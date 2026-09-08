@@ -56,7 +56,7 @@ deliberate set of bundled tools.
 
 | | Loop shape | Streaming | Termination | Step budget |
 | --- | --- | --- | --- | --- |
-| pikuri | three callbacks (`after_message`, `before_tool_call`, `after_tool_result`) wired on a `RubyLLM::Chat`; controls (`StepLimit`, `Cancellable`, `Interloper`) poked at well-defined boundaries; `run_loop` is `chat.ask(message)` (`pikuri-core/lib/pikuri/agent.rb`) | opt-in via `Agent.new(streaming: true)` — per-chunk `Event::{Thinking,Assistant}Delta`; propagates to sub-agents + synthesizer | inherits ruby_llm's: no tool calls (or `Tool::Halt`); also `StepLimit::Exceeded` → `Synthesizer.run` rescue, or `Cancellable::Cancelled` re-raise | yes (`Control::StepLimit`, with step-exhaustion rescue via `Synthesizer`) |
+| pikuri | three callbacks (`after_message`, `before_tool_call`, `after_tool_result`) wired on a `RubyLLM::Chat`; controls (`Cancellable`, `Interloper`) poked at well-defined boundaries; `run_loop` is `chat.ask(message)` (`pikuri-core/lib/pikuri/agent.rb`) | opt-in via `Agent.new(streaming: true)` — per-chunk `Event::{Thinking,Assistant}Delta`; propagates to sub-agents | inherits ruby_llm's: no tool calls (or `Tool::Halt`); also a `Cancellable::Cancelled` re-raise | **no** — deliberately unbounded; the ceilings are a watching human's `Cancellable` and the context window (`D_no_step_limit`) |
 | ruby_llm | recursive: `Chat#complete` calls itself after running tool calls (`lib/ruby_llm/chat.rb:156–293`) | yes, optional via block | LLM returns no tool calls, OR `Tool::Halt` short-circuits | no — bounded only by `Halt` |
 | langchainrb | state machine over `messages.last.standard_role`: `process_latest_message` dispatches `:system / :llm / :user / :tool` to handlers; on tool-call response sets `:requires_action`; `execute_tools` sets `:in_progress`; loops until terminal state | per-LLM block at `Assistant.new(...) { \|chunk\| ... }`; provider-dependent | LLM returns no tool calls → `:completed`; or `auto_tool_execution: false` returns at `:requires_action` so host can inspect | no |
 | pi | nested loops: outer for follow-up queue, inner for steering+tools (`packages/agent/src/agent-loop.ts:155–269`) | yes — `EventStream<AgentEvent>` | `shouldStopAfterTurn()` hook, `stopReason`, abort | implicit via context-window compaction |
@@ -65,28 +65,32 @@ deliberate set of bundled tools.
 
 **Takeaway.** Pikuri's loop is now the thinnest of the six with real
 extension wiring: ruby_llm owns iteration, and pikuri's `Agent` is a
-wiring file — three callbacks, three controls, one sealed `Event`
-hierarchy, plus a step-exhaustion rescue (`Synthesizer.run`) and a
-cancellation re-raise path. Streaming is opt-in (`streaming: true`)
-and propagates to sub-agents and the synthesizer consistently. The
+wiring file — three callbacks, two controls, one sealed `Event`
+hierarchy, and a cancellation re-raise path. Nothing caps the
+iteration at all (`D_no_step_limit`), which makes it thinner than any
+of the five. Streaming is opt-in (`streaming: true`) and propagates
+to sub-agents consistently. The
 langchainrb state-machine approach is the obvious Ruby alternative
 shape but pays for orthogonal "host decides when to run tools" cases
 pikuri doesn't need.
 
 The contrast worth recording is grok-build's **goal mode**, which is the
 only thing in the set that answers "the agent stopped but isn't done"
-with machinery rather than a message. Where pikuri's `StepLimit` is a
-*budget* (run out → raise, or synthesize a final answer) and opencode's
-overflow is a *compaction*, grok-build's `GoalTracker` is a *supervisor*:
+with machinery rather than a message. Where pikuri caps nothing and
+opencode's overflow is a *compaction*, grok-build's `GoalTracker` is a
+*supervisor*:
 a classifier scores the remaining gaps after each attempt, a strategist
 restructures the plan when progress stalls, and a stop detector decides
 the goal is met. Its interesting property is the failure mode it designs
 for — a stall is detected by *fingerprinting the flagged gaps* and
 tripping when two consecutive attempts produce an identical fingerprint,
 i.e. the model is looping rather than converging. That's a real answer
-to a question pikuri currently answers with "the human is watching."
-Out of scope for pikuri as shipped, but the stall fingerprint is the
-cheap half and would transfer to `StepLimit` on its own.
+to a question pikuri answers with "the human is watching" — and that
+answer is now deliberate rather than incidental, since the step budget
+that used to sit beside it is gone. The stall fingerprint is the cheap
+half, and it is precisely the **repetition detector** `D_no_step_limit`
+names as the first thing to reach for if a real loop is ever observed.
+Borrow from here when that day comes; don't reintroduce a count.
 
 ---
 
@@ -597,7 +601,7 @@ the whole portable half of grok-build's template machinery.
 
 | | Message store | Event stream | Streaming deltas | Token bookkeeping |
 | --- | --- | --- | --- | --- |
-| pikuri | inherits ruby_llm's `Chat#messages` | sealed `Agent::Event` hierarchy: `UserTurn(mid_loop)`, `Thinking`, `Assistant`, `ThinkingDelta`, `AssistantDelta`, `ToolCall`, `ToolResult`, `Tokens`, `ContextCap`, `FallbackNotice`, `Cancelled` — all flow through one `Listener::Base#on_event` entry point | opt-in via `Agent.new(streaming: true)`; per-chunk `*Delta` events alongside message-level bookends | `Tokens` event carries `input`/`output`/`cached`/`cache_creation`/`thinking`/`model_id`; `Listener::TokenLog` tracks running context-window size; `Event::ContextCap` carries the detected cap from `ContextWindowDetector` |
+| pikuri | inherits ruby_llm's `Chat#messages` | sealed `Agent::Event` hierarchy: `UserTurn(mid_loop)`, `Thinking`, `Assistant`, `ThinkingDelta`, `AssistantDelta`, `ToolCall`, `ToolResult`, `Tokens`, `ContextCap`, `Cancelled` — all flow through one `Listener::Base#on_event` entry point | opt-in via `Agent.new(streaming: true)`; per-chunk `*Delta` events alongside message-level bookends | `Tokens` event carries `input`/`output`/`cached`/`cache_creation`/`thinking`/`model_id`; `Listener::TokenLog` tracks running context-window size; `Event::ContextCap` carries the detected cap from `ContextWindowDetector` |
 | ruby_llm | plain Array of `Message` objects (no log wrapper) | three registered callbacks (`after_message`, `before_tool_call`, `after_tool_result`); pikuri-style structured events not exposed | yes, optional via block | per-message `tokens` field on `Message`; no running aggregate |
 | langchainrb | `messages` (Array of provider-specific `Messages::*Message`); `add_message_callback` proc fires on every append | none beyond the two callbacks (`add_message_callback`, `tool_execution_callback`) | per-LLM block at `Assistant.new(...) { ... }` | running totals on `Assistant`: `total_prompt_tokens` / `total_completion_tokens` / `total_tokens` |
 | pi | TypeScript discriminated union; custom message types extensible via declaration merging | `EventStream<AgentEvent>` | yes | per-event |
@@ -1507,21 +1511,21 @@ out of scope. Three things are not:
   `c.add_extension Pikuri::SubAgent::Extension.new(personas: [...])`
   inside the `Agent.new` block): the LLM-visible `agent` tool
   delegates to a fresh `Agent` by *persona name*. A `Persona` is a
-  five-field record (`name`, `description`, `tool_names`,
-  `system_prompt`, `max_steps`); spawning runs the persona's
+  four-field record (`name`, `description`, `tool_names`,
+  `system_prompt`); spawning runs the persona's
   `system_prompt` verbatim (no inheritance from the parent), with
   the subset of `parent.tools` whose `name` appears in
   `persona.tool_names` (parent tool *instances* are reused so any
-  workspace/confirmer wiring travels along), and a fresh
-  `StepLimit` at `persona.max_steps`. The parent's `transport`,
+  workspace/confirmer wiring travels along). The child's loop is
+  unbounded, as the parent's is. The parent's `transport`,
   `cancellable`, `context_window_cap`, and `streaming` flag travel
   through unchanged. Listeners propagate via a duck-typed
   `for_sub_agent(id:)` convention — `Terminal` pads with the
   child's id, `TokenLog` tags a fresh per-agent snapshot,
   `RateLimited` splits its bucket. Controls don't use the same
   hook (the propagation policy is inlined in
-  `SubAgentTool#execute` — fresh `StepLimit` at the persona's max,
-  shared parent `Cancellable` by reference, `nil` `Interloper`).
+  `SubAgentTool#execute` — shared parent `Cancellable` by reference,
+  `nil` `Interloper`).
   Extensions are *not* inherited — if a persona needs MCP or
   skills, the persona ships its own wiring. Recursion is
   structurally impossible: no bundled persona lists `agent` in its
@@ -1657,10 +1661,11 @@ Notable shape differences:
   from "subagents."
 - **opencode's hidden housekeeping agents** (`compaction` / `title` /
   `summary`) dress LLM-driven internal workflows up as personas with
-  `tools: none`. Pikuri's equivalent — step-exhaustion synthesis —
-  is hard-coded as `Pikuri::Agent::Synthesizer`, an internal recovery
-  path the LLM never picks. Different style choice, same underlying
-  trick (LLM-drive an internal task without exposing it as a tool).
+  `tools: none`. Pikuri had one equivalent — a hard-coded
+  step-exhaustion synthesizer the LLM never picked — and it went with
+  the step limit (`D_no_step_limit`), so pikuri now ships no hidden
+  LLM-driven internal task at all. The trick is still worth knowing if
+  compaction ever lands (`ideas/context-overflow-behavior.md`).
 - **pi ships personas under `examples/`**, leaving the persona
   inventory to be a per-host decision rather than a harness-core fact.
   Same shape as pikuri keeping bundled personas in pikuri-subagents
@@ -2377,13 +2382,17 @@ more than wiring through ruby_llm's existing primitive.
     *exclusions* (`tee`, `cargo check`, `rg --pre`, and any `git` command
     whose local config installs an executable hook) are the part worth
     reading before writing any auto-approval logic.
-16. **Stall detection for `StepLimit`** (grok-build's goal mode). Its
-    supervisor fingerprints the remaining gaps after each attempt and
-    trips when two consecutive attempts produce an identical
-    fingerprint — the model is looping, not converging. The full goal
-    subsystem is out of scope; the fingerprint alone is a better
-    exhaustion signal than a step count, and would compose with the
-    existing `on_exhausted: :synthesize` path.
+16. **Stall detection instead of a step count** (grok-build's goal
+    mode). Its supervisor fingerprints the remaining gaps after each
+    attempt and trips when two consecutive attempts produce an
+    identical fingerprint — the model is looping, not converging. The
+    full goal subsystem is out of scope, but the fingerprint alone is
+    the *only* loop guard pikuri would consider: `D_no_step_limit`
+    removed the step budget precisely because a count fires on long
+    work and never on looping, and names this shape as the thing to
+    reach for if a real loop is ever observed. Nothing to compose with
+    now — it would be the first such guard, and needs a real sighting
+    to earn its place.
 17. **Content-hash anchors as an edit-addressing arm** (grok-build's
     `hashline_*`). A third answer alongside unique-string matching and
     patch-with-context: `read` returns `LINE:HASH→CONTENT`, `edit`

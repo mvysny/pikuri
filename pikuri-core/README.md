@@ -10,8 +10,9 @@ AI-assistant toolkit:
   (`Pikuri::Tool::Parameters`) and LLM-actionable error messages.
 - Listener stream (`Pikuri::Agent::Listener::*`) for rendering,
   token accounting, and structured capture.
-- Controls (`StepLimit`, `Cancellable`, `Interloper`) for budget
-  enforcement + cancellation.
+- Controls (`Cancellable`, `Interloper`) for cancellation and
+  mid-loop injection. The loop itself is unbounded — see
+  `DECISIONS.md` `D_no_step_limit`.
 - Three stateless bundled tools (`CALCULATOR`, `WEB_SCRAPE`,
   `FETCH`) plus a host-configured web-search tool built via
   `Pikuri::Tool::WebSearch.build` (provider keys passed in, never
@@ -55,8 +56,7 @@ agent = Pikuri::Agent.new(
     provider: :openai,
     assume_model_exists: true
   ),
-  system_prompt: Pikuri.prompt(:'pikuri-chat'),
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
+  system_prompt: Pikuri.prompt(:'pikuri-chat')
 ) do |c|
   c.add_tool Pikuri::Tool::CALCULATOR
   c.add_tool Pikuri::Tool::WebSearch.build

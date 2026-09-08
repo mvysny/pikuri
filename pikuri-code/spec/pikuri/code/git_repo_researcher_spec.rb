@@ -16,11 +16,6 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
     assert_match(/git_repo_researcher sub-agent/i, described_class.system_prompt)
   end
 
-  it 'has a step budget suited to clone + multi-pass grep/read + web fallback' do
-    assert_kind_of Integer, described_class.max_steps
-    assert described_class.max_steps.positive?
-  end
-
   it 'signals needs_temp_workspace so SubAgentTool mints a fresh Filesystem at spawn' do
     assert_equal true, described_class.needs_temp_workspace
   end
@@ -51,7 +46,6 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
         system_prompt_base: 'base',
         id: '',
         streaming: false,
-        step_limit: nil,
         cancellable: nil,
         interloper: nil
       )

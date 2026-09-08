@@ -348,7 +348,6 @@ Pikuri::SubAgent::FILE_MINER
 # => Persona.new(
 #      name:          'file_miner',
 #      tool_names:    %w[file_list read grep glob],
-#      max_steps:     30,
 #      system_prompt: Pikuri.prompt('persona-file-miner'),
 #      ...)
 ```
@@ -396,7 +395,6 @@ Pikuri::Code::GIT_REPO_RESEARCHER
 #      name:                 'git_repo_researcher',
 #      tool_names:           %w[git_clone file_list read grep glob
 #                               web_search web_scrape fetch],
-#      max_steps:            30,
 #      needs_temp_workspace: true,
 #      ...)
 ```

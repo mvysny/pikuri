@@ -122,8 +122,6 @@ module Pikuri
             println(indent(Rainbow("= #{defang(summary, MAX_SUMMARY_CHARS)}").color(TOOL_COLOR)))
           in Event::ModelSwitched(from:, to:)
             println(indent(Rainbow("⇄ model: #{from.model} → #{to.model}").magenta))
-          in Event::FallbackNotice(reason:)
-            println(indent(Rainbow("! #{reason}").yellow))
           in Event::Cancelled
             println(indent(Rainbow('! cancelled').red))
           in Event::Reset

@@ -391,8 +391,7 @@ shape you've used since the sub-agents chapter:
 ```ruby
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.from_openai_server(server:, model:, api_key:),
-  system_prompt: system_prompt,
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40)
+  system_prompt: system_prompt
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new
   c.add_tool Pikuri::Tool::CALCULATOR

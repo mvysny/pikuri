@@ -10,7 +10,7 @@ describe Pikuri::Lsp::Extension do
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt_base: 'base', id: '', streaming: false,
-      step_limit: nil, cancellable: nil, interloper: nil
+      cancellable: nil, interloper: nil
     )
   end
 

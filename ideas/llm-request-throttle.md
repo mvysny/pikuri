@@ -98,10 +98,11 @@ way to bracket one request from outside. A permit held across
 `@chat.complete` is a whole-turn permit — exactly the over-restriction of the
 turn pool, plus the deadlock:
 
-- `Synthesizer.run_synthesizer` fires from the `StepLimit::Exceeded` rescue,
-  building a nested `Agent` that needs a permit of its own.
 - A tool that spawns a sub-agent runs inside tool execution, inside
-  `@chat.complete`.
+  `@chat.complete` — a nested `Agent` needing a permit of its own while the
+  parent holds one. (A second instance of this shape, the step-exhaustion
+  synthesizer, was deleted in `D_no_step_limit`; the sub-agent case alone is
+  enough to force the design.)
 
 A parent holding the only permit waits forever on a child that needs one. Both
 are safe *only* because the parent holds nothing while a tool runs — so the
@@ -267,8 +268,7 @@ agents against a `Testing::Gate`-held `fake_transport` under `limit(base, k)`
 and asserts in-flight ≤ k while the gate holds — the test the adapter approach
 could not write. Plus the deadlock invariant, because it is precisely what a
 later "why not acquire once per turn?" tidy-up would break: under `limit 1`, a
-parent whose tool spawns a sub-agent, and a parent that trips `StepLimit` into
-`:synthesize`, both complete.
+parent whose tool spawns a sub-agent completes.
 
 ## Still open
 

@@ -36,7 +36,7 @@ RSpec.describe 'vectordb tool trifecta legs' do
     c = Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt_base: 'base', id: '', streaming: false,
-      step_limit: nil, cancellable: nil, interloper: nil
+      cancellable: nil, interloper: nil
     )
     extension(**flags).configure(c)
     c.tools.to_h { |t| [t.name, t] }

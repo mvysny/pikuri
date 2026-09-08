@@ -79,6 +79,104 @@ design.
 
 ---
 
+## D_no_step_limit — The loop is unbounded; a tool-call count was the wrong axis (2026-09-08)
+
+**Status:** Accepted; shipped 2026-09-08. Deletes
+`Pikuri::Agent::Control::StepLimit`, `Pikuri::Agent::Synthesizer`,
+`Event::FallbackNotice`, `Agent.new(step_limit:)`, `Persona#max_steps`, and
+`Agent::STEP_BUDGET_RESULT`. Tombstones the salvage half of
+`D_unwound_batch_repair` (edited in place). The deleted summarizer's prompt,
+message-walk and construction traps are preserved in
+`ideas/context-overflow-behavior.md` §The deleted summarizer.
+
+**Context.** `StepLimit` capped tool calls per turn, with an `on_exhausted:
+:raise | :synthesize` policy; on `:synthesize` a nested tools-free `Agent`
+salvaged an answer from the evidence gathered so far. Seven `bin/` wirings took
+`:synthesize` at 20–45, three took `:raise` at 40, and sub-agents got
+`:synthesize` at `persona.max_steps` unconditionally.
+
+Reported operating experience, in years of daily agent use: **the budget never
+once caught a runaway loop, and repeatedly stopped legitimate long work** — a
+capable model implementing a function, halted mid-edit at the cap. A guard
+whose every firing to date was a false positive is not neutral complexity; it
+is negative value, and it was also among the more intricate control flow in
+`agent.rb`.
+
+The diagnosis is that a step count is the wrong axis for what the cap was
+reaching for. **Cost** is tokens and money — three `grep`s are cheaper than one
+`fetch` of a 200 KB page, so steps are a bad proxy. **Wall-clock** is a
+deadline. **Pathological looping** is a repetition signature. One integer stood
+in for all three and measured none of them.
+
+Two ceilings already exist and are better aimed. `Control::Cancellable` — a
+watching human, cooperative, batch-repairing — and it covers **every wiring
+pikuri ships**: a check of the binaries (2026-09-08) found no unattended one,
+`bin/pikuri-briefing` included (its `ARGV` one-shot runs a turn and then falls
+into a Reline loop, so it would block on stdin under cron). And the model's
+context window, which every turn grows toward and nothing in `lib/` compacts.
+`Pikuri::Mcp::Thinker` had also been constructing `Agent`s with no budget since
+it shipped, uneventfully.
+
+**Decision.** Remove the budget wholesale rather than re-tune it. `Agent` caps
+nothing; sub-agents inherit the same posture, their ceilings being the shared
+cancel token (one Ctrl+C stops the tree) and their own fresh window. A spec
+guards the *absence* of a cap (`agent_spec.rb`, "unbounded tool calling"),
+because re-adding one is a reflex.
+
+The dividend is an interaction removed, not just lines. The `:synthesize`
+rescue forced `run_loop`'s `ensure` to run *after* it so
+`Synthesizer.build_prompt` saw unrepaired history, and because Ruby restores
+`$!` when a rescue completes normally, the exception had to be carried across
+in a local. That whole wrinkle is gone; `unanswered_results` loses an arm and
+`last_assistant_content` stops having two meanings.
+
+**Consequences.**
+
+- Overflow is now the *only* ceiling on an autonomous leg, which promotes
+  `ideas/context-overflow-behavior.md` from "compaction is a convenience" to
+  "this is the last backstop". That note's argument for its autonomous legs now
+  rests on the sub-agent alone.
+- `Control` holds two *signals* and no budget, so
+  `ideas/context-budget.md`'s proposed token control can no longer cite a
+  sibling as precedent — noted in both notes.
+- `on_exhausted:` was the repo's one worked example of a two-valued policy enum
+  in core, and it went as unearned. A future `on_context_overflow:` therefore
+  has to justify itself from scratch; that reversal is recorded where the
+  proposal lives.
+
+**Alternatives rejected.**
+
+- **Default `step_limit:` to `nil`, keep the class.** Keeps 100% of the
+  complexity to serve 0% of the use — strictly the worst option on the table.
+- **Raise the caps (40 → 400).** Keeps every line and moves the false positive
+  later, so the interruption lands after 400 steps of work instead of 40.
+  Arguably worse than the status quo, not better.
+- **Keep it for sub-agents only.** The most tempting, since a child is the one
+  leg no human watches *within* a turn. Declined on two grounds: the cancel
+  token is shared by reference so Ctrl+C does reach the child, and the child's
+  own fresh window is a real ceiling. It also saves almost nothing —
+  `StepLimit`, `Exceeded`, `Synthesizer`, `FallbackNotice` and
+  `Persona#max_steps` would all survive to serve twelve lines of `bin/` wiring.
+  Either the guard earns its complexity or it doesn't.
+- **A loop detector** — stop after N consecutive tool calls with identical
+  name + arguments. **This is the one to reach for first if a real loop ever
+  appears**, and it is recorded here rather than built: it fires on the actual
+  pathology instead of a proxy, and never on legitimate long work. Not built
+  today because the pathology has not been observed once, and replacing
+  speculative machinery with different speculative machinery is not a
+  simplification.
+- **A token or wall-clock budget in core.** The right axes, but nobody has
+  asked for either, and the honest home for an unattended job's deadline is
+  `timeout 10m pikuri-briefing` in the cron line — one shell word, at the layer
+  that owns the deadline, the same move as the sandbox and env decisions.
+- **Keeping `Synthesizer` alone**, unreachable, as a head start on overflow
+  compaction. Declined: pikuri does not keep code "just in case", and the
+  reusable part is knowledge, not lines — the prompt, the message-graph walk
+  and the three construction traps now live in the idea note, with a sha for
+  the rest.
+
+---
+
 ## D_tool_summary_lines — The tool composes its own display line, in code (2026-09-07)
 
 **Status:** Accepted; shipped 2026-09-07. Graduated from
@@ -398,10 +496,10 @@ if a reader can run both readings in one sitting.
   owns exactly what no gem can know: that one source is the user's own
   writing and the other is not. The mail surface's own search discipline and
   untrusted-content guard arrive with the extension.
-- ***The step ceiling rises to 45 under the flag*** (30 without): a brief now
-  has two sets to enumerate before any of it is read. Exhaustion is not
-  silent — `Agent::Synthesizer` emits `Event::FallbackNotice` — but the
-  synthesized brief itself never mentions it.
+- ***The flag makes a brief a longer run***: two sets to enumerate before any
+  of it is read. This consequence used to be a number — the step ceiling rose
+  to 45 under the flag, 30 without — and that budget is gone as of
+  `D_no_step_limit`, so the run simply takes the turns it takes.
 
 **Alternatives rejected.**
 
@@ -1299,10 +1397,12 @@ provider sees (`id`, `kind`); stripped thinking is the same kind of thing, and
 ## D_unwound_batch_repair — Answer the dangling calls on the way out, don't prevent the damage (2026-08-28)
 
 **Status:** Accepted; implemented 2026-08-28 as an `ensure` on
-{Pikuri::Agent#run_loop} calling a private `repair_dangling_tool_calls!`, four
+{Pikuri::Agent#run_loop} calling a private `repair_dangling_tool_calls!`, three
 public `*_RESULT` constants on `Agent`, and
 `pikuri-core/spec/pikuri/agent/unwind_repair_spec.rb`. Graduated from
-`ideas/unwind-mid-tool-batch.md` (deleted).
+`ideas/unwind-mid-tool-batch.md` (deleted). Amended 2026-09-08 by
+`D_no_step_limit`: the fourth source and the salvage-ordering constraint below
+went with the step limit, along with `STEP_BUDGET_RESULT`.
 
 **Context.** ruby_llm's `complete_once` appends the assistant `tool_calls`
 message *before* running any tool, so anything unwinding out of a batch leaves
@@ -1311,35 +1411,37 @@ calls that no `:tool` message answers. OpenAI and Anthropic reject that with a
 — the same loud-on-cloud / silent-on-local split as
 `D_reference_text_as_user_turn`.
 
-Four sources, and the first is the one that shapes the decision: **any**
+Three sources, and the first is the one that shapes the decision: **any**
 exception out of a tool, which "errors are loud" deliberately lets propagate —
 a bug in tool code, a corrupt file, a library blowing up. Then
 `Cancellable::Cancelled` (from `before_tool_call`, from `Cancellable#sleep`
-inside a tool, or out of a sub-agent sharing the token),
-`StepLimit::Exceeded` from `tick!`, and `Interrupt` in a host that doesn't
-trap SIGINT.
+inside a tool, or out of a sub-agent sharing the token), and `Interrupt` in a
+host that doesn't trap SIGINT.
 
 It was already shipping. `bin/pikuri-chat`'s `run_turn` rescues `Cancelled` and
 returns to the `> ` prompt with the agent intact, so Ctrl+C during a batch
-poisons the next message; and the seven `bin/` scripts running
-`on_exhausted: :synthesize` answer from the salvage path and return *normally*,
-leaving the same wreckage behind. An earlier draft of the idea note asserted
-the opposite ("they exit, or they `clear_conversation`") — worth recording,
-because the same reflex will say it again.
+poisons the next message. A fourth source — a tripped step budget, whose seven
+`:synthesize` wirings answered from the salvage path and returned *normally*,
+leaving the same wreckage — is gone as of `D_no_step_limit`. An earlier draft
+of the idea note asserted that hosts "exit, or they `clear_conversation`" —
+worth recording, because the same reflex will say it again.
 
 **Decision.** An `ensure` on `run_loop` appends a `:tool` observation for every
 call the last assistant turn left unanswered, then the exception propagates
 untouched. The first unanswered call is told what went wrong; the ones behind
 it are told they never ran.
 
-`ensure` rather than a clause on each `rescue` is the load-bearing part. It
-catches sources nobody enumerated (`Interrupt` is not a `StandardError`), it is
-a no-op on the success path, and it runs *after* the `:synthesize` rescue body
-— so {Pikuri::Agent::Synthesizer.build_prompt} still reads the unrepaired
-history that its documented drop-calls-with-no-result pass expects, and the
-salvage answer does not change. The one wrinkle: Ruby restores `$!` once a
-rescue clause completes normally, so that branch hands its exception across in
-a local.
+`ensure` rather than a clause on each `rescue` is the load-bearing part: it
+catches sources nobody enumerated (`Interrupt` is not a `StandardError`) and is
+a no-op on the success path.
+
+Two constraints here were load-bearing only while the step limit existed, and
+are recorded because a future rescue that *returns normally* re-creates both.
+The `ensure` had to run **after** the `:synthesize` rescue body, so the
+salvage prompt read unrepaired history and its answer did not change; and
+because Ruby restores `$!` once a rescue clause completes normally, that branch
+had to hand its exception across in a local. Add a rescue that recovers rather
+than re-raises, and both come back.
 
 Splitting culprit from skipped is worth the extra constant because telling a
 call that never started "you failed" invites a retry of something that was
@@ -5118,7 +5220,9 @@ CLAUDE.md *Conventions*.
 
 - **`Paths.cache(session: :shared | :current)`** — a required kwarg
   *forcing* the decision at the signature. Genuinely attractive: great
-  discoverability, and pikuri-shaped like `StepLimit.new(on_exhausted:)`.
+  discoverability, and pikuri-shaped like a policy enum on a constructor.
+  (The example cited here used to be `StepLimit.new(on_exhausted:)`, itself
+  since deleted as an unearned knob — `D_no_step_limit`.)
   **Killed** because the enum is secretly a 2×2 matrix — *shared-vs-private*
   × *persistent-vs-nuked* — crammed onto one axis: `:shared` implies
   persistent, `:current` implies nuked, and **there is no cell for a

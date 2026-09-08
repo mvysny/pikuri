@@ -19,8 +19,8 @@ a security signal the human must see has to travel on a channel the LLM
 
 The channel already exists and is used for benign domain events:
 `ctx.emit_event(...)` → each listener's `on_event(event)` → the Terminal
-listener renders it (today: `PlanModeChanged`, `ListChanged`,
-`FallbackNotice`). What's missing is that **guard / security signals don't
+listener renders it (today: `PlanModeChanged`, `ListChanged`, `Cancelled`).
+What's missing is that **guard / security signals don't
 use it** — they ride the tool's return string back into the LLM's context:
 
 - `MailCompose#compose` returns `ComposeGuard`'s notes (recipient-novelty

@@ -81,13 +81,6 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     assert_equal '', out
   end
 
-  it 'prints FallbackNotice in yellow with the reason' do
-    out = capture_stdout do
-      listener.on_event(Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'))
-    end
-    assert_includes out, 'budget exhausted'
-  end
-
   it 'prints Cancelled notice in red' do
     out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Cancelled.new) }
     assert_includes out, 'cancelled'
@@ -239,12 +232,11 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
       assert_equal "  line one\n  line two\n", out
     end
 
-    it 'prepends N spaces to ToolCall, ToolResult, Thinking, and FallbackNotice' do
+    it 'prepends N spaces to ToolCall, ToolResult, and Thinking' do
       out = capture_stdout do
         padded.on_event(Pikuri::Agent::Event::Thinking.new(content: 'pondered'))
         padded.on_event(tool_call)
         padded.on_event(tool_result)
-        padded.on_event(Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'))
       end
       out.each_line do |line|
         assert line.start_with?('  '), "expected line to start with 2 spaces, got: #{line.inspect}"

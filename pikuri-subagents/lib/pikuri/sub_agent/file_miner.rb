@@ -35,8 +35,7 @@ module Pikuri
                    'Use to delegate file lookups so their contents stay out of your context. ' \
                    'Returns one paragraph + file:line references.',
       tool_names: %w[file_list read grep glob].freeze,
-      system_prompt: Pikuri.prompt('persona-file-miner'),
-      max_steps: 30
+      system_prompt: Pikuri.prompt('persona-file-miner')
     )
   end
 end

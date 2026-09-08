@@ -109,7 +109,7 @@ that never received your instruction behaves like a model that received
 it and was unimpressed — it just seems a bit dim. Compare that with the
 failures you have met in earlier chapters: a bad tool argument returns
 `Error: ...` and the model reacts, a refused write comes back as a
-permission message, an exhausted step budget raises. Those are *loud*.
+permission message, a cancel raises. Those are *loud*.
 This one has no error at all, at any layer, ever.
 
 The author's framing, which is the reason this chapter exists:

@@ -48,7 +48,6 @@ RSpec.describe Pikuri::Mcp::Extension do
       system_prompt_base: 'base',
       id: '',
       streaming: false,
-      step_limit: nil,
       cancellable: nil,
       interloper: nil
     )
@@ -286,7 +285,6 @@ RSpec.describe Pikuri::Mcp::Extension do
         system_prompt_base: 'base',
         id: '',
         streaming: false,
-        step_limit: nil,
         cancellable: cancellable,
         interloper: nil
       )

@@ -15,11 +15,6 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
     assert_match(/research sub-agent/i, described_class.system_prompt)
   end
 
-  it 'has a step budget suited to "look it up + summarize"' do
-    assert_kind_of Integer, described_class.max_steps
-    assert described_class.max_steps.positive?
-  end
-
   describe 'integration with Pikuri::SubAgent::Extension' do
     let(:tools) do
       [Pikuri::Tool::WebSearch.build, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH]
@@ -31,7 +26,6 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
         system_prompt_base: 'base',
         id: '',
         streaming: false,
-        step_limit: nil,
         cancellable: nil,
         interloper: nil
       )

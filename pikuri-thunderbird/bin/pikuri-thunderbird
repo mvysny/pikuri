@@ -81,9 +81,6 @@ begin
       api_key: examples_config.fetch('llm_api_key', 'not-needed')
     ),
     system_prompt: system_prompt,
-    # Q&A wiring: on step exhaustion, synthesize a best-effort answer from
-    # what's gathered rather than raising (a coding agent would :raise).
-    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 30, on_exhausted: :synthesize),
     cancellable: cancel_flag
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new

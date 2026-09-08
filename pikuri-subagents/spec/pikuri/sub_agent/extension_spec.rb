@@ -33,8 +33,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       name: 'researcher',
       description: 'd',
       tool_names: %w[web_search],
-      system_prompt: 's',
-      max_steps: 3
+      system_prompt: 's'
     )
   end
 
@@ -43,8 +42,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       name: 'file_miner',
       description: 'fs recon',
       tool_names: %w[web_search],
-      system_prompt: 's',
-      max_steps: 5
+      system_prompt: 's'
     )
   end
 
@@ -87,7 +85,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
     it 'raises on duplicate persona names — fail fast on a quiet config bug' do
       twin = Pikuri::SubAgent::Persona.new(
         name: 'researcher', description: 'd', tool_names: %w[web_search],
-        system_prompt: 's', max_steps: 3
+        system_prompt: 's'
       )
       err = assert_raises(ArgumentError) do
         described_class.new(personas: [tiny_persona, twin])
@@ -122,8 +120,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
         name: 'multi',
         description: 'd',
         tool_names: %w[read grep glob bash],
-        system_prompt: 's',
-        max_steps: 5
+        system_prompt: 's'
       )
       err = assert_raises(ArgumentError) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),

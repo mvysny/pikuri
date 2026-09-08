@@ -25,15 +25,22 @@ rescue RubyLLM::ContextLengthExceededError => e
 
 Two things worth knowing before designing anything:
 
-- **Nothing is summarized.** The conversation is lost as-is. (Easy to
-  misremember otherwise — see the next point.)
-- **A summarizer already exists**, for the *neighbouring* case:
-  {Pikuri::Agent::Synthesizer}, a nested tools-free `Agent` used by
-  `Control::StepLimit`'s `on_exhausted: :synthesize` policy. So
-  "summarize, then exit" is closer to shipping than it looks, and may
-  reduce to reusing that machinery on a second trigger.
+- **Nothing is summarized.** The conversation is lost as-is.
+- **A summarizer used to exist and was deleted** (2026-09-08) — see
+  *The deleted summarizer* below, which carries its prompt and its
+  message-walk verbatim. Do not go looking for
+  `Pikuri::Agent::Synthesizer`; it is gone, along with the step limit
+  that was its only trigger.
 - Nothing in `lib/` handles overflow at all — it propagates out of
   `run_loop` to whoever called it.
+
+Overflow is now also the **only** ceiling on a runaway loop. The step
+limit went on the grounds that it never once caught a real loop and
+repeatedly stopped legitimate long work (`D_no_step_limit`), which
+promotes this note from "compaction is a convenience" to "this is the
+last backstop". That is not a reason to want the step cap back — a
+tool-call count was always the wrong axis — but it does mean the
+do-nothing answer below is now load-bearing rather than merely tidy.
 
 Per CLAUDE.md (Layout), the `exit 1` is a *demo script's* deliberate
 simplicity and must not be read as pikuri's policy. But 10 identical
@@ -109,14 +116,26 @@ turn, watching `TokenLog`, is a better context manager than any
 summarizer, and the honest read is that compaction is a *convenience*
 there, not a correctness requirement.
 
-It cannot hold for the **autonomous legs**, and pikuri ships several —
-`max_steps` of 40, sub-agents, `bin/pikuri-minions`, corpus RAG. One tool
-observation (a large file read, `rg` across a monorepo, a scraped page)
-can add tens of thousands of tokens between two consecutive human
-glances. The operator cannot watch what they are not watching. Note that
-sub-agents already encode the same insight from the other side: they are
-always `on_exhausted: :synthesize`, i.e. the leg that no human is
-watching is the one that must summarize itself.
+It cannot hold for the **autonomous legs**, and the sharpest of those is
+the **sub-agent**: no human sits between the parent's tool call and the
+child's return, so a child can burn its whole window inside one glance at
+the parent. One tool observation (a large file read, `rg` across a
+monorepo, a scraped page) can add tens of thousands of tokens between two
+consecutive human glances. The operator cannot watch what they are not
+watching.
+
+Two earlier props for this paragraph are gone, and the honest version is
+narrower than the one they supported. It used to cite `max_steps` of 40
+as an autonomous leg and read sub-agents' unconditional
+`on_exhausted: :synthesize` as independent corroboration ("the leg no
+human watches is the one that must summarize itself"); both were deleted
+with the step limit. And a check of how the binaries actually run
+(2026-09-08) found **no unattended wiring at all** — all 12 `bin/`
+scripts are a human at a prompt with SIGINT trapped to
+`cancellable.cancel!`, `bin/pikuri-briefing` included (its `ARGV`
+one-shot runs a turn and then falls into a Reline loop, so it would block
+on stdin under cron). So the argument now rests on the sub-agent alone,
+and on any future host that runs a turn nobody is watching.
 
 ### The sharp bit: the idea file *is* the compaction
 
@@ -143,12 +162,18 @@ than something to paper over.
   a live answer, not a placeholder.
 - **Who owns recovery — `lib/` or the host?** A `Control` in core that
   every host inherits, versus a seam core exposes and `pikuri-tui`
-  implements. (Compare `StepLimit`, which chose a policy enum in core.)
-- **Does a `bin/` script get a choice?** A `on_context_overflow:` knob
-  mirroring `on_exhausted: :raise | :synthesize` would keep demos honest
-  while letting one demonstrate the real behaviour — at the cost of a
-  config knob CLAUDE.md's "no knobs not needed for the next concrete
-  step" rule would want justified.
+  implements. This note used to cite `StepLimit` as the precedent for
+  choosing a policy enum in core. That precedent has been **reversed**,
+  not merely lost: the enum was deleted as exactly the knob CLAUDE.md's
+  "no knobs not needed for the next concrete step" rule warns about
+  (`D_no_step_limit`). A new policy enum in core now has to justify
+  itself from scratch; there is no sibling left to lean on.
+- **Does a `bin/` script get a choice?** An `on_context_overflow:` knob
+  would keep demos honest while letting one demonstrate the real
+  behaviour. Note what the bullet above does to this one: the
+  `on_exhausted: :raise | :synthesize` pair it was modelled on is gone,
+  and it was *the* worked example of a two-valued core policy enum going
+  unearned. Treat that as evidence against, not as a template.
 - **Recover before or after the raise?** Reacting to
   `ContextLengthExceededError` is simple but late (the request already
   failed and the turn is half-built); acting on a threshold *before* it
@@ -195,10 +220,111 @@ demo script, a TUI, and a sub-agent. Given (0), 2 and 7 look stronger
 than 3.
 
 
+## The deleted summarizer
+
+`Pikuri::Agent::Synthesizer` was a nested tools-free `Agent` that
+answered a question from the evidence an exhausted agent had already
+gathered. It shipped for the *neighbouring* trigger — a tripped
+`Control::StepLimit` under `on_exhausted: :synthesize` — and both went
+in one commit (`D_no_step_limit`). It never handled overflow, but it is
+the closest thing pikuri ever had to "summarize, then exit", so what it
+knew is recorded here rather than left for git archaeology.
+
+Last commit where it existed: **`d0efb6c10df0`** (2026-09-08),
+`pikuri-core/lib/pikuri/agent/synthesizer.rb` plus its spec. Read it
+there if you want the construction boilerplate; what follows is the part
+worth reconstructing.
+
+**The prompt, verbatim.** Four sentences, and every clause was earned by
+watching a model do the opposite:
+
+```
+You are given evidence another agent collected before running out of steps. Answer the user's question using only this evidence. You have no tools. If the evidence is insufficient, state plainly what's missing and what partial answer you can give. Do not apologize or comment on the previous agent.
+```
+
+The last sentence is the one that looks droppable and isn't: without it a
+salvage answer opens with a paragraph of apology for a failure the user
+never saw. `state plainly what's missing` is what stops a confident
+answer built on three of the eight facts it needed. For an overflow
+summarizer the first sentence changes (`running out of steps` → whatever
+the trigger is) and the rest transfers as-is.
+
+**The message walk, verbatim.** This is the fiddly half — it encodes the
+shape of ruby_llm's message graph, which is stable and which a rewrite
+will get wrong at least once:
+
+```ruby
+def self.format_evidence(messages)
+  results_by_id = messages
+                  .select { |m| m.role == :tool }
+                  .to_h { |m| [m.tool_call_id, m.content] }
+
+  lines = []
+  messages.each do |msg|
+    next unless msg.role == :assistant
+
+    text = msg.content
+    lines << "Note: #{text}" if text.is_a?(String) && !text.empty?
+
+    msg.tool_calls&.each_value do |tc|
+      result = results_by_id[tc.id]
+      next unless result
+
+      args = tc.arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
+      lines << "Tool call: #{tc.name}(#{args})"
+      lines << "Tool result: #{result}"
+      lines << ''
+    end
+  end
+  lines.join("\n").rstrip
+end
+```
+
+Four things in there are non-obvious. `tool_calls` is a **Hash**, hence
+`each_value`, and it is insertion-ordered. Results pair by
+`tool_call_id`, which lives on the `:tool` message, not on the call.
+`msg.content` on an assistant turn is **not always a String** (an
+attachment observation is a `RubyLLM::Content`), hence the `is_a?`
+guard — drop it and a multimodal turn interpolates as `#<RubyLLM::Content
+...>` into the prompt. And **calls with no matching result are dropped**:
+the call that tripped the budget never executed, so rendering a
+nonexistent result invents evidence.
+
+That last rule is where this connects to the open problem below. The
+`load_history!` pointer notes that `History` only *validates* the
+call/result pairing and won't tell you where to cut. `format_evidence`
+is that same constraint solved in the read direction — proof the pairing
+is tractable to walk, just not to slice.
+
+**Three traps in the construction**, which is otherwise boilerplate you
+should not copy:
+
+1. **Check the cancel flag before building the nested agent.** The
+   nested `run_loop` calls `Cancellable#reset!` at its turn boundary, so
+   a cancel requested between the trigger and the rescue was silently
+   erased. The old code called `ctx.agent.cancellable&.check!` as its
+   first statement for exactly this reason.
+2. **Carry the parent's already-resolved `context_window` onto the
+   nested transport** (`transport.with(context_window: ...)`) or the
+   child re-probes the model. This matters *more* for overflow than it
+   did for step exhaustion: you are recovering from a cap you have
+   already measured.
+3. **Give the nested agent a distinct `id` suffix** (`"#{id}_synthesizer"`,
+   `_` being the separator sub-agents use) so `TokenLog` bills the
+   rescue separately from the loop. Without it the salvage tokens look
+   like the run's own.
+
+A fourth trap has no expression any more: the old code gave the nested
+agent a defensive `StepLimit.new(max: 1)` against a provider that
+returns a tool call to a tools-free agent. There is no step limit to
+reach for now, and the honest answer is that this never fired.
+
+
 ## Pointers
 
-- {Pikuri::Agent::Synthesizer}, {Pikuri::Agent::Control::StepLimit} — the
-  existing summarize-on-exhaustion machinery and its policy-enum shape.
+- `d0efb6c10df0` — the last commit holding `Pikuri::Agent::Synthesizer`
+  and `Pikuri::Agent::Control::StepLimit`. See *The deleted summarizer*
+  above for what survived the deletion, and `D_no_step_limit` for why.
 - {Pikuri::Agent::Listener::TokenLog} — where the live usage number
   already lives.
 - {Pikuri::Agent#clear_conversation} — the existing "start over" path any

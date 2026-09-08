@@ -20,7 +20,7 @@ RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
   let(:persona) do
     Pikuri::SubAgent::Persona.new(name: 'RESEARCHER', description: 'd',
                                   tool_names: %w[web_search fetch].freeze,
-                                  system_prompt: 'p', max_steps: 5)
+                                  system_prompt: 'p')
   end
 
   def extension(confirmer:)

@@ -91,10 +91,12 @@ same sentence — the one edge that still asks politely.
    the bits.** Same shape as `Event::SystemInjected` carrying its block
    unwrapped for display.
 
-Plus, or strictness eats the step budget: one pikuri-driven tools-free
-re-ask of the child with the schema on mismatch. That machinery exists —
-{Pikuri::Agent::Synthesizer} with a grammar check bolted on, which is
-already what `on_exhausted: :synthesize` reaches for.
+Plus: one pikuri-driven tools-free re-ask of the child with the schema on
+mismatch. This used to lean on {Pikuri::Agent::Synthesizer} as machinery that
+"already exists" — it was deleted with the step limit (`D_no_step_limit`), so
+the nested tools-free re-ask is now something this note would have to build.
+Its shape is recorded in `ideas/context-overflow-behavior.md` §The deleted
+summarizer.
 
 ## Where the guarantee lives
 

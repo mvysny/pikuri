@@ -58,7 +58,6 @@ RSpec.describe Pikuri::Skill::Extension do
       system_prompt_base: 'base',
       id: '',
       streaming: false,
-      step_limit: nil,
       cancellable: nil,
       interloper: interloper
     )

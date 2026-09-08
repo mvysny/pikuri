@@ -247,13 +247,6 @@ agent = Pikuri::Agent.new(
     assume_model_exists: true
   ),
   system_prompt: system_prompt,
-  # :synthesize — a Q&A agent, as bin/pikuri-corpus. A brief assembled
-  # from what was gathered beats a raised budget error. The ceiling is
-  # higher than the corpus demo's because a brief legitimately reads
-  # several notes in full after listing them — and higher again with
-  # mail, which is a second set to enumerate before any of it is read.
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: with_mail ? 45 : 30,
-                                                    on_exhausted: :synthesize),
   cancellable: cancel_flag,
   streaming: false
 ) do |c|

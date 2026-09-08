@@ -139,8 +139,10 @@ scan, with user-curation as the first line of defense. Open:
 ## Output-size DoS and cost
 
 A 50MB scraped page → context window blown → API cost spike or OOM in
-the tokenizer. `max_steps` covers the loop-count axis; a per-tool
-output-byte cap covers the per-step axis. `Bash` (head+tail truncation
+the tokenizer. A per-tool output-byte cap covers the per-step axis; the
+loop-count axis is **uncovered by design** since `D_no_step_limit`
+removed the step budget, which makes the per-step cap the only bound on
+a single turn's growth. `Bash` (head+tail truncation
 via `OUTPUT_HEAD`/`OUTPUT_TAIL`), `Read` (`MAX_BYTES`), and `WebScrape`
 each enforce their own cap; remaining gap is a uniform shape across
 all tools and disk-spillover of overflow (PI/opencode prior art —

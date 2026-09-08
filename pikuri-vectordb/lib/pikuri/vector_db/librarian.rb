@@ -41,8 +41,7 @@ module Pikuri
                    'Use to delegate document lookups so retrieved chunks and full documents stay out of your context. ' \
                    'Returns one paragraph + cited source paths.',
       tool_names: %w[vectordb_search vectordb_read].freeze,
-      system_prompt: Pikuri.prompt('persona-librarian'),
-      max_steps: 15
+      system_prompt: Pikuri.prompt('persona-librarian')
     )
   end
 end
