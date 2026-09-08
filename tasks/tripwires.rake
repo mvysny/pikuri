@@ -314,12 +314,20 @@ module Tripwires
 
     Check.new(
       'T_decision_slugs',
-      'Every D_ slug cited in the repo exists as a heading in DECISIONS.md.',
+      'Every D_ slug cited outside ideas/ exists as a heading in DECISIONS.md.',
       -> {
+        # +ideas/+ is exempt, deliberately. A slug is *born* in an idea note
+        # and only graduates to a DECISIONS.md heading once the decision is
+        # made (CLAUDE.md §Documentation kinds), so a forward reference there
+        # is the normal in-flight state of the file — not a broken link. This
+        # scanned +ideas/+ until 2026-09-08 and turned every push red for the
+        # three commits between a note naming its slugs and the entries
+        # existing. Everywhere else the check keeps its teeth, because those
+        # are the docs a reader actually follows a slug from.
         dangling_slugs(/\b(D_[a-z0-9_]+)(\*?)/,
                        heading: /^## (D_[a-z0-9_]+)/,
                        doc: 'DECISIONS.md',
-                       files: tracked_files,
+                       files: tracked_files.grep_v(%r{^ideas/}),
                        placeholders: %w[D_xxx])
       }
     )
