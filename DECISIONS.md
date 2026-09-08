@@ -123,6 +123,108 @@ invariant is a new line in that gem's file, not the root. The root's
 "Placement" paragraph states the rule. `T_decision_slugs` and
 `T_named_chapters` scan the new files like any tracked file.
 
+## D_probe_when_unknown — The `/props` probe is skipped only when both its facts are already known (2026-09-08)
+
+**Status:** Accepted; shipped 2026-09-08. Amends `D_llm_request_throttle`'s
+"Sizing is automatic" paragraph, which held only for a transport carrying no
+explicit cap. Closes pikuri-tui's `Q_upstream_probe_skip`, so its
+`[[server]] max_requests` key is an *override* rather than the only sizing a
+capped connection could get.
+
+**Context.** One `/props` document answers two independent questions, and
+`ContextWindowDetector::Props` carries both: `n_ctx` is a *model-on-server*
+fact, `total_slots` is a *server* fact (`D_rate_limiter_scope`). But the probe
+was skipped whenever `ChatTransport#context_window` was set — keyed on the one
+of the two a host can state — so stating the cap silently forfeited the slot
+count, and the connection ran unthrottled unless the host also called
+`ServerPermits.limit` by hand. Downstream this becomes visibly wrong rather
+than merely surprising: pikuri-tui and pikuri-web split their config into
+`[[server]]` (`url`, `api_key`, `max_requests`) and `[[llm]]` (`name`,
+`model`, `context_window`), where a key in the *model* table would suppress
+the probe that seeds the *server* table.
+
+Deleting the conditional outright is two lines and the right semantics, and
+it is worse than the bug: `SubAgentTool` spawns with
+`parent.transport.with(context_window: parent.context_window_cap)`, so every
+child carries an explicit cap *by construction*. Unconditional probing turns
+each spawn into an HTTP round trip on the tool thread behind
+`OPEN_TIMEOUT`/`READ_TIMEOUT`, and pikuri-code spawns several personas per
+session. It also left a sibling bug standing: N agents against one server
+probed it N times, nothing memoizing the answer.
+
+**Decision.** Key the skip on what is still *unknown*, not on the cap. The
+probe is skipped only when both facts are already in hand — the transport
+states a cap *and* `ServerPermits.sized?(base)`, the registry's new predicate,
+says this server's concurrency is on record. And the seeding widens: a probe
+that *answered* is recorded even when it reported no `total_slots`
+(`ServerPermits.default(base, nil)` — a recorded "unlimited"), while a probe
+that *failed* records nothing. `ServerPermits` is thereby the probe's memo, at
+the process-wide scope `D_rate_limiter_scope` already gives the fact being
+cached; `ContextWindowDetector` stays stateless and every call to it stays a
+live request.
+
+What that buys, in the cases that matter:
+
+| wiring | probes before | probes after |
+|---|---|---|
+| local llama.cpp, no explicit cap | 1 per agent | 1 per agent |
+| local llama.cpp, explicit cap, no `.limit` | **0, unthrottled** | 1 per process, auto-sized |
+| sub-agent spawn (inherited cap) | 0 | 0 — the parent left the server sized |
+| cloud openai-compatible base, explicit cap | 0 | 1 per process (a 404) |
+| explicit cap **+ a host's `.limit`** | 0 | 0 — the host stated both facts |
+
+The last row is the shape downstream config lands in, and the fourth is the
+whole honest cost: one pointless request per process against a remote paid API
+a host had opted out of. `detect` tolerates the 404 and answers `Props::NONE`,
+so it is latency at boot, not breakage — and the `provider == :openai` gate
+means an Anthropic-family transport still never probes at all.
+
+Folded in, since it is the same conflation one layer down: a `/props` body
+carrying `total_slots` but no usable `n_ctx` used to be discarded wholesale
+(`warn_and_none`); it now warns about the cap and keeps the slots.
+
+**Alternatives rejected.**
+
+- **Memoize `ContextWindowDetector.detect` per `[base, model_id]`, then delete
+  the conditional** — the first shape this took, and it builds a second
+  process-wide cache beside the one that already holds the fact. It also
+  answers strictly worse on the two rows above where a host stated its
+  concurrency (it probes first and consults nothing), and it buys three forks
+  the chosen shape does not have: what invalidates a memo (a restarted
+  `llama-server -c` reports a stale window, where a live `n_ctx` reading picks
+  it up), whether a *failed* probe is memoized (it must be, or the cloud row
+  regresses per-agent — and then a server that was merely booting stays
+  unsized for the life of the process), and a `reset!` on a class whose rdoc
+  promises a live probe. Its one advantage over what shipped is real: it also
+  fixes the N-agents-probe-one-server storm for *uncapped* agents. That is a
+  milder problem — one fast localhost request per agent at boot, not a
+  per-spawn stall — and remembering `n_ctx` is what carries the staleness
+  fork, so it stays unfixed rather than paid for. Nothing here forecloses it.
+- **Memoize only `total_slots` and keep probing for `n_ctx`.** The current
+  conflation with the operands swapped, and it keeps the storm.
+- **Inherit `total_slots` down the spawn**, as a second field beside
+  `context_window` on `ChatTransport`. Tempting symmetry, wrong for the reason
+  `D_rate_limiter_scope` states: the slot count belongs to the server, so a
+  *transport* carrying it lets two transports state contradictory numbers for
+  one server — the exact contradiction the downstream `[[server]]` / `[[llm]]`
+  split exists to remove one layer up. The registry already is the shared
+  home; a child looks it up instead of being handed a copy. Same rejection as
+  `D_llm_request_throttle`'s "a `ChatTransport` field".
+
+**Consequences.**
+
+- **A recorded "no slots" reads as "unlimited".** `ServerPermits.sizes` lists
+  a probed-but-slotless server as `nil`, conflating "the server reports no
+  slot count" with an explicit "does not care". It is a faithful record of the
+  decision pikuri actually made for that server, `for` answers `UNLIMITED`
+  either way, and a host's `limit` still overrides it whenever it lands.
+- **A server that was booting during the first probe is asked again**, since a
+  failure is not an answer — the deliberate asymmetry that keeps the cloud
+  404 from repeating per agent while leaving a cold llama.cpp reachable.
+- **`n_ctx` stays a live reading.** Restart `llama-server` with a different
+  `-c` and the next agent (or model switch) sees the new window; only the slot
+  count is remembered.
+
 ## D_llm_request_throttle — One permit per HTTP request, taken in ruby_llm's instrumenter (2026-09-08)
 
 **Status:** Accepted; shipped 2026-09-08 as
@@ -161,6 +263,9 @@ automatic: the `/props` probe already fetched for the context cap also
 reports `total_slots`, seeded as a default that a host's
 `ServerPermits.limit` overrides, so the default local llama.cpp throttles
 correctly with no config at all and everything unprobeable stays unlimited.
+That probe runs whether or not the transport states a `context_window:` —
+the two facts in the document are independent, and `D_probe_when_unknown`
+(which also made this registry the probe's memo) is why.
 
 Measured against ruby_llm 1.16.0 and a live llama.cpp router on
 `mavi-fw:8080` (2026-09-08), which is what closed the design:
@@ -248,10 +353,10 @@ Measured against ruby_llm 1.16.0 and a live llama.cpp router on
   not inherited: a user-facing turn jumping background work needs a ticket
   queue, and that is the moment to build ordering. The acquire site is where
   it would go.
-- **An explicit `ChatTransport#context_window` skips the probe**, so it skips
-  the auto-size too; such a host is configuring anyway and calls
-  `ServerPermits.limit`. Likewise a router serving two models with differing
-  slot counts: first probe wins, though the shared resource is really the GPU.
+- **An explicit `ChatTransport#context_window` skipped the probe**, so it
+  skipped the auto-size too — reversed by `D_probe_when_unknown`, which is the
+  live rule. What still stands: a router serving two models with differing slot
+  counts, where first probe wins though the shared resource is really the GPU.
 - `bin/pikuri-corpus`'s `RubyLLM.embed` runs outside any `Agent` on the global
   config, so it stays unthrottled — a `bin/` shortcut, not policy.
 

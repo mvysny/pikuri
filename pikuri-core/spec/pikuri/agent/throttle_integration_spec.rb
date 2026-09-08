@@ -128,11 +128,22 @@ RSpec.describe 'Agent request throttling' do
 
   describe 'sizing from the /props probe' do
     # Stand in for a llama.cpp answering /props with a slot count; the real
-    # probe's own HTTP is exercised in context_window_detector_spec.
+    # probe's own HTTP is exercised in context_window_detector_spec. Counts its
+    # calls, because half of what this section asserts is a probe *not* paid —
+    # +n_ctx: nil, total_slots: nil+ is the failed probe, equal to Props::NONE.
     def stub_props(n_ctx: 16_384, total_slots: 4)
-      @original_detect = Pikuri::Agent::ContextWindowDetector.method(:detect)
+      probes = @probes = []
       props = Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: n_ctx, total_slots: total_slots)
-      Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) { |*_, **_| props }
+      @original_detect = Pikuri::Agent::ContextWindowDetector.method(:detect)
+      # A local, not @probes: the block's self is the detector class.
+      Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*_, **_|
+        probes << props
+        props
+      end
+    end
+
+    def probe_count
+      @probes.length
     end
 
     after do
@@ -162,14 +173,95 @@ RSpec.describe 'Agent request throttling' do
       built&.close
     end
 
-    it 'does not size the server when the transport carries an explicit cap' do
+    # The two facts in one document are independent: the cap the host stated
+    # wins over the probed n_ctx and says nothing about the server's slots.
+    it 'sizes the server even when the transport carries an explicit cap' do
       stub_props
       built = agent(transport(context_window: 8192))
 
       assert_equal 8192, built.context_window_cap
-      assert_equal({}, permits.sizes)
+      assert_equal 4, permits.for(server).permits
+      assert_equal 1, probe_count
     ensure
       built&.close
+    end
+
+    it 'skips the probe when the cap is stated and the server is already sized' do
+      stub_props
+      permits.limit(server, 2)
+      built = agent(transport(context_window: 8192))
+
+      assert_equal 8192, built.context_window_cap
+      assert_equal 2, permits.for(server).permits
+      assert_equal 0, probe_count, 'nothing left to learn, and it asked anyway'
+    ensure
+      built&.close
+    end
+
+    it 'probes a shared server once across capped agents — the registry is the memo' do
+      stub_props
+      built = Array.new(3) { agent(transport(context_window: 8192)) }
+
+      assert_equal 4, permits.for(server).permits
+      assert_equal 1, probe_count
+    ensure
+      built&.each(&:close)
+    end
+
+    # The deliberate boundary: n_ctx is a live reading (restart llama-server
+    # with a different -c and the next agent sees it), so an agent that needs
+    # one always probes. Only the slot count is remembered.
+    it 'still probes per agent when no cap is stated' do
+      stub_props
+      built = Array.new(3) { agent(transport(context_window: nil)) }
+
+      assert_equal [16_384] * 3, built.map(&:context_window_cap)
+      assert_equal 3, probe_count
+    ensure
+      built&.each(&:close)
+    end
+
+    # The shape SubAgentTool spawns with: the parent's resolved cap rides the
+    # transport, and the parent's probe already sized the server.
+    it 'costs a sub-agent spawn no probe of its own' do
+      stub_props
+      parent = agent(transport(context_window: nil))
+      child = agent(parent.transport.with(context_window: parent.context_window_cap))
+
+      assert_equal 16_384, child.context_window_cap
+      assert_equal 4, permits.for(server).permits
+      assert_equal 1, probe_count
+    ensure
+      parent&.close
+      child&.close
+    end
+
+    # "Answered, no slots" is an old llama.cpp, and it will not start reporting
+    # one while it runs — so it is recorded as unlimited rather than re-asked.
+    it 'records an answer that carried no slot count' do
+      stub_props(n_ctx: 8192, total_slots: nil)
+      first = agent(transport(context_window: 4096))
+      second = agent(transport(context_window: 4096))
+
+      assert_same permits::UNLIMITED, permits.for(server)
+      assert_equal({ permits.key_for(server) => nil }, permits.sizes)
+      assert_equal 1, probe_count
+      assert_equal 4096, second.context_window_cap
+    ensure
+      first&.close
+      second&.close
+    end
+
+    # A failure is not an answer: a server that was merely booting when the
+    # first agent asked gets asked again.
+    it 'asks again after a probe that failed' do
+      stub_props(n_ctx: nil, total_slots: nil)
+      built = Array.new(2) { agent(transport(context_window: 4096)) }
+
+      assert_equal({}, permits.sizes)
+      assert_equal 2, probe_count
+    ensure
+      built&.each(&:close)
     end
   end
 end
