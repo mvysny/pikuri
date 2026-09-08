@@ -11,9 +11,10 @@ design, each one's threat model, and the invariants that span
 {Pikuri::Code::ToolchainPaths} at once. In-flight notes and still-open
 questions live in [`../ideas/coding-agent.md`](../ideas/coding-agent.md).
 
-The must-not-break half is already in [`../CLAUDE.md`](../CLAUDE.md)'s
-**Sandbox seam** and **Workspace seam**; this file is the reasoning
-*behind* those one-liners, not a second copy of them.
+The must-not-break half is already in this gem's [`CLAUDE.md`](CLAUDE.md)
+(**Sandbox seam**) and [`../pikuri-workspace/CLAUDE.md`](../pikuri-workspace/CLAUDE.md)
+(**Workspace seam**); this file is the reasoning *behind* those
+one-liners, not a second copy of them.
 
 ## Two sandboxes, opposite postures
 
@@ -96,8 +97,8 @@ Prompt injection reaching the LLM can still:
 The overlay specifically prevents *cross-project* contamination via
 shared `$HOME` caches — nothing more. Users needing adversarial
 isolation run pikuri-code inside a container: the container is the outer
-boundary, `bwrap` the inner. (The `Filesystem::AllowAll` note in
-CLAUDE.md's Workspace seam is the file-tool-side counterpart.)
+boundary, `bwrap` the inner. ({Pikuri::Workspace::Filesystem::AllowAll}
+is the file-tool-side counterpart.)
 
 ### Concurrency: one umbrella, serialized bwrap
 

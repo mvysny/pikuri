@@ -9,7 +9,7 @@ already homed and does **not** live here:
   gate, `File.writable?`-is-exact, {Pikuri::Workspace::WriteGate}, the
   semantic `Request`→`#ask` confirmer protocol, the {Pikuri::Sanitizer}
   defanging — are the **Workspace seam** and **Confirmer seam** in
-  [`../CLAUDE.md`](../CLAUDE.md).
+  this gem's [`CLAUDE.md`](CLAUDE.md).
 - The **reader-level posture** — reads-are-safe / writes-need-a-human,
   confirm-every-writable-write, the unwritable short-circuit, no
   sensitive-path list, `AllowAll` + empty denylist behind a container —

@@ -6,7 +6,7 @@ A living record of the design decisions behind pikuri — especially the
 alternative. Both candidate homes refuse it on their own stated terms —
 yardoc is browsed standalone on rubydoc.info by someone at the API, who
 gains nothing from an argument against a design that never shipped; and
-CLAUDE.md is loaded into *every* session's context under a 40 KB cap, so
+CLAUDE.md is loaded into *every* session's context under a 32 KB cap, so
 rationale there is paid for on every turn. This file is the lazy side of
 that split: never context-loaded, read only when someone asks "why this
 way?".
@@ -78,6 +78,50 @@ already editing that doc and the inline rejection is crowding out the live
 design.
 
 ---
+
+## D_claude_md_index — Root CLAUDE.md is an index; gem invariants live in per-gem CLAUDE.md (2026-09-08)
+
+**Status:** Accepted; implemented 2026-09-08.
+
+**Context.** The root `CLAUDE.md` had grown to 41 KB against its own 40 KB
+cap, and 53 % of it was the Seams section. Each seam had become a small
+essay — the invariant, the mechanism, the failure it prevents and the
+symbols involved — and 9.5 KB of those essays cited symbols from a single
+gem (LSP, RAG, Thunderbird, the skills gate). Every session paid for all
+of it, whether or not the work touched that gem.
+
+**Decision.** Two moves. (1) A seam whose every cited symbol lives in one
+gem moves to that gem's own `CLAUDE.md`, which Claude Code loads beside
+the root only when work touches that directory; a seam consumed across
+gems (Workspace / Denylist / Confirmer) is stated once in the owner gem's
+file, and each consumer's file carries a one-line pointer. (2) Every entry,
+root or gem, is an *index* line: the one-sentence invariant, the tripwire
+slug, and `See {…}` pointers — never the mechanism or its rationale, which
+the yardoc, the book, `DESIGN.md` or this file already own. Before cutting,
+each detail was grepped for in those homes; the one that had none turned
+out to be a stale claim (Bubblewrap `--clearenv`, which the sandbox never
+passes) and was dropped rather than moved. The cap moved to 34 KB; the
+root landed at 20 KB.
+
+**Rejected.**
+
+- **Trim prose only, one file.** Buys one round; the next gem re-fattens
+  it, and every session still loads Thunderbird's allowlist to edit the
+  agent loop. The per-directory load is the mechanism that scales.
+- **Fold the seams into each gem's `DESIGN.md`.** `DESIGN.md` is never
+  auto-loaded, so an invariant there is only read by someone who already
+  suspects it exists — the opposite of a tripwire.
+- **Duplicate a cross-gem seam into every consumer.** Two copies drift;
+  the owner + pointer shape keeps `grep` honest and matches the *single
+  source of truth per fact* rule.
+- **Keep the mechanism in CLAUDE.md "so the agent doesn't have to open the
+  yardoc."** The agent editing `interloper.rb` has its header open anyway;
+  the reader who needs the mechanism without the file is the book's.
+
+**Consequences.** A gem with no seam has no `CLAUDE.md`; a new gem-local
+invariant is a new line in that gem's file, not the root. The root's
+"Placement" paragraph states the rule. `T_decision_slugs` and
+`T_named_chapters` scan the new files like any tracked file.
 
 ## D_llm_request_throttle — One permit per HTTP request, taken in ruby_llm's instrumenter (2026-09-08)
 

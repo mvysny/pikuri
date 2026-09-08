@@ -1,0 +1,12 @@
+# pikuri-skills — CLAUDE.md
+
+This gem's must-not-break list, loaded beside the root `../CLAUDE.md`
+when work touches this directory. One-line invariants + pointers only;
+the truth lives in the cited yardoc, roads not taken in `../DECISIONS.md`.
+
+## Seams (invariants)
+
+- **Bundle-surface seam (skills vs. commands).** A skill is *model*-invoked and advertised; a **command is never advertised** — no prompt snippet, no tool, and its expansion lands as a `:user` turn, never `:system`. Both take `Bundle::Base(dir:, trusted:)` bases; a refused command never taints. Typed `/name` resolution is the host's: **host built-in > command > skill**. `T_command_not_advertised`. See {Pikuri::Command::Registry}, `DECISIONS.md` `D_slash_commands`.
+- **Skill path gate.** *A `paths:` skill is not in play until its path fires*: withheld from the prompt block entirely and refused by `SkillTool` / `schedule_load_skill` like a name that exists nowhere. `Skill::Activation` holds the per-conversation set; `Catalog` stays unfiltered. See {Pikuri::Skill::Activation}, {Pikuri::Skill::PathActivationListener}, `DECISIONS.md` `D_skill_path_activation`.
+- **Sub-agents get no skills.** `SkillTool#for_sub_agent` hands a child a sealed `Skill::Activation`, and no bundled persona names `skill`; the rule is the **Sub-agent propagation** seam in `../pikuri-subagents/CLAUDE.md`. See {Pikuri::Skill::Activation::Sealed}, `DECISIONS.md` `D_no_skills_in_sub_agents`.
+- **Host-driven skill loading** is the enqueue-only, main-agent-only `Skill::Extension#schedule_load_skill`, riding the interloper's `:system` kind (root Interloper injection seam).

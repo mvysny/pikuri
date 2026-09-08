@@ -14,7 +14,8 @@ module Pikuri
     # +tool_names+ excludes the filesystem tools, shell, and +agent+
     # itself, so a researcher spawned from inside a coding agent cannot
     # read the user's repo, run code, or delegate further — the persona
-    # model's privilege-separation story (+CLAUDE.md+ §Scope decisions).
+    # model's privilege-separation story (this gem's +CLAUDE.md+, *Sub-agent
+    # propagation*).
     #
     # @return [Persona]
     RESEARCHER = Persona.new(

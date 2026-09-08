@@ -26,8 +26,9 @@ its rationale, read:
   {Pikuri::Code::Bash::Sandbox::FullFsNoNet} (the kernel-severed
   network) and {Pikuri::Code::Bash::PassiveCommandDetector} +
   `Pikuri::Code::Bash::GIT_HARDENING` (the passive detector + git arm).
-- **[`../CLAUDE.md`](../CLAUDE.md)** — the `pikuri-os` gem entry and the
-  Sandbox / Confirmer / Workspace seam invariants.
+- **[`../CLAUDE.md`](../CLAUDE.md)** — the `pikuri-os` gem entry; the
+  Sandbox seam is in `../pikuri-code/CLAUDE.md`, the Confirmer / Workspace
+  seams in `../pikuri-workspace/CLAUDE.md`.
 - **[`../pikuri-os/DESIGN.md`](../pikuri-os/DESIGN.md)** — the file-index
   engine survey (`localsearch` vs `recoll`, measured) and the
   keyword-recall-vs-semantic decision.
