@@ -24,6 +24,9 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
   let(:base)  { 'http://example.com/v1' }
   let(:url)   { 'http://example.com/props' }
 
+  # "the probe learned nothing" — every failure path answers this exact value.
+  let(:none) { Pikuri::Agent::ContextWindowDetector::Props::NONE }
+
   def transport(model: 'm', provider: :openai)
     Pikuri::Agent::ChatTransport.new(
       model: model, provider: provider, assume_model_exists: provider == :openai
@@ -44,15 +47,15 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
   end
 
   describe 'gate + URL derivation' do
-    it 'returns nil for a non-openai transport without probing' do
+    it 'returns Props::NONE for a non-openai transport without probing' do
       # No stub registered: if a probe were attempted, the test adapter
       # would raise on the un-stubbed request.
-      assert_nil described_class.detect(transport(provider: :anthropic), openai_base: base)
+      assert_equal none, described_class.detect(transport(provider: :anthropic), openai_base: base)
       assert_equal '', buf.string
     end
 
-    it 'returns nil when the openai base is blank, without probing' do
-      assert_nil described_class.detect(transport, openai_base: '')
+    it 'returns Props::NONE when the openai base is blank, without probing' do
+      assert_equal none, described_class.detect(transport, openai_base: '')
       assert_equal '', buf.string
     end
 
@@ -61,18 +64,52 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
         [200, { 'content-type' => 'application/json' },
          JSON.generate('default_generation_settings' => { 'n_ctx' => 32_768 })]
       end
-      assert_equal 32_768, described_class.detect(transport, openai_base: 'http://example.com/v1')
+      assert_equal 32_768, described_class.detect(transport, openai_base: 'http://example.com/v1').n_ctx
     end
 
     it 'appends /props directly when the base has no /v1 suffix' do
       stubs.get(url) do
         [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 4096 })]
       end
-      assert_equal 4096, described_class.detect(transport, openai_base: 'http://example.com')
+      assert_equal 4096, described_class.detect(transport, openai_base: 'http://example.com').n_ctx
     end
 
     it 'tolerates a trailing slash on the base' do
       assert_equal url, described_class.props_url('http://example.com/v1/')
+    end
+  end
+
+  # The slot count rides the same document as the cap, and is what seeds
+  # {Pikuri::Agent::ServerPermits} — see the /props shape measured on a live
+  # llama.cpp in DECISIONS.md D_llm_request_throttle.
+  describe 'total_slots' do
+    it 'reads the top-level total_slots beside the nested n_ctx' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('total_slots' => 4,
+                                'default_generation_settings' => { 'n_ctx' => 16_384 })]
+      end
+      props = described_class.detect(transport, openai_base: base)
+
+      assert_equal 16_384, props.n_ctx
+      assert_equal 4, props.total_slots
+    end
+
+    it 'leaves total_slots nil on a server that reports none' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 8192 })]
+      end
+      props = described_class.detect(transport, openai_base: base)
+
+      assert_equal 8192, props.n_ctx
+      assert_nil props.total_slots
+    end
+
+    it 'ignores a non-positive or non-integer total_slots' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('total_slots' => '4',
+                                'default_generation_settings' => { 'n_ctx' => 8192 })]
+      end
+      assert_nil described_class.detect(transport, openai_base: base).total_slots
     end
   end
 
@@ -81,49 +118,49 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       described_class.detect(transport, openai_base: base)
     end
 
-    it 'returns nil and warns on a non-200 response' do
+    it 'returns Props::NONE and warns on a non-200 response' do
       stubs.get(url) { [404, {}, ''] }
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'HTTP 404 from'
     end
 
-    it 'returns nil and warns on Faraday::ConnectionFailed' do
+    it 'returns Props::NONE and warns on Faraday::ConnectionFailed' do
       stubs.get(url) { raise Faraday::ConnectionFailed, 'getaddrinfo: Name does not resolve' }
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'ConnectionFailed'
     end
 
-    it 'returns nil and warns on Faraday::TimeoutError' do
+    it 'returns Props::NONE and warns on Faraday::TimeoutError' do
       stubs.get(url) { raise Faraday::TimeoutError, 'execution expired' }
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'TimeoutError'
     end
 
-    it 'returns nil and warns on a malformed JSON body' do
+    it 'returns Props::NONE and warns on a malformed JSON body' do
       stubs.get(url) { [200, { 'content-type' => 'application/json' }, 'not-json'] }
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'ParserError'
     end
 
-    it 'returns nil and warns when default_generation_settings.n_ctx is missing' do
+    it 'returns Props::NONE and warns when default_generation_settings.n_ctx is missing' do
       stubs.get(url) { [200, {}, JSON.generate('other' => 1)] }
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
 
-    it 'returns nil and warns when n_ctx is not a positive integer' do
+    it 'returns Props::NONE and warns when n_ctx is not a positive integer' do
       stubs.get(url) do
         [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 0 })]
       end
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
 
-    it 'returns nil and warns when n_ctx is a string rather than an integer' do
+    it 'returns Props::NONE and warns when n_ctx is a string rather than an integer' do
       stubs.get(url) do
         [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => '4096' })]
       end
-      assert_nil detect
+      assert_equal none, detect
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
   end
@@ -132,10 +169,12 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     # The router answers a bare /props with role=router and n_ctx 0; the
     # real per-model cap lives at /props?model=<id>. One stub block serves
     # both, branching on the presence of the +model+ query param.
-    def router_stub(model_n_ctx:)
+    def router_stub(model_n_ctx:, model_slots: nil)
       stubs.get(url) do |env|
         if env.params['model']
-          [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => model_n_ctx })]
+          [200, {}, JSON.generate({ 'total_slots' => model_slots }.compact.merge(
+                                    'default_generation_settings' => { 'n_ctx' => model_n_ctx }
+                                  ))]
         else
           [200, {}, JSON.generate('role' => 'router',
                                   'default_generation_settings' => { 'n_ctx' => 0 })]
@@ -145,11 +184,18 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
 
     it 'follows the router to /props?model= using the transport model id' do
       router_stub(model_n_ctx: 262_144)
-      cap = described_class.detect(
+      props = described_class.detect(
         transport(model: 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'), openai_base: base
       )
-      assert_equal 262_144, cap
+      assert_equal 262_144, props.n_ctx
       assert_equal '', buf.string
+    end
+
+    it 'takes the slot count from the router hop, which the bare /props lacks' do
+      router_stub(model_n_ctx: 262_144, model_slots: 4)
+      props = described_class.detect(transport(model: 'org/Model:Q4_K_M'), openai_base: base)
+
+      assert_equal 4, props.total_slots
     end
 
     it 'url-encodes the model id when following the router' do
@@ -163,7 +209,8 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
                                   'default_generation_settings' => { 'n_ctx' => 0 })]
         end
       end
-      assert_equal 4096, described_class.detect(transport(model: 'org/Model:Q4_K_M'), openai_base: base)
+      props = described_class.detect(transport(model: 'org/Model:Q4_K_M'), openai_base: base)
+      assert_equal 4096, props.n_ctx
       # Faraday decodes the param back, proving the id round-tripped intact
       # through CGI.escape rather than being sent raw.
       assert_equal ['org/Model:Q4_K_M'], seen.compact
@@ -171,7 +218,7 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
 
     it 'does not follow the router when the transport has no model id' do
       router_stub(model_n_ctx: 262_144)
-      assert_nil described_class.detect(transport(model: nil), openai_base: base)
+      assert_equal none, described_class.detect(transport(model: nil), openai_base: base)
       assert_includes buf.string, "in #{url} response"
     end
 
@@ -184,7 +231,7 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
                                   'default_generation_settings' => { 'n_ctx' => 0 })]
         end
       end
-      assert_nil described_class.detect(transport, openai_base: base)
+      assert_equal none, described_class.detect(transport, openai_base: base)
       assert_includes buf.string, 'router probe'
     end
   end

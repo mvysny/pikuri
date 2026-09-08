@@ -79,8 +79,8 @@ module Pikuri
         model: model,
         provider: :openai,
         assume_model_exists: true,
-        # An api_base forces the connection-override path (Context#chat), the
-        # only branch that honours faraday_adapter; the host is never dialed.
+        # Never dialed (the adapter answers); it is the transport's identity to
+        # a host, and the {Agent::ServerPermits} key a throttling spec sizes.
         api_base: api_base,
         api_key: 'not-needed',
         context_window: context_window,

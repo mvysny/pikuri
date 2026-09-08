@@ -133,15 +133,17 @@ RSpec.describe Pikuri::Agent do
   let(:recorder)   { Pikuri::Agent::Listener::InMemoryEventList.new }
   let(:listeners)  { Pikuri::Agent::ListenerList.new([recorder]) }
 
+  # +Agent#build_chat+ always builds through a +RubyLLM::Context+ (that is what
+  # carries the per-transport +RequestThrottle+ and +faraday_adapter+), so the
+  # seam to stub is +Context#chat+, not +RubyLLM.chat+.
   before do
     captured = fake_chat
-    @original_chat = RubyLLM.method(:chat)
-    RubyLLM.define_singleton_method(:chat) { |**_| captured }
+    @original_context_chat = RubyLLM::Context.instance_method(:chat)
+    RubyLLM::Context.define_method(:chat) { |**_| captured }
   end
 
   after do
-    original = @original_chat
-    RubyLLM.define_singleton_method(:chat) { |**kwargs| original.call(**kwargs) }
+    RubyLLM::Context.define_method(:chat, @original_context_chat)
   end
 
   describe '#initialize' do
@@ -953,7 +955,7 @@ RSpec.describe Pikuri::Agent do
     it 'injects nothing when the hook returns nil or a blank String' do
       [nil, '', "   \n"].each do |blank|
         local_fake = fake_chat_class.new
-        RubyLLM.define_singleton_method(:chat) { |**_| local_fake }
+        RubyLLM::Context.define_method(:chat) { |**_| local_fake }
         ext = recording_extension_class.new(block: blank)
         agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                   system_prompt: 's') { |c| c.add_extension ext }

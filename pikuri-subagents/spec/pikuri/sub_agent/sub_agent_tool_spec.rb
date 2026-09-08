@@ -111,12 +111,14 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     )
   end
 
+  # +Context#chat+, not +RubyLLM.chat+: every chat an Agent builds rides a
+  # per-transport +RubyLLM::Context+.
   before do
     @fake_chats = []
     fake_class = fake_chat_class
     captured = @fake_chats
-    @original_chat = RubyLLM.method(:chat)
-    RubyLLM.define_singleton_method(:chat) do |**_|
+    @original_context_chat = RubyLLM::Context.instance_method(:chat)
+    RubyLLM::Context.define_method(:chat) do |**_|
       chat = fake_class.new
       captured << chat
       chat
@@ -124,8 +126,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   end
 
   after do
-    original = @original_chat
-    RubyLLM.define_singleton_method(:chat) { |**kwargs| original.call(**kwargs) }
+    RubyLLM::Context.define_method(:chat, @original_context_chat)
   end
 
   let(:parent_listeners) do
