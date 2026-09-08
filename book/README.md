@@ -56,9 +56,9 @@ gem, landing once they stabilise.
 - **[Sub-agents](subagents.md).** One new concept on top of
   the last chapter: delegation. The `Persona` record, the
   `SubAgent::Extension`, the configure/bind dance. Demo via
-  `pikuri-minions` — fan out three research questions in
-  parallel, get one synthesised answer back. This is also
-  where pikuri's main privilege-separation story starts.
+  `pikuri-minions` — fan out three research questions, get one
+  synthesised answer back. This is also where pikuri's main
+  privilege-separation story starts.
 
 ### Assistant track
 
@@ -206,6 +206,24 @@ gem, landing once they stabilise.
   the model *read*, why a fallback path is an alibi, and why the
   fix is a uniform `<system-reminder>`-wrapped user turn rather
   than a per-model branch. Demo via `pikuri-wire-check`.
+
+### Hosting
+
+- **[Hosting many agents at once](hosting.md).** Every binary in
+  the book runs one agent at a time; a real host doesn't. What
+  changes when N agents share one process, with
+  [pikuri-web](https://codeberg.org/mvysny/pikuri-web) as the
+  concrete case: concurrent conversations plus the one-off jobs
+  that caption and summarize them. The two agent shapes, why
+  `Agent` is thread-unsafe on purpose and what the two doors in
+  from another thread are, the queueing problem N agents create
+  for one llama.cpp and the per-request permit that fixes it
+  (with the measurements), why a connection rides the transport
+  instead of `RubyLLM.configure`, the tool sharing postures
+  finally with a scene behind them, and why a stored conversation
+  and a rendered transcript are two artifacts that don't
+  reconstruct each other. No demo — the honest version is a few
+  hundred lines of plumbing; read pikuri-web instead.
 
 ### Coda
 

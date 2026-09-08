@@ -20,7 +20,7 @@ module Pikuri
     # The scope is the *server*, not the agent talking to it, so this is one
     # process-wide registry and there is deliberately no per-agent permit pool
     # to construct and pass in (+DECISIONS.md+ +D_rate_limiter_scope+,
-    # +D_llm_request_throttle+).
+    # +D_llm_request_throttle+). Narrative in book/hosting.md.
     #
     # Keys are normalized as {ChatTransport.from_openai_server} normalizes a
     # server (a trailing +/+ and +/v1+ stripped), so +http://x:8080+,

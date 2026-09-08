@@ -50,10 +50,12 @@ the binary prints on startup:
 What you should see: the boss reasons about the question, then
 emits **three `agent` tool calls in a single turn** — one for each
 independent sub-question (weather, sights, restaurants). Pikuri
-spins up three `researcher` minions in parallel, each on a clean
-conversation with only `web_search` / `web_scrape` / `fetch` and
-the researcher's focused system prompt. Each minion does its
-lookups and replies with one paragraph plus source URLs. The boss
+spins up three `researcher` minions, one after another — ruby_llm
+runs a tool batch sequentially, so the fan-out is in the *boss's
+reasoning*, not in wall-clock time. Each gets a clean conversation
+with only `web_search` / `web_scrape` / `fetch` and the
+researcher's focused system prompt, does its lookups, and replies
+with one paragraph plus source URLs. The boss
 receives the three replies as observations and weaves them into a
 single coherent trip plan.
 

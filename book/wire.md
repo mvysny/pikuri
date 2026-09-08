@@ -310,9 +310,13 @@ recorded as `D_reference_text_as_user_turn`.
 
 ## What's next
 
-The book closes on [pikuri-assistant](assistant.md), itself still a
-stub; a fleshed-out version of it — waiting on the vectordb and
-memories gems stabilising — is the natural follow-on to the whole
+[Hosting many agents at once](hosting.md) is the last chapter before
+the coda, and the one that steps outside the single-agent shape every
+demo in this book has used: what changes when a real host runs N
+conversations in one process, plus the housekeeping jobs that caption
+them. Then the book closes on [pikuri-assistant](assistant.md), itself
+still a stub; a fleshed-out version of it — waiting on the vectordb
+and memories gems stabilising — is the natural follow-on to the whole
 guide. Until then, the vocabulary you have now (`Pikuri::Agent`,
 `Tool`, listeners, the Extension protocol, configure/bind, sub-agent
 privilege separation, the kit from the security chapter, MCP's verifier
