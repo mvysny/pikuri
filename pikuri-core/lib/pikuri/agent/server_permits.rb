@@ -17,16 +17,10 @@ module Pikuri
     # {RequestThrottle} is the acquire site — one permit per HTTP request, held
     # for the whole streamed response.
     #
-    # == Why a process-wide registry
-    #
-    # The resource being rationed is the *server*, so the limiter is scoped to
-    # the server (+DECISIONS.md+ +D_rate_limiter_scope+, +D_llm_request_throttle+).
-    # Anything narrower defeats it: a permit pool a host builds per session, or
-    # per agent tree, still lets two independently-built agents hammer one
-    # llama.cpp exactly as before — and a ctor argument is one more field the
-    # forwarding sites ({SubAgent::SubAgentTool} and friends, which rebuild a
-    # child's transport with +parent.transport.with(...)+) can silently drop.
-    # A registry has nothing to forward.
+    # The scope is the *server*, not the agent talking to it, so this is one
+    # process-wide registry and there is deliberately no per-agent permit pool
+    # to construct and pass in (+DECISIONS.md+ +D_rate_limiter_scope+,
+    # +D_llm_request_throttle+).
     #
     # Keys are normalized as {ChatTransport.from_openai_server} normalizes a
     # server (a trailing +/+ and +/v1+ stripped), so +http://x:8080+,
@@ -144,7 +138,8 @@ module Pikuri
         # @param permits [Integer, nil] concurrent requests to allow; +nil+ for
         #   unlimited
         # @return [void]
-        # @raise [ArgumentError] on a non-positive or non-Integer +permits+
+        # @raise [ArgumentError] on a non-positive or non-Integer +permits+, or
+        #   a +server+ with nothing to key on
         def limit(server, permits)
           store(server, permits, explicit: true)
         end
@@ -155,7 +150,8 @@ module Pikuri
         # @param server [String] the server's base URL, with or without +/v1+
         # @param permits [Integer, nil] concurrent requests to allow
         # @return [void]
-        # @raise [ArgumentError] on a non-positive or non-Integer +permits+
+        # @raise [ArgumentError] on a non-positive or non-Integer +permits+, or
+        #   a +server+ with nothing to key on
         def default(server, permits)
           store(server, permits, explicit: false)
         end
@@ -225,10 +221,10 @@ module Pikuri
             next if !explicit && (@explicit[key] || @sizes.key?(key))
 
             # Dropping the memoized semaphore is what makes a re-size take
-            # effect ({RequestThrottle} looks one up per request). Requests
-            # already holding a permit release into the old object, so a re-size
-            # under load can briefly overlap old and new permits — hosts size at
-            # boot, and an advisory overlap beats blocking one.
+            # effect ({RequestThrottle} looks one up per request). A request
+            # already holding a permit releases into the old object, so a
+            # re-size under load can briefly overlap the two — accepted, since
+            # hosts size at boot and an advisory overlap beats blocking one.
             @semaphores.delete(key) unless @sizes[key] == permits
             @sizes[key] = permits
             @explicit[key] = true if explicit

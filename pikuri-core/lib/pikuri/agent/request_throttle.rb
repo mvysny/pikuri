@@ -22,30 +22,27 @@ module Pikuri
     #
     # == Implementation details
     #
-    # One +request.ruby_llm+ block is exactly one HTTP request, measured rather
-    # than assumed: on a 150-line streamed completion the block spanned 20.8 s
-    # and all 491 delta chunks landed inside it (ruby_llm streams through
+    # One +request.ruby_llm+ block is exactly one HTTP request *including its
+    # streamed response* — measured, not assumed: every delta chunk of a
+    # streamed completion landed inside one block (ruby_llm streams through
     # Faraday's +on_data+, driven from inside the +post+), and a forced
-    # +Faraday::TimeoutError+ retried *inside* the same block. So the permit
-    # spans the generation, not just the request line.
+    # +Faraday::TimeoutError+ retried inside that same block. So the permit
+    # spans the generation, and must not be released at the first byte.
     #
-    # A retried request therefore keeps its permit through ruby_llm's
-    # +retry_interval+ backoff, idling the server slot for a moment. That is
-    # deliberate — releasing across retries re-creates the duplicate-work
-    # stampede the throttle exists to prevent, where a re-enqueued request piles
-    # in behind the original that is still generating.
+    # A retried request therefore holds its permit through ruby_llm's
+    # +retry_interval+ backoff, idling the server slot for a moment.
+    # Deliberate: releasing across retries re-creates the duplicate-work
+    # stampede the throttle exists to prevent, a re-enqueued request piling in
+    # behind an original that is still generating.
     #
-    # Blocking inside an *instrumentation* hook is a semantic stretch: the name
-    # says observe, this gates. But the contract ruby_llm documents is "yield and
-    # return the block's result", which is all a gate needs, and it is the one
-    # before/after hook the library offers around a single request — the
-    # alternative, subclassing the Faraday adapter, occupies the one
-    # {ChatTransport#faraday_adapter} slot the scripted test fake needs. See
-    # +DECISIONS.md+ +D_llm_request_throttle+.
+    # Blocking inside an *instrumentation* hook is a semantic stretch — the name
+    # says observe, this gates — accepted because the contract ruby_llm
+    # documents is "yield and return the block's result", which is all a gate
+    # needs. The measurements and the roads not taken: +DECISIONS.md+
+    # +D_llm_request_throttle+.
     #
-    # Thread-safe: immutable after construction, and the waiting belongs to
-    # {ServerPermits::Semaphore}. One instance serves every request an agent
-    # makes, from whichever thread drives it.
+    # Thread-safe: immutable after construction, and the waiting is
+    # {ServerPermits::Semaphore}'s.
     class RequestThrottle
       # The one instrumented event that is exactly one HTTP request.
       REQUEST_EVENT = 'request.ruby_llm'
@@ -87,7 +84,7 @@ module Pikuri
         ServerPermits.for(@key).acquire(cancellable: @cancellable) { pass(name, payload, &block) }
       end
 
-      # @return [String] short label for a debug print.
+      # @return [String] +"RequestThrottle(http://localhost:8080/v1: 1/1 permits)"+.
       def to_s
         "RequestThrottle(#{@key || 'unlimited'}: #{ServerPermits.for(@key)})"
       end

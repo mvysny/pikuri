@@ -58,10 +58,9 @@ module Pikuri
   #
   # Thread-safety is not the only question those N agents raise, though: they
   # usually point at *one* inference server, and N simultaneous completions
-  # against a llama.cpp started with +--parallel 1+ pile up in a queue inside
-  # the server, where pikuri can neither cancel nor reorder them while
-  # ruby_llm's request timeout ticks anyway. {ServerPermits} rations that — one
-  # permit per HTTP request, sized from the server's own slot count — and needs
+  # against a llama.cpp started with +--parallel 1+ queue up inside the server,
+  # where pikuri can neither cancel nor reorder them. {ServerPermits} rations
+  # that — one permit per HTTP request, sized from the server's own slot count,
   # no per-agent wiring.
   #
   # Two {Control}s are the sanctioned doors *in* from another thread, which is
@@ -718,11 +717,9 @@ module Pikuri
                 ContextWindowDetector.detect(@transport, openai_base: base)
               end
       @context_window_cap = @transport.context_window || props.n_ctx
-      # The server's own slot count is the right default permit size, and this
-      # probe is the one place pikuri already holds it. A host-set
-      # {ServerPermits.limit} still wins, and the +/props+ GET itself takes no
-      # permit — it runs on {ContextWindowDetector}'s own Faraday, outside
-      # ruby_llm and so outside the throttle it is sizing.
+      # The probe is the one place pikuri holds the server's slot count, and it
+      # must stay outside the throttle it sizes — which it is, by construction:
+      # {ContextWindowDetector} uses its own Faraday, not ruby_llm's connection.
       ServerPermits.default(base, props.total_slots) if props.total_slots
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
     end

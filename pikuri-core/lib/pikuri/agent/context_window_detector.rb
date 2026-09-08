@@ -205,7 +205,7 @@ module Pikuri
       end
 
       # @param reason [String]
-      # @return [nil] so {#fetch_props} can +return+ it
+      # @return [nil]
       def warn_and_nil(reason)
         LOGGER.warn("llama.cpp /props probe failed: #{reason}")
         nil
