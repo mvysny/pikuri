@@ -14,6 +14,10 @@ module Pikuri
     # against the default local server already queue correctly. {.limit} wins
     # over any such default.
     #
+    # It doubles as that probe's memo: {.sized?} answers "do I already know this
+    # server?" for a caller about to pay for a request (+DECISIONS.md+
+    # +D_probe_when_unknown+).
+    #
     # {RequestThrottle} is the acquire site — one permit per HTTP request, held
     # for the whole streamed response.
     #
@@ -179,6 +183,24 @@ module Pikuri
         #   {.key_for} normalizes it; a +nil+ value is an explicit "unlimited".
         def sizes
           @mutex.synchronize { @sizes.dup }
+        end
+
+        # Whether this server's concurrency is on record at all, from either
+        # door — a recorded "unlimited" included, since that is an answer too:
+        #
+        #   ServerPermits.sized?('http://x:8080/v1')      # => false
+        #   ServerPermits.default('http://x:8080', nil)   # probed, reports no slots
+        #   ServerPermits.sized?('http://x:8080/v1')      # => true
+        #
+        # @param server [String, nil] the server's base URL, with or without
+        #   +/v1+
+        # @return [Boolean] +false+ for a +nil+/blank +server+ — nothing to
+        #   record a size against, so nothing is on record
+        def sized?(server)
+          key = key_for(server)
+          return false if key.nil?
+
+          @mutex.synchronize { @sizes.key?(key) }
         end
 
         # Forget every size and every permit object — a spec's +after+ hook, so

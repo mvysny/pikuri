@@ -99,6 +99,41 @@ RSpec.describe Pikuri::Agent::ServerPermits do
     end
   end
 
+  # The probe's memo question: "have I anything left to learn about this
+  # server?" (see Agent#detect_and_emit_context_cap!, DECISIONS.md
+  # D_probe_when_unknown).
+  describe '.sized?' do
+    it 'is false for an unsized server and true once either door sizes it' do
+      refute described_class.sized?('http://x:8080')
+
+      described_class.default('http://x:8080', 4)
+      assert described_class.sized?('http://x:8080/v1')
+
+      described_class.limit('http://y:8080', 1)
+      assert described_class.sized?('http://y:8080')
+    end
+
+    it 'is true for a recorded "unlimited", which is an answer like any other' do
+      described_class.limit('https://api.openai.com/v1', nil)
+      assert described_class.sized?('https://api.openai.com')
+
+      # What a probe that answered without a slot count records.
+      described_class.default('http://x:8080', nil)
+      assert described_class.sized?('http://x:8080')
+    end
+
+    it 'is false for a blank server, which nothing can be recorded against' do
+      [nil, '', '   ', '/'].each { |blank| refute described_class.sized?(blank) }
+    end
+
+    it 'is false again after reset!' do
+      described_class.limit('http://x:8080', 1)
+      described_class.reset!
+
+      refute described_class.sized?('http://x:8080')
+    end
+  end
+
   describe '.reset!' do
     it 'forgets every size and permit object' do
       described_class.limit('http://x:8080', 1)

@@ -45,15 +45,14 @@ module Pikuri
     # @!attribute [r] context_window
     #   @return [Integer, nil] explicit context-window cap for this
     #     model-on-server, or +nil+ to defer to {ContextWindowDetector}. Travels
-    #     with the model because the cap *is* per-model-per-server. Setting it
-    #     skips the probe, and with it the {Agent::ServerPermits} auto-size, so
-    #     a host that sets this and cares about throttling calls
-    #     +ServerPermits.limit+ too.
+    #     with the model because the cap *is* per-model-per-server. It overrides
+    #     the probed +n_ctx+ and nothing else — the {Agent::ServerPermits}
+    #     auto-size still happens (+DECISIONS.md+ +D_probe_when_unknown+).
     #     Never sent to ruby_llm — pure pikuri metadata read by
     #     {Agent#detect_and_emit_context_cap!}, and the cap-inheritance channel:
     #     a spawned agent gets +parent.transport.with(context_window:
-    #     parent.context_window_cap)+ so the resolved cap rides along without a
-    #     re-probe.
+    #     parent.context_window_cap)+, so the resolved cap rides along and the
+    #     child probes nothing.
     # @!attribute [r] faraday_adapter
     #   @return [Class, Symbol, nil] a custom Faraday adapter to install on this
     #     agent's per-chat +RubyLLM::Context+ (via +config.faraday_adapter=+),

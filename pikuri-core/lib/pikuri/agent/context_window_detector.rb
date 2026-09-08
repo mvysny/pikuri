@@ -19,8 +19,10 @@ module Pikuri
     # possibly smaller than the model's max, e.g. +llama-server -c 8192+ on a
     # 128k model) beside the slot count {ServerPermits} sizes itself from. Both
     # fields are +nil+ — an honest "we don't know" — for anything else.
-    # {Agent#detect_and_emit_context_cap!} calls it only when the transport
-    # carries no explicit {ChatTransport#context_window}.
+    #
+    # Every call is a live request: nothing here is memoized, and the caller
+    # decides when it has nothing left to learn (+DECISIONS.md+
+    # +D_probe_when_unknown+).
     #
     # This probe and an explicit {ChatTransport#context_window} are the *only*
     # cap sources: +RubyLLM::Model::Info#context_window+ is deliberately never
@@ -47,8 +49,9 @@ module Pikuri
     #
     # == Failure handling
     #
-    # Best-effort: HTTP error, timeout, non-JSON body, or a missing/invalid
-    # +n_ctx+ all return {Props::NONE} with one +warn+ line. The CLAUDE.md
+    # Best-effort: an HTTP error, a timeout or a non-JSON body returns
+    # {Props::NONE} with one +warn+ line, and a missing/invalid +n_ctx+ warns
+    # but keeps a +total_slots+ the same document carried. The CLAUDE.md
     # "secondary to the loop" carve-out — a wedged or non-llama.cpp server must
     # not abort agent construction over a cosmetic readout.
     class ContextWindowDetector
@@ -148,7 +151,8 @@ module Pikuri
         # to the model's own instance, which reports both.
         return probe_router_model if data['role'] == 'router' && model_id_present?
 
-        warn_and_none(
+        warn_and_keep(
+          props,
           "no positive integer at default_generation_settings.n_ctx in #{@probe_url} response"
         )
       end
@@ -161,8 +165,8 @@ module Pikuri
         props = props_from(data)
         return props if props.n_ctx
 
-        warn_and_none(
-          "no positive integer at default_generation_settings.n_ctx in router probe #{url}"
+        warn_and_keep(
+          props, "no positive integer at default_generation_settings.n_ctx in router probe #{url}"
         )
       end
 
@@ -211,11 +215,16 @@ module Pikuri
         nil
       end
 
-      # @param reason [String]
-      # @return [Props] {Props::NONE}
-      def warn_and_none(reason)
+      # Warn about the missing +n_ctx+ but keep whatever the document *did*
+      # carry — a +total_slots+ beside a missing cap is still the slot count.
+      #
+      # @param props [Props] what {#props_from} parsed; equal to {Props::NONE}
+      #   when the document carried neither field
+      # @param reason [String] the +warn+ line's text
+      # @return [Props] +props+, unchanged
+      def warn_and_keep(props, reason)
         warn_and_nil(reason)
-        Props::NONE
+        props
       end
     end
   end

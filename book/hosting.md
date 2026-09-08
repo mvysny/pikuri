@@ -193,10 +193,29 @@ already makes to learn the context window also reports
 llama.cpp throttles correctly with zero configuration. Anything
 unprobeable — cloud endpoints, providers with a fixed base — stays
 unlimited, which is the right answer there. `limit` is the
-override, and it always wins over what the probe found. The one
-place you must call it yourself is when you pass an explicit
-`context_window:` on the transport: that skips the probe, and the
-auto-sizing with it.
+override, and it always wins over what the probe found.
+
+Passing an explicit `context_window:` on the transport doesn't
+change any of that, and it's worth knowing why, because the
+tempting shortcut is a bug. The cap is what the probe was built
+for, so stating the cap looks like a reason to skip the probe —
+pikuri did skip it, once. But one `/props` document answers *two*
+questions, and the second one is `total_slots`, which is a property
+of the **server**, not of the model you just sized. Skipping on the
+cap meant that stating a number in the model's column silently gave
+up the server's.
+
+So the probe is skipped only when both answers are already in hand:
+you stated the cap *and* something already sized the server. That
+something is this registry, which doubles as the probe's memo. A
+`limit` call in your boot code means no probe at all. Four agents
+against one llama.cpp probe it once between them rather than four
+times. And a sub-agent probes never — it inherits its parent's
+resolved cap by construction, and the parent's probe left the
+server sized. What's left is the honest cost: a cloud endpoint you
+handed a cap to gets one `/props` request per process, which 404s
+and degrades to "unlimited". Size it with `limit` and even that
+goes away.
 
 Does it matter? Measured against a live llama.cpp router, three
 agents running the same prompt:

@@ -104,6 +104,17 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       assert_nil props.total_slots
     end
 
+    # The two fields are independent both ways: a document with slots but no
+    # usable cap still tells ServerPermits what it needs.
+    it 'keeps total_slots when the cap is missing, warning about the cap alone' do
+      stubs.get(url) { [200, {}, JSON.generate('total_slots' => 4)] }
+      props = described_class.detect(transport, openai_base: base)
+
+      assert_nil props.n_ctx
+      assert_equal 4, props.total_slots
+      assert_includes buf.string, 'default_generation_settings.n_ctx'
+    end
+
     it 'ignores a non-positive or non-integer total_slots' do
       stubs.get(url) do
         [200, {}, JSON.generate('total_slots' => '4',

@@ -699,10 +699,12 @@ module Pikuri
 
     # Resolve the context-window cap and announce it as an
     # {Event::ContextCap}, seeding {ServerPermits} with the slot count the same
-    # probe reports. The transport's explicit +context_window+ wins; else
-    # {ContextWindowDetector} probes the server ({ContextWindowDetector::Props::NONE}
-    # for a non-llama one). The cap rides {ChatTransport}, so a switch resolves
-    # the *new* transport's cap. Shared by {#run_configure} and
+    # probe reports. The transport's explicit +context_window+ wins over the
+    # probed +n_ctx+; the *slot count* has no such override, so the probe is
+    # skipped only when *both* of its answers are already in hand — a stated cap
+    # and a {ServerPermits.sized?} server (+DECISIONS.md+
+    # +D_probe_when_unknown+). The cap rides {ChatTransport}, so a switch
+    # resolves the *new* transport's cap. Shared by {#run_configure} and
     # {#apply_transport!}.
     #
     # @return [void]
@@ -711,16 +713,19 @@ module Pikuri
       # the chat points at +@transport.api_base+, but the global config still
       # names the old server — so derive the base from the transport.
       base = @transport.api_base || RubyLLM.config.openai_api_base
-      props = if @transport.context_window
+      props = if @transport.context_window && ServerPermits.sized?(base)
                 ContextWindowDetector::Props::NONE
               else
                 ContextWindowDetector.detect(@transport, openai_base: base)
               end
       @context_window_cap = @transport.context_window || props.n_ctx
-      # The probe is the one place pikuri holds the server's slot count, and it
-      # must stay outside the throttle it sizes — which it is, by construction:
-      # {ContextWindowDetector} uses its own Faraday, not ruby_llm's connection.
-      ServerPermits.default(base, props.total_slots) if props.total_slots
+      # A +total_slots: nil+ is seeded too, deliberately: "answered, no slots"
+      # is knowledge, where a failure is not — so a server that was merely
+      # booting is asked again. The probe must stay outside the throttle it
+      # sizes — which it is, by construction: {ContextWindowDetector} uses its
+      # own Faraday, not ruby_llm's connection.
+      answered = props != ContextWindowDetector::Props::NONE
+      ServerPermits.default(base, props.total_slots) if answered
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
     end
 
