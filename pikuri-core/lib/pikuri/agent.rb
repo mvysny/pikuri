@@ -28,14 +28,11 @@ module Pikuri
   #
   # == The loop is unbounded
   #
-  # Nothing here caps how many tool calls a turn may make. The ceilings are
-  # {Control::Cancellable} (a watching human, which is every wiring pikuri
-  # ships) and the model's context window, which every turn grows toward.
-  # pikuri shipped a tool-call budget until 2026-09-08 and removed it: it
-  # never once caught a runaway loop and repeatedly stopped legitimate long
-  # work, and a step count is the wrong axis for the cost it was reaching
-  # for anyway. See +DECISIONS.md+ +D_no_step_limit+ — including what to
-  # reach for *first* if a real loop ever shows up (it is not a step cap).
+  # Nothing here caps how many tool calls a turn may make. A turn ends when
+  # the model stops asking for tools, when {Control::Cancellable} trips, or
+  # when the context window fills. Why there is no budget, and what to reach
+  # for instead if a runaway loop ever shows up: +DECISIONS.md+
+  # +D_no_step_limit+.
   #
   # == Cancellation rescue
   #
@@ -284,8 +281,7 @@ module Pikuri
     # initiative, so the agent reacts to it. Resets the cancellation control,
     # drains any pending {Control::Interloper} injections, then +complete+s the
     # chat. Output is the listeners' job; subsequent calls build on the same
-    # history. Nothing bounds the number of tool calls — see the class header's
-    # "The loop is unbounded".
+    # history.
     #
     # A blank +user_message+ against a conversation holding nothing but the
     # system prompt is provider-split: providers that can't complete it raise

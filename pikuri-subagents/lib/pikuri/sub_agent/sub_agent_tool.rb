@@ -30,12 +30,10 @@ module Pikuri
     # a fixed set and the policy is sub-agent-specific (CLAUDE.md
     # §Conventions).
     #
-    # A child's loop is **unbounded**, as the parent's is. Its ceilings are the
-    # shared +cancellable+ (one Ctrl+C stops the whole tree, the child
-    # included) and its own fresh context window — it starts empty, so a child
-    # that will not stop hits that window without touching the parent's.
-    # Personas carried a +max_steps+ budget until 2026-09-08; +DECISIONS.md+
-    # +D_no_step_limit+ has why it went and what would replace it.
+    # A child's loop is *unbounded*, as the parent's is: a persona carries no
+    # step budget. It stops on the shared +cancellable+ (one Ctrl+C stops the
+    # whole tree) or on its own context window — which starts empty, so a
+    # child that will not stop exhausts that window rather than the parent's.
     #
     # Two duck-typed hooks let a *tool* differ inside the child, applied in
     # this order: +with_workspace(ws)+, only when the persona minted a temp

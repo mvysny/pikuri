@@ -17,11 +17,6 @@ module Pikuri
     # * {Cancellable} — cooperative cancel flag, shared by reference across the
     #   parent and its sub-agents.
     # * {Interloper} — mid-loop user-input queue; not propagated to sub-agents.
-    #
-    # Both are *signals*, not budgets. A tool-call budget lived here until
-    # 2026-09-08 and was removed (+DECISIONS.md+ +D_no_step_limit+), so a
-    # proposal to add a budget-shaped control cannot cite a sibling as
-    # precedent — there isn't one.
     module Control
     end
   end
