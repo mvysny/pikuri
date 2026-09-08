@@ -94,10 +94,6 @@ agent = Pikuri::Agent.new(
     api_key: examples_config.fetch('llm_api_key', 'not-needed')
   ),
   system_prompt: system_prompt,
-  # :synthesize — this is a Q&A agent: when the budget trips, salvage an
-  # answer from the evidence gathered so far instead of raising. (Coding
-  # agents take the default :raise — see bin/pikuri-code.)
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20, on_exhausted: :synthesize),
   cancellable: cancel_flag,
   streaming: streaming
 ) do |c|

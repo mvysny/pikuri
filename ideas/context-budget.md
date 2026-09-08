@@ -173,13 +173,21 @@ auto-compaction the same bytes are an active hazard. That is the concrete
 mechanism behind "downstream of `context-overflow-behavior.md`" — not
 ordering hygiene, but the message text being a function of the policy.
 
-Home: a `Control` next to {Pikuri::Agent::Control::StepLimit} — controls
-are already the family for loop-level budgets, and the natural firing
-point is the `after_tool_result` boundary where the interloper drains
-(the only place mid-turn where conversation state is consistent).
-`Extension#on_user_message` is the wrong hook for this: it fires once per
-*user* turn, so a 40-step autonomous run — precisely the case that blows
-the window — would get one reading, taken before the run started.
+Home: a `Control` — the family already holds the loop-level signals, and
+the natural firing point is the `after_tool_result` boundary where the
+interloper drains (the only place mid-turn where conversation state is
+consistent). `Extension#on_user_message` is the wrong hook for this: it
+fires once per *user* turn, so a long autonomous run — precisely the case
+that blows the window — would get one reading, taken before the run
+started.
+
+This bullet used to cite `Control::StepLimit` as the sibling that made
+`Control` obviously the right home. That sibling is gone
+(`D_no_step_limit`), and `Control` is now `Cancellable` + `Interloper` —
+both *host-facing signal holders*, neither a budget. So "controls are the
+family for budgets" is no longer true by example, and a token control
+would be the first of its kind. Weigh that as a cost of this proposal,
+not a formality.
 
 **Off by default**, wired by `pikuri-code` only.
 
@@ -232,7 +240,7 @@ human-facing warning.
   cache for the whole conversation: the most expensive possible home for
   a number that changes constantly.
 - **Appending to every tool result** — that's the tool's contract, and
-  you'd pay it on all 40 steps.
+  you'd pay it on every step of the run.
 - **A `context_status` tool** — the model has to know to ask, which is
   the one thing it can't know.
 - **`<total_tokens>` as a design precedent.** Claude Code emits a

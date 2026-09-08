@@ -46,10 +46,6 @@ module Pikuri
       #   streaming.
       attr_reader :streaming
 
-      # @return [Control::StepLimit, nil] step-budget control passed
-      #   to the Agent ctor, or +nil+.
-      attr_reader :step_limit
-
       # @return [Control::Cancellable, nil] cancellation control, or +nil+.
       #   Extensions running sub-LLM calls in +configure+ share it so a user
       #   cancel during boot propagates.
@@ -87,7 +83,6 @@ module Pikuri
       # @param system_prompt_base [String]
       # @param id [String]
       # @param streaming [Boolean]
-      # @param step_limit [Control::StepLimit, nil]
       # @param cancellable [Control::Cancellable, nil]
       # @param interloper [Control::Interloper, nil]
       # @param on_close_sink [Array<Proc>, nil] array {#on_close} appends to.
@@ -96,13 +91,12 @@ module Pikuri
       #   constructor close a half-built agent if a later +configure+ raises.
       #   Defaults to a fresh array (standalone/spec use).
       def initialize(transport:, system_prompt_base:, id:, streaming:,
-                     step_limit:, cancellable:, interloper:,
+                     cancellable:, interloper:,
                      on_close_sink: nil)
         @transport = transport
         @system_prompt_base = system_prompt_base
         @id = id
         @streaming = streaming
-        @step_limit = step_limit
         @cancellable = cancellable
         @interloper = interloper
 

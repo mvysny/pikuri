@@ -184,7 +184,6 @@ RSpec.describe Pikuri::Agent::Listener::RateLimited do
                                          display_name: 'Echo', argument: 'hi'),
       Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: 'echo', content: 'done',
                                            summary: 'Returned 4 bytes'),
-      Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'),
       Pikuri::Agent::Event::Cancelled.new,
       Pikuri::Agent::Event::ContextCap.new(cap: 32_768),
       Pikuri::Agent::Event::Tokens.new(input: 1, output: 1, cached: nil,

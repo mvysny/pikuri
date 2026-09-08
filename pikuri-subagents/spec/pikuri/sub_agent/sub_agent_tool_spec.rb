@@ -101,14 +101,13 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   end
 
   # Simple persona used by tests that want a quick one — single tool,
-  # short prompt, max_steps that's easy to assert against.
+  # short prompt.
   let(:simple_persona) do
     Pikuri::SubAgent::Persona.new(
       name: 'researcher',
       description: 'simple researcher',
       tool_names: %w[web_search],
-      system_prompt: 'be terse',
-      max_steps: 7
+      system_prompt: 'be terse'
     )
   end
 
@@ -139,11 +138,10 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   # the SubAgent::Extension's #bind received). Tools and listeners go
   # through the Configurator block.
   def build_parent(system_prompt: 'sp', tools: [web_search_tool], listeners: nil,
-                   step_limit: nil, cancellable: nil, id: '')
+                   cancellable: nil, id: '')
     agent = Pikuri::Agent.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt: system_prompt,
-      step_limit: step_limit,
       cancellable: cancellable,
       id: id
     ) do |c|
@@ -206,8 +204,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         name: 'file_miner',
         description: 'd',
         tool_names: %w[web_search],
-        system_prompt: 's',
-        max_steps: 5
+        system_prompt: 's'
       )
       tool = described_class.new(
         build_parent,
@@ -291,9 +288,9 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
   describe 'sub-agent naming and control derivation' do
     # Capture every kwarg handed to Pikuri::Agent.new so the spec can
-    # read the generated +id:+ / +step_limit:+ / +cancellable:+ (the
-    # context-window cap rides +transport.context_window+ now, not a
-    # ctor kwarg) without having to introspect a built Pikuri::Agent.
+    # read the generated +id:+ / +cancellable:+ (the context-window cap
+    # rides +transport.context_window+ now, not a ctor kwarg) without
+    # having to introspect a built Pikuri::Agent.
     def with_captured_agent_new
       received = []
       original_new = Pikuri::Agent.method(:new)
@@ -316,8 +313,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         name: 'file_miner',
         description: 'd',
         tool_names: %w[web_search],
-        system_prompt: 's',
-        max_steps: 3
+        system_prompt: 's'
       )
       tool = described_class.new(
         build_parent,
@@ -357,25 +353,6 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       assert_equal [{ id: 'researcher 0' }], recorded
     end
 
-    it "constructs a fresh StepLimit at the persona's max_steps for the sub-agent" do
-      tool = described_class.new(
-        build_parent(step_limit: Pikuri::Agent::Control::StepLimit.new(max: 99)),
-        personas: { 'researcher' => simple_persona }
-      )
-
-      with_captured_agent_new do |kwargs|
-        tool.run('name' => 'researcher', 'task' => 'go')
-
-        sub_step = kwargs.first[:step_limit]
-        assert_kind_of Pikuri::Agent::Control::StepLimit, sub_step
-        # simple_persona declares max_steps: 7
-        assert_equal 7, sub_step.max
-        # Sub-agents always salvage: an exhausted run must return usable
-        # text to the parent's tool call, never raise into it.
-        assert_equal :synthesize, sub_step.on_exhausted
-      end
-    end
-
     it 'shares the parent Cancellable by reference with the sub-agent (one cancel stops the tree)' do
       parent_cancel = Pikuri::Agent::Control::Cancellable.new
       tool = described_class.new(
@@ -390,7 +367,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       end
     end
 
-    it 'passes nil cancellable when the parent had none, fresh StepLimit regardless' do
+    it 'passes nil cancellable when the parent had none' do
       tool = described_class.new(
         build_parent,
         personas: { 'researcher' => simple_persona }
@@ -400,8 +377,8 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         tool.run('name' => 'researcher', 'task' => 'go')
 
         assert_nil kwargs.first[:cancellable]
-        assert_kind_of Pikuri::Agent::Control::StepLimit, kwargs.first[:step_limit]
-        assert_equal 7, kwargs.first[:step_limit].max
+        # The child's loop is unbounded, as the parent's is (D_no_step_limit).
+        refute_includes kwargs.first.keys, :step_limit
       end
     end
   end
@@ -440,7 +417,6 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         description: 'd',
         tool_names: %w[workspace_aware web_search],
         system_prompt: 's',
-        max_steps: 5,
         needs_temp_workspace: true
       )
     end
@@ -543,8 +519,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         name: 'researcher',
         description: 'd',
         tool_names: %w[narrowable web_search],
-        system_prompt: 's',
-        max_steps: 5
+        system_prompt: 's'
       )
     end
 
@@ -677,8 +652,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         name: 'file_miner',
         description: 'fs recon',
         tool_names: %w[web_search],
-        system_prompt: 's',
-        max_steps: 3
+        system_prompt: 's'
       )
       snippet = described_class.available_agents_snippet(
         'researcher' => simple_persona,

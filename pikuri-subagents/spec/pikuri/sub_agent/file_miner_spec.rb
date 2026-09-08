@@ -15,11 +15,6 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
     assert_match(/recon sub-agent/i, described_class.system_prompt)
   end
 
-  it 'has a step budget suited to fs recon (glob + multi-pass grep + read)' do
-    assert_kind_of Integer, described_class.max_steps
-    assert described_class.max_steps.positive?
-  end
-
   describe 'integration with Pikuri::SubAgent::Extension' do
     # Stub tools whose names match FILE_MINER.tool_names. Hand-rolled
     # rather than pulling in the real Pikuri::Workspace::Read / Grep /
@@ -43,7 +38,6 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
         system_prompt_base: 'base',
         id:                 '',
         streaming:          false,
-        step_limit:         nil,
         cancellable:        nil,
         interloper:         nil
       )

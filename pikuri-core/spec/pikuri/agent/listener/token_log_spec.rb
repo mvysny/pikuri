@@ -162,7 +162,6 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
         Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: 't', content: 'r',
                                              summary: 'Returned 1 bytes'),
         Pikuri::Agent::Event::Thinking.new(content: 'pondering'),
-        Pikuri::Agent::Event::FallbackNotice.new(reason: 'why'),
         Pikuri::Agent::Event::Cancelled.new
       ].each { |e| listener.on_event(e) }
 

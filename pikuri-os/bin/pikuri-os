@@ -155,9 +155,6 @@ def run_turn(agent, message)
   agent.run_loop(user_message: message)
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   # Notice already rendered by the Terminal listener.
-rescue Pikuri::Agent::Control::StepLimit::Exceeded => e
-  warn "\nStep budget exhausted (#{e.max_steps} tool calls this turn)."
-  warn "Type 'continue' to let it keep going, or redirect it."
 rescue RubyLLM::ContextLengthExceededError => e
   warn "\nContext window exhausted: #{e.message}"
   warn 'The conversation has grown too large for the model. Start a fresh question.'
@@ -173,7 +170,6 @@ agent = Pikuri::Agent.new(
     api_key: examples_config.fetch('llm_api_key', 'not-needed')
   ),
   system_prompt: system_prompt,
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
   cancellable: cancel_flag
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new

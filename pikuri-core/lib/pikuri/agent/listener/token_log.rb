@@ -24,8 +24,7 @@ module Pikuri
       # (Claude Code's convention). Sizes are 1024-scaled with a +k+ suffix.
       #
       # One instance per conversation (the snapshot is instance state);
-      # sub-agents and the synthesizer get a fresh zeroed one via
-      # {#for_sub_agent}.
+      # sub-agents get a fresh zeroed one via {#for_sub_agent}.
       class TokenLog < Base
         # Subsystem logger; the per-turn line is +INFO+. Level via
         # +PIKURI_LOG_TOKENS+ or +PIKURI_LOG+.

@@ -21,10 +21,6 @@ describe Pikuri::VectorDb::LIBRARIAN do
     assert_equal %w[vectordb_search vectordb_read], described_class.tool_names
   end
 
-  it 'caps step budget at 15 (generous-but-bounded for a few refined queries)' do
-    assert_equal 15, described_class.max_steps
-  end
-
   it 'does not request a temp workspace (vectordb hits a shared backend)' do
     refute described_class.needs_temp_workspace
   end

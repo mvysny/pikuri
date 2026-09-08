@@ -18,34 +18,27 @@ module Pikuri
   #    from an +Agent+ reference to emission (no +listeners+/+chat+ reader,
   #    no emit method), so holding an agent grants read access and nothing
   #    more. New sinks are added as listeners without touching {Agent}.
-  # 2. **Controls** ({Control::StepLimit}, {Control::Cancellable},
-  #    {Control::Interloper}) — host-facing signal holders the +Agent+
-  #    reads at fixed boundaries: +tick!+/+check!+ on every
-  #    +before_tool_call+, +reset!+ at turn start, +drain!+ once each tool
-  #    batch is answered.
+  # 2. **Controls** ({Control::Cancellable}, {Control::Interloper}) —
+  #    host-facing signal holders the +Agent+ reads at fixed boundaries:
+  #    +check!+ on every +before_tool_call+, +reset!+ at turn start,
+  #    +drain!+ once each tool batch is answered.
   #
   # "What fires when" is one grep for +@listeners.emit+ (loop narration)
   # plus the capability calls in {ExtensionContext} (domain events).
   #
-  # == Step-exhaustion policy
+  # == The loop is unbounded
   #
-  # When +step_limit:+ trips during completion, {#run_loop} applies its
-  # {Control::StepLimit#on_exhausted} policy:
-  #
-  # - +:raise+ (default) — re-raise to the host. History survives and
-  #   {Control::StepLimit#reset!} fires next turn, so "continue" works.
-  # - +:synthesize+ — emit an {Event::FallbackNotice} and run the
-  #   {Synthesizer} prompt on a nested tools-free +Agent+ (listener stream
-  #   via {ListenerList#for_sub_agent}, +cancellable+ shared so a user
-  #   cancel still works, a defensive +step_limit+ at +max: 1+). Its answer
-  #   becomes {#last_assistant_content}, so callers still get a reply.
+  # Nothing here caps how many tool calls a turn may make. A turn ends when
+  # the model stops asking for tools, when {Control::Cancellable} trips, or
+  # when the context window fills. Why there is no budget, and what to reach
+  # for instead if a runaway loop ever shows up: +DECISIONS.md+
+  # +D_no_step_limit+.
   #
   # == Cancellation rescue
   #
   # When +cancellable:+ trips during +Chat#ask+, {#run_loop} emits an
-  # {Event::Cancelled} and re-raises — no synthesizer fallback (cancel
-  # means drop everything). {Control::Cancellable#reset!} at each turn
-  # start lets the same instance take a fresh turn afterwards.
+  # {Event::Cancelled} and re-raises. {Control::Cancellable#reset!} at each
+  # turn start lets the same instance take a fresh turn afterwards.
   #
   # == Threading
   #
@@ -140,12 +133,10 @@ module Pikuri
     # @see CANCELLED_RESULT
     CANCELLED_SKIPPED_RESULT = '[Not executed — the user cancelled this turn]'
     # @see CANCELLED_RESULT
-    STEP_BUDGET_RESULT = '[Not executed — step budget exhausted]'
-    # @see CANCELLED_RESULT
     FAILED_SKIPPED_RESULT = '[Not executed — a previous tool call in this batch failed]'
 
     # Display line ({Event::ToolResult}'s +summary+) for a call answered by a
-    # repair rather than by its tool. One word for all four causes above: the
+    # repair rather than by its tool. One word for all three causes above: the
     # *content* says which, and a status line only has to report that no
     # observation came back.
     INTERRUPTED_SUMMARY = 'Interrupted'
@@ -158,9 +149,6 @@ module Pikuri
     #   this plus every extension's {Extension#system_prompt_snippets},
     #   assembled by {#assemble_system_prompt} at construction and on each
     #   {#clear_conversation}.
-    # @param step_limit [Control::StepLimit, nil] step budget, or +nil+ for
-    #   no budget (unbounded looping). Its {Control::StepLimit#on_exhausted}
-    #   policy drives {#run_loop} on trip (see the class header).
     # @param cancellable [Control::Cancellable, nil] cancellation control,
     #   or +nil+ for none (no way to stop a running turn but killing the
     #   process).
@@ -179,7 +167,7 @@ module Pikuri
     #   kwargs. Optional; without it the agent has none of those.
     # @return [Agent]
     def initialize(transport:, system_prompt:,
-                   step_limit: nil, cancellable: nil, interloper: nil,
+                   cancellable: nil, interloper: nil,
                    id: '',
                    streaming: false,
                    &block)
@@ -193,11 +181,9 @@ module Pikuri
       # {#clear_conversation}, refreshing dynamic sections.
       @system_prompt_base = system_prompt
       @system_prompt = system_prompt
-      @step_limit = step_limit
       @interloper = interloper
       @id = id
       @streaming = streaming
-      @synth_answer = nil
       @on_close_handlers = []
       # Stashed for {#run_configure}, the failure-prone build phase.
       @block = block
@@ -221,7 +207,7 @@ module Pikuri
 
     # @return [ChatTransport] the resolved transport this agent was built
     #   with — the model/provider/connection every +RubyLLM.chat+ from this
-    #   agent uses (main chat, synthesizer, sub-agents).
+    #   agent uses (main chat, sub-agents).
     attr_reader :transport
 
     # @return [Array<Tool>] tool list in declaration order. These are the
@@ -247,9 +233,6 @@ module Pikuri
     #   {#clear_conversation} (so a dynamic section may differ from its
     #   construction value). Not inherited by sub-agents.
     attr_reader :system_prompt
-
-    # @return [Control::StepLimit, nil] the step budget, or +nil+.
-    attr_reader :step_limit
 
     # @return [Control::Cancellable, nil] the cancellation control, or
     #   +nil+. Extensions read it to propagate cancellation to their own
@@ -281,16 +264,12 @@ module Pikuri
     #   Re-resolved on every model switch.
     attr_reader :context_window_cap
 
-    # Final assistant message content for the most recent
-    # {#run_loop}. When the synthesizer rescue fired, returns its
-    # answer; otherwise walks the underlying chat's history.
-    # Returns +nil+ if neither source has produced an assistant
-    # turn yet.
+    # Final assistant message content for the most recent {#run_loop} — the
+    # last +:assistant+ message in the underlying chat's history. +nil+ until
+    # one has been produced.
     #
     # @return [String, nil]
     def last_assistant_content
-      return @synth_answer if @synth_answer
-
       last = @chat.messages.reverse.find { |m| m.role == :assistant }
       last&.content
     end
@@ -299,10 +278,10 @@ module Pikuri
     # {Event::UserTurn} (+mid_loop: false+) and appends it; with none, runs a
     # *bare* turn against whatever the conversation + drained injections
     # already hold — the case a host uses after loading a skill on its own
-    # initiative, so the agent reacts to it. Resets the step/cancellation
-    # controls, drains any pending {Control::Interloper} injections, then
-    # +complete+s the chat. Output is the listeners' job; subsequent calls
-    # build on the same history.
+    # initiative, so the agent reacts to it. Resets the cancellation control,
+    # drains any pending {Control::Interloper} injections, then +complete+s the
+    # chat. Output is the listeners' job; subsequent calls build on the same
+    # history.
     #
     # A blank +user_message+ against a conversation holding nothing but the
     # system prompt is provider-split: providers that can't complete it raise
@@ -310,8 +289,8 @@ module Pikuri
     # *mid-conversation* always proceeds — real turns remain to answer, and a
     # drained injection is itself one.
     #
-    # Step-limit and cancellation trips are handled per the class header's
-    # "Step-exhaustion policy" / "Cancellation rescue".
+    # Cancellation trips are handled per the class header's "Cancellation
+    # rescue".
     #
     # == Switching models mid-conversation
     #
@@ -328,17 +307,16 @@ module Pikuri
     #
     # ruby_llm appends the assistant +tool_calls+ message *before* running any
     # of them, so anything unwinding out of the batch — a tool raising, a
-    # {Control::Cancellable::Cancelled}, a tripped budget, an untrapped
-    # +Interrupt+ — leaves calls no +:tool+ message answers. OpenAI and
-    # Anthropic 400 on that; a local llama.cpp feeds it to the chat template
-    # and the model improvises. So an +ensure+ answers each dangling call
+    # {Control::Cancellable::Cancelled}, an untrapped +Interrupt+ — leaves
+    # calls no +:tool+ message answers. OpenAI and Anthropic 400 on that; a
+    # local llama.cpp feeds it to the chat template and the model improvises.
+    # So an +ensure+ answers each dangling call
     # ({#repair_dangling_tool_calls!}) and the exception then propagates: a
     # host that keeps the conversation gets one it can still send.
     #
     # +ensure+ rather than a clause per +rescue+, because it also catches what
-    # nobody enumerated (+Interrupt+ is no +StandardError+) and it runs *after*
-    # the +:synthesize+ rescue body, leaving {Synthesizer.build_prompt} the
-    # unrepaired history its drop-calls-with-no-result pass expects.
+    # nobody enumerated (+Interrupt+ is no +StandardError+) and it is a no-op
+    # on the success path.
     #
     # Unlike {History#repair_interrupted_tool_calls} — the load path, where a
     # killed process leaves no clue and {History::INTERRUPTED_RESULT} has to be
@@ -350,16 +328,12 @@ module Pikuri
     #   different, switch to it before the turn; +nil+ keeps the model
     # @raise [Control::Cancellable::Cancelled] if cancelled mid-turn (an
     #   {Event::Cancelled} is emitted first)
-    # @raise [Control::StepLimit::Exceeded] if the budget tripped under the
-    #   +:raise+ policy
     # @raise [EmptyTurnError] on a blank turn against a prompt-only
     #   conversation when the provider carries +:system+ outside +messages+
     #   (see above)
     # @return [nil] after a turn runs
     def run_loop(user_message: nil, transport: nil)
       apply_transport!(transport) if transport
-      @synth_answer = nil
-      @step_limit&.reset!
       @cancellable&.reset!
 
       # Deliver host-scheduled injections (e.g. a UI-loaded skill) before the
@@ -398,17 +372,8 @@ module Pikuri
     rescue Control::Cancellable::Cancelled
       @listeners.emit(Event::Cancelled.new)
       raise
-    rescue Control::StepLimit::Exceeded => e
-      raise unless @step_limit&.on_exhausted == :synthesize
-
-      # Ruby restores +$!+ once a rescue clause completes normally, so the
-      # +ensure+ below would see no cause for this one unwind. Assigned before
-      # the synth runs, so a synth that raises doesn't displace the real reason.
-      exhausted = e
-      @synth_answer = Synthesizer.run_synthesizer(@extension_context, @chat.messages, user_message)
-      nil
     ensure
-      repair_dangling_tool_calls!(exhausted || $!)
+      repair_dangling_tool_calls!($!)
     end
 
     # Return the agent to a fresh-conversation state without tearing down
@@ -422,8 +387,8 @@ module Pikuri
     #    dynamic sections refresh (a resident memory persona, a re-read
     #    +MACHINE.md+). Callbacks and tool registrations on the reused +@chat+
     #    are untouched.
-    # 2. Controls — step/cancellation reset, interloper queue drained (stale
-    #    mid-loop input must not leak forward), cached synth answer dropped.
+    # 2. Controls — cancellation reset, interloper queue drained (stale
+    #    mid-loop input must not leak forward).
     # 3. Listeners — a single {Event::Reset} so they reset display state.
     # 4. Extension state — {Extension#on_conversation_reset} on each.
     #
@@ -436,8 +401,6 @@ module Pikuri
       @message_meta.clear
       @system_prompt = assemble_system_prompt
       @chat.with_instructions(@system_prompt)
-      @synth_answer = nil
-      @step_limit&.reset!
       @cancellable&.reset!
       @interloper&.drain!
       @listeners.emit(Event::Reset.new)
@@ -611,7 +574,6 @@ module Pikuri
         system_prompt_base: @system_prompt,
         id: @id,
         streaming: @streaming,
-        step_limit: @step_limit,
         cancellable: @cancellable,
         interloper: @interloper,
         on_close_sink: @on_close_handlers
@@ -671,7 +633,6 @@ module Pikuri
                           tool_call_id: tc.id, name: tc.name, arguments: tc.arguments,
                           display_name: display_name, argument: argument
                         ))
-        @step_limit&.tick!
         @cancellable&.check!
       end
       @chat.after_tool_result do |result|
@@ -1086,8 +1047,6 @@ module Pikuri
     def unanswered_results(cause)
       case cause
       when Control::Cancellable::Cancelled then [CANCELLED_RESULT, CANCELLED_SKIPPED_RESULT]
-      # An exhausted budget singles no call out.
-      when Control::StepLimit::Exceeded then [STEP_BUDGET_RESULT, STEP_BUDGET_RESULT]
       # Deliberately unsanitized: the message can carry untrusted bytes (a
       # filename off a scraped page), which {Tool#run}'s own +"Error: ..."+
       # already puts in the conversation — and a model cannot react to a

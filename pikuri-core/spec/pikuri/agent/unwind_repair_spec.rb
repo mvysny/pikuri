@@ -98,44 +98,6 @@ RSpec.describe 'Pikuri::Agent unwound tool batch' do
     agent&.close
   end
 
-  it 'blames an exhausted budget on no call in particular' do
-    transport = Pikuri::Testing.fake_transport do |llm|
-      llm.tool_batch(['probe', { x: 'a' }], ['probe', { x: 'b' }], ['probe', { x: 'c' }])
-    end
-    agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test',
-                              step_limit: Pikuri::Agent::Control::StepLimit.new(max: 1)) do |c|
-      c.add_tool(probe_tool('probe') { 'ok' })
-    end
-
-    assert_raises(Pikuri::Agent::Control::StepLimit::Exceeded) { agent.run_loop(user_message: 'go') }
-
-    assert_equal ['ok', Pikuri::Agent::STEP_BUDGET_RESULT, Pikuri::Agent::STEP_BUDGET_RESULT],
-                 answers(agent)
-  ensure
-    agent&.close
-  end
-
-  # $! is nil in an ensure once a rescue clause has completed normally, so this
-  # is the one unwind whose cause has to be carried across by hand — and the
-  # only sign of getting it wrong is the wording of a message nothing else reads.
-  it 'still knows the cause when the budget was rescued into a synthesized answer' do
-    transport = Pikuri::Testing.fake_transport do |llm|
-      llm.tool_batch(['probe', { x: 'a' }], ['probe', { x: 'b' }])
-      llm.reply('synthesized')
-    end
-    limit = Pikuri::Agent::Control::StepLimit.new(max: 1, on_exhausted: :synthesize)
-    agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test', step_limit: limit) do |c|
-      c.add_tool(probe_tool('probe') { 'ok' })
-    end
-
-    agent.run_loop(user_message: 'go')
-
-    assert_equal 'synthesized', agent.last_assistant_content
-    assert_equal ['ok', Pikuri::Agent::STEP_BUDGET_RESULT], answers(agent)
-  ensure
-    agent&.close
-  end
-
   it 'emits each synthesized observation as a ToolResult so a host can render it' do
     events = []
     listener = Class.new(Pikuri::Agent::Listener::Base) do

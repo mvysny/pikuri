@@ -33,8 +33,8 @@ module Pikuri
     #
     # == Not an Agent control
     #
-    # Deliberately not under +Pikuri::Agent::Control+: unlike {StepLimit} /
-    # +Cancellable+ / +Interloper+, the loop never reads this — only Write/Edit's
+    # Deliberately not under +Pikuri::Agent::Control+: unlike +Cancellable+ /
+    # +Interloper+, the loop never reads this — only Write/Edit's
     # +execute+ does (the loop can't deny a tool call *and* feed the model an
     # explanatory observation, so the refusal lives in the tool). It's a
     # workspace property, not a loop control.

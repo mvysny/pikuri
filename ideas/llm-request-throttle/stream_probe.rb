@@ -39,7 +39,6 @@ transport = Pikuri::Agent::ChatTransport.from_openai_server(
 agent = Pikuri::Agent.new(
   transport: transport,
   system_prompt: 'You follow instructions exactly.',
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 1),
   streaming: true
 ) { |c| c.add_listener DeltaClock.new }
 

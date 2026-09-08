@@ -23,7 +23,6 @@ module Pikuri
     #   uses, so their workspace/confirmer wiring comes along for free.
     # * +system_prompt+ — full prompt, replaces the parent's (no append,
     #   no inheritance).
-    # * +max_steps+ — step budget for one delegated task.
     # * +needs_temp_workspace+ — when +true+, {SubAgentTool} mints a
     #   fresh temp workspace per invocation and deletes it at close (see
     #   there; the persona controls neither shape nor lifecycle). Default
@@ -44,7 +43,7 @@ module Pikuri
     # @example bundled researcher
     #   Pikuri::SubAgent::RESEARCHER
     #   # => #<data Pikuri::SubAgent::Persona name="researcher", ...>
-    class Persona < Data.define(:name, :description, :tool_names, :system_prompt, :max_steps, :needs_temp_workspace)
+    class Persona < Data.define(:name, :description, :tool_names, :system_prompt, :needs_temp_workspace)
       # @param needs_temp_workspace [Boolean] see class header.
       #   Default +false+.
       def initialize(needs_temp_workspace: false, **rest)

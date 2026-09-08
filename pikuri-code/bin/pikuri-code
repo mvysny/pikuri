@@ -447,12 +447,6 @@ def run_turn(agent, message)
   agent.run_loop(user_message: message)
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   # Notice already rendered by the Terminal listener; nothing else to do.
-rescue Pikuri::Agent::Control::StepLimit::Exceeded => e
-  # The :raise policy (see the StepLimit construction above): no
-  # synthesizer salvage for a coding agent. Work done so far is on disk
-  # and in the chat history; the budget resets at the next turn boundary.
-  warn "\nStep budget exhausted (#{e.max_steps} tool calls this turn)."
-  warn "Type 'continue' to let the agent keep going, or redirect it."
 rescue RubyLLM::ContextLengthExceededError => e
   warn "\nContext window exhausted: #{e.message}"
   warn 'The conversation has grown too large for the model. Start a fresh question.'
@@ -476,13 +470,6 @@ begin
       api_key: examples_config.fetch('llm_api_key', 'not-needed')
     ),
     system_prompt: system_prompt,
-    # Default :raise policy, deliberately NOT :synthesize — a coding turn
-    # ends in a changed working tree, not an answer, and a tools-free
-    # synthesis pass can't write the remaining files, only describe
-    # half-done work with confidence. Stop instead: the rescue arm in
-    # run_turn below tells the user, the chat history survives, and the
-    # budget resets at the next turn boundary — so "continue" just works.
-    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
     cancellable: cancel_flag,
     # Two things land here: the *agent's own* mid-loop injections, which is
     # what a `paths:`-gated skill needs to be promoted when a matching file

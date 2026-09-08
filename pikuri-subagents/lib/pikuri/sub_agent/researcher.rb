@@ -24,8 +24,7 @@ module Pikuri
                    'API references) so their contents stay out of your context. ' \
                    'Returns one paragraph + sources.',
       tool_names: %w[web_search web_scrape fetch].freeze,
-      system_prompt: Pikuri.prompt('persona-researcher'),
-      max_steps: 20
+      system_prompt: Pikuri.prompt('persona-researcher')
     )
   end
 end

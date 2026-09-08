@@ -77,8 +77,7 @@ What pikuri actually does when the boss calls
 2. Mint a fresh `Pikuri::Agent` configured per that persona: its
    `system_prompt` replaces the boss's; its tools are the subset
    of the boss's tools the persona named
-   (`web_search` / `web_scrape` / `fetch`); its step budget is a
-   fresh `StepLimit` at the persona's `max_steps` (20).
+   (`web_search` / `web_scrape` / `fetch`).
 3. Run the new agent's Thought → Tool-call → Observation loop on
    a clean message history — the `task` string is the entire user
    message the child sees.
@@ -93,15 +92,14 @@ on what those tools do.
 
 ## The Persona record
 
-A persona is a five-field value object — `Pikuri::SubAgent::Persona`:
+A persona is a four-field value object — `Pikuri::SubAgent::Persona`:
 
 ```ruby
 Persona.new(
   name:          'researcher',
   description:   'Focused web research with web_search, web_scrape, fetch. ...',
   tool_names:    %w[web_search web_scrape fetch],
-  system_prompt: Pikuri.prompt('persona-researcher'),
-  max_steps:     20
+  system_prompt: Pikuri.prompt('persona-researcher')
 )
 ```
 
@@ -121,9 +119,14 @@ Persona.new(
   child, and the persona's prompt is not appended to anything.
   Hosts typically load this from a `.txt` under their gem's
   `prompts/` via `Pikuri.prompt(name)`.
-- **`max_steps`** — per-task step budget. Each invocation gets a
-  fresh `StepLimit` at this value, so one minion exhausting its
-  budget doesn't reduce the next minion's budget.
+Notice what a persona does *not* carry: a step budget. A child's
+loop runs as long as it needs to, and stops for the same two reasons
+the parent's does — you hit Ctrl+C (the cancel token is shared by
+reference, so one keystroke stops the whole tree), or the child fills
+its own context window. pikuri shipped a per-persona `max_steps` cap
+until September 2026 and removed it: it never caught a runaway agent
+and regularly cut off a minion that was still making progress. See
+`DECISIONS.md` `D_no_step_limit` if you want the argument.
 
 The bundled `RESEARCHER` is the one you just saw fan out. Its
 prompt lives at `pikuri-subagents/prompts/persona-researcher.txt`
@@ -224,8 +227,6 @@ A sub-agent isn't a clone of its parent. The split:
   in `persona.tool_names`. Same *instances* the parent uses, so
   any workspace/confirmer wiring already on those tools comes
   along.
-- **`step_limit`** — a fresh `StepLimit` at `persona.max_steps`.
-  Independent budget per invocation.
 - **`interloper`** — `nil`. Sub-agents can't accept mid-loop user
   input; they're driven by the parent.
 

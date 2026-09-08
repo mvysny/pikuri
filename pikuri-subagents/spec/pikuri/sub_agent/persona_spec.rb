@@ -6,8 +6,7 @@ RSpec.describe Pikuri::SubAgent::Persona do
       name: 'fake',
       description: 'd',
       tool_names: %w[web_search],
-      system_prompt: 's',
-      max_steps: 5
+      system_prompt: 's'
     }
   end
 

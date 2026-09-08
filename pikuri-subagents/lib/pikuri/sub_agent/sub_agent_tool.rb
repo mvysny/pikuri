@@ -25,11 +25,15 @@ module Pikuri
     # {Pikuri::Agent::ListenerList#for_sub_agent} so renderers adjust
     # per-child). Everything else the persona owns: system prompt, tool
     # subset (filtered out of +parent.tools + parent.sub_agent_tools+ by
-    # +persona.tool_names+), step budget (a fresh
-    # {Pikuri::Agent::Control::StepLimit} at +persona.max_steps+). The
-    # propagation policy is inlined here rather than delegated to a
-    # +for_sub_agent+ control hook — the three controls are a fixed set and
-    # the policy is sub-agent-specific (CLAUDE.md §Conventions).
+    # +persona.tool_names+). The propagation policy is inlined here rather
+    # than delegated to a +for_sub_agent+ control hook — the two controls are
+    # a fixed set and the policy is sub-agent-specific (CLAUDE.md
+    # §Conventions).
+    #
+    # A child's loop is *unbounded*, as the parent's is: a persona carries no
+    # step budget. It stops on the shared +cancellable+ (one Ctrl+C stops the
+    # whole tree) or on its own context window — which starts empty, so a
+    # child that will not stop exhausts that window rather than the parent's.
     #
     # Two duck-typed hooks let a *tool* differ inside the child, applied in
     # this order: +with_workspace(ws)+, only when the persona minted a temp
@@ -186,16 +190,9 @@ module Pikuri
             # state the child must not see hands over a narrower copy here.
             sub_tools = sub_tools.map { |t| t.respond_to?(:for_sub_agent) ? t.for_sub_agent : t }
 
-            # The budget always carries :synthesize: a sub-agent's contract
-            # is "return usable text to the parent", so an exhausted run
-            # must salvage an answer rather than raise into the parent's
-            # tool call — even when the parent's own budget is :raise (e.g.
-            # pikuri-code, whose personas are researchers, not coders).
             sub = Pikuri::Agent.new(
               transport: transport,
               system_prompt: persona.system_prompt,
-              step_limit: Pikuri::Agent::Control::StepLimit.new(max: persona.max_steps,
-                                                                on_exhausted: :synthesize),
               cancellable: parent_cancel,
               id: sub_id,
               streaming: streaming

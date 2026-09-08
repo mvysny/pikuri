@@ -131,16 +131,10 @@ module Pikuri
       # {ContextCap}, not here.
       ModelSwitched = Data.define(:from, :to)
 
-      # Out-of-band notice that a rescue path was taken: emitted by
-      # {Agent#run_loop} when {Control::StepLimit} trips and the
-      # {Synthesizer} fallback runs. Carries the reason to surface before
-      # the synthesizer's own output flows through.
-      FallbackNotice = Data.define(:reason)
-
       # Out-of-band notice that the user cancelled the in-flight turn via
       # {Control::Cancellable}. Emitted by {Agent#run_loop} just before the
-      # +Cancelled+ exception re-raises — unlike {FallbackNotice}, no
-      # recovery follows; the caller returns control to the user.
+      # +Cancelled+ exception re-raises. No recovery follows; the caller
+      # returns control to the user.
       Cancelled = Data.define
 
       # Marks a *domain* event whose successor **replaces** it rather than adding

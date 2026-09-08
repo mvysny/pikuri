@@ -39,7 +39,7 @@ module Pikuri
   # == Limitations
   #
   # A fake transport feeds **one ordered response list**. Propagation to
-  # sub-agents / the synthesizer works (they derive their transport via
+  # sub-agents works (they derive their transport via
   # +parent.transport.with(...)+, and +Data#with+ preserves the adapter), but
   # they *share* that one list — fine for a single linear script, not for
   # targeting a specific sub-agent's replies. Per-sub-agent scripting is a

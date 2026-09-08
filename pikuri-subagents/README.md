@@ -5,7 +5,7 @@ Sub-agent / delegation support for the
 
 Provides:
 - `Pikuri::SubAgent::Persona` — the
-  `(name, description, tool_names, system_prompt, max_steps)`
+  `(name, description, tool_names, system_prompt)`
   record bundling "what kind of agent is this." Hosts declare
   which personas an agent may spawn by handing instances to the
   extension.

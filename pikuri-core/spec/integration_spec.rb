@@ -133,8 +133,7 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
         provider: :openai,
         assume_model_exists: true
       ),
-      system_prompt: 'be terse',
-      step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
+      system_prompt: 'be terse'
     ) do |c|
       c.add_tool echo_tool
       c.add_listener Pikuri::Agent::Listener::Terminal.new
@@ -199,8 +198,7 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
         provider: :openai,
         assume_model_exists: true
       ),
-      system_prompt: 'be terse',
-      step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
+      system_prompt: 'be terse'
     ) do |c|
       c.add_tool described_tool
       c.add_listener Pikuri::Agent::Listener::Terminal.new

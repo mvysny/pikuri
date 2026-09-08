@@ -37,6 +37,8 @@ shipped without one.
 - Fix `vectordb_reindex` declaring an untrusted leg — its observation is a chunk count, never corpus content, so it now declares no legs, like `write`.
 - **Breaking:** `Event::ToolCall` now takes `tool_call_id:`, `name:`, `arguments:`, `display_name:`, `argument:` and `Event::ToolResult` takes `tool_call_id:`, `name:`, `content:`, `summary:` — all required. A renderer reads the two display strings and the summary instead of formatting `arguments` and excerpting `content`, and pairs a result to its call by `tool_call_id` rather than by arrival order; `Listener::Terminal` no longer echoes the observation.
 - **Breaking:** the file, search, bash, skill, task, LSP, retrieval, memory and Thunderbird tools now return a `Tool::Result` rather than a `String` — the model still sees `#to_s`, but a caller reading a tool's class-level `.read` / `.search` / `.execute` return as a String must unwrap it.
+- **Breaking:** the agent loop no longer caps tool calls — `Agent.new(step_limit:)`, `Control::StepLimit`, `Agent::Synthesizer`, `Event::FallbackNotice` and `Agent::STEP_BUDGET_RESULT` are gone, leaving `Cancellable` and the context window as the ceilings. Drop the `step_limit:` argument; a host that rescued `StepLimit::Exceeded` can delete that arm. See `DECISIONS.md` `D_no_step_limit`.
+- **Breaking:** `SubAgent::Persona` no longer takes `max_steps:` — a sub-agent's loop is unbounded like the parent's, bounded by the shared cancel token and its own context window. Drop the argument from any hand-rolled persona.
 
 ## [0.1.0] - 2026-08-30
 
