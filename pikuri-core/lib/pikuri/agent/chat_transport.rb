@@ -23,6 +23,29 @@ module Pikuri
     # Pure data carrier — no +RubyLLM+ references here, so the seam stays in
     # {Agent}, +bin/pikuri-chat+, and {Tool}.
     #
+    # == Extra request parameters
+    #
+    # +params+ is an opaque passthrough for a request key pikuri names no field
+    # for. It is deep-merged into the chat-completion payload as written:
+    #
+    #   transport.with(params: { chat_template_kwargs: { enable_thinking: false } })
+    #   # on the wire: {"model":…,"messages":[…],
+    #   #               "chat_template_kwargs":{"enable_thinking":false}}
+    #
+    # It rides the transport rather than a call because the spelling is
+    # per-model-per-server, exactly like +context_window+; pikuri translates
+    # none of it — a parameter is sent as written or not at all. Why there is no
+    # typed +thinking:+ flag instead: +DECISIONS.md+
+    # +D_opaque_request_params+.
+    #
+    # Two edges worth knowing. Keys are deep-symbolized on the way in (naming
+    # one key in both spellings raises), without which a table read from TOML
+    # would land a second +"temperature"+ beside the payload's +:temperature+
+    # instead of overriding it. And the merge is unguarded: a table naming
+    # +messages+, +tools+ or +stream+ breaks the loop rather than configuring
+    # it, and one naming +model+ sends a model this transport does not think it
+    # is using.
+    #
     # @!attribute [r] model
     #   @return [String, nil] LLM id; +nil+ defers to
     #     +RubyLLM.config.default_model+ at {Agent} construction.
@@ -61,8 +84,14 @@ module Pikuri
     #     global +RubyLLM.config+. Its worked use is
     #     {Pikuri::Testing.fake_transport}, which bakes an anonymous scripted
     #     adapter here so the real ruby_llm loop runs against canned HTTP.
+    # @!attribute [r] params
+    #   @return [Hash{Symbol => Object}] extra chat-completion payload keys,
+    #     merged in verbatim; +{}+ for none. Keys symbolized, and every hash /
+    #     array node frozen (a value object is *not* deep-frozen: a +String+
+    #     value the caller still holds stays mutable).
+    #     See +== Extra request parameters+.
     class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key,
-                                      :context_window, :faraday_adapter)
+                                      :context_window, :faraday_adapter, :params)
       # Build an +:openai+-provider transport for an OpenAI-compatible server
       # (local llama.cpp, cloud endpoint, ...), carrying its connection so the
       # agent rides a per-chat +RubyLLM::Context+ instead of the global config.
@@ -81,8 +110,12 @@ module Pikuri
       # @param context_window [Integer, nil] explicit cap, or +nil+ to defer to
       #   {ContextWindowDetector}'s +/props+ probe (right for local llama.cpp;
       #   an override for a cloud server the probe can't reach)
+      # @param params [Hash{String, Symbol => Object}] extra payload keys for
+      #   this connection, e.g.
+      #   +{'chat_template_kwargs' => {'enable_thinking' => false}}+
       # @return [ChatTransport]
-      def self.from_openai_server(server:, model:, api_key: 'not-needed', context_window: nil)
+      def self.from_openai_server(server:, model:, api_key: 'not-needed', context_window: nil,
+                                  params: {})
         base = server.to_s.strip.chomp('/').delete_suffix('/v1')
         new(
           model: model,
@@ -90,7 +123,8 @@ module Pikuri
           assume_model_exists: true,
           api_base: "#{base}/v1",
           api_key: api_key,
-          context_window: context_window
+          context_window: context_window,
+          params: params
         )
       end
 
@@ -101,21 +135,27 @@ module Pikuri
       # @param api_key [String, nil]
       # @param context_window [Integer, nil]
       # @param faraday_adapter [Class, Symbol, nil]
+      # @param params [Hash{String, Symbol => Object}]
       # @raise [ArgumentError] if +api_base+ or +api_key+ is set without
       #   a +provider+ (the provider names the config slots the
-      #   connection overrides map onto)
-      def initialize(model:, provider: nil, assume_model_exists: false,
-                     api_base: nil, api_key: nil, context_window: nil, faraday_adapter: nil)
+      #   connection overrides map onto), or if +params+ is not a Hash, or
+      #   names one key in both the +String+ and +Symbol+ spelling
+      def initialize(model:, provider: nil, assume_model_exists: false, api_base: nil,
+                     api_key: nil, context_window: nil, faraday_adapter: nil, params: {})
         if (api_base || api_key) && provider.nil?
           raise ArgumentError, "api_base/api_key require a provider, got #{provider.inspect}"
         end
+        raise ArgumentError, "params must be a Hash, got #{params.class}" unless params.is_a?(Hash)
 
-        super
+        super(model: model, provider: provider, assume_model_exists: assume_model_exists,
+              api_base: api_base, api_key: api_key, context_window: context_window,
+              faraday_adapter: faraday_adapter, params: deep_symbolize(params))
       end
 
       # Model-resolution kwargs to spread into +RubyLLM.chat+ /
       # +RubyLLM::Context#chat+. Excludes the connection fields (those configure
-      # the +Context+, not the +chat+ call).
+      # the +Context+, not the +chat+ call) and +params+ (a +with_params+ call
+      # on the built chat).
       #
       # @return [Hash{Symbol => String, Symbol, Boolean, nil}]
       def chat_kwargs
@@ -133,14 +173,57 @@ module Pikuri
       # Default +Data#inspect+ would print +api_key+ verbatim into any log line
       # or backtrace. Redact it.
       #
+      # +params+ is configuration rather than a credential channel, so it prints
+      # verbatim — anything sensitive a host puts there lands in every log line
+      # and backtrace that inspects a transport.
+      #
       # @return [String]
       def inspect
         "#<#{self.class} model=#{model.inspect} provider=#{provider.inspect} " \
           "assume_model_exists=#{assume_model_exists} api_base=#{api_base.inspect} " \
           "api_key=#{api_key.nil? ? 'nil' : '[REDACTED]'} context_window=#{context_window.inspect} " \
-          "faraday_adapter=#{faraday_adapter.inspect}>"
+          "faraday_adapter=#{faraday_adapter.inspect} params=#{params.inspect}>"
       end
       alias to_s inspect
+
+      private
+
+      # Recursively symbolize +value+'s hash keys, freezing what it builds.
+      # Scalars pass through as they are — only the containers are rebuilt.
+      #
+      # @param value [Hash, Array, Object] any +params+ subtree.
+      # @return [Hash, Array, Object] the same shape, symbol-keyed, with every
+      #   hash / array node frozen.
+      # @raise [ArgumentError] if a hash names one key in both spellings —
+      #   the merge can send only one of them, and picking silently is the
+      #   failure mode this whole channel exists to avoid.
+      def deep_symbolize(value)
+        case value
+        when Hash
+          symbolized = value.to_h { |k, v| [symbolize_key(k), deep_symbolize(v)] }
+          reject_collisions(value) if symbolized.size < value.size
+          symbolized.freeze
+        when Array
+          value.map { |item| deep_symbolize(item) }.freeze
+        else
+          value
+        end
+      end
+
+      # @param key [Object] a +params+ hash key.
+      # @return [Object] +key+ as a +Symbol+, or unchanged if it has no
+      #   symbol form (an +Integer+ key in a provider's own table).
+      def symbolize_key(key)
+        key.respond_to?(:to_sym) ? key.to_sym : key
+      end
+
+      # @param table [Hash] the pre-symbolize hash whose keys collided.
+      # @return [void]
+      # @raise [ArgumentError] always, naming the colliding spellings.
+      def reject_collisions(table)
+        collided = table.keys.group_by { |k| symbolize_key(k) }.select { |_, ks| ks.size > 1 }
+        raise ArgumentError, "params names a key twice: #{collided.values.flatten.inspect}"
+      end
     end
   end
 end

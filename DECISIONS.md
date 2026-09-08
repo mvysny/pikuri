@@ -6,7 +6,7 @@ A living record of the design decisions behind pikuri — especially the
 alternative. Both candidate homes refuse it on their own stated terms —
 yardoc is browsed standalone on rubydoc.info by someone at the API, who
 gains nothing from an argument against a design that never shipped; and
-CLAUDE.md is loaded into *every* session's context under a 32 KB cap, so
+CLAUDE.md is loaded into *every* session's context under a 34 KB cap, so
 rationale there is paid for on every turn. This file is the lazy side of
 that split: never context-loaded, read only when someone asks "why this
 way?".
@@ -78,6 +78,94 @@ already editing that doc and the inline rejection is crowding out the live
 design.
 
 ---
+
+## D_opaque_request_params — An extra request parameter rides the transport as an opaque table, never a typed flag (2026-09-08)
+
+**Status:** Accepted; shipped 2026-09-08 as `ChatTransport#params`, applied in
+{Pikuri::Agent#build_chat} and re-applied by
+{Pikuri::Agent#apply_transport!}.
+
+**Context.** A local llama.cpp serving Qwen 3.6 will not stop thinking for any
+prompt-level trick, and a host that needs a *short* answer pays for it. On a
+matched benchmark — same eight openers, same agent, only the injected parameter
+differing — thinking-off named a conversation in **1.2 s and 8 completion tokens
+against 31.1 s and 625**; with thinking on, one of the eight put ~4000
+characters of chain-of-thought where a title belonged. (Eight runs decide
+nothing subtle, but nothing subtle is being claimed: the gap is a factor of 25,
+and the failure is visible to the naked eye.) Only `chat_template_kwargs: {enable_thinking: false}` suppresses it,
+and pikuri named no field for such a key. The one host that needed it reached
+for `faraday_adapter` and rewrote the serialized body from a Faraday
+middleware — coupling itself to ruby_llm registering `faraday.request :json`
+*before* the adapter, re-parsing and re-serializing every request, sniffing the
+URL path so a `/props` probe was left alone, and occupying the single adapter
+slot {Pikuri::Testing.fake_transport} needs, so a params-carrying connection
+could not be fake-tested at all.
+
+**Decision.** `ChatTransport` grows a `params` field, and `Agent` hands it to
+ruby_llm's own `Chat#with_params`, which deep-merges it into the completion
+payload before serialization. The table is **opaque**: pikuri validates only its
+*shape* — a Hash, naming no key twice — translates nothing, and knows no
+parameter by name. Keys are deep-symbolized on the way in, without which a table
+read from a host's TOML would land a second `"temperature"` beside the payload's
+`:temperature` instead of overriding it, leaving which one wins to the server's
+JSON parser; a table spelling one key both ways is the one thing that raises,
+since the merge can carry only one of them and picking silently is the failure
+this entry is about.
+
+It rides the *transport* rather than a call because the spelling is
+per-model-per-server, exactly like `context_window` — so it survives every
+forwarding site for free: a sub-agent spawn (`parent.transport.with(...)`), a
+mid-conversation switch, any `Data#with`.
+
+**Rejected: a typed flag — `thinking: false`, or a map onto ruby_llm's
+`with_thinking(effort:/budget:)`.** The obvious API, and the one first asked
+for. The wire spelling is not one thing: llama.cpp+Qwen wants that kwarg, a
+sibling GGUF's chat template spells its own differently, OpenAI wants
+`reasoning_effort`, Anthropic wants `thinking: {type: "disabled"}` — so a
+boolean needs translating per provider *and per chat template*, and a wrong
+translation fails in the one direction that costs: **silently not applied**,
+i.e. the essay where the title belongs. `reasoning_effort` was measured being
+accepted and then ignored (`"none"` and `"low"` both still emitted 679–1070
+reasoning tokens against a 1493-token baseline) — exactly that shape. A key
+promising a portability it has to guess at is worse than one that says only
+what it sends. Sugar can still be added *above* this, in a host's config
+parser, where a bad guess is one host's bug.
+
+**Rejected: a per-call `run_loop(params:)`.** The parameter belongs to the
+connection, not the turn, so every forwarding site would have to remember it —
+and `ChatTransport` exists precisely because a site that drops a field routes
+the chat wrong. A sub-agent would silently start thinking again.
+
+**Rejected: leaving it to the host's `faraday_adapter`.** The status quo, and
+it works. But it makes every host wanting a request key own an HTTP
+body-rewriter pinned to ruby_llm's middleware order; two hosts wanting one
+would own two, and neither could combine it with a scripted fake.
+`Chat#with_params` is available under the `~> 1.16` constraint pikuri already
+carries, so the workaround was buying nothing.
+
+**Rejected: guarding the merge.** `Utils.deep_merge` lets a table overwrite
+`messages`, `tools` or `stream` and wedge the loop, or `model` and send one the
+transport does not think it is using (the cap and `ModelSwitched` then describe
+a different model than the wire does). A four-key
+denylist was considered and dropped: it would be the first place pikuri claimed
+to know what a parameter *means*, and that failure is loud and immediate — a
+broken request, not the silent non-application this entry is about. Documented
+on the attribute instead.
+
+**Rejected: making thinking-off the server's property, with no code at all.**
+`llama-server` has the flags (`--reasoning-budget 0`, `--chat-template-kwargs`)
+and a router can alias one GGUF twice, so thinking-off becomes a *connection*.
+Strictly cleaner where there is VRAM for a second copy of the weights (~20 GB
+at Q4_K_M), and it stays available to anyone who has it — but that fork belongs
+to a host's deployment rather than to the library, and the parameter is what
+works on one box.
+
+**Consequences.** `faraday_adapter` is a test / observability seam again, and
+`Testing.fake_transport(params:)` covers a params-carrying connection. A host
+that shipped the adapter workaround deletes it and keeps its config spelling.
+`params` joins structural equality, so two transports differing only in it are
+different transports — which is what lets one model on one server be declared
+twice, once thinking and once not.
 
 ## D_claude_md_index — Root CLAUDE.md is an index; gem invariants live in per-gem CLAUDE.md (2026-09-08)
 

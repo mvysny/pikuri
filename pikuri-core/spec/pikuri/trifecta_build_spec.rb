@@ -22,6 +22,7 @@ RSpec.describe 'Pikuri::Trifecta.build' do
       def after_tool_result(&_block) = self
       def with_context(*, **) = self
       def with_model(*, **) = self
+      def with_params(**) = self
       def add_message(*, **) = self
     end.new
   end

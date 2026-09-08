@@ -286,6 +286,50 @@ server's URL with the old key. In a host where different
 conversations legitimately run different models, that's a bug you'd
 debug for an afternoon.
 
+## The parameter your model needs and pikuri doesn't name
+
+The bundle carries one more thing, for the same reason it carries
+the URL: a request key that is a property of *this model on this
+server* and of nothing else.
+
+The canonical one is thinking. A local Qwen 3.6 reasons before
+every answer, which is what you want for a hard question and
+ruinous for a short one — asked for a few-word conversation title,
+it spent 31 seconds and 625 completion tokens, and on one of eight
+tries put four thousand characters of chain-of-thought where the
+title went. With reasoning off, the same eight titles cost 1.2
+seconds and 8 tokens. Nothing you can write in a prompt turns it
+off. The only thing that does is a request parameter:
+
+```ruby
+Pikuri::Agent::ChatTransport.from_openai_server(
+  server: 'http://localhost:8080',
+  model:  'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M',
+  params: { 'chat_template_kwargs' => { 'enable_thinking' => false } }
+)
+```
+
+`params` lands in the request body as written. pikuri does not know
+what `chat_template_kwargs` means, and that is deliberate: there is
+no `thinking: false` flag, because "off" has no single spelling.
+llama.cpp reads that kwarg, OpenAI reads `reasoning_effort`,
+Anthropic reads a `thinking` object, and the next GGUF's chat
+template invents its own. A flag would have to guess, and a wrong
+guess doesn't raise — it sends a parameter the server shrugs at, so
+you get the four-thousand-character essay while your code says
+thinking is off. (`reasoning_effort` does exactly that on
+llama.cpp: accepted, then ignored, a full reasoning block either
+way.) Sending precisely what you wrote is the honest failure mode —
+if it doesn't work, it's your table, and `curl` will say so.
+
+Because it rides the transport rather than the call, it follows the
+connection everywhere the connection goes: a sub-agent spawned from
+this parent, a mid-conversation model switch, a conversation
+reopened tomorrow. That's also how a host gets both behaviours out
+of one loaded model — build two transports over the same server,
+one carrying the table and one not, and hand each job the one it
+wants. No second copy of the weights, no second process.
+
 ## A tool instance two agents can reach
 
 Now the consequence hosts don't see coming.

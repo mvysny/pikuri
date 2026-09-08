@@ -68,11 +68,14 @@ module Pikuri
     #   engaged ({Gate#block!}), the adapter parks before serving each response
     #   until {Gate#release!} — so a test can observe spinner / queued-injection
     #   / Ctrl+C paths through the real turn lifecycle. Default +nil+ (no gating).
+    # @param params [Hash{String, Symbol => Object}] extra payload keys this
+    #   fake connection carries; they reach the request body the scripted
+    #   adapter is handed
     # @yieldparam script [Script] the conversation builder
     # @return [Agent::ChatTransport] carrying the scripted adapter; pass it as
     #   +Agent.new(transport:)+
     def self.fake_transport(model: 'fake-model', context_window: 8192,
-                            api_base: 'http://fake.invalid/v1', gate: nil)
+                            api_base: 'http://fake.invalid/v1', gate: nil, params: {})
       script = Script.new
       yield script if block_given?
       Agent::ChatTransport.new(
@@ -84,7 +87,8 @@ module Pikuri
         api_base: api_base,
         api_key: 'not-needed',
         context_window: context_window,
-        faraday_adapter: build_adapter(script.responses, gate)
+        faraday_adapter: build_adapter(script.responses, gate),
+        params: params
       )
     end
 

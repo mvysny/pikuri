@@ -10,6 +10,8 @@ shipped without one.
 
 ## [Unreleased]
 
+- Add `Agent::ChatTransport#params` — an opaque table of extra chat-completion keys the connection carries and ruby_llm deep-merges into every request (`params: {'chat_template_kwargs' => {'enable_thinking' => false}}` stops a Qwen thinking); pikuri translates nothing and knows no parameter by name. See `DECISIONS.md` `D_opaque_request_params`.
+- Add `params:` to `Agent::ChatTransport.from_openai_server` and `Testing.fake_transport` — the host factory takes the table, and a scripted-HTTP spec can now cover a params-carrying connection instead of rewriting the request body from a Faraday adapter.
 - Add `Tool::Result(content:, summary:)` plus `Tool#display_name` / `#describe_call` — a tool composes its own one-line display form where it still holds the structure it flattens for the model, so a chrome renders `Write(lib/foo.rb)` / `Added 2 lines, removed 3 lines` instead of an argument dump and a slice of the observation. See `DECISIONS.md` `D_tool_summary_lines`.
 - Add `Tool.display_name_for` / `.describe_arguments` / `.describe_content` / `.pluralize` / `.format_bytes` — the mechanical defaults every tool gets for free, including an MCP tool (`server__tool` renders `Server::Tool`) and a replayed history with no tool left to ask.
 - Add `Workspace::Listing.render_with_count` — `render` plus the row count, which the rendered text cannot be counted for (nested rows and a truncation marker are lines too).

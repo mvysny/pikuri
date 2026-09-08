@@ -20,6 +20,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
 
       def model;                       @model_info; end
       def with_instructions(text);     @instructions = text; self; end
+      def with_params(**);             self; end
       def with_tool(tool);             @tools << tool; self; end
       def after_message(&);            self; end
       def before_tool_call(&);         self; end

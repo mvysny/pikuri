@@ -62,6 +62,15 @@ RSpec.describe Pikuri::Agent do
         self
       end
 
+      # Records each +with_params+ install, so a switch spec can assert the new
+      # transport's parameters replaced the old one's rather than merging.
+      attr_reader :params_installs
+
+      def with_params(**params)
+        (@params_installs ||= []) << params
+        self
+      end
+
       def after_message(&block);     @hooks[:after_message] << block;     self; end
       def before_tool_call(&block);  @hooks[:before_tool_call] << block;  self; end
       def after_tool_result(&block); @hooks[:after_tool_result] << block; self; end
@@ -444,6 +453,26 @@ RSpec.describe Pikuri::Agent do
         ev = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) }
         assert_equal 'http://cloud:9000/v1', ev.to.api_base
         assert_equal 'sek', ev.to.api_key
+      end
+
+      # +Chat#with_params+ replaces rather than merges, so the install must be
+      # unconditional: a switch onto a connection carrying no parameters has to
+      # clear the previous one's, and neither +with_model+ nor +with_context+
+      # touches them.
+      it 'installs the new transport-s params on every switch, empty ones included' do
+        agent = build_agent
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'thinker', context_window: 8_192,
+                         params: { 'chat_template_kwargs' => { 'enable_thinking' => false } }
+                       ))
+        agent.run_loop(user_message: 'again',
+                       transport: Pikuri::Agent::ChatTransport.new(model: 'plain', context_window: 8_192))
+
+        assert_equal [{}, # the build_agent construction, no params
+                      { chat_template_kwargs: { enable_thinking: false } },
+                      {}],
+                     fake_chat.params_installs
       end
     end
   end

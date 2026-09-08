@@ -27,6 +27,7 @@ RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
 
       def model; @model_info; end
       def with_instructions(_text); self; end
+      def with_params(**); self; end
       def with_tool(tool); @tools << tool; self; end
       def after_message(&_block); self; end
       def before_tool_call(&_block); self; end

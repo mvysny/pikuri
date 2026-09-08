@@ -735,7 +735,9 @@ module Pikuri
     # +nil+-model fill before the structural compare, so a transport
     # deferring to the default model doesn't switch spuriously.
     # +Chat#with_model+ keeps history and callbacks. Emits
-    # {Event::ModelSwitched}, then re-resolves and re-emits the cap.
+    # {Event::ModelSwitched}, then re-resolves and re-emits the cap. The new
+    # transport's +params+ replace the old one's, so a switch cannot leave a
+    # thinking-off kwarg on a connection that never asked for one.
     #
     # Because the history is kept, every turn in it is now potentially from
     # another model, so {#strip_foreign_thinking!} runs before the event —
@@ -760,6 +762,7 @@ module Pikuri
       old = @transport
       @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
       @chat.with_model(filled.model, provider: filled.provider, assume_exists: filled.assume_model_exists)
+      @chat.with_params(**filled.params)
       @transport = filled
       strip_foreign_thinking!
       @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
@@ -772,10 +775,14 @@ module Pikuri
     # transport gets a plain dup of the global config, which resolves the model
     # exactly as +RubyLLM.chat+ would.
     #
+    # A transport's +params+ ride the *chat* rather than the context, because
+    # ruby_llm deep-merges them into the completion payload — see
+    # {ChatTransport}'s +== Extra request parameters+.
+    #
     # @param transport [ChatTransport]
     # @return [RubyLLM::Chat]
     def build_chat(transport)
-      build_context(transport).chat(**transport.chat_kwargs)
+      build_context(transport).chat(**transport.chat_kwargs).with_params(**transport.params)
     end
 
     # A +RubyLLM::Context+ carrying +transport+'s connection overrides on the

@@ -33,6 +33,10 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         self
       end
 
+      def with_params(**)
+        self
+      end
+
       def with_tool(tool)
         @tools << tool
         self

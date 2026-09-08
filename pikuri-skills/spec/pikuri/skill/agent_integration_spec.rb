@@ -12,8 +12,8 @@ require 'pikuri-core'
 # Self-contained: this spec ships its own minimal fake +RubyLLM::Chat+
 # stand-in rather than depending on pikuri-core's test fixtures. The
 # inline copy stays small because integration tests exercise only the
-# surface +Agent#initialize+ touches (with_instructions, with_tool,
-# after_message / before_tool_call / after_tool_result hooks, ask).
+# surface +Agent#initialize+ touches (with_instructions, with_params,
+# with_tool, after_message / before_tool_call / after_tool_result hooks, ask).
 RSpec.describe 'Pikuri::Skill::Extension agent integration' do
   let(:fake_model) { Struct.new(:context_window, :id).new(nil, 'm') }
 
@@ -29,6 +29,7 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
 
       def model; @model_info; end
       def with_instructions(text); @instructions = text; self; end
+      def with_params(**); self; end
       def with_tool(tool); @tools << tool; self; end
       def after_message(&_block); self; end
       def before_tool_call(&_block); self; end
