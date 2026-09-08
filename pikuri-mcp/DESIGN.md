@@ -13,7 +13,7 @@ homed elsewhere, and is deliberately **not** repeated here:
   defenses are `SECURITY.md`.
 - **The invariants** — the `Subprocess.spawn` stdio carve-out, why MCP
   tools bypass `Pikuri::Tool`, and the `env` credential channel — are
-  CLAUDE.md seams whose authoritative text lives in the
+  this gem's [`CLAUDE.md`](CLAUDE.md) seams whose authoritative text lives in the
   {Pikuri::Mcp::Servers} / {Pikuri::Mcp::ClientWrapper} /
   {Pikuri::Mcp::Registry} YARD.
 

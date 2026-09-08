@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-# Executable form of the grep tripwires CLAUDE.md's seams declare.
+# Executable form of the grep tripwires the CLAUDE.md seams declare — the
+# root file's and the per-gem +pikuri-*/CLAUDE.md+ files' alike.
 #
 # These used to live in CLAUDE.md as literal shell one-liners next to the
 # invariant each one guards. That put ~2 KB of shell into a file loaded

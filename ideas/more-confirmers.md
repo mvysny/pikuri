@@ -16,7 +16,7 @@ moved to its permanent homes: {Pikuri::Workspace::Confirmer} and
 {Pikuri::Workspace::Confirmer::Terminal} own the per-symbol rationale
 (the `#ask` return type, the edit/reason axes, the still-rejected
 `:once/:always` fatigue knob, and the sanitizer-gated editable pre-fill),
-and CLAUDE.md's **Confirmer seam** owns the invariant. **Still open**
+and `pikuri-workspace/CLAUDE.md`'s **Confirmer seam** owns the invariant. **Still open**
 (this file): whether a *parent-level* `fetch` should ever be gated by an
 editable-URL confirmer (the author-vs-approver dichotomy is settled by the
 shipped seat — only this wiring question remains), the ingest-axis output
@@ -52,7 +52,7 @@ Related, already worked out:
 confirmation of the *task prompt* before dispatch. That gate is the
 **egress-axis input confirmation** — it already ships as a full author
 seat with a reject-reason channel (design now in
-{Pikuri::Workspace::Confirmer} + CLAUDE.md's Confirmer seam).
+{Pikuri::Workspace::Confirmer} + `pikuri-workspace/CLAUDE.md`'s Confirmer seam).
 What remains are the *harder* confirmer shapes this file collects:
 
 1. **An LLM-driven `fetch` on the parent** — the LLM picks the entire URL
@@ -66,7 +66,7 @@ What remains are the *harder* confirmer shapes this file collects:
 (The original list opened with a third item — "make the task-prompt gate
 a true author seat plus a reject-reason channel." That one shipped; its
 worked-out design graduated to {Pikuri::Workspace::Confirmer} +
-{Pikuri::Workspace::Confirmer::Terminal} and CLAUDE.md's Confirmer seam,
+{Pikuri::Workspace::Confirmer::Terminal} and `pikuri-workspace/CLAUDE.md`'s Confirmer seam,
 so it is no longer detailed here.)
 
 The ideas split along two axes. Keeping them distinct is load-bearing: a

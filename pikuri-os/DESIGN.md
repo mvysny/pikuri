@@ -5,8 +5,10 @@ chapter ([`book/os-assistant.md`](../book/os-assistant.md)) nor
 the per-class YARD headers — the cross-cutting *why* that spans several
 classes at once. The gem's threat model (kernel-severed egress +
 confirmed mutations + the passive-command detector) is **not** here:
-it graduated into the book's OS-assistant chapter and the Sandbox / Confirmer / Workspace seam
-invariants in [`../CLAUDE.md`](../CLAUDE.md). What remains for this file
+it graduated into the book's OS-assistant chapter and the Sandbox seam
+([`../pikuri-code/CLAUDE.md`](../pikuri-code/CLAUDE.md)) plus the
+Confirmer / Workspace seams
+([`../pikuri-workspace/CLAUDE.md`](../pikuri-workspace/CLAUDE.md)). What remains for this file
 is the file-index story, which no single class owns:
 
 1. the choice of backend engine (`localsearch` vs `recoll`), spanning

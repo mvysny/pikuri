@@ -2473,7 +2473,7 @@ more than wiring through ruby_llm's existing primitive.
     just the shell subprocess — strictly stronger than pikuri's
     bubblewrap-around-`Bash`. But pikuri's file tools run in-process as
     the real user *on purpose*, so `File.writable?` is exact and backs
-    the confirm-writable-writes posture (`CLAUDE.md` §Workspace seam).
+    the confirm-writable-writes posture (`pikuri-workspace/CLAUDE.md` §Workspace seam).
     Adopting this would mean giving that up. A real fork, decided the
     other way.
 

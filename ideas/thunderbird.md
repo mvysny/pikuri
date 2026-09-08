@@ -5,7 +5,7 @@ calendar-create) both shipped and validated against a real populated
 Thunderbird profile.** Everything shipped has graduated: empirical storage
 data → `pikuri-thunderbird/DESIGN.md`, per-symbol design + rationale (including
 the rejected alternatives, inline beside the live design) → the class yardocs,
-invariants → CLAUDE.md's *Thunderbird no-egress / no-send seam*.
+invariants → `pikuri-thunderbird/CLAUDE.md`'s *Thunderbird no-egress / no-send seam*.
 
 What is left here is only work not done yet. When a line below is built or
 answered, it graduates the same way and this note shrinks again.
