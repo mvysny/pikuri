@@ -45,8 +45,11 @@ module Pikuri
     # @!attribute [r] context_window
     #   @return [Integer, nil] explicit context-window cap for this
     #     model-on-server, or +nil+ to defer to {ContextWindowDetector}. Travels
-    #     with the model because the cap *is* per-model-per-server. Never sent to
-    #     ruby_llm — pure pikuri metadata read by
+    #     with the model because the cap *is* per-model-per-server. Setting it
+    #     skips the +/props+ probe altogether, so this server's
+    #     {Agent::ServerPermits} size is not auto-detected either — a host that
+    #     sets this and cares about throttling calls +ServerPermits.limit+ too.
+    #     Never sent to ruby_llm — pure pikuri metadata read by
     #     {Agent#detect_and_emit_context_cap!}, and the cap-inheritance channel:
     #     a spawned agent gets +parent.transport.with(context_window:
     #     parent.context_window_cap)+ so the resolved cap rides along without a
@@ -58,9 +61,7 @@ module Pikuri
     #     inject a VCR / logging / *scripted-fake* adapter without touching the
     #     global +RubyLLM.config+. Its worked use is
     #     {Pikuri::Testing.fake_transport}, which bakes an anonymous scripted
-    #     adapter here so the real ruby_llm loop runs against canned HTTP. Only
-    #     honoured on the connection-override path ({#connection_overrides?}),
-    #     which any adapter-carrying transport is on (it also sets +api_base+).
+    #     adapter here so the real ruby_llm loop runs against canned HTTP.
     class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key,
                                       :context_window, :faraday_adapter)
       # Build an +:openai+-provider transport for an OpenAI-compatible server

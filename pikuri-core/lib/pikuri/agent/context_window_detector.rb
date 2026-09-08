@@ -7,16 +7,23 @@ require 'cgi'
 
 module Pikuri
   class Agent
-    # Resolves the model's context-window cap by asking the server that serves
-    # it. The only authoritative runtime source is llama.cpp's non-standard
-    # +/props+ endpoint, reporting the server's *launched* +n_ctx+ (the real
-    # window — possibly smaller than the model's max, e.g. +llama-server -c
-    # 8192+ on a 128k model). Returns +nil+ — an honest "we don't know" — for
-    # anything else. {Agent#detect_and_emit_context_cap!} calls it only when
-    # the transport carries no explicit {ChatTransport#context_window}.
+    # Asks the server that serves the model what it is capable of, and answers
+    # a {Props} carrying the two facts pikuri can use:
+    #
+    #   props = ContextWindowDetector.detect(transport)
+    #   props.n_ctx        # => 16384 — the window to budget against
+    #   props.total_slots  # => 4 — how many requests it serves at once
+    #
+    # The only authoritative runtime source is llama.cpp's non-standard +/props+
+    # endpoint, reporting the server's *launched* +n_ctx+ (the real window —
+    # possibly smaller than the model's max, e.g. +llama-server -c 8192+ on a
+    # 128k model) beside the slot count {ServerPermits} sizes itself from. Both
+    # fields are +nil+ — an honest "we don't know" — for anything else.
+    # {Agent#detect_and_emit_context_cap!} calls it only when the transport
+    # carries no explicit {ChatTransport#context_window}.
     #
     # This probe and an explicit {ChatTransport#context_window} are the *only*
-    # sources: +RubyLLM::Model::Info#context_window+ is deliberately never
+    # cap sources: +RubyLLM::Model::Info#context_window+ is deliberately never
     # consulted (why: +DECISIONS.md+ +D_context_window_sources+).
     #
     # == The openai-provider gate + auto-derived URL
@@ -41,10 +48,27 @@ module Pikuri
     # == Failure handling
     #
     # Best-effort: HTTP error, timeout, non-JSON body, or a missing/invalid
-    # +n_ctx+ all return +nil+ with one +warn+ line. The CLAUDE.md
+    # +n_ctx+ all return {Props::NONE} with one +warn+ line. The CLAUDE.md
     # "secondary to the loop" carve-out — a wedged or non-llama.cpp server must
     # not abort agent construction over a cosmetic readout.
     class ContextWindowDetector
+      # What one probe learned. Every field is optional, because the two
+      # documents a llama.cpp answers carry different halves (a router's bare
+      # +/props+ has neither) and a non-llama server has no +/props+ at all.
+      #
+      # @!attribute [r] n_ctx
+      #   @return [Integer, nil] the server's launched context window.
+      # @!attribute [r] total_slots
+      #   @return [Integer, nil] how many requests it serves concurrently —
+      #     {ServerPermits}'s default size for this server.
+      class Props < Data.define(:n_ctx, :total_slots)
+        # Nothing learned: not an +:openai+ transport, no base URL, or a failed
+        # probe.
+        #
+        # @return [Props]
+        NONE = new(n_ctx: nil, total_slots: nil)
+      end
+
       # Subsystem logger; set its level with
       # +PIKURI_LOG_CONTEXTWINDOWDETECTOR+ or the global +PIKURI_LOG+.
       #
@@ -65,20 +89,20 @@ module Pikuri
       # @return [Integer]
       READ_TIMEOUT = 30
 
-      # Resolve the context-window cap for +transport+ by probing its server.
+      # Probe the server +transport+ targets.
       #
       # @param transport [Agent::ChatTransport] +provider+ gates the probe,
       #   +model+ drives the router +?model=+ hop
       # @param openai_base [String, nil] base URL the probe URL derives from;
       #   defaults to the live +RubyLLM.config.openai_api_base+ (passed
       #   explicitly only by tests, to avoid mutating global config)
-      # @return [Integer, nil] the launched +n_ctx+, or +nil+ for a
-      #   non-+:openai+ transport, unconfigured base, or any probe failure
+      # @return [Props] what the server reported; {Props::NONE} for a
+      #   non-+:openai+ transport, an unconfigured base, or any probe failure
       def self.detect(transport, openai_base: RubyLLM.config.openai_api_base)
-        return nil unless transport.provider == :openai
+        return Props::NONE unless transport.provider == :openai
 
         url = props_url(openai_base)
-        return nil if url.nil?
+        return Props::NONE if url.nil?
 
         new(probe_url: url, model_id: transport.model).probe
       end
@@ -104,8 +128,8 @@ module Pikuri
         @model_id = model_id
       end
 
-      # @return [Integer, nil] resolved cap, or +nil+ if the probe
-      #   produced none
+      # @return [Props] what the server reported; {Props::NONE} if the probe
+      #   produced nothing
       def probe
         probe_llama_cpp
       end
@@ -114,16 +138,17 @@ module Pikuri
 
       def probe_llama_cpp
         data = fetch_props(@probe_url)
-        return nil if data.nil?
+        return Props::NONE if data.nil?
 
-        n_ctx = positive_n_ctx(data)
-        return n_ctx if n_ctx
+        props = props_from(data)
+        return props if props.n_ctx
 
         # llama.cpp router: the bare /props carries no model, so its
-        # n_ctx is 0. Follow the router to the model's own instance.
+        # n_ctx is 0 (and it reports no slot count either). Follow the router
+        # to the model's own instance, which reports both.
         return probe_router_model if data['role'] == 'router' && model_id_present?
 
-        warn_and_nil(
+        warn_and_none(
           "no positive integer at default_generation_settings.n_ctx in #{@probe_url} response"
         )
       end
@@ -131,12 +156,12 @@ module Pikuri
       def probe_router_model
         url = "#{@probe_url}?model=#{CGI.escape(@model_id)}"
         data = fetch_props(url)
-        return nil if data.nil?
+        return Props::NONE if data.nil?
 
-        n_ctx = positive_n_ctx(data)
-        return n_ctx if n_ctx
+        props = props_from(data)
+        return props if props.n_ctx
 
-        warn_and_nil(
+        warn_and_none(
           "no positive integer at default_generation_settings.n_ctx in router probe #{url}"
         )
       end
@@ -161,20 +186,36 @@ module Pikuri
       end
 
       # @param data [Hash] a parsed +/props+ body
-      # @return [Integer, nil] the launched +n_ctx+ when present and
-      #   positive, else +nil+
-      def positive_n_ctx(data)
-        n_ctx = data.dig('default_generation_settings', 'n_ctx')
-        n_ctx if n_ctx.is_a?(Integer) && n_ctx.positive?
+      # @return [Props] the launched +n_ctx+ (nested under
+      #   +default_generation_settings+) and +total_slots+ (top level), each
+      #   +nil+ unless present and positive
+      def props_from(data)
+        Props.new(n_ctx: positive_int(data.dig('default_generation_settings', 'n_ctx')),
+                  total_slots: positive_int(data['total_slots']))
+      end
+
+      # @param value [Object] a value off a +/props+ body
+      # @return [Integer, nil]
+      def positive_int(value)
+        value if value.is_a?(Integer) && value.positive?
       end
 
       def model_id_present?
         !@model_id.nil? && !@model_id.empty?
       end
 
+      # @param reason [String]
+      # @return [nil] so {#fetch_props} can +return+ it
       def warn_and_nil(reason)
         LOGGER.warn("llama.cpp /props probe failed: #{reason}")
         nil
+      end
+
+      # @param reason [String]
+      # @return [Props] {Props::NONE}
+      def warn_and_none(reason)
+        warn_and_nil(reason)
+        Props::NONE
       end
     end
   end

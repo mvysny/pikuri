@@ -79,6 +79,138 @@ design.
 
 ---
 
+## D_llm_request_throttle — One permit per HTTP request, taken in ruby_llm's instrumenter (2026-09-08)
+
+**Status:** Accepted; shipped 2026-09-08 as
+{Pikuri::Agent::ServerPermits} + {Pikuri::Agent::RequestThrottle}. Widens
+`ContextWindowDetector.detect` to return a `Props(n_ctx:, total_slots:)`
+and makes `Agent#build_chat` always go through a `RubyLLM::Context`.
+Supersedes pikuri-web's host-side `ThrottledAdapter` (and the
+throttle-at-the-request entry in *that* repo's DECISIONS.md, which someone
+landing this should mark superseded): its `ModelCatalog.from_llms(permits:)`
+becomes `ServerPermits.limit` calls.
+
+**Context.** {Pikuri::Agent}'s threading yardoc invites hosts to run N
+agents one-thread-each, and answers only "will they corrupt each other?".
+Those N agents usually point at *one* llama.cpp, and nothing stopped them
+issuing N simultaneous completions at a server started with `--parallel 1`.
+llama.cpp does not fall over — it queues — which is precisely the problem:
+ruby_llm's `request_timeout` ticks while a request sits in the server's
+queue, its Faraday stack retries a `Timeout::Error` on POST (re-enqueueing
+work *behind* an original that may still be generating), and a request
+parked in the server cannot be cancelled or reprioritized from the client.
+Parked in *our* queue it can. Other servers differ — Ollama 503s above its
+cap, cloud endpoints don't care — so "unlimited" has to stay expressible.
+
+Capping at the *turn* level (a worker pool sized to the server's slots) is
+the obvious lever and over-restricts: a turn is inference *plus tools*, so a
+turn spending five seconds in `web_search` holds a slot while the server
+idles.
+
+**Decision.** A permit is scoped to exactly one HTTP request, acquired in
+ruby_llm's documented `config.instrumenter` hook (`rubyllm.com/instrumentation`)
+around its `request.ruby_llm` event, installed on the agent's own
+`RubyLLM::Context` so the process-global `RubyLLM.config` is untouched.
+Permits live in one process-wide registry keyed by the normalized server
+base — `D_rate_limiter_scope` applied to the inference server. Sizing is
+automatic: the `/props` probe already fetched for the context cap also
+reports `total_slots`, seeded as a default that a host's
+`ServerPermits.limit` overrides, so the default local llama.cpp throttles
+correctly with no config at all and everything unprobeable stays unlimited.
+
+Measured against ruby_llm 1.16.0 and a live llama.cpp router on
+`mavi-fw:8080` (2026-09-08), which is what closed the design:
+
+- One `request.ruby_llm` block *is* one HTTP request, streaming included: on
+  a 150-line streamed completion the block spanned 20.76 s and all 491 delta
+  chunks landed inside it (ruby_llm streams through Faraday's `on_data`,
+  driven from inside the `post`). A forced `Faraday::TimeoutError` retried
+  *inside* the same block — one block, two adapter entries.
+- `chat.ruby_llm` *wraps* `request.ruby_llm`, tool calls included, so it is
+  the whole-turn permit in disguise; it and every other event pass through
+  untouched.
+- Three agents against the router, same prompt: 1 permit → 21.3 s total,
+  landing at 7.1 / 14.2 / 21.3 s; 4 permits → 9.1 s, all three landing
+  together. `/props?model=<id>` reports `total_slots: 4`, and a
+  zero-configuration agent auto-sized to it.
+
+**Alternatives rejected.**
+
+- **A `Control` acquired around `@chat.complete`** (the first draft's shape).
+  Impossible, not merely worse: `Chat#complete` *is* ruby_llm's whole
+  recursive loop (`complete_once` → `handle_tool_calls` → `complete`), and
+  no exposed callback brackets a single request (`on_new_message` fires
+  after a sync response lands; `before_tool_call` / `after_tool_result`
+  bracket tools). A permit held there is a whole-turn permit, and under one
+  permit a parent whose tool spawns a sub-agent deadlocks against its own
+  child — the same nested-`Agent` shape `D_no_step_limit` deleted the other
+  instance of. Both are safe *only* because the parent holds nothing while a
+  tool runs.
+- **A Faraday adapter subclass** — what pikuri-web shipped, and it works,
+  since an HTTP request is where the acquire has to be. Against it: it
+  couples the throttle to the adapter choice and to undocumented middleware
+  order, it cannot see `Cancellable` (a parked request acquires, then finds
+  the turn dead), and `ChatTransport#faraday_adapter` is a
+  single-occupancy slot already held by `Pikuri::Testing.fake_transport`'s
+  scripted fake (`D_fake_transport`) — so a throttled agent could not be run
+  against the fake at all, and the throttle could not be tested through the
+  normal harness. The instrumenter is a second slot, so the two compose and
+  the concurrency spec exists.
+- **A `ServerPermits` instance a host builds and passes to `Agent.new`.**
+  Scoped to an agent *tree*: a web host's two sessions each holding their own
+  pool hammer the server exactly as before — the rejected "a limiter per
+  agent" of `D_rate_limiter_scope`, not a tuning choice. It is also one more
+  field every forwarding site (`SubAgentTool`, a mid-conversation switch) can
+  silently drop, which is the failure `ChatTransport` was invented to close.
+  A registry has nothing to forward.
+- **A `ChatTransport` field.** It is per-server *state*, not per-model data,
+  and a semaphore inside a `Data` breaks the structural equality hosts use to
+  detect a no-op model pick.
+- **Path-matching `/chat/completions`** (what downstream did). Everything
+  through the connection takes a permit instead — a `list_models` GET
+  queueing briefly behind a generation is harmless, and an embedding on a
+  llama.cpp really does occupy a slot.
+- **Releasing the permit across a retry's backoff.** Re-creates the
+  duplicate-work stampede above; a briefly idle slot is the cheaper failure.
+- **Machine-wide permits** (two pikuri processes, one server). Out, same
+  reasoning as `D_rate_limiter_scope`'s lock-file rejection.
+
+**Consequences.**
+
+- **Blocking inside an instrumentation hook is a semantic stretch** — the
+  name says observe, we gate. The contract ruby_llm documents is "yield and
+  return the block's result", which is all a gate needs, and it is the only
+  before/after hook the library offers around one request. Said so in
+  {Pikuri::Agent::RequestThrottle}'s yardoc so nobody "fixes" it.
+- **A displaced host instrumenter is chained, not clobbered.** `RubyLLM.context`
+  dups the global config, so a Rails host that set
+  `ActiveSupport::Notifications` would otherwise lose it the moment
+  `build_context` overwrote the slot. Every event is delegated to the captured
+  one; `tool_call.ruby_llm` in particular stays available, since {Pikuri::Agent}
+  already names it as the fix for `@pending_tool_call` under
+  `tool_concurrency`.
+- **`build_chat`'s `RubyLLM.chat` branch is gone**, so a no-override
+  transport now rides a plain config dup too (identical model resolution).
+  That is what makes the throttle unconditional — and it lifts the old
+  caveat that `faraday_adapter` was honoured only on the override path.
+  `T_request_permits` guards both halves.
+- **Waiting is slice-polled, not signalled.** `Cancellable#cancel!` must stay
+  a bare flag write callable from a SIGINT trap, so it can signal no
+  condition variable; the waiter wakes every `Cancellable::SLICE_SECONDS`
+  and re-checks. Release uses `broadcast` — a `signal` could wake exactly the
+  waiter about to raise `Cancelled` and strand the permit.
+- **No fairness and no priority in v1.** A broadcast-and-recheck loop is not
+  FIFO (downstream accepted the same from `Concurrent::Semaphore`). Decided,
+  not inherited: a user-facing turn jumping background work needs a ticket
+  queue, and that is the moment to build ordering. The acquire site is where
+  it would go.
+- **An explicit `ChatTransport#context_window` skips the probe**, so it skips
+  the auto-size too; such a host is configuring anyway and calls
+  `ServerPermits.limit`. Likewise a router serving two models with differing
+  slot counts: first probe wins, though the shared resource is really the GPU.
+- `bin/pikuri-corpus`'s `RubyLLM.embed` runs outside any `Agent` on the global
+  config, so it stays unthrottled — a `bin/` shortcut, not policy.
+
 ## D_no_step_limit — The loop is unbounded; a tool-call count was the wrong axis (2026-09-08)
 
 **Status:** Accepted; shipped 2026-09-08. Deletes

@@ -231,6 +231,24 @@ module Tripwires
     ),
 
     Check.new(
+      'T_request_permits',
+      'Every ruby_llm request rides a Context whose instrumenter is the permit gate.',
+      # Two halves of one seam, both of which a plausible tidy-up breaks
+      # silently — the throttle would simply stop gating, with every spec
+      # still green. A +RubyLLM.chat+ call is a chat built off the *global*
+      # config, i.e. one carrying no throttle; and the +instrumenter+ slot is
+      # single-occupancy, so anything else assigning it displaces the gate
+      # (a host's own instrumenter is chained *by* the gate, not installed
+      # over it).
+      -> {
+        hits(/RubyLLM\.chat\b/, files: lib_files, code_only: true) +
+          confined(/instrumenter\s*=[^=]/,
+                   allowed: ['pikuri-core/lib/pikuri/agent.rb'],
+                   code_only: true)
+      }
+    ),
+
+    Check.new(
       'T_history_encapsulated',
       'A conversation leaves the agent only as a History; no host reads @chat.messages.',
       -> { confined(/@chat\.messages/, allowed: ['pikuri-core/lib/pikuri/agent.rb']) }

@@ -40,15 +40,16 @@ RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
   let(:recorder)  { Pikuri::Agent::Listener::InMemoryEventList.new }
   let(:listeners) { Pikuri::Agent::ListenerList.new([recorder]) }
 
+  # +Context#chat+, not +RubyLLM.chat+: every chat an Agent builds rides a
+  # per-transport +RubyLLM::Context+.
   before do
     captured = fake_chat
-    @original_chat = RubyLLM.method(:chat)
-    RubyLLM.define_singleton_method(:chat) { |**_| captured }
+    @original_context_chat = RubyLLM::Context.instance_method(:chat)
+    RubyLLM::Context.define_method(:chat) { |**_| captured }
   end
 
   after do
-    original = @original_chat
-    RubyLLM.define_singleton_method(:chat) { |**kwargs| original.call(**kwargs) }
+    RubyLLM::Context.define_method(:chat, @original_context_chat)
   end
 
   # Minimal Mcp::Servers stand-in for lifecycle tests. Real Mcp::

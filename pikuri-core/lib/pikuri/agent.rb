@@ -56,6 +56,14 @@ module Pikuri
   #
   #   agents.map { |a| Thread.new { a.run_loop(user_message: task_for(a)) } }.each(&:join)
   #
+  # Thread-safety is not the only question those N agents raise, though: they
+  # usually point at *one* inference server, and N simultaneous completions
+  # against a llama.cpp started with +--parallel 1+ pile up in a queue inside
+  # the server, where pikuri can neither cancel nor reorder them while
+  # ruby_llm's request timeout ticks anyway. {ServerPermits} rations that — one
+  # permit per HTTP request, sized from the server's own slot count — and needs
+  # no per-agent wiring.
+  #
   # Two {Control}s are the sanctioned doors *in* from another thread, which is
   # why they carry locks and the agent does not: {Control::Cancellable} (stop
   # the turn) and {Control::Interloper} (queue a mid-turn message, delivered at
@@ -612,8 +620,10 @@ module Pikuri
       # put the summary on the +:tool+ message. A single slot, i.e. the
       # ordering assumption, is valid only while +tool_concurrency+ stays off,
       # which {Pikuri::Tool}'s +== Sharing+ asks for on separate grounds. Turn
-      # it on and the fix is ruby_llm's +instrumenter+ config option, whose
-      # +tool_call.ruby_llm+ payload carries +tool_call+ and +result+ together.
+      # it on and the fix is ruby_llm's +tool_call.ruby_llm+ instrumenter
+      # event, whose payload carries +tool_call+ and +result+ together —
+      # reachable through {RequestThrottle}, which already holds that slot and
+      # passes every non-request event through.
       @pending_tool_call = nil
 
       @chat.after_message do |msg|
@@ -689,21 +699,31 @@ module Pikuri
     end
 
     # Resolve the context-window cap and announce it as an
-    # {Event::ContextCap}. The transport's explicit +context_window+ wins;
-    # else {ContextWindowDetector} probes the server (+nil+ for a non-llama
-    # one). The cap rides {ChatTransport}, so a switch resolves the *new*
-    # transport's cap. Shared by {#run_configure} and {#apply_transport!}.
+    # {Event::ContextCap}, seeding {ServerPermits} with the slot count the same
+    # probe reports. The transport's explicit +context_window+ wins; else
+    # {ContextWindowDetector} probes the server ({ContextWindowDetector::Props::NONE}
+    # for a non-llama one). The cap rides {ChatTransport}, so a switch resolves
+    # the *new* transport's cap. Shared by {#run_configure} and
+    # {#apply_transport!}.
     #
     # @return [void]
     def detect_and_emit_context_cap!
       # Probe the server this transport targets: after a cross-server switch
       # the chat points at +@transport.api_base+, but the global config still
       # names the old server — so derive the base from the transport.
-      @context_window_cap = @transport.context_window ||
-                            ContextWindowDetector.detect(
-                              @transport,
-                              openai_base: @transport.api_base || RubyLLM.config.openai_api_base
-                            )
+      base = @transport.api_base || RubyLLM.config.openai_api_base
+      props = if @transport.context_window
+                ContextWindowDetector::Props::NONE
+              else
+                ContextWindowDetector.detect(@transport, openai_base: base)
+              end
+      @context_window_cap = @transport.context_window || props.n_ctx
+      # The server's own slot count is the right default permit size, and this
+      # probe is the one place pikuri already holds it. A host-set
+      # {ServerPermits.limit} still wins, and the +/props+ GET itself takes no
+      # permit — it runs on {ContextWindowDetector}'s own Faraday, outside
+      # ruby_llm and so outside the throttle it is sizing.
+      ServerPermits.default(base, props.total_slots) if props.total_slots
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
     end
 
@@ -744,18 +764,16 @@ module Pikuri
       detect_and_emit_context_cap!
     end
 
-    # Build the chat for +transport+: through a dedicated +RubyLLM::Context+
-    # when it overrides the connection, else through the process-global
-    # +RubyLLM.chat+.
+    # Build the chat for +transport+ — always through a dedicated
+    # +RubyLLM::Context+, never +RubyLLM.chat+, so every chat this agent builds
+    # carries the {RequestThrottle} and any +faraday_adapter+. A no-override
+    # transport gets a plain dup of the global config, which resolves the model
+    # exactly as +RubyLLM.chat+ would.
     #
     # @param transport [ChatTransport]
     # @return [RubyLLM::Chat]
     def build_chat(transport)
-      if transport.connection_overrides?
-        build_context(transport).chat(**transport.chat_kwargs)
-      else
-        RubyLLM.chat(**transport.chat_kwargs)
-      end
+      build_context(transport).chat(**transport.chat_kwargs)
     end
 
     # A +RubyLLM::Context+ carrying +transport+'s connection overrides on the
@@ -770,6 +788,12 @@ module Pikuri
     # +RubyLLM.config+, so it stays per-agent — the seam
     # {Pikuri::Testing.fake_transport} uses to run the real ruby_llm loop
     # against a scripted HTTP backend.
+    #
+    # So does the {RequestThrottle}, on the same config's +instrumenter+ slot:
+    # per-transport, global config untouched, and keyed on the base URL the
+    # connection will actually dial — which is why it is resolved *after* the
+    # override assignments above. A transport carrying no +provider+ names no
+    # config slot to read, so it throttles nothing (see {ServerPermits}).
     #
     # @param transport [ChatTransport]
     # @return [RubyLLM::Context]
@@ -786,7 +810,27 @@ module Pikuri
         # prompt then arrives under a role token the model was not trained
         # on. pikuri targets local servers first, so ask for `system`.
         c.openai_use_system_role = true if c.respond_to?(:openai_use_system_role=)
+        c.instrumenter = RequestThrottle.new(
+          key: permit_key(slug, c), cancellable: @cancellable, chain: c.instrumenter
+        )
       end
+    end
+
+    # The server URL {ServerPermits} rations, read off the context config the
+    # chat is about to use rather than re-derived, so the key can't drift from
+    # the connection.
+    #
+    # @param slug [Symbol, nil] the transport's provider.
+    # @param config [RubyLLM::Configuration] this context's config, connection
+    #   overrides already applied.
+    # @return [String, nil] the base URL, or +nil+ when the provider names no
+    #   +_api_base+ slot (a fixed-base provider like Anthropic) or has none
+    #   configured — unlimited, which is the right answer for all of them.
+    def permit_key(slug, config)
+      return nil if slug.nil?
+
+      reader = "#{slug}_api_base"
+      config.respond_to?(reader) ? config.public_send(reader) : nil
     end
 
     # Fire {Extension#on_user_message} on every extension, appending any
