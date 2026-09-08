@@ -128,7 +128,7 @@ invariant is a new line in that gem's file, not the root. The root's
 **Status:** Accepted; shipped 2026-09-08. Amends `D_llm_request_throttle`'s
 "Sizing is automatic" paragraph, which held only for a transport carrying no
 explicit cap. Closes pikuri-tui's `Q_upstream_probe_skip`, so its
-`[[server]] max_requests` key is an *override* rather than the only sizing a
+`[[server]] max_concurrent_requests` key is an *override* rather than the only sizing a
 capped connection could get.
 
 **Context.** One `/props` document answers two independent questions, and
@@ -139,7 +139,7 @@ of the two a host can state — so stating the cap silently forfeited the slot
 count, and the connection ran unthrottled unless the host also called
 `ServerPermits.limit` by hand. Downstream this becomes visibly wrong rather
 than merely surprising: pikuri-tui and pikuri-web split their config into
-`[[server]]` (`url`, `api_key`, `max_requests`) and `[[llm]]` (`name`,
+`[[server]]` (`url`, `api_key`, `max_concurrent_requests`) and `[[llm]]` (`name`,
 `model`, `context_window`), where a key in the *model* table would suppress
 the probe that seeds the *server* table.
 
