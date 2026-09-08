@@ -280,6 +280,69 @@ parent whose tool spawns a sub-agent, and a parent that trips `StepLimit` into
 - **Machine-wide** (two pikuri processes on one server) — out, same reasoning
   as `D_rate_limiter_scope`.
 
+## Implementation notes (2026-09-08, pre-hand-off review)
+
+Decided: instrumenter, not adapter. Re-verified against the installed
+ruby_llm 1.16.0 source (`connection.rb`, `instrumentation.rb`,
+`configuration.rb`): `option :instrumenter, nil` exists; `Connection#post` /
+`#get` wrap the *entire* `@connection.post` in `request.ruby_llm` and pass the
+connection's own config to `RubyLLM.instrument`, so a `RubyLLM.context`
+config's instrumenter is per-transport with the global config untouched. The
+Faraday retry middleware runs *inside* the block. Everything §3 claims holds.
+
+Points that are not in the sections above and must not be lost:
+
+- **Chain the inherited instrumenter in v1, not "when asked".**
+  `RubyLLM.context` dups the global config, so a Rails host that set
+  `ActiveSupport::Notifications` as `RubyLLM.config.instrumenter` has it
+  *silently clobbered* the moment `build_context` overwrites the slot. Capture
+  `c.instrumenter` before assigning and delegate every event to it (the gate
+  wraps `request.ruby_llm`, everything else is a plain pass-through to the
+  captured one, or a bare `yield` when there is none). A few lines; turns a
+  silent breakage into a non-issue. Strike the *Still open* bullet.
+- **Match `request.ruby_llm` only.** `chat.ruby_llm` and `tool_call.ruby_llm`
+  arrive through the same object; yield them untouched. `tool_call.ruby_llm`
+  is the payload `Agent`'s `@pending_tool_call` comment already names as the
+  future fix for `tool_concurrency` — don't foreclose it.
+- **A held permit idles the slot during retry backoff.** ruby_llm sleeps
+  `retry_interval` × backoff between retries *inside* the block, permit held.
+  That is the intended behaviour (the alternative — release across retries —
+  re-creates the duplicate-work problem the *gap* section describes). Say so in
+  the yardoc so nobody later "optimizes" it.
+- **Wait slice: reuse `Cancellable::SLICE_SECONDS` (0.1 s)**, not a new
+  constant and not a one-second poll — Ctrl-C responsiveness is why the slice
+  exists. Waiting is `Mutex` + `ConditionVariable#wait(mutex, SLICE)` then
+  `cancellable.check!`, per the *Waiting* section.
+- **`build_chat` always through a Context; `apply_transport!` stays as is.**
+  `apply_transport!` already rebuilds the context whenever *either* the old or
+  the new transport overrides the connection, so a switch between two servers
+  gets the new server's permit key. The only skipped case is
+  no-override → no-override, which is the same global server and the same
+  key. The one change is `build_chat`'s `RubyLLM.chat` branch, which must go
+  so the initial chat carries the instrumenter too.
+- **Stale comment to fix:** `Pikuri::Testing.fake_transport` says the override
+  path is "the only branch that honours faraday_adapter". With the global-chat
+  branch gone that caveat is false; delete it there and in
+  `ChatTransport#faraday_adapter`'s attribute doc.
+- **`ContextWindowDetector` return shape.** It returns `Integer | nil` today
+  (`n_ctx`). It needs to hand back `total_slots` too — a small `Data.define`
+  result (`n_ctx:`, `total_slots:`) is the obvious shape; both fields
+  optional, since the router's bare `/props` has neither and a non-llama
+  server has no `/props` at all. `detect_and_emit_context_cap!` is the one
+  call site (called from `initialize` and `apply_transport!`).
+- **Verification order.** Before the semaphore: the instrumenter variant of
+  `ideas/llm-request-throttle/stream_probe.rb` (block spans every delta;
+  forced retry inside the block; `chat.ruby_llm` passes through). Then the
+  fake-transport concurrency spec and the two deadlock specs from *Testing*.
+- **Docs on landing** (per CLAUDE.md's graduation rules): the *why-not-adapter,
+  why-not-Control* forks → a `D_llm_request_throttle` entry in `DECISIONS.md`
+  (cite `D_rate_limiter_scope`); the instrumenter-as-gate caveat and the
+  retry-backoff note → the new class's yardoc; a one-line Seam entry in
+  CLAUDE.md ("every request through a ruby_llm connection takes a permit; the
+  `/props` probe never does") with a `T_` tripwire only if something is
+  mechanically checkable; the `Agent` `== Threading` yardoc gets the missing
+  sentence about the server; one CHANGELOG `Add` line. Then delete this note.
+
 ## Sequencing
 
 Not urgent: pikuri-web is unblocked and running on the adapter. When this
