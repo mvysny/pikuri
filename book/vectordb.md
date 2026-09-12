@@ -340,7 +340,7 @@ summaries below tell you what each owns.
   50 tokens of overlap; the overlap exists so an answer that
   straddles a chunk boundary survives in *at least one* chunk.
   Markdown-heading-aware and AST-aware chunkers are sketched in
-  [`ideas/vectordb-deferrals.md`](../ideas/vectordb-deferrals.md) as
+  [`design/ideas/vectordb-deferrals.md`](../design/ideas/vectordb-deferrals.md) as
   quality-improvement follow-ups.
 - **Tokenizer** (`Tokenizer::CharHeuristic` /
   `Tokenizer::LlamaServer`) — counts tokens so the chunker knows
@@ -638,7 +638,7 @@ breaking API revision on record), its server image is less than
 half the size, and the memories chapter's memory stack already runs it — one
 engine to learn, audit, and trust instead of two. The full
 side-by-side survey lives in
-[`pikuri-vectordb/DESIGN.md`](../pikuri-vectordb/DESIGN.md).
+[`pikuri-vectordb/design/architecture.md`](../pikuri-vectordb/design/architecture.md).
 `pgvector` and others would be similarly thin Faraday clients;
 they're deferred until a concrete need shows up.
 

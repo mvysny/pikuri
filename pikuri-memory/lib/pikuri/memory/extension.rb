@@ -32,7 +32,7 @@ module Pikuri
     # milliseconds), capture is off-path through {Recorder} (extraction is
     # a ~3s LLM call). Recalled context is +:system+-role and only the
     # user's own words are captured — the two halves of the feedback-loop
-    # defense (DESIGN.md §"Retrieval").
+    # defense (design/architecture.md §"Retrieval").
     #
     # Automatic capture + recall are safe only on a no-untrusted-ingest,
     # no-egress agent (the +@private+ configuration; {Pikuri::Memory}
@@ -46,7 +46,7 @@ module Pikuri
       # @return [Integer] default prefetch slice size — small and
       #   high-precision, since junk recall degrades behavior and the
       #   +recall+ tool means a small slice is a pointer, not a loss
-      #   (DESIGN.md §"Automatic ≠ always-inject").
+      #   (design/architecture.md §"Automatic ≠ always-inject").
       DEFAULT_PREFETCH_K = 5
 
       # @return [Integer] default cap on the resident-persona summary —
@@ -72,7 +72,7 @@ module Pikuri
       #   sent with each capture. +nil+ (default) sends none, so mem0 uses
       #   its reliable built-in prompt. The bundled +memory-extraction+
       #   prompt is a **WIP** that *under*-extracts on small models, so it
-      #   is opt-in until hardened (DESIGN.md §"Open follow-ups"). The
+      #   is opt-in until hardened (design/architecture.md §"Open follow-ups"). The
       #   user-only extraction discipline is independent of it — enforced
       #   in {Mem0Client#add}, whatever prompt mem0 runs.
       # @param resident_persona [Boolean] when +true+ (default), append

@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-# Executable form of the grep tripwires the CLAUDE.md seams declare — the
-# root file's and the per-gem +pikuri-*/CLAUDE.md+ files' alike.
+# Executable form of the grep tripwires the AGENTS.md seams declare — the
+# root file's and the per-gem +pikuri-*/AGENTS.md+ files' alike.
 #
-# These used to live in CLAUDE.md as literal shell one-liners next to the
+# These used to live in AGENTS.md as literal shell one-liners next to the
 # invariant each one guards. That put ~2 KB of shell into a file loaded
 # every session, and — worse — nothing ever ran them, so they rotted
 # silently: when this file was first written, two were already wrong
@@ -12,13 +12,13 @@
 # named +Search::Grep+, which filters by prefix through
 # +Utils.reject_denied_lines+ rather than calling +denied?+).
 #
-# So CLAUDE.md now states the invariant and cites the slug, and the
+# So AGENTS.md now states the invariant and cites the slug, and the
 # command lives here where +rake tripwires+ runs it. A tripwire that fails
 # is either a real violation or a stale expectation — both worth a human
 # looking, which is why a failure prints the offending lines rather than
 # just a count.
 #
-# Checks are cited by slug (+T_<name>+), the same convention DECISIONS.md
+# Checks are cited by slug (+T_<name>+), the same convention design/decisions.md
 # uses for +D_+. Ids are stable once published: rename only with a sweep
 # of every reference.
 #
@@ -111,12 +111,13 @@ module Tripwires
   # a heading in +doc+.
   #
   # +pattern+ must capture the slug first and a trailing +*+ second: prose
-  # cites a whole family as a glob (+D_lsp_*+, +D_history_*+), which is not
-  # a dangling reference. Detecting the star beats listing every family,
-  # which would need editing each time prose names a new one.
+  # may cite a whole family as a glob, which is not a dangling reference.
+  # Detecting the star beats listing every family, which would need editing
+  # each time prose names a new one.
   #
-  # +placeholders+ is for text that looks like a slug and is not — today
-  # only +D_xxx+, the stand-in in CLAUDE.md's CHANGELOG rule.
+  # +placeholders+ is for text that looks like a slug and is not. Unused
+  # since the +D_+ check moved to +design/verify_design_tripwires.sh+; kept
+  # because the next id namespace will want it.
   def self.dangling_slugs(pattern, heading:, doc:, files:, placeholders: [])
     cited = files.select { |f| File.file?(f) && !binary?(f) }
                  .flat_map { |f| File.read(f, encoding: 'UTF-8').scan(pattern) }
@@ -140,7 +141,7 @@ module Tripwires
       'T_subprocess_chokepoint',
       'All subprocess spawning in lib/ routes through Subprocess.spawn, ' \
       'except two long-lived stdio children.',
-      # Only two paths are allowed, though CLAUDE.md names three
+      # Only two paths are allowed, though AGENTS.md names three
       # exceptions: the MCP child is spawned *inside* the third-party
       # +mcp+ gem (+MCP::Client::Stdio+), so pikuri's own
       # +mcp/client_wrapper.rb+ contains no spawn primitive to match.
@@ -203,11 +204,11 @@ module Tripwires
 
     Check.new(
       'T_lsp_finding_ids',
-      'Every LSP finding id cited in the repo is defined in pikuri-lsp/DESIGN.md.',
+      'Every LSP finding id cited in the repo is defined in pikuri-lsp/design/architecture.md.',
       -> {
-        dangling_slugs(/\b([FJHS]_[a-z0-9_]+)(\*?)/,
-                       heading: /\*\*([FJHS]_[a-z0-9_]+)\.\*\*/,
-                       doc: 'pikuri-lsp/DESIGN.md',
+        dangling_slugs(/\b([FJHSE]_[a-z0-9_]+)(\*?)/,
+                       heading: /\*\*([FJHSE]_[a-z0-9_]+)\.\*\*/,
+                       doc: 'pikuri-lsp/design/architecture.md',
                        files: tracked_files.grep(%r{^(pikuri-lsp/|bin/)}))
       }
     ),
@@ -329,31 +330,19 @@ module Tripwires
         hits(/chapters? ?\d+|\bch\.? ?\d+\b/i, files: tracked_files) +
           hits(/\d{2}-[a-z-]+\.md/, files: tracked_files)
       }
-    ),
-
-    Check.new(
-      'T_decision_slugs',
-      'Every D_ slug cited outside ideas/ exists as a heading in DECISIONS.md.',
-      -> {
-        # +ideas/+ is exempt, deliberately. A slug is *born* in an idea note
-        # and only graduates to a DECISIONS.md heading once the decision is
-        # made (CLAUDE.md §Documentation kinds), so a forward reference there
-        # is the normal in-flight state of the file — not a broken link. This
-        # scanned +ideas/+ until 2026-09-08 and turned every push red for the
-        # three commits between a note naming its slugs and the entries
-        # existing. Everywhere else the check keeps its teeth, because those
-        # are the docs a reader actually follows a slug from.
-        dangling_slugs(/\b(D_[a-z0-9_]+)(\*?)/,
-                       heading: /^## (D_[a-z0-9_]+)/,
-                       doc: 'DECISIONS.md',
-                       files: tracked_files.grep_v(%r{^ideas/}),
-                       placeholders: %w[D_xxx])
-      }
     )
+    # A decision-slug check lived here until 2026-09-12 (its id is left
+    # unspelled: this file is scanned for +T_+ ids, and a retired one would
+    # read as a live check nothing cites). The +D_+ / +R_+ slug check now
+    # belongs to +design/verify_design_tripwires.sh+, which owns
+    # the whole doc layer and runs beside this file in +rake check+ — one
+    # rule, one home. Its exemption for in-flight forward references in
+    # +design/ideas/+ went with it: an idea that wants to name a decision
+    # not yet taken writes a +Q_+ slug (see +D_design_docs+).
   ].freeze
 end
 
-desc 'Check the grep tripwires CLAUDE.md\'s seams declare (T_<slug> ids)'
+desc 'Check the grep tripwires AGENTS.md\'s seams declare (T_<slug> ids)'
 task :tripwires do
   width = Tripwires::CHECKS.map { |c| c.id.length }.max
   failures = {}

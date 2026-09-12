@@ -72,7 +72,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
   # A thinking block belongs to the model that produced it: replayed to another
   # one it lands in a slot the receiver reads as its own scratchpad. So it is
   # withheld from the *wire* while staying in the *record*.
-  # See DECISIONS.md D_thinking_block_replay.
+  # See design/decisions.md D_thinking_block_replay.
   describe 'thinking blocks and a model switch' do
     H = Pikuri::Agent::History unless defined?(H)
 

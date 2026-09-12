@@ -38,7 +38,7 @@ module Pikuri
     # Write confirms an overwrite where {Edit} stays promptless — the two-guard
     # asymmetry (the shared read-before-edit gate plus Edit's +old_string+
     # content-check, which Write lacks so a hallucinated +content+ could clobber
-    # the file) is in +pikuri-workspace/DESIGN.md+.
+    # the file) is in +pikuri-workspace/design/architecture.md+.
     #
     # == Side effects
     #

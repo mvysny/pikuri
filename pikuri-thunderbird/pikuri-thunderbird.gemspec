@@ -27,7 +27,7 @@ Gem::Specification.new do |spec|
     Any *outbound* action (compose a mail, create an event) is a v2
     feature and is always a human-gated hand-off to Thunderbird's own UI —
     pikuri writes nothing to Thunderbird's stores and sends nothing itself.
-    See +pikuri-thunderbird/DESIGN.md+ and +ideas/thunderbird.md+.
+    See +pikuri-thunderbird/design/architecture.md+ and +design/ideas/thunderbird.md+.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'
@@ -47,7 +47,7 @@ Gem::Specification.new do |spec|
     'prompts/*.txt',
     'LICENSE',
     'README.md',
-    'DESIGN.md'
+    'design/architecture.md'
   ]
   spec.require_paths = ['lib']
 

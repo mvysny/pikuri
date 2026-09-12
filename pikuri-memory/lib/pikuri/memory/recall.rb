@@ -17,7 +17,7 @@ module Pikuri
     # alongside its correction — so the observation carries each memory's
     # +created_at+ and the description tells the model to treat
     # newer-about-the-same-thing as current. Resolution lives in the
-    # model's reasoning, not the store (DESIGN.md §"Supersede recall:
+    # model's reasoning, not the store (design/architecture.md §"Supersede recall:
     # resolution is the consumer's job").
     #
     # Sharing: +P_stateless+ in pikuri's own state — the topic is an argument

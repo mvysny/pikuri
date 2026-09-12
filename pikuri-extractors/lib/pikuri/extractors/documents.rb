@@ -21,7 +21,7 @@ module Pikuri
     # rationale, the PDF-arm trade-off against pikuri-pdf, the
     # deliberately-unsupported formats (ODS/ODP, OCR/audio), and why
     # paging re-converts each time — lives in
-    # +pikuri-extractors/DESIGN.md+.
+    # +pikuri-extractors/design/architecture.md+.
     #
     # == Format detection
     #

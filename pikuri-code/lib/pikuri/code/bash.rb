@@ -96,7 +96,7 @@ module Pikuri
       # residual it deliberately does NOT close (+diff.external+ /
       # +.gitattributes+ +.textconv+, uncloseable via environment), and the tie
       # to {PassiveCommandDetector}'s +allow_git:+ — lives in
-      # +pikuri-code/DESIGN.md+ (*Passive git needs Bash's hardening*).
+      # +pikuri-code/design/architecture.md+ (*Passive git needs Bash's hardening*).
       #
       # @return [Array<Array(String, String)>] +[key, value]+ pairs.
       GIT_HARDENING = [

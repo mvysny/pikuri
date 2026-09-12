@@ -134,7 +134,7 @@ the model is resourceful.
 
 pikuri talks HTTP through Faraday, and a `ChatTransport` lets you
 substitute the adapter — the same seam the scripted test transport is
-built on (`DECISIONS.md` `D_fake_transport`). So recording every
+built on (`design/decisions.md` `D_fake_transport`). So recording every
 outgoing request is a subclass that peeks and delegates:
 
 ```ruby

@@ -28,7 +28,7 @@ gemspec path: 'pikuri'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write
-  # assertions in minitest style — see CLAUDE.md.
+  # assertions in minitest style — see AGENTS.md.
   gem 'rspec-core', '~> 3.13'
 
   # Provides the minitest-style assertion methods (assert_equal, refute,
@@ -41,7 +41,7 @@ group :test do
 end
 
 group :development do
-  # Generates YARD docs from the inline tags required by CLAUDE.md.
+  # Generates YARD docs from the inline tags required by AGENTS.md.
   gem 'yard', '~> 0.9.43'
 
   # REPL for bin/console. Was a default gem in Ruby <= 3.x and dropped

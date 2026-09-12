@@ -15,7 +15,7 @@ module Pikuri
       # only when an Exa key was configured, so users who never registered don't
       # spend money, then drives it through the same +#search+/+#label+
       # interface as every provider. pikuri reads no key from the environment
-      # (CLAUDE.md "Environment is not a secret store"). Paid; key at
+      # (AGENTS.md "Environment is not a secret store"). Paid; key at
       # https://exa.ai.
       #
       # Requests +type: "auto"+ (Exa picks neural vs keyword) and +contents: {

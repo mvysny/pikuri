@@ -81,7 +81,7 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
 
   # The slot count rides the same document as the cap, and is what seeds
   # {Pikuri::Agent::ServerPermits} — see the /props shape measured on a live
-  # llama.cpp in DECISIONS.md D_llm_request_throttle.
+  # llama.cpp in design/decisions.md D_llm_request_throttle.
   describe 'total_slots' do
     it 'reads the top-level total_slots beside the nested n_ctx' do
       stubs.get(url) do

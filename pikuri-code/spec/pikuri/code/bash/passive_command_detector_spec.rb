@@ -292,7 +292,7 @@ RSpec.describe Pikuri::Code::Bash::PassiveCommandDetector do
     # These need root, so under Bash's unprivileged view they fail EACCES —
     # but the detector classifies content (does it mutate?), not outcome
     # (will it succeed?), so the read forms are passive and drop a pointless
-    # prompt on the way to that honest failure. See ideas/bash-confirmer.md.
+    # prompt on the way to that honest failure. See design/ideas/bash-confirmer.md.
     [
       # nvme: subcommand-allowlist, verb immediately after `nvme`.
       'nvme list',

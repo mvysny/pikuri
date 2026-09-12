@@ -47,7 +47,7 @@ module Pikuri
     # model cites, plus the file as an attachment the model looks at.
     # +offset+/+limit+ are ignored (no line paging). Over
     # {MAX_IMAGE_BYTES} → +"Error: image too large…"+ rather than a payload the
-    # provider rejects; no auto-resize (see +ideas/coding-agent.md+). Vision
+    # provider rejects; no auto-resize (see +design/ideas/coding-agent.md+). Vision
     # capability is not checked — a non-vision model's provider error is
     # something the LLM reacts to, cheaper than tracking model metadata.
     #

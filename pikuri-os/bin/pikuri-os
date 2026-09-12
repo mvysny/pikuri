@@ -32,7 +32,7 @@ confirm_enabled = true
 internet_enabled = false # web_search off by default — keeps the agent networkless
 
 # Example-only config: LLM connection + keys live verbatim in a user-owned
-# YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
+# YAML file (see AGENTS.md "Environment is not a secret store"). chmod 600.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 
@@ -85,7 +85,7 @@ end
 # the user hasn't seen; and every writable write is confirmed with a diff
 # (confirm_all_writes, wired by Os::Extension), unwritable ones
 # short-circuit to "sudo it yourself". Re-instate the floor the moment
-# this parent ever gains unmediated egress. See ideas/write-edit-confirmer.md.
+# this parent ever gains unmediated egress. See design/ideas/write-edit-confirmer.md.
 # project_root is the relative-path base and the bash chdir target (the
 # launch dir is the intuitive anchor; absolute paths reach everywhere).
 #

@@ -21,12 +21,12 @@ module Pikuri
     # fields are +nil+ — an honest "we don't know" — for anything else.
     #
     # Every call is a live request: nothing here is memoized, and the caller
-    # decides when it has nothing left to learn (+DECISIONS.md+
+    # decides when it has nothing left to learn (+design/decisions.md+
     # +D_probe_when_unknown+).
     #
     # This probe and an explicit {ChatTransport#context_window} are the *only*
     # cap sources: +RubyLLM::Model::Info#context_window+ is deliberately never
-    # consulted (why: +DECISIONS.md+ +D_context_window_sources+).
+    # consulted (why: +design/decisions.md+ +D_context_window_sources+).
     #
     # == The openai-provider gate + auto-derived URL
     #
@@ -51,7 +51,7 @@ module Pikuri
     #
     # Best-effort: an HTTP error, a timeout or a non-JSON body returns
     # {Props::NONE} with one +warn+ line, and a missing/invalid +n_ctx+ warns
-    # but keeps a +total_slots+ the same document carried. The CLAUDE.md
+    # but keeps a +total_slots+ the same document carried. The AGENTS.md
     # "secondary to the loop" carve-out — a wedged or non-llama.cpp server must
     # not abort agent construction over a cosmetic readout.
     class ContextWindowDetector

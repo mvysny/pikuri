@@ -3,7 +3,7 @@
 require 'json'
 
 describe Pikuri::Lsp::Location do
-  # Shaped after the recorded replies in DESIGN.md §Measurements: ruby-lsp
+  # Shaped after the recorded replies in design/architecture.md §Measurements: ruby-lsp
   # answers LocationLink (F_two_location_shapes), jdtls answers a jdt: URI (J_library_is_not_a_file).
   link = JSON.parse(<<~JSON)
     { "targetUri": "file:///home/m/pikuri/pikuri-workspace/lib/pikuri/workspace/filesystem.rb",

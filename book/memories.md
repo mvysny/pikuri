@@ -36,7 +36,7 @@ ones to put in front of the model, and when. Context is the scarce
 resource: a fact that's in the prompt every turn is paid for every
 turn, whether or not it's relevant. So `pikuri-memory` allocates
 every durable fact to one of three tiers, by how broadly and how
-often it's useful — the same principle that separates a `CLAUDE.md`
+often it's useful — the same principle that separates an `AGENTS.md`
 line (always loaded) from a skill (loaded when the task matches) from
 a RAG lookup (fetched on demand). The design borrows the three-tier
 shape wholesale from [hermes-agent](https://github.com/nousresearch/hermes-agent),
@@ -150,7 +150,7 @@ reprocess the whole conversation from scratch (brutal on a 35B). A
 separate model is a separate cache by construction — no fragile
 `--parallel` tuning to get wrong. (The reuse-the-chat-model path
 *does* exist as a documented fallback, with a build-time no-think
-patch; see `pikuri-memory/DESIGN.md`. It's verified but not the
+patch; see `pikuri-memory/design/architecture.md`. It's verified but not the
 default, for exactly this cache reason.)
 
 ### 2. The mem0 + Qdrant store
@@ -454,7 +454,7 @@ per-fact privacy erasure with stronger guarantees — plus
 explicit-correction pinning (a stated correction should be
 decay-resistant, never silently overridden by a weak inferred signal)
 and read-time recency weighting — are tracked for v2 in
-`pikuri-memory/DESIGN.md`. The honest line pikuri holds today: your
+`pikuri-memory/design/architecture.md`. The honest line pikuri holds today: your
 memories live in a plain directory on your own disk
 (`~/.cache/pikuri/mem0/data/`), the supervisor
 binds the store to loopback only, and v1 leans on full-disk
@@ -472,7 +472,7 @@ no-egress/no-ingest boundary as a *hard* safety scope, user-only
 extraction and system-role recall as the two structural feedback-loop
 defenses, and Qdrant-by-default to dodge the pgvector ranking bug. The
 deeper rationale — the store survey, the threat model, the bake-off
-numbers, what's deferred to v2 — lives in `pikuri-memory/DESIGN.md`
+numbers, what's deferred to v2 — lives in `pikuri-memory/design/architecture.md`
 for readers who want the full design journey rather than the tour.
 
 ## What's next

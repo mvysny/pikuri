@@ -23,7 +23,7 @@ module Pikuri
       #
       # The full two-sandbox design — each posture's threat model, the
       # overlay/concurrency reasoning, and which to pick — is in
-      # +pikuri-code/DESIGN.md+.
+      # +pikuri-code/design/architecture.md+.
       #
       # == Posture predicates
       #
@@ -55,7 +55,7 @@ module Pikuri
         # +flags+ are the isolation each sandbox promises (+--unshare-net+, an
         # overlay mount, …) — deliberately *not* defaulted, because the probe's
         # whole job is to prove *that exact* isolation works on this host (see
-        # +pikuri-code/DESIGN.md+ on why the two probes aren't interchangeable).
+        # +pikuri-code/design/architecture.md+ on why the two probes aren't interchangeable).
         # Propagates +Errno::ENOENT+ when +bwrap+ is absent; each caller rescues
         # it to raise its own install hint.
         #
@@ -93,7 +93,7 @@ module Pikuri
         # ephemeral temp + the few +/etc+ files needed for TLS/DNS/tz/hostname.
         # Keeps the network (+--share-net+); contains the filesystem. Its
         # inverse is {FullFsNoNet}. Full posture comparison + threat model in
-        # +pikuri-code/DESIGN.md+.
+        # +pikuri-code/design/architecture.md+.
         #
         # == What's bound
         #
@@ -118,7 +118,7 @@ module Pikuri
         #   observation); this degrades with a logged warning, never raises.
         #   Why the mounts are narrow cache subdirs (secrets stay out of the
         #   sandbox's *view*): {Pikuri::Code::ToolchainPaths}. Warm-cache
-        #   lifetime + the +EBUSY+ concurrency argument: +pikuri-code/DESIGN.md+.
+        #   lifetime + the +EBUSY+ concurrency argument: +pikuri-code/design/architecture.md+.
         #
         # == Isolation
         #
@@ -130,7 +130,7 @@ module Pikuri
         #
         # Blast-radius containment, *not* a malware boundary — the non-defenses
         # (project source, poisoned deps, network exfil) and the container-as-
-        # outer-boundary escape hatch are in +pikuri-code/DESIGN.md+.
+        # outer-boundary escape hatch are in +pikuri-code/design/architecture.md+.
         class Bubblewrap
           LOGGER = Pikuri.logger_for('Sandbox')
 
@@ -423,7 +423,7 @@ module Pikuri
         # session's IPC surface masked ({SESSION_IPC_MASKS} — both halves are
         # load-bearing), an injection in a file the agent reads has nowhere to
         # exfiltrate to — the trifecta's egress leg is cut by the kernel, not a
-        # prompt. Full design + threat model in +pikuri-code/DESIGN.md+.
+        # prompt. Full design + threat model in +pikuri-code/design/architecture.md+.
         #
         # == What's bound
         #
@@ -437,7 +437,7 @@ module Pikuri
         #   survives someone narrowing that bind: a synthetic +/dev+ omits the
         #   block nodes (+/dev/nvme0n1+) and turns +smartctl+'s honest +EACCES+
         #   into a confusing +ENOENT+, corrupting the model's error signal (full
-        #   argument in +pikuri-code/DESIGN.md+).
+        #   argument in +pikuri-code/design/architecture.md+).
         #
         #   +--dev-bind+, never plain +--bind+, for both: +--bind+ applies
         #   +MS_NODEV+, which leaves nodes visible to +ls+/+stat+ but unopenable
@@ -474,7 +474,7 @@ module Pikuri
         # sockets under +/run+ (a confirmed +docker run --network=host+ has full
         # connectivity; only the rootless variants vanish with the runtime-dir
         # mask), so this is not a malware boundary — it severs the agent's *own*
-        # egress; the non-defenses are in +pikuri-code/DESIGN.md+. A hard
+        # egress; the non-defenses are in +pikuri-code/design/architecture.md+. A hard
         # boundary means running the whole agent inside a container / VM.
         class FullFsNoNet
           # Directory holding the X11 display sockets.
@@ -494,8 +494,8 @@ module Pikuri
           # spawns commands *outside* every namespace, so +--unshare-net+ without
           # this isn't a cut. Abstract-namespace sockets (+@/tmp/.X11-unix/X0+)
           # need no mask — the unshared netns already scopes them. Measurements and
-          # the residual paths in +pikuri-code/DESIGN.md+; the capability trade in
-          # +DECISIONS.md+ +D_headless_os_agent+.
+          # the residual paths in +pikuri-code/design/architecture.md+; the capability trade in
+          # +design/decisions.md+ +D_headless_os_agent+.
           SESSION_IPC_MASKS = begin
             dirs = [ENV['XDG_RUNTIME_DIR'], "/run/user/#{Process.uid}", X11_SOCKET_DIR].compact.uniq
             masks = dirs.select { |d| File.directory?(d) }.flat_map { |d| ['--tmpfs', d] }

@@ -36,7 +36,7 @@ module Pikuri
     # for shaving the round-trip (pre-injecting bodies, a `names:` batch)
     # makes the expensive axis worse. A `paths:` trigger is therefore a
     # relevance filter on the catalog *entry*, never a body preloader; see
-    # `DECISIONS.md` `D_skill_path_activation`.
+    # `design/decisions.md` `D_skill_path_activation`.
     #
     # Sharing: +P_one_agent+ — the {Activation} it resolves through is *this*
     # conversation's set of fired +paths:+ gates, and a promotion one agent

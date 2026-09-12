@@ -21,7 +21,7 @@ module Pikuri
     # common case flushes in one +add+. An +add+ that raises (mem0 down,
     # timeout, 5xx) is logged at WARN and the item dropped — a transient
     # failure must never crash the worker (which would silently end all
-    # future capture). See DESIGN.md §"Capture: off-path and bounded".
+    # future capture). See design/architecture.md §"Capture: off-path and bounded".
     class Recorder
       LOGGER = Pikuri.logger_for('Memory::Recorder')
 

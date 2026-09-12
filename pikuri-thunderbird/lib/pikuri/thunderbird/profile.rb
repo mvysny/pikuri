@@ -113,7 +113,7 @@ module Pikuri
       # A directory a *snap-confined* Thunderbird can read a hand-off file from,
       # for the +.ics+ import hand-off ({CalendarCreate}). Snap's +home+
       # interface blocks hidden +$HOME+ dirs (so the +~/.cache+ snapshot dir is
-      # unreadable by the confined app — see +DESIGN.md+ § "Platform
+      # unreadable by the confined app — see +design/architecture.md+ § "Platform
       # confinement"); we stage instead in the variant's own readable root: the
       # snap-owned data area for +:snap+ (readable regardless of the dotfile
       # rule), the unconfined profile dir for +:apt+/+:override+. The caller

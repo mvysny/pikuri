@@ -30,7 +30,7 @@ module Pikuri
   # +MCP::Client::Stdio+ calls +Process.spawn+ internally; routing it through
   # pikuri's {Pikuri::Subprocess.spawn} chokepoint would mean forking the gem
   # or threading custom IO pipes through its API. So stdio MCP is the documented
-  # exception to the chokepoint convention (CLAUDE.md): the gem spawns, we own
+  # exception to the chokepoint convention (AGENTS.md): the gem spawns, we own
   # +#close+ (via {ClientWrapper#close}) — closing stdin → EOF → the server
   # self-terminates per spec. HTTP entries don't spawn (plain Faraday); +#close+
   # sends the session-termination +DELETE+.

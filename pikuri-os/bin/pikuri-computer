@@ -8,7 +8,7 @@
 # Thunderbird mail + calendar and draft a reply or event for them to send.
 #
 # This is the "reassembled trifecta" demo (see the book's OS-assistant chapter Part 3 and the
-# pikuri-os entry in CLAUDE.md). By default it runs `os --with-internet`
+# pikuri-os entry in AGENTS.md). By default it runs `os --with-internet`
 # (web research via the isolated RESEARCHER) *plus* thunderbird's outbound
 # compose / calendar-create hand-offs — so all three trifecta legs are live
 # (whole-disk private pool + attacker-authorable email as an untrusted
@@ -42,7 +42,7 @@ internet_enabled = true  # web research ON by default — a "computer" reaches o
 profile_dir = nil        # Thunderbird profile (nil = auto-discover)
 
 # Example-only config: LLM connection + keys live verbatim in a user-owned
-# YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
+# YAML file (see AGENTS.md "Environment is not a secret store"). chmod 600.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 

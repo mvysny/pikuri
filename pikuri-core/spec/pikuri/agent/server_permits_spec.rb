@@ -100,7 +100,7 @@ RSpec.describe Pikuri::Agent::ServerPermits do
   end
 
   # The probe's memo question: "have I anything left to learn about this
-  # server?" (see Agent#detect_and_emit_context_cap!, DECISIONS.md
+  # server?" (see Agent#detect_and_emit_context_cap!, design/decisions.md
   # D_probe_when_unknown).
   describe '.sized?' do
     it 'is false for an unsized server and true once either door sizes it' do

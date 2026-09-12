@@ -31,7 +31,7 @@ module Pikuri
   # Nothing here caps how many tool calls a turn may make. A turn ends when
   # the model stops asking for tools, when {Control::Cancellable} trips, or
   # when the context window fills. Why there is no budget, and what to reach
-  # for instead if a runaway loop ever shows up: +DECISIONS.md+
+  # for instead if a runaway loop ever shows up: +design/decisions.md+
   # +D_no_step_limit+.
   #
   # == Cancellation rescue
@@ -361,8 +361,9 @@ module Pikuri
 
       unless blank
         # Append the user turn, emit it, then run the memory dispatch — so any
-        # <memory-context> the dispatch injects lands as a :system message
-        # *after* the user turn it annotates. (+ask+ bundles append+complete
+        # <memory-context> the dispatch injects lands *after* the user turn it
+        # annotates (as a :user turn like every reference block, see
+        # {#append_reference_block}). (+ask+ bundles append+complete
         # atomically, leaving no seam to inject between; the halves run
         # explicitly instead.)
         track_message(@chat.add_message(role: :user, content: user_message))
@@ -479,7 +480,7 @@ module Pikuri
     #   — a foreign one lands in a slot the receiving model reads as its own
     #   scratchpad. Withheld from the conversation only; {#export_history}
     #   still writes it. {#apply_transport!} repeats this for a switch that
-    #   happens later. See +DECISIONS.md+ +D_thinking_block_replay+.
+    #   happens later. See +design/decisions.md+ +D_thinking_block_replay+.
     #
     # @param history [History] from {#export_history}, {History.parse} or
     #   {History.load} — already validated by whichever door it came through.
@@ -687,7 +688,7 @@ module Pikuri
     # one invalidates every cached token after the change point and
     # re-prefills. Hence there is no amend-the-prompt seam — mid-conversation
     # blocks go through {#append_reference_block}, which appends and
-    # invalidates nothing. See `DECISIONS.md` `D_reference_text_as_user_turn`.
+    # invalidates nothing. See `design/decisions.md` `D_reference_text_as_user_turn`.
     #
     # @return [String]
     def assemble_system_prompt
@@ -702,7 +703,7 @@ module Pikuri
     # probe reports. The transport's explicit +context_window+ wins over the
     # probed +n_ctx+; the *slot count* has no such override, so the probe is
     # skipped only when *both* of its answers are already in hand — a stated cap
-    # and a {ServerPermits.sized?} server (+DECISIONS.md+
+    # and a {ServerPermits.sized?} server (+design/decisions.md+
     # +D_probe_when_unknown+). The cap rides {ChatTransport}, so a switch
     # resolves the *new* transport's cap. Shared by {#run_configure} and
     # {#apply_transport!}.
@@ -886,7 +887,7 @@ module Pikuri
     # the standing system prompt, so the block is presented as though it had
     # always been there and stays in force. Neither failure is visible from
     # anything pikuri can observe: the message is in the payload, the listener
-    # stream renders it, the history holds it. See +DECISIONS.md+
+    # stream renders it, the history holds it. See +design/decisions.md+
     # +D_reference_text_as_user_turn+.
     #
     # A closing tag inside +content+ is escaped, so injected text (a file, a web
@@ -1008,7 +1009,7 @@ module Pikuri
     # only ever over-drops (a model loses its own reasoning; none is ever
     # attributed to another), which is why the weaker test is tolerated; the
     # fakes in +Pikuri::Testing+ are themselves such a backend. Measured
-    # echoing verbatim on llama.cpp — see +DECISIONS.md+
+    # echoing verbatim on llama.cpp — see +design/decisions.md+
     # +D_thinking_block_replay+.
     #
     # @param thinking [History::Thinking, RubyLLM::Thinking, nil]

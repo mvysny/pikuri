@@ -23,7 +23,7 @@ require 'pikuri-core'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
-# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# AGENTS.md "Environment is not a secret store"). Shared by convention across
 # the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
 # (Per-run choices like the prompt stay on the command line, not here.)
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')

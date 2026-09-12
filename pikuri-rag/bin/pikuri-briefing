@@ -38,7 +38,7 @@
 # below is a llama-server on localhost; keep it that way.
 #
 # TWO DECLARATIONS ARE HARDCODED, deliberately, where bin/pikuri-corpus
-# takes them as flags — see DECISIONS.md D_briefing_wiring. This binary
+# takes them as flags — see design/decisions.md D_briefing_wiring. This binary
 # has no honest non-private reading, so a flag would make the honest map
 # opt-in and the documented invocation the flagged one. `trusted: true`
 # is a claim about a folder *you* supply through --source, so the boot
@@ -75,7 +75,7 @@ require 'pikuri-thunderbird'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
-# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# AGENTS.md "Environment is not a secret store"). Shared by convention across
 # the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
@@ -213,7 +213,7 @@ rag_ext = Pikuri::Rag::Extension.new(
   embedder: embedder,
   reranker: reranker,
   store:    store,
-  # Constants, not flags — see the header and DECISIONS.md D_briefing_wiring.
+  # Constants, not flags — see the header and design/decisions.md D_briefing_wiring.
   private:  true,
   trusted:  true
 )

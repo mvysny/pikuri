@@ -39,7 +39,7 @@ module Pikuri
     # +[N dirs, M files]+ column already does depth 2's job on the wide-flat
     # directories where depth 2 costs most — a blog's +_posts/  [0 dirs, 256
     # files]+ is 30 bytes against 24 KB expanded. Measurements and the rejected
-    # ladder live in +DECISIONS.md+ +D_directory_listing+.
+    # ladder live in +design/decisions.md+ +D_directory_listing+.
     #
     # Re-taken whenever the prompt is re-assembled, so +clear_conversation+
     # refreshes it and nothing else does.

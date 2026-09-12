@@ -19,7 +19,7 @@ module Pikuri
     # {Pikuri::Mcp::Servers::Connect} both capture the context their +bind+
     # received). Capabilities flow by explicit handoff, never by fetching from
     # a globally reachable object. The boundary is the API contract, not a
-    # mechanical seal — same as every seam in CLAUDE.md.
+    # mechanical seal — same as every seam in AGENTS.md.
     #
     # == Boundary rule
     #

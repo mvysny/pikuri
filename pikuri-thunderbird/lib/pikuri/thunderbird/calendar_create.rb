@@ -26,7 +26,7 @@ module Pikuri
     #
     # No +attendees+ parameter — an imported +ATTENDEE+ line *might* trigger
     # CalDAV meeting invites, which would be an autonomous send; that's unverified
-    # (see +ideas/thunderbird.md+), so the whole capability waits rather than risk
+    # (see +design/ideas/thunderbird.md+), so the whole capability waits rather than risk
     # it. A self-authored event with no attendees can't invite anyone.
     #
     # Sharing: +P_one_agent+ — it holds a {Profile} and writes an +.ics+ per

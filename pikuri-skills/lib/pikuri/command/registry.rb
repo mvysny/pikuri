@@ -61,7 +61,7 @@ module Pikuri
     # Detection is over-eager on purpose and does *not* skip fenced blocks —
     # the inverse of what {Renderer} does to the same characters, which is not
     # an inconsistency; see there. Rationale for both refusals:
-    # +DECISIONS.md+ +D_command_inlining_legs+.
+    # +design/decisions.md+ +D_command_inlining_legs+.
     #
     # == Trust
     #
@@ -76,7 +76,7 @@ module Pikuri
       private_constant :LOGGER
 
       # Subdirectory names scanned under each search base, in precedence
-      # order. No +.agents/commands+: no harness in +COMPARISON.md+ defines
+      # order. No +.agents/commands+: no harness in +design/comparison.md+ defines
       # one, and an invented convention is worse than a missing one.
       COMMAND_SUBDIRS = ['.pikuri/commands', '.claude/commands'].freeze
       private_constant :COMMAND_SUBDIRS

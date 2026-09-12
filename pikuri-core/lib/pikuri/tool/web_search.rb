@@ -10,7 +10,7 @@ module Pikuri
     # *host-configured*: the paid providers (Brave/Exa) join the cascade only
     # when the host passes their key, so it's built per-wiring (like
     # {Code::Bash}), not a shared constant. pikuri reads no key from the
-    # environment — the host supplies them (CLAUDE.md "Environment is not a
+    # environment — the host supplies them (AGENTS.md "Environment is not a
     # secret store").
     #
     # == Sharing

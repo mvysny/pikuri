@@ -45,7 +45,7 @@ module Pikuri
     #
     # The container is one JSON object, not JSONL. Should append ever be worth
     # it, going to JSONL is a *sniff* (does the whole file parse as one
-    # object?) rather than a version bump — see +DECISIONS.md+ +D_history_container+.
+    # object?) rather than a version bump — see +design/decisions.md+ +D_history_container+.
     class History < Data.define(:version, :messages)
       # Bumped only for a change an old reader could not survive; an added
       # optional key is not one (readers ignore unknown keys). A file claiming
@@ -106,7 +106,7 @@ module Pikuri
       # OpenAI-compatible server +text+ is the reasoning itself and
       # +signature+ is usually absent. So the whole block, never one field, is
       # what {Agent} withholds from a model that did not produce it — see
-      # +DECISIONS.md+ +D_thinking_block_replay+.
+      # +design/decisions.md+ +D_thinking_block_replay+.
       Thinking = Data.define(:text, :signature)
 
       # Per-message token usage, as the provider reported it. Carried so a
@@ -236,7 +236,7 @@ module Pikuri
         #   *other* model produced, since a thinking block lands in a slot the
         #   receiving model reads as its own scratchpad. Dropped from the
         #   *message*, not from the record: {Agent#export_history} still
-        #   writes it. See +DECISIONS.md+ +D_thinking_block_replay+.
+        #   writes it. See +design/decisions.md+ +D_thinking_block_replay+.
         # @return [RubyLLM::Message]
         def to_ruby_llm(keep_thinking: true)
           calls = tool_calls.to_h do |c|

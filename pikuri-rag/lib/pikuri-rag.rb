@@ -44,8 +44,8 @@ module Pikuri
   # The threat model is +pikuri-vectordb+'s, unchanged — same corpus, same
   # +private:+ / +trusted:+ declaration ({Pikuri::VectorDb::Extension#trusted?}
   # is still where those clauses live), no egress leg on any tool, same
-  # membership gate on the reader. Which is why there is no +DESIGN.md+ here.
-  # The fork that made this a gem, and the roads not taken, are +DECISIONS.md+
+  # membership gate on the reader. Which is why there is no +design/architecture.md+ here.
+  # The fork that made this a gem, and the roads not taken, are +design/decisions.md+
   # +D_rag_gem+; the walk-through is +book/rag.md+.
   module Rag
     LOADER = Zeitwerk::Loader.new

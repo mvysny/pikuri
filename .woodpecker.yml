@@ -40,8 +40,10 @@ steps:
       # hand it the checkout + gem cache, and run the build as that user. HOME
       # is exported so bundler/rubygems write their config under /home/ci.
       #
-      # `rake check` = specs then the seam tripwires CLAUDE.md declares
-      # (tasks/tripwires.rake) — the same command a contributor runs locally,
+      # `rake check` = specs, then the seam tripwires AGENTS.md declares
+      # (tasks/tripwires.rake), then the doc-layer ones
+      # (design/verify_design_tripwires.sh) — the same command a contributor
+      # runs locally,
       # so CI cannot drift from the local check. Tripwires run *after* the
       # specs so a drifted doc invariant never masks a real test failure. It
       # all runs as the `ci` user rather than as a separate root command: the

@@ -5,7 +5,7 @@ require 'pathname'
 module Pikuri
   module Os
     # Durable, cross-conversation memory for the OS helper — a single
-    # user-owned +MACHINE.md+, the +CLAUDE.md+-for-this-host. This class is
+    # user-owned +MACHINE.md+, the +AGENTS.md+-for-this-host. This class is
     # the *read* half (resolve the XDG path, load content, size-warn,
     # render the prompt section); the *write* half is the ordinary
     # (confirmed) +write+/+edit+ tools plus a prompt line pointing the agent
@@ -29,7 +29,7 @@ module Pikuri
       FILENAME = 'MACHINE.md'
 
       # @return [Integer] soft size ceiling. On overshoot we log a warning to
-      #   trim — mirrors the Claude CLI nudging an oversized CLAUDE.md.
+      #   trim — mirrors the Claude CLI nudging an oversized AGENTS.md.
       #   No hard cap, no eviction: the file is prepended to every prompt,
       #   so a visible nudge is enough.
       OVERSIZE_BYTES = 10 * 1024

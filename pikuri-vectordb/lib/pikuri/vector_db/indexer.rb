@@ -46,7 +46,7 @@ module Pikuri
       # Basenames skipped during the walk — cruft that accumulates inside a
       # notes folder put under +source:+ (a cloned repo, a Python venv, a build
       # dir). Conservative; configurable ignore rules deferred (see
-      # +ideas/vectordb-deferrals.md+).
+      # +design/ideas/vectordb-deferrals.md+).
       DENYLIST = %w[
         .git
         node_modules
@@ -70,7 +70,7 @@ module Pikuri
       # named +cooking.md+ would derive identical relative +source+ values,
       # hence identical +"source:offset"+ ids, and {Backend#upsert}'s
       # replace-by-id would silently let the second overwrite the first.
-      # Multi-source is deferred — see +ideas/vectordb-deferrals.md+.
+      # Multi-source is deferred — see +design/ideas/vectordb-deferrals.md+.
       def initialize(backend:, source:, embedder:, chunker:)
         @backend  = backend
         @source   = Pathname.new(source).expand_path

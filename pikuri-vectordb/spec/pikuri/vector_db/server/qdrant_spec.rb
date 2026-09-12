@@ -63,7 +63,7 @@ describe Pikuri::VectorDb::Server::Qdrant do
 
   describe 'IMAGE pin' do
     it 'matches Mem0Server::DEFAULT_QDRANT_IMAGE when pikuri-memory is loadable (lockstep convention)' do
-      # The cross-gem invariant from DESIGN.md §"Verdict": same tag,
+      # The cross-gem invariant from design/architecture.md §"Verdict": same tag,
       # one image on disk. The gems don't depend on each other, so
       # this guard only fires where the sibling gem is present (the
       # monorepo dev closure — which is where a drifting bump would

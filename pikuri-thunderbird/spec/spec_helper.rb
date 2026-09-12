@@ -9,7 +9,7 @@ require 'pikuri-thunderbird'
 # Silence Pikuri's default $stderr logging for the suite.
 Pikuri.log_io = File.open(File::NULL, 'w')
 
-# CLAUDE.md "Tests" convention: rspec-core describe/it groups, minitest
+# AGENTS.md "Tests" convention: rspec-core describe/it groups, minitest
 # assertions. Mix the assertion module in + provide the `assertions`
 # accessor the assert_* helpers need internally.
 RSpec.configure do |config|

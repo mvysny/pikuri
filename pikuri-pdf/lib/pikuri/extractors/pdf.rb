@@ -22,7 +22,7 @@ module Pikuri
     # *lazily* ({.extract_lines} parses pages on demand) — a property a
     # subprocess converter structurally cannot have. (The full
     # this-gem-vs-pikuri-extractors PDF trade-off is in
-    # +pikuri-extractors/DESIGN.md+.)
+    # +pikuri-extractors/design/architecture.md+.)
     #
     # == Registration is explicit
     #

@@ -172,8 +172,8 @@ Verifier you already met in [the MCP chapter](mcp.md).
 | **Break the trifecta** | give an agent ≤2 legs (sub-agent personas) | chat, `minions`, recon | the relay leg — a reply carrying the injection to a parent that has the third leg |
 | **Blast-radius containment** | workspace allowlist + Bubblewrap; `~/.ssh`, `~/.aws`, other projects don't resolve | coding, attended or not | the workspace itself is reachable — "leak *this* project's `.env`" still works |
 | **Human gate** | the Confirmer prompts before an irreversible or outbound action runs | coding **with a human watching** | confirmation fatigue; worth nothing when nobody's there |
-| **Egress allowlist** *(in-process form planned — see [`ideas/security-open-questions.md`](../ideas/security-open-questions.md); enforceable at the network layer today)* | allow your package registries + git remote, deny the rest | **unattended** coding | coarse; an allowlisted host is still a hole, and DNS exfil rides port 53 |
-| **Outer isolation** | a container or VM around the whole pikuri process | `--yolo`, "I trust none of this" | adds no *inner* gate — yolo drops the sandbox + confirmer, so anything mounted in (the project's `.env`) exfiltrates trivially; isolation is the OS's to enforce, and a bind-mounted home or the docker socket re-opens the host (see [the security-revisited chapter](security-revisited.md) / [the MCP-revisited chapter](mcp-revisited.md) / [`ideas/security-open-questions.md`](../ideas/security-open-questions.md)) |
+| **Egress allowlist** *(in-process form planned — see [`design/ideas/security-open-questions.md`](../design/ideas/security-open-questions.md); enforceable at the network layer today)* | allow your package registries + git remote, deny the rest | **unattended** coding | coarse; an allowlisted host is still a hole, and DNS exfil rides port 53 |
+| **Outer isolation** | a container or VM around the whole pikuri process | `--yolo`, "I trust none of this" | adds no *inner* gate — yolo drops the sandbox + confirmer, so anything mounted in (the project's `.env`) exfiltrates trivially; isolation is the OS's to enforce, and a bind-mounted home or the docker socket re-opens the host (see [the security-revisited chapter](security-revisited.md) / [the MCP-revisited chapter](mcp-revisited.md) / [`design/ideas/security-open-questions.md`](../design/ideas/security-open-questions.md)) |
 
 These **compose** — they aren't a menu where you pick one. The two
 classes are worth naming, because the choice between them is the
@@ -213,7 +213,7 @@ heart of this chapter:
      no human to prompt, so the human gate is worth nothing. Use
      containment plus an egress allowlist so exfiltration is
      blocked with no human in the loop. Pikuri's *in-process*
-     allowlist isn't shipped yet (TODO, [`ideas/security-open-questions.md`](../ideas/security-open-questions.md)), but you can
+     allowlist isn't shipped yet (TODO, [`design/ideas/security-open-questions.md`](../design/ideas/security-open-questions.md)), but you can
      cut the same leg a layer down *today*: run the VM with its
      network whitelisted to your registries + git remote — or off
      entirely, if the job needs no network, accepting that a coding
@@ -414,7 +414,7 @@ human has attention to spend on what *does* still reach them.
 > hostile bytes are defanged before they reach your terminal (see
 > [the coding-agent chapter](code.md)). What's **not yet shipped** is the fatigue
 > half: it still prompts on every `write` and `bash`. The plan
-> (motivation in [`ideas/more-confirmers.md`](../ideas/more-confirmers.md),
+> (motivation in [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md),
 > "Structured action context on the `Request`") is to ask only on the
 > consequential, and when it *does* ask, headline the consequence —
 > "this will POST `.env` to attacker.com" — rather than echoing an
@@ -467,7 +467,7 @@ cheap, operational where structure runs out.
 
 (For the head-to-head specifics — Claude Code's exact defenses
 versus pi's and opencode's, at the code-path level —
-`COMPARISON.md` has the internal survey.)
+`design/comparison.md` has the internal survey.)
 
 ## If the NX flag ever arrives
 

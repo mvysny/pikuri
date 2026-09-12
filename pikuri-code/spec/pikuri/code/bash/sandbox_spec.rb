@@ -526,7 +526,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         # And never plain --bind: it applies MS_NODEV, which leaves every node
         # visible to ls/stat but unopenable — `echo x > /dev/null` refused
         # EACCES on a crw-rw-rw- file. A lying environment, worse than a
-        # missing one; see pikuri-code/DESIGN.md.
+        # missing one; see pikuri-code/design/architecture.md.
         refute_includes argv, '--bind'
         assert argv.each_cons(2).any? { |a, b| a == '--chdir' && b == root.to_s },
                "expected --chdir #{root} in #{argv.inspect}"

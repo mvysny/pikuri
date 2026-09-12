@@ -59,8 +59,8 @@ The first time the agent wants to write a file or run a shell
 command, it prompts you on the terminal (`(y/n)?`). Read what
 it's about to do before you say yes. Two instruction files are
 prepended to the system prompt as context when present: your
-user-wide `~/.claude/CLAUDE.md` first, then a project `AGENTS.md`
-or `CLAUDE.md` at the workspace root (`AGENTS.md` wins when both
+user-wide `~/.claude/AGENTS.md` first, then a project `AGENTS.md`
+or `AGENTS.md` at the workspace root (`AGENTS.md` wins when both
 exist) — so a project's rules refine your user-wide ones.
 
 ## Security: this is a tech demo, treat it accordingly
@@ -98,7 +98,7 @@ model has glaring holes:
 In short: run it inside a Docker container, a dev container, a
 VM, a fresh user account — anywhere you'd be fine with a stranger
 having a shell. The sandboxing story is a known gap and tracked
-as future work (see [`ideas/security-open-questions.md`](../ideas/security-open-questions.md)); until it lands,
+as future work (see [`design/ideas/security-open-questions.md`](../design/ideas/security-open-questions.md)); until it lands,
 **assume the agent can do anything your user can do**, and
 approve prompts on that basis.
 

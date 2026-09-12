@@ -16,7 +16,7 @@ module Pikuri
     # +Agent#run_loop+ resets its cancellable at the turn boundary, which would
     # erase a pending Ctrl+C. Provider errors propagate verbatim; how each
     # consumer then handles them is the cancel/degrade policy in
-    # +pikuri-mcp/DESIGN.md+.
+    # +pikuri-mcp/design/architecture.md+.
     class Thinker
       # System prompt for the one-shot agents. The real
       # instructions (synthesis framing, verification rubric) live

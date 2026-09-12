@@ -8,7 +8,7 @@ JSON-RPC member: a `result`, or a complete notification frame.
 a run recorded verbatim (the `jdt:` URI, the error codes and messages, the
 progress token titles, the 14 `Pikuri::Tool` rows and the file that
 declares it last) come from the live runs written up in
-`DESIGN.md` §Measurements, cited per file below by finding id. What is *ours*
+`pikuri-lsp/design/architecture.md` §Measurements, cited per file below by finding id. What is *ours*
 is whitespace, key order, paths the write-up elided, and ranges past the one
 line a finding recorded.
 These are faithful reconstructions of recorded payloads, not raw captures — the

@@ -533,7 +533,7 @@ deliberate and worth knowing before it surprises you: on a *trusted* repo,
 adding a language server to a wiring that also has web access can light a
 trifecta leg that was dark before. [Measuring the
 trifecta](trifecta-detector.md) explains what that reads like at boot;
-`pikuri-lsp/DESIGN.md` argues the declaration line by line.
+`pikuri-lsp/design/architecture.md` argues the declaration line by line.
 
 For the same reason, one thing is fixed and not configurable: the
 workspace root is the server's working directory *and* the `rootUri` it
@@ -647,7 +647,7 @@ is why each probe names the decision it guards. `no answer` means the
 probe could not run here and says why, because "absence of evidence" is
 not something a diagnostic should round to a clean bill of health. Every
 finding id in that output (`F_`, `J_`, `H_`, `S_`) is a paragraph in
-`pikuri-lsp/DESIGN.md`, cited from the specs and the fixtures too, so a
+`pikuri-lsp/design/architecture.md`, cited from the specs and the fixtures too, so a
 drift leads somewhere.
 
 If that shape feels familiar, it is the same one as the wire check in
@@ -711,5 +711,5 @@ silent failures appealed to you.
 The vocabulary you have now is enough to read
 [`pikuri-lsp`](../pikuri-lsp/README.md)'s sources directly — start at
 `Connection` for the protocol, `Navigator` for what one call does end to
-end, and `pikuri-lsp/DESIGN.md` for the threat model and the measurements
+end, and `pikuri-lsp/design/architecture.md` for the threat model and the measurements
 every line of it rests on.

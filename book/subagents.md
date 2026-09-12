@@ -128,7 +128,7 @@ reference, so one keystroke stops the whole tree), or the child fills
 its own context window. pikuri shipped a per-persona `max_steps` cap
 until September 2026 and removed it: it never caught a runaway agent
 and regularly cut off a minion that was still making progress. See
-`DECISIONS.md` `D_no_step_limit` if you want the argument.
+`design/decisions.md` `D_no_step_limit` if you want the argument.
 
 The bundled `RESEARCHER` is the one you just saw fan out. Its
 prompt lives at `pikuri-subagents/prompts/persona-researcher.txt`
