@@ -70,8 +70,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'ruby-readability', '~> 0.7'
 
   # LLM transport + agent loop. Pikuri sits on top of ruby_llm and owns
-  # only the extension surface (see CLAUDE.md "Scope decisions" and "The
-  # seam"). The tight pin reflects the bus-factor and Chat-API-churn risk
+  # only the extension surface (see AGENTS.md "Invariants (seams)" and
+  # "Out of scope"). The tight pin reflects the bus-factor and Chat-API-churn risk
   # of leaning on a single upstream for the loop itself.
   spec.add_dependency 'ruby_llm',         '~> 1.16'
 

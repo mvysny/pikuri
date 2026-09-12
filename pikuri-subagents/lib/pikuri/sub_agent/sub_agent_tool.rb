@@ -27,7 +27,7 @@ module Pikuri
     # subset (filtered out of +parent.tools + parent.sub_agent_tools+ by
     # +persona.tool_names+). The propagation policy is inlined here rather
     # than delegated to a +for_sub_agent+ control hook — the two controls are
-    # a fixed set and the policy is sub-agent-specific (this gem's CLAUDE.md,
+    # a fixed set and the policy is sub-agent-specific (this gem's AGENTS.md,
     # *Sub-agent propagation*).
     #
     # A child's loop is *unbounded*, as the parent's is: a persona carries no

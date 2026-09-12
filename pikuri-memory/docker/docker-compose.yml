@@ -13,7 +13,7 @@
 # carries mem0's LLM/embedder calls to the host's llama.cpp router
 # (see Mem0Server's "router relay" yardoc section). The pgvector
 # default the upstream server ships has a top-k inversion bug
-# (ideas/memory-mem0.md §"Root cause"); Qdrant ranks correctly.
+# (design/ideas/memory-mem0.md §"Root cause"); Qdrant ranks correctly.
 # Verified end-to-end (server boots with no Postgres, add + search
 # through the REST API rank correctly against the local llama.cpp
 # router).

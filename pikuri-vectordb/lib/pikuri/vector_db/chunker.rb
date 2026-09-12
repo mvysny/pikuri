@@ -15,7 +15,7 @@ module Pikuri
     #
     # FixedWindow is enough for v1: fancier chunkers (heading-aware, AST-aware,
     # contextual, parent-document) are real quality wins but separately scoped
-    # (see +ideas/vectordb-deferrals.md+). The plain token-budgeted window works
+    # (see +design/ideas/vectordb-deferrals.md+). The plain token-budgeted window works
     # on every format {Pikuri::FileType.read_as_text} flattens to prose, and the
     # bigger quality lever in practice is the embedder/reranker choice.
     module Chunker

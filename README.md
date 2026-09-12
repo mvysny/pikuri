@@ -133,8 +133,9 @@ Pikuri is the counter-move: privacy-first defaults (no cloud
 account, no API key, no telemetry), sane defaults so the first
 conversation needs no config file, and a deliberately small
 codebase that doubles as a tour of how a small agent runtime
-actually works. See [`CLAUDE.md`](CLAUDE.md) for the design
-rationale; [`COMPARISON.md`](COMPARISON.md) places pikuri next to
+actually works. See [`design/decisions.md`](design/decisions.md) for the
+design rationale and the roads not taken;
+[`design/comparison.md`](design/comparison.md) places pikuri next to
 opencode and pi.
 
 ## Curious how the agentic loop actually works?

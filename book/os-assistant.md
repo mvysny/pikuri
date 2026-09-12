@@ -340,7 +340,7 @@ deliberately simpler — a single markdown file:
 ~/.config/pikuri/MACHINE.md
 ```
 
-A `CLAUDE.md` for this host. It's read at boot and folded into the
+A `AGENTS.md` for this host. It's read at boot and folded into the
 system prompt, and the agent edits it through the *same confirmed
 `write`/`edit` path* as any other file. That choice is the whole
 point of contrast with the memories chapter. mem0's safety rested on an invisible
@@ -361,7 +361,7 @@ steering power. The counterweights are that it's your own trusted
 file and every write is confirmed; the severed network still contains
 the blast radius. There's a soft size guard, too: past ~10k the agent
 is nudged to trim, the same way the Claude CLI nudges an oversized
-`CLAUDE.md`.
+`AGENTS.md`.
 
 ## Grounding — what the agent already knows about the host
 
@@ -563,7 +563,7 @@ risk lives.
 (Rejecting with `n` also prompts for an optional reason, which comes back
 to the agent as the observation — a decline that steers instead of just
 failing. Richer confirmer shapes still on the list are in
-[`ideas/more-confirmers.md`](../ideas/more-confirmers.md).)
+[`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md).)
 
 ## Two network boundaries, not one
 
@@ -626,7 +626,7 @@ Part 2 *weakens* the third leg; it does not delete it. What remains:
 
 Sharper still — richer confirmers, an ingest-side gate on what the
 researcher returns — is future work in
-[`ideas/more-confirmers.md`](../ideas/more-confirmers.md).
+[`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md).
 
 ---
 

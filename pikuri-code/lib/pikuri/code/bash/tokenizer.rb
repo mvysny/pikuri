@@ -57,7 +57,7 @@ module Pikuri
       # spelling-based classifiers in {PassiveCommandDetector} sound — the
       # cross-cutting "why the de-quoted word must be the *true* word, and why an
       # allowlist tolerates a shortcut a denylist doesn't" argument lives in
-      # +pikuri-code/DESIGN.md+ (*The soundness hinge: true de-quoted words*).
+      # +pikuri-code/design/architecture.md+ (*The soundness hinge: true de-quoted words*).
       #
       # The classic mis-parse — +echo "a\"b; rm x"+, where a naive lexer closes
       # the span at the escaped quote and exposes the +;+ — cannot happen: the

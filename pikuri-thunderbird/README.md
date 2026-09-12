@@ -16,7 +16,7 @@ Thunderbird compose window** — you read it, and *you* click Send. It draws the
 draft in plain text (no hidden HTML, no tracking images), refuses a body laced
 with invisible characters, drops look-alike recipient addresses for you to
 retype, and warns you when you're about to mail a domain you've never
-corresponded with. See [`DESIGN.md`](DESIGN.md).
+corresponded with. See [`design/architecture.md`](design/architecture.md).
 
 ## Requirements
 
@@ -62,5 +62,5 @@ will keep the tools unused).
 pikuri copies a consistent snapshot of Thunderbird's SQLite databases (so it
 never fights Thunderbird for the lock), builds its own fast full-text index
 over the already-decoded mail, and serves ranked search + full reads with no
-MIME parsing. Design and threat model: [`DESIGN.md`](DESIGN.md). In-flight
-design notes: `ideas/thunderbird.md` in the repo.
+MIME parsing. Design and threat model: [`design/architecture.md`](design/architecture.md). In-flight
+design notes: `design/ideas/thunderbird.md` in the repo.

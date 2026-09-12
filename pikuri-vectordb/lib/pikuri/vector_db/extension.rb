@@ -120,12 +120,12 @@ module Pikuri
       #   any {Backend} implementation. {InMemory} is the
       #   educational default; {Backend::Qdrant} the recommended
       #   persistent backend ({Backend::Chroma} the supported
-      #   alternative — see +DESIGN.md+).
+      #   alternative — see +design/architecture.md+).
       # @param source [String, Pathname] path to index. A file
       #   indexes directly; a directory is walked recursively
       #   (see {Indexer::DENYLIST}). Single source only in v1
       #   — multi-source is deferred (see
-      #   +ideas/vectordb-deferrals.md+ §"Multi-source indexing").
+      #   +design/ideas/vectordb-deferrals.md+ §"Multi-source indexing").
       # @param embedder [#embed, nil] anything implementing
       #   +embed(Array<String>) -> Array<Array<Float>>+; +nil+
       #   constructs {Embedder} with the default model.

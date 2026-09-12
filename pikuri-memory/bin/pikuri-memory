@@ -19,7 +19,7 @@
 # outbound leg. Capture also feeds only the user's own words, and recalled
 # context enters as a system message (never re-extracted). Do NOT bolt web
 # tools onto this agent without re-deriving the recall-poisoning
-# mitigations (see pikuri-memory/DESIGN.md).
+# mitigations (see pikuri-memory/design/architecture.md).
 #
 # Two model roles, both served by the local llama.cpp router:
 #   * the CHAT model (the conversation) — may be a thinking model;
@@ -44,7 +44,7 @@ require 'pikuri-memory'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
-# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# AGENTS.md "Environment is not a secret store"). Shared by convention across
 # the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}

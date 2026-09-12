@@ -221,7 +221,7 @@ def drive_probes(entry:, root:, path:, line:, symbol:)
     end
   end
 
-  probe('no rendered answer repeats a row (R_same_line_references)',
+  probe('no rendered answer repeats a row (E_same_line_references)',
         "Renderer#locations deduping on the row, since pikuri prints no column") do
     repeated = answers.filter_map do |name, answer|
       rows = answer.lines.select { |row| row.match?(/\A {2}\S/) }.map(&:rstrip)
@@ -250,7 +250,7 @@ def drive_probes(entry:, root:, path:, line:, symbol:)
     end
   end
 
-  probe('hover stays silent on a method\'s own def line (R_hover_not_on_a_def_line)',
+  probe('hover stays silent on a method\'s own def line (E_hover_not_on_a_def_line)',
         'why documentSymbol, not hover, is the route to a method') do
     declaration = File.readlines(path)[line - 1].to_s.match?(/^\s*def\s+(self\.)?#{Regexp.escape(symbol)}\b/)
     answered = !answers['hover'].to_s.start_with?('The server answered no results')

@@ -345,13 +345,16 @@ chmod 600 ~/.pikuri-examples-config.yaml
 
 Every key is optional — with no file at all, the scripts fall back to
 a local `llama-server` at `http://localhost:8080` and need no API key.
-The recognized keys:
+A key is not a cloud opt-in: if you start your own server with
+`llama-server --api-key YOUR_SECRET` (worth doing the moment it listens
+on anything but loopback), put that same secret in `llm_api_key` and
+everything stays on your machine. The recognized keys:
 
 | Key | Used by | Meaning |
 |-----|---------|---------|
 | `llm_server` | all scripts | LLM server base URL; a trailing `/v1` is optional (`https://api.x.ai` and `https://api.x.ai/v1` both work) |
 | `llm_model` | all scripts | chat model identifier |
-| `llm_api_key` | all scripts | API key for a hosted provider; omit for a keyless local server |
+| `llm_api_key` | all scripts | API key the server expects — a hosted provider's, or the secret of a local `llama-server --api-key`; omit for a keyless local server |
 | `search` | chat, code, assistant, os | the search block: `brave_key`, `exa_key`, `engines` (below) |
 | `embed_model` | corpus, memory | embedding model |
 | `extraction_model` | memory | mem0 extraction model |

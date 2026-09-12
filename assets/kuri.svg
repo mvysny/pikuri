@@ -2,8 +2,8 @@
   <!-- Kuri - pikuri's mascot, in the Talus coat. THIS FILE IS THE MASTER: it
        lives in pikuri/assets/ and every other copy, in this repo or a host's,
        is downstream of it. Why a pika, why this coat, and what was drawn and
-       rejected first: D_kuri_mascot in *pikuri's* DECISIONS.md - named in full
-       because this file is vendored, and a bare "DECISIONS.md" would point at
+       rejected first: D_kuri_mascot in *pikuri's* design/decisions.md - named in full
+       because this file is vendored, and a bare "design/decisions.md" would point at
        the wrong repo everywhere but here.
 
        Deliberately transparent and unplated. Talus is a mid grey, which holds

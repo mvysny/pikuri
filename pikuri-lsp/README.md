@@ -13,9 +13,9 @@ what it refuses to become: the moment it applies an edit it needs the
 > **Status: young.** Everything below is in and wired — `bin/pikuri-code`
 > builds its registry from the `lsp_servers:` key of
 > `~/.pikuri-examples-config.yaml`, and one `c.add_extension` does the same
-> for any other host. [`DESIGN.md`](DESIGN.md) carries the threat model and
-> the measurements every call here rests on, `DECISIONS.md` the five forks
-> (`D_lsp_*`), and [the language-intelligence chapter](../book/lsp.md) the
+> for any other host. [`design/architecture.md`](design/architecture.md) carries the threat model and
+> the measurements every call here rests on, `../design/decisions.md` its five
+> LSP forks, and [the language-intelligence chapter](../book/lsp.md) the
 > teaching walk-through.
 
 ## What is here

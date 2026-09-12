@@ -46,7 +46,7 @@ require 'pikuri-pdf'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
-# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# AGENTS.md "Environment is not a secret store"). Shared by convention across
 # the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
@@ -162,7 +162,7 @@ embedder = Pikuri::VectorDb::Embedder.new(
 # (routed through Pikuri::Subprocess, teardown registered with
 # Pikuri::Finalizers) and persist the embeddings to disk — so a corpus
 # you index once stays indexed across runs. Qdrant is the recommended
-# engine (DESIGN.md has the survey); Chroma remains for hosts that
+# engine (design/architecture.md has the survey); Chroma remains for hosts that
 # already run it.
 server_class, engine_flag =
   if use_qdrant then [Pikuri::VectorDb::Server::Qdrant, '--qdrant']

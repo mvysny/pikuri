@@ -588,7 +588,7 @@ describe Pikuri::Lsp::LspTool do
     end
 
     # Two references on one line, differing only in the column pikuri never
-    # prints (R_same_line_references) — so deduping on Location identity would
+    # prints (E_same_line_references) — so deduping on Location identity would
     # leave both rows standing.
     it 'collapses two results on one line, which render as the same row' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes, root|

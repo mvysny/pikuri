@@ -236,7 +236,7 @@ a vector backend anywhere in sight.
 The alternative — a `Rag::Indexer` that wraps SQLite plus the vectordb
 indexer — was the larger cut and got rejected. It would re-read and
 re-extract every file, and it would have to merge two "what's indexed?"
-manifests. `DECISIONS.md` `D_rag_gem` has the full comparison.
+manifests. `design/decisions.md` `D_rag_gem` has the full comparison.
 
 ### "Indexed" means both stores hold it
 

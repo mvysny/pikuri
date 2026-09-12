@@ -14,7 +14,7 @@
 # model's own chat template and a template may drop, merge or reorder whatever it
 # likes. That is not hypothetical: Qwen3.6's template discards every
 # system/developer message past the leading header, which silently disabled
-# pikuri's memory prefetch and skill promotions (DECISIONS.md
+# pikuri's memory prefetch and skill promotions (design/decisions.md
 # `D_reference_text_as_user_turn`).
 #
 # Two phases, because the two layers fail differently:
@@ -219,5 +219,5 @@ end
 puts
 puts "#{eaten.size} of #{MARKERS.size} positions never reach the model."
 puts 'Nothing inside pikuri can detect this — do not route anything load-bearing'
-puts 'through an eaten position. See DECISIONS.md `D_reference_text_as_user_turn`.'
+puts 'through an eaten position. See design/decisions.md `D_reference_text_as_user_turn`.'
 exit 1

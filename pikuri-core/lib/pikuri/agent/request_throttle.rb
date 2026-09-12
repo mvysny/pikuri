@@ -38,7 +38,7 @@ module Pikuri
     # Blocking inside an *instrumentation* hook is a semantic stretch — the name
     # says observe, this gates — accepted because the contract ruby_llm
     # documents is "yield and return the block's result", which is all a gate
-    # needs. The measurements and the roads not taken: +DECISIONS.md+
+    # needs. The measurements and the roads not taken: +design/decisions.md+
     # +D_llm_request_throttle+.
     #
     # Thread-safe: immutable after construction, and the waiting is

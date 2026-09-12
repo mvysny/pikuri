@@ -17,7 +17,7 @@ module Pikuri
     # is the inverse: recoll indexes exactly the *folders* the user
     # configured (+topdirs+), source code included — everything outside them
     # is invisible. The measured survey behind the pick-one-per-host order
-    # is in +pikuri-os/DESIGN.md+.
+    # is in +pikuri-os/design/architecture.md+.
     #
     # {.search} asks +recollq -F 'url abstract'+ for two base64-encoded
     # fields per line (recoll's own recommended machine shape) so paths and

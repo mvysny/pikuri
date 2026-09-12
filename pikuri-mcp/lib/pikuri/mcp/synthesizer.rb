@@ -9,7 +9,7 @@ module Pikuri
     # the {Thinker} pre-call check propagates (not caught by the +StandardError+
     # rescue) to abort startup; any other +StandardError+ (flaky LLM, cache
     # write failure) is WARN-logged and returns +nil+, so a transient blip
-    # doesn't drop a server from the listing. See +pikuri-mcp/DESIGN.md+.
+    # doesn't drop a server from the listing. See +pikuri-mcp/design/architecture.md+.
     class Synthesizer
       LOGGER = Pikuri.logger_for('Mcp::Synthesizer')
       private_constant :LOGGER

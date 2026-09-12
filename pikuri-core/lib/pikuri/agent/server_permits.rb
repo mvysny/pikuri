@@ -15,7 +15,7 @@ module Pikuri
     # over any such default.
     #
     # It doubles as that probe's memo: {.sized?} answers "do I already know this
-    # server?" for a caller about to pay for a request (+DECISIONS.md+
+    # server?" for a caller about to pay for a request (+design/decisions.md+
     # +D_probe_when_unknown+).
     #
     # {RequestThrottle} is the acquire site — one permit per HTTP request, held
@@ -23,7 +23,7 @@ module Pikuri
     #
     # The scope is the *server*, not the agent talking to it, so this is one
     # process-wide registry and there is deliberately no per-agent permit pool
-    # to construct and pass in (+DECISIONS.md+ +D_rate_limiter_scope+,
+    # to construct and pass in (+design/decisions.md+ +D_rate_limiter_scope+,
     # +D_llm_request_throttle+). Narrative in book/hosting.md.
     #
     # Keys are normalized as {ChatTransport.from_openai_server} normalizes a

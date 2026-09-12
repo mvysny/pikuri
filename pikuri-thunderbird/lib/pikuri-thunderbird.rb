@@ -14,7 +14,7 @@ require 'pikuri-core'
 # but *no egress leg* — the lethal trifecta is broken by construction, the
 # same model as +bin/pikuri-corpus+. Outbound actions (compose / create
 # event) are v2 and are always human-gated hand-offs to Thunderbird's own
-# UI. Threat model: +DESIGN.md+; design rationale: +ideas/thunderbird.md+.
+# UI. Threat model: +design/architecture.md+; design rationale: +design/ideas/thunderbird.md+.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri

@@ -64,8 +64,8 @@ module Pikuri
     # egress leg, not mere feature toggles.
     #
     # Both are human-gated hand-offs — pikuri writes nothing to Thunderbird's
-    # stores and sends/imports nothing itself (+DESIGN.md+,
-    # +ideas/thunderbird.md+).
+    # stores and sends/imports nothing itself (+design/architecture.md+,
+    # +design/ideas/thunderbird.md+).
     #
     # == One instance per agent
     #

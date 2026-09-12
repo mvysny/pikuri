@@ -14,7 +14,7 @@ module Pikuri
       #
       # Constructed with its API key (+Brave.new(api_key:)+); {Engines} builds
       # one only when a Brave key was configured. pikuri reads no key from the
-      # environment (CLAUDE.md "Environment is not a secret store"). Key at
+      # environment (AGENTS.md "Environment is not a secret store"). Key at
       # https://api-dashboard.search.brave.com — the free "Data for Search" tier
       # allows 1 query/sec, ~2k/month.
       #

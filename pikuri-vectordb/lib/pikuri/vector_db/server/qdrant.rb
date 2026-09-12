@@ -14,7 +14,7 @@ module Pikuri
       #
       # *Port 6333 caveat:* +pikuri-memory+'s +Mem0Server+ compose stack also
       # publishes its own internal Qdrant on host 6333 (separate instance by
-      # design — see +DESIGN.md+), so running both at the defaults collides —
+      # design — see +design/architecture.md+), so running both at the defaults collides —
       # pass a different +port:+ here when the mem0 stack is up.
       class Qdrant
         # @return [String] pinned qdrant docker image; bump it to upgrade

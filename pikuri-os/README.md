@@ -9,7 +9,7 @@ answer questions about the machine, find and open files, read logs and
 explain errors, advise on configuration. It is the federation's
 privacy-first `@os` member shipped as a standalone single agent (walked
 through in [the guide's OS-assistant chapter](../book/os-assistant.md); see
-[`ideas/pikuri-os.md`](../ideas/pikuri-os.md) for the design
+[`design/ideas/pikuri-os.md`](../design/ideas/pikuri-os.md) for the design
 origin and the work still deferred).
 
 Posture (the load-bearing parts):
@@ -23,7 +23,7 @@ Posture (the load-bearing parts):
   only provably-read-only commands.
 - **Advise, don't execute, anything privileged or networked.** Anything
   needing `sudo` or the network is handed to the user to run.
-- **Memory is a single `MACHINE.md`**, not mem0 — a `CLAUDE.md` for this
+- **Memory is a single `MACHINE.md`**, not mem0 — an `AGENTS.md` for this
   host, appended to the system prompt at boot and editable through the
   confirmed write path.
 
@@ -37,7 +37,7 @@ machine), and the researcher — having no private data — can at worst leak
 that approved task plus the public pages it read. This is a *separate*
 network boundary from the bash sandbox, which **stays kernel-severed
 regardless**. Off by default; the agent stays networkless until you pass
-the flag. See [`ideas/more-confirmers.md`](../ideas/more-confirmers.md)
+the flag. See [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md)
 for the harder pieces still deferred (editable task prompts, a
 reject-reason channel).
 

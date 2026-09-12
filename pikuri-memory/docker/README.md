@@ -23,7 +23,7 @@ supervisor clones mem0, applies the patch, and drives compose through
   1. mem0's pgvector provider has a top-k inversion bug — it returns the
      *farthest* matches (cosine distance ranked as if it were a
      similarity). Qdrant ranks correctly. See
-     `../DESIGN.md` §"Root cause: the pgvector top-k inversion".
+     `../design/architecture.md` §"Root cause: the pgvector top-k inversion".
   2. the pgvector provider connects to Postgres *eagerly at boot*, so
      leaving it as the default would force a Postgres container into the
      stack. Defaulting to Qdrant lets the server boot Postgres-free.

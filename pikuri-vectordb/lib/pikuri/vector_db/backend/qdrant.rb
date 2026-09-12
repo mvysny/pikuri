@@ -9,7 +9,7 @@ module Pikuri
     module Backend
       # Thin Faraday HTTP client against a self-hosted Qdrant server (1.x REST,
       # 1.8+), the *recommended* persistent backend (see
-      # +pikuri-vectordb/DESIGN.md+ for the Chroma-vs-Qdrant survey). Same
+      # +pikuri-vectordb/design/architecture.md+ for the Chroma-vs-Qdrant survey). Same
       # duck-typed {Backend} protocol as {InMemory} / {Chroma}. Hand-rolled for
       # the same reasons as {Chroma}; the 1.x REST surface is stable, so the
       # track-by-hand cost is lower. Bring your own via +Qdrant.new(host:, port:,
@@ -39,7 +39,7 @@ module Pikuri
       # * *Cosine, no conversion*: created +distance: 'Cosine'+; unlike Chroma
       #   (distance, +1 - d+), Qdrant's +score+ already *is* a similarity, passed
       #   through untouched. (Same convention that makes mem0's ranker correct on
-      #   Qdrant and inverted on pgvector — +pikuri-memory/DESIGN.md+.)
+      #   Qdrant and inverted on pgvector — +pikuri-memory/design/architecture.md+.)
       # * *Vector-dim* diverges from {InMemory} like {Chroma}, with a wrinkle:
       #   Qdrant fixes the dim at *collection creation*, so {#upsert} creates it
       #   with the first batch's size; later mismatches are HTTP 4xx →

@@ -259,7 +259,7 @@ describe Pikuri::Memory::Extension do
     # conversation. That used to be backed up by the role — a recalled block was
     # a :system message — but since `D_reference_text_as_user_turn` the block is
     # a :user message like any other, so this is the only thing left holding it.
-    # See DESIGN.md §"Retrieval".
+    # See design/architecture.md §"Retrieval".
     it 'captures the turn it was handed, never the block it returns' do
       require 'timeout'
       client = fake_client_class.new

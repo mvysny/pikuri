@@ -321,7 +321,7 @@ Pikuri::Mcp::Registry::HttpEntry.new(
 
 `StdioEntry` is the documented carve-out from `pikuri`'s
 otherwise-strict `Pikuri::Subprocess.spawn` chokepoint convention
-(see CLAUDE.md): the upstream `mcp` gem owns the subprocess
+(see AGENTS.md): the upstream `mcp` gem owns the subprocess
 lifecycle on stdio servers, and routing through pikuri's
 chokepoint would mean forking the gem. That the argv here happens
 to start with `docker` changes nothing — to pikuri it's just an

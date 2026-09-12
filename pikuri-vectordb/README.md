@@ -75,7 +75,7 @@ one-line change:
   everything reloads from sources on every boot.
 - `Backend::Qdrant` — thin Faraday HTTP client against a
   self-hosted [Qdrant](https://qdrant.tech). **The recommended
-  persistent backend** — [`DESIGN.md`](DESIGN.md) has the engine
+  persistent backend** — [`design/architecture.md`](design/architecture.md) has the engine
   survey behind the pick.
 - `Backend::Chroma` — the supported
   [ChromaDB](https://www.trychroma.com) alternative, identical
@@ -206,7 +206,7 @@ events for the `Watcher`; loaded only when a `Watcher` starts).
 - **Guide chapter:** [Agentic search and the vector
   DB](../book/vectordb.md) — concepts, model setup, the
   no-egress argument, `--qdrant --watch` day-to-day shape.
-- **Design notes:** [`DESIGN.md`](DESIGN.md) — the Chroma-vs-Qdrant
+- **Design notes:** [`design/architecture.md`](design/architecture.md) — the Chroma-vs-Qdrant
   engine survey.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-vectordb> (once published),

@@ -1,16 +1,1 @@
-# pikuri-workspace — CLAUDE.md
-
-This gem's must-not-break list, loaded beside the root `../CLAUDE.md`
-when work touches this directory. One-line invariants + pointers only;
-the truth and its rationale live in the cited yardoc and `DESIGN.md`,
-roads not taken in `../DECISIONS.md`.
-
-The three seams here are **consumed by other gems** (`Bash` and `agent`
-take a `Confirmer`; `Bash` takes the bare `Filesystem`; the LSP tool
-renders walked paths) — their `CLAUDE.md` point here, never restate.
-
-## Seams (invariants)
-
-- **Workspace seam.** File tools take a `Workspace::Workspace` composite, `Bash` the bare `Workspace::Filesystem`; every path routes through `#resolve_for_read` / `#resolve_for_write`. The composite enforces the read-before-edit gate, file tools run in-process as the real user (so `File.writable?` is exact and backs the confirm-writable-writes posture), and every confirmed write routes through {Pikuri::Workspace::WriteGate}. See {Pikuri::Workspace::Workspace}, {Pikuri::Workspace::Filesystem}, {Pikuri::Workspace::Extension} (the depth-1 boot snapshot).
-- **Denylist seam (walked vs. supplied paths).** `resolve_for_*` gates a path the *model* supplied; a path a tool **walked** to must pass `Filesystem#denied?` before it is reported — that check is the fail-closed guarantee, `rg` pruning is an optimization. Roster: `Listing`, `Search::Glob`, `Search::Grep` (via `Utils.reject_denied_lines`), and `Lsp::Sources` / `Lsp::Renderer` in `pikuri-lsp`. `T_walked_path_denylist`. See {Pikuri::Workspace::Filesystem#denied?}, `DECISIONS.md` `D_walked_path_denylist`.
-- **Confirmer seam.** State-mutating or network-dispatching tools take a `Workspace::Confirmer` and route every prompt through `#ask(request:)` → `Approved` / `Rejected`. Presentation belongs to the confirmer; tool code never touches `gets` / `puts` / `$stdin` / `$stdout`, and defanging is the shared `Pikuri::Sanitizer`. See {Pikuri::Workspace::Confirmer}, {Pikuri::Sanitizer}.
+@AGENTS.md

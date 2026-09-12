@@ -6,7 +6,7 @@ require 'json'
 module Pikuri
   module Memory
     # Thin Faraday HTTP client against a self-hosted mem0 server (the v3
-    # "token-efficient" line — see DESIGN.md). Hand-rolled rather than
+    # "token-efficient" line — see design/architecture.md). Hand-rolled rather than
     # depending on a mem0 Ruby SDK (there isn't a maintained one), so the
     # wire protocol stays auditable in one readable file.
     #
@@ -17,7 +17,7 @@ module Pikuri
     # server must be configured for the stack pikuri assumes: a local
     # OpenAI-compatible LLM + embedder (llama.cpp via +openai_base_url+),
     # the **Qdrant** vector backend (the pgvector path has a top-k
-    # inversion bug — see DESIGN.md §"Root cause: the pgvector top-k
+    # inversion bug — see design/architecture.md §"Root cause: the pgvector top-k
     # inversion"), and a non-reasoning extraction model. Endpoints used:
     #
     # * +POST /memories+ — append. Body
@@ -39,7 +39,7 @@ module Pikuri
     # Feeding only the user's own words to extraction structurally removes
     # the dominant junk sources a production mem0 audit measured (assistant
     # restating, recalled-memory feedback loops, involuntary secret
-    # leakage — DESIGN.md §"Extraction-input discipline"). The rule lives
+    # leakage — design/architecture.md §"Extraction-input discipline"). The rule lives
     # in the signature so it can't be bypassed by accident.
     #
     # == Errors are loud
@@ -97,7 +97,7 @@ module Pikuri
       # Append a memory. Wraps +content+ as one +role: "user"+ message
       # (the user-only rule — see the class header) and posts it for
       # extraction. mem0 is append-only: a correction is a *newer*
-      # add, never a mutation of an earlier row (DESIGN.md §"Why mem0").
+      # add, never a mutation of an earlier row (design/architecture.md §"Why mem0").
       #
       # @param content [String] the user's own words to extract from.
       # @param user_id [String] the mem0 namespace (one per user).
@@ -135,7 +135,7 @@ module Pikuri
       # returns the relevant memories (including a stale fact and its
       # correction) near-tied, and the consuming LLM resolves them at
       # synthesis. That's why {Record#created_at} rides along. See
-      # DESIGN.md §"Supersede recall: resolution is the consumer's job".
+      # design/architecture.md §"Supersede recall: resolution is the consumer's job".
       #
       # @param query [String] natural-language recall query (typically
       #   the latest user message, or a +recall+ topic).

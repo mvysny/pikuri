@@ -38,7 +38,7 @@ module Pikuri
     # does work for a concrete case, resolving against
     # {Pikuri::Skill::Activation::Sealed} (ungated skills only, never the
     # parent's path promotions); why that is not the default is
-    # +DECISIONS.md+ +D_no_skills_in_sub_agents+.
+    # +design/decisions.md+ +D_no_skills_in_sub_agents+.
     #
     # @example bundled researcher
     #   Pikuri::SubAgent::RESEARCHER

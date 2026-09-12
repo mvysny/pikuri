@@ -52,7 +52,7 @@ Gem::Specification.new do |spec|
   # recall with the corpus quarantined in the LIBRARIAN sub-agent,
   # plus durable memories). The quarantined wiring wants a per-tool
   # pool choice on VectorDb::Extension, which registers all three
-  # tools parent-visibly today — see ideas/vectordb-deferrals.md — so
+  # tools parent-visibly today — see design/ideas/vectordb-deferrals.md — so
   # the binary registers neither yet; the deps declare intent.
   spec.add_dependency 'pikuri-core',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-extractors', "= #{Pikuri::VERSION}"

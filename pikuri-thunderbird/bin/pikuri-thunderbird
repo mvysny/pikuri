@@ -25,7 +25,7 @@ require 'pikuri-thunderbird' # pulls in pikuri-core
 profile_dir = nil
 
 # Example-only config: LLM connection + keys live verbatim in a user-owned
-# YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
+# YAML file (see AGENTS.md "Environment is not a secret store"). chmod 600.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 server = examples_config['llm_server'] || 'http://localhost:8080'

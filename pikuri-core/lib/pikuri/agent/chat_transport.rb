@@ -35,7 +35,7 @@ module Pikuri
     # It rides the transport rather than a call because the spelling is
     # per-model-per-server, exactly like +context_window+; pikuri translates
     # none of it — a parameter is sent as written or not at all. Why there is no
-    # typed +thinking:+ flag instead: +DECISIONS.md+
+    # typed +thinking:+ flag instead: +design/decisions.md+
     # +D_opaque_request_params+.
     #
     # Two edges worth knowing. Keys are deep-symbolized on the way in (naming
@@ -70,7 +70,7 @@ module Pikuri
     #     model-on-server, or +nil+ to defer to {ContextWindowDetector}. Travels
     #     with the model because the cap *is* per-model-per-server. It overrides
     #     the probed +n_ctx+ and nothing else — the {Agent::ServerPermits}
-    #     auto-size still happens (+DECISIONS.md+ +D_probe_when_unknown+).
+    #     auto-size still happens (+design/decisions.md+ +D_probe_when_unknown+).
     #     Never sent to ruby_llm — pure pikuri metadata read by
     #     {Agent#detect_and_emit_context_cap!}, and the cap-inheritance channel:
     #     a spawned agent gets +parent.transport.with(context_window:

@@ -35,7 +35,7 @@ extra_readable = []
 extra_writable = []
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
-# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# AGENTS.md "Environment is not a secret store"). Shared by convention across
 # the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
 # (Per-run choices — the prompt, --no-sandbox, --writable, ... — stay on the
 # command line, not here: persisting a security toggle you forget is a footgun.)
@@ -112,7 +112,7 @@ end
 # the file tools, Bash, Grep, Glob all operate against +project_root+.
 # Keeping the Ruby process's cwd aligned with the workspace means there
 # is one truth, not two (which the LLM would otherwise have to reason
-# about — see the discussion in CLAUDE.md / IDEAS.md). Loud about it
+# about — see the discussion in AGENTS.md / IDEAS.md). Loud about it
 # so the user isn't surprised by +pwd+ output later.
 launch_cwd   = Pathname.new(Dir.pwd)
 project_root = Pikuri::Workspace::ProjectRoot.find(cwd: launch_cwd) || launch_cwd

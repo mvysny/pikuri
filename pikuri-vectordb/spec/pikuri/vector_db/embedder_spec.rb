@@ -6,7 +6,7 @@ describe Pikuri::VectorDb::Embedder do
   # Stub +RubyLLM.embed+ via +define_singleton_method+ — the
   # pattern pikuri-core/spec/pikuri/agent_spec.rb established
   # for ruby_llm singletons (rspec-mocks isn't in the closure;
-  # CLAUDE.md "Tests" convention).
+  # AGENTS.md "Tests" convention).
   let(:fake_vectors) { [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]] }
   let(:captured_calls) { [] }
 

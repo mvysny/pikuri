@@ -113,7 +113,7 @@ matches "meeting" in English and nowhere else. A current limitation
 rather than a design position: stock FTS5 has no Snowball and the
 prebuilt `sqlite3` gem cannot load a tokenizer extension, so other
 languages mean stemming in Ruby on both the index and the query side.
-See `DECISIONS.md` `D_rag_gem`.
+See `design/decisions.md` `D_rag_gem`.
 
 ## Try it
 
@@ -144,8 +144,8 @@ primitive; the two extensions cannot both be wired onto one agent.
 ## Threat model
 
 `pikuri-vectordb`'s, unchanged — which is why this gem ships no
-`DESIGN.md` of its own. Same corpus, same `private:` / `trusted:`
+`design/architecture.md` of its own. Same corpus, same `private:` / `trusted:`
 declaration, same inbound-only posture (no tool here has an egress
 leg), same membership gate on the reader. The keyword index is a
 second copy of text the vector store already holds, in a SQLite file
-the same user owns. See `pikuri-vectordb/DESIGN.md`.
+the same user owns. See `pikuri-vectordb/design/architecture.md`.

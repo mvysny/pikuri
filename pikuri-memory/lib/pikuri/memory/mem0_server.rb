@@ -35,7 +35,7 @@ module Pikuri
     # *similarity*) *and* connects to Postgres eagerly at boot.
     # {#prepare_checkout!} applies +docker/qdrant-default-config.patch+ to
     # swap the default to **Qdrant** (env-driven host/port/dims) — correct
-    # ranking *and* a Postgres-free stack. See DESIGN.md §"Root cause: the
+    # ranking *and* a Postgres-free stack. See design/architecture.md §"Root cause: the
     # pgvector top-k inversion".
     #
     # == Local LLM + embedder via the router
@@ -45,7 +45,7 @@ module Pikuri
     # +provider: "openai"+ and points +OPENAI_BASE_URL+ at the llama.cpp
     # router. The extraction model must be **non-reasoning** (e.g.
     # +Qwen2.5-7B-Instruct+) — a thinking model burns its budget on CoT
-    # and returns empty/truncated JSON (DESIGN.md §"Extraction model
+    # and returns empty/truncated JSON (design/architecture.md §"Extraction model
     # decision"). The vector store is not bundle-gated, so Qdrant is fine.
     #
     # == The router relay (container → host loopback)

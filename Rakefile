@@ -4,7 +4,7 @@ require 'json'
 require 'net/http'
 require 'open3'
 
-# Executable form of CLAUDE.md's seam tripwires — see tasks/tripwires.rake.
+# Executable form of AGENTS.md's seam tripwires — see tasks/tripwires.rake.
 Dir.glob(File.expand_path('tasks/*.rake', __dir__)).sort.each { |f| load f }
 
 # Top-level Rakefile for the pikuri monorepo. The release task bumps
@@ -96,8 +96,8 @@ end
 # `bundle exec rake`) runs the full verification. Prerequisite order keeps
 # the CI invariant — tripwires run *after* the specs, so a drifted doc
 # invariant never masks a real test failure.
-desc 'Full check: specs across every gem, then the CLAUDE.md tripwires'
-task check: %i[test tripwires]
+desc 'Full check: specs across every gem, then the AGENTS.md seam and doc-layer tripwires'
+task check: %i[test tripwires design_tripwires]
 
 task default: :check
 

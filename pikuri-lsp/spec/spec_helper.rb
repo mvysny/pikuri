@@ -26,7 +26,7 @@ Thread.report_on_exception = false
 
 # Match pikuri-core's spec_helper minitest wiring: mix the
 # assertion module in + provide the `assertions` accessor that
-# `assert_equal` and friends require internally. CLAUDE.md's
+# `assert_equal` and friends require internally. AGENTS.md's
 # "Tests" convention — minitest-style assertions inside rspec
 # example groups.
 RSpec.configure do |config|

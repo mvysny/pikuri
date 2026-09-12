@@ -25,8 +25,8 @@ module Pikuri
       # feature, what "passive" excludes vs. merely can't prove, the four
       # recovery strategies and the residual each accepts, PATH-hijack, and the
       # git-hardening containment behind +allow_git:+ — lives in
-      # +pikuri-code/DESIGN.md+ (*Passive-command auto-approval*). See also
-      # +ideas/pikuri-os.md+ and +ideas/bash-confirmer.md+.
+      # +pikuri-code/design/architecture.md+ (*Passive-command auto-approval*). See also
+      # +design/ideas/pikuri-os.md+ and +design/ideas/bash-confirmer.md+.
       #
       # == The decision rule (deny-by-default)
       #
@@ -45,7 +45,7 @@ module Pikuri
       #    +journalctl+/+man+/+rg+/+nvme+/+smartctl+ query, or — under
       #    +allow_git:+ — a passive git invocation). The four recovery strategies
       #    (subcommand gate / flag denylist / flag allowlist / glob fast path)
-      #    are surveyed in DESIGN.md; each predicate below states its own.
+      #    are surveyed in design/architecture.md; each predicate below states its own.
       #
       # A command the strict parse rejects *solely* because of an unquoted glob
       # gets a second look through the {#glob_passive?} fast path (see there):
@@ -65,7 +65,7 @@ module Pikuri
       # cross-tool coupling.
       class PassiveCommandDetector
         # Binaries passive in *every* argument form (no mutating mode
-        # reachable, with or without root). See +pikuri-code/DESIGN.md+
+        # reachable, with or without root). See +pikuri-code/design/architecture.md+
         # (*Passive-command auto-approval*) for the curation principle and
         # exclusions.
         #
@@ -245,7 +245,7 @@ module Pikuri
         #   git invocations ({#passive_git?}). Default +false+. Sound only
         #   paired with {Pikuri::Code::Bash::GIT_HARDENING}, which closes the
         #   +core.fsmonitor+ vector; the caller accepts the narrow diff-driver
-        #   residual (see +pikuri-code/DESIGN.md+).
+        #   residual (see +pikuri-code/design/architecture.md+).
         def initialize(allow_git: false)
           @allow_git = allow_git
         end

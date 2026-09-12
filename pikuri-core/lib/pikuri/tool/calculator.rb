@@ -14,7 +14,7 @@ module Pikuri
     # minus, parentheses, numeric literals, and the fixed-arity real functions
     # and constants in {FUNCTIONS} / {CONSTANTS}. No variables, sequences,
     # assignment or comparisons — every name is spelled the way Python spells
-    # it rather than as a pikuri dialect. See +DECISIONS.md+
+    # it rather than as a pikuri dialect. See +design/decisions.md+
     # +D_calculator_functions+.
     #
     # Hand-rolled rather than a gem: the previous backend (dentaku) pulled in
@@ -305,7 +305,7 @@ module Pikuri
     # Stays wired even in shells that have +bash+: it is the only *unconfirmed*
     # float arithmetic there, since a shell's own +$((…))+ is integer-only and
     # every interpreter that isn't must stay off the passive allowlist. See
-    # +DECISIONS.md+ +D_keep_calculator+.
+    # +design/decisions.md+ +D_keep_calculator+.
     #
     # Sharing: +P_stateless+ — arithmetic over the argument, no I/O, no state.
     # Hand this one constant to every agent in the VM.

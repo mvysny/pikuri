@@ -24,7 +24,7 @@ module Pikuri
       # Brave and Exa are paid and need a key; DuckDuckGo needs none. An
       # {Engines} is built with the keys it should use (+brave_key:+ /
       # +exa_key:+, both optional) — pikuri reads no key from the environment,
-      # so a host supplies them. See CLAUDE.md "Environment is not a secret
+      # so a host supplies them. See AGENTS.md "Environment is not a secret
       # store".
       class Engines
         # Subsystem logger; level via +PIKURI_LOG_ENGINES+ or +PIKURI_LOG+.
