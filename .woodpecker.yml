@@ -1,37 +1,60 @@
 when:
   - event: [push, pull_request, manual]
 
+variables:
+  # One image for every step, so the agent pulls it once.
+  - &ruby_image ruby:4.0
+
+  # The gem cache lives in Hetzner Object Storage, reached with Debian's
+  # s3cmd. It used to be minio's `mc`, fetched from dl.min.io on every
+  # build — that URL now answers 410 and the download step took CI red with
+  # it. s3cmd comes from the same apt repo the build already talks to, so
+  # there is no third-party binary left to disappear. S3_HOST is bare: the
+  # --host flag takes no scheme.
+  - &s3_env
+    S3_HOST: hel1.your-objectstorage.com
+    S3_BUCKET: mavi-ci-cache
+    AWS_ACCESS_KEY_ID:
+      from_secret: cache_access_key
+    AWS_SECRET_ACCESS_KEY:
+      from_secret: cache_secret_key
+
 steps:
+  # --- restore the gem cache ---
+  # Keyed on Gemfile.lock so it auto-busts when deps change.
+  #
+  # Its own step for two reasons. The cache secrets are not allowed on the
+  # `pull_request` event, and a secret a step *mentions* is enough to fail
+  # the whole pipeline to compile — which is why every PR build has errored
+  # out rather than run. A step whose `when` rejects the event is dropped
+  # before its secrets are resolved, so isolating the secrets here leaves PR
+  # builds compiling and running cacheless, which was the intent all along.
+  # And `failure: ignore` keeps the next cache outage from turning the build
+  # red: a cache is an optimization, never a build requirement.
+  - name: restore-cache
+    image: *ruby_image
+    failure: ignore
+    when:
+      - event: [push, manual]
+    environment: *s3_env
+    commands:
+      - apt-get update && apt-get install -y s3cmd
+      - |
+        KEY=$(sha256sum Gemfile.lock | cut -c1-16)
+        s3cmd --host="$S3_HOST" --host-bucket="%(bucket)s.$S3_HOST" --no-progress \
+          get "s3://$S3_BUCKET/$CI_REPO_NAME/bundle-$KEY.tgz" bundle.tgz \
+          && tar xzf bundle.tgz && echo "cache hit" || echo "cache miss"
+
   - name: test
-    image: ruby:4.0
+    image: *ruby_image
     environment:
       BUNDLE_PATH: vendor/bundle
-      S3_ENDPOINT: https://hel1.your-objectstorage.com
-      S3_BUCKET: mavi-ci-cache
-      S3_ACCESS_KEY:
-        from_secret: cache_access_key
-      S3_SECRET_KEY:
-        from_secret: cache_secret_key
     commands:
       - ruby -v
 
       # ripgrep (rg) is required by the Grep tool's specs; the ruby image
       # doesn't ship it, so install it from Debian.
       - apt-get update && apt-get install -y ripgrep
-
-      # --- restore the gem cache from Hetzner Object Storage ---
-      # Keyed on Gemfile.lock so it auto-busts when deps change. Skipped when
-      # no credentials are present (e.g. a fork PR), so such builds still pass.
-      - |
-        if [ -n "$S3_ACCESS_KEY" ]; then
-          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && chmod +x /usr/local/bin/mc
-          mc alias set hz "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY"
-          KEY=$(sha256sum Gemfile.lock | cut -c1-16)
-          OBJ="hz/$S3_BUCKET/$CI_REPO_NAME/bundle-$KEY.tgz"
-          mc cp "$OBJ" bundle.tgz 2>/dev/null && tar xzf bundle.tgz && echo "cache hit" || echo "cache miss"
-        else
-          echo "no cache credentials - skipping cache"
-        fi
 
       # --- install + test as an unprivileged user ---
       # The container runs as root, but root bypasses Unix permission bits, so
@@ -43,18 +66,31 @@ steps:
       # `rake check` = specs, then the seam tripwires AGENTS.md declares
       # (tasks/tripwires.rake), then the doc-layer ones
       # (design/verify_design_tripwires.sh) — the same command a contributor
-      # runs locally,
-      # so CI cannot drift from the local check. Tripwires run *after* the
-      # specs so a drifted doc invariant never masks a real test failure. It
-      # all runs as the `ci` user rather than as a separate root command: the
-      # chown above makes the checkout ci-owned, and the doc-layer script
-      # shells out to `git ls-files`, which refuses a repo owned by another
-      # user.
+      # runs locally, so CI cannot drift from the local check. Tripwires run
+      # *after* the specs so a drifted doc invariant never masks a real test
+      # failure. It all runs as the `ci` user rather than as a separate root
+      # command: the chown above makes the checkout ci-owned, and the
+      # doc-layer script shells out to `git ls-files`, which refuses a repo
+      # owned by another user.
       - useradd -m ci && chown -R ci:ci .
       - su ci -c 'export HOME=/home/ci BUNDLE_PATH=vendor/bundle && bundle install --jobs 4 --retry 3 && bundle exec rake check'
 
-      # --- repopulate the cache on a miss (bundle.tgz only exists on a hit) ---
+  # --- repopulate the cache on a miss (bundle.tgz only exists on a hit) ---
+  # Runs only when `test` succeeded, so a red build never poisons the cache.
+  - name: save-cache
+    image: *ruby_image
+    failure: ignore
+    when:
+      - event: [push, manual]
+    environment: *s3_env
+    commands:
       - |
-        if [ -n "$S3_ACCESS_KEY" ] && [ ! -f bundle.tgz ]; then
-          tar czf bundle.tgz vendor/bundle && mc cp bundle.tgz "$OBJ"
+        if [ -f bundle.tgz ]; then
+          echo "cache hit earlier — nothing to upload"
+          exit 0
         fi
+        apt-get update && apt-get install -y s3cmd
+        KEY=$(sha256sum Gemfile.lock | cut -c1-16)
+        tar czf bundle.tgz vendor/bundle
+        s3cmd --host="$S3_HOST" --host-bucket="%(bucket)s.$S3_HOST" --no-progress \
+          put bundle.tgz "s3://$S3_BUCKET/$CI_REPO_NAME/bundle-$KEY.tgz"
