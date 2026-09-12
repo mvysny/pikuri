@@ -1,142 +1,61 @@
 # frozen_string_literal: true
 
-# Executable form of the grep tripwires the AGENTS.md seams declare — the
-# root file's and the per-gem +pikuri-*/AGENTS.md+ files' alike.
+# Executable form of the handful of seams that break *silently*.
 #
-# These used to live in AGENTS.md as literal shell one-liners next to the
-# invariant each one guards. That put ~2 KB of shell into a file loaded
-# every session, and — worse — nothing ever ran them, so they rotted
-# silently: when this file was first written, two were already wrong
-# (T_subprocess_chokepoint named +code/bash.rb+, which had stopped
-# matching, and missed three files that had started; T_walked_path_denylist
-# named +Search::Grep+, which filters by prefix through
-# +Utils.reject_denied_lines+ rather than calling +denied?+).
+# The set is closed at five. *Do not add a +T_+ rule* — a new invariant
+# goes in AGENTS.md as prose and stays unchecked. The bar the five clear:
+# breaking the seam is *invisible* (every spec stays green, the diff looks
+# reasonable) and the consequence is a security hole or a protocol
+# failure, not an untidy file; a grep says so in one line, over +lib/+
+# only. Eighteen of these once accumulated into a checker framework —
+# which were cut and why are +design/decisions.md+ +D_tripwire_bar+.
 #
-# So AGENTS.md now states the invariant and cites the slug, and the
-# command lives here where +rake tripwires+ runs it. A tripwire that fails
-# is either a real violation or a stale expectation — both worth a human
-# looking, which is why a failure prints the offending lines rather than
-# just a count.
+# The doc layer is not our business: slug links, file caps and the shim
+# files belong to +design/verify_design_tripwires.sh+, which runs beside
+# this file in +rake check+. It checks both directions, so a check added
+# here that nothing cites fails just as a cited id with no check does.
 #
-# Checks are cited by slug (+T_<name>+), the same convention design/decisions.md
-# uses for +D_+. Ids are stable once published: rename only with a sweep
-# of every reference.
-#
-# Runs in CI after +rake test+ (see +.woodpecker.yml+), so every check must
-# either report or raise — never pass vacuously.
-require 'open3'
-
+# A failure is as often a stale expectation as a real violation, which is
+# why it prints the offending lines rather than a count. Ids are stable
+# once published: rename only with a sweep of every reference.
 module Tripwires
   # One check. +body+ returns an Array of violation strings (empty = pass).
   Check = Struct.new(:id, :invariant, :body) do
     def run = body.call
   end
 
-  # Ruby comments are not code. Several invariants are about what the code
-  # *does*, and a yardoc example naming +Open3.popen3+ is documentation of
-  # the very rule it appears to break — so those checks read code lines
-  # only. Deliberately naive: a line whose first non-space character is
-  # +#+. A +#+ inside a string or heredoc still counts as code, which errs
-  # toward reporting rather than hiding.
-  def self.code_lines(path)
-    File.readlines(path, chomp: true).each_with_index.reject do |line, _i|
-      line.lstrip.start_with?('#')
-    end
-  end
-
-  def self.all_lines(path)
-    File.readlines(path, chomp: true).each_with_index.to_a
-  end
-
-  # Every +.rb+ under every gem's +lib/+.
+  # Every +.rb+ under every gem's +lib/+ — the only thing these scan.
+  # A convention about prose, prompts or docs is not a tripwire any more.
   def self.lib_files
     Dir.glob('pikuri-*/lib/**/*.rb').sort
   end
 
-  # Files git tracks, for the repo-wide prose checks. +git ls-files+ rather
-  # than a glob so the scan matches what is actually committed and skips
-  # +.git/+, build artifacts and untracked scratch files.
+  # "path:line: text" for every *code* line matching +pattern+.
   #
-  # Raises rather than degrading. An empty list would make every check
-  # built on it pass vacuously — the one outcome worse than a red tripwire
-  # is a green one that scanned nothing, and this runs in CI where no human
-  # is reading the output of a passing build.
-  def self.tracked_files
-    @tracked_files ||= begin
-      out, status = Open3.capture2e('git', 'ls-files', '-z')
-      raise "git ls-files failed (#{status.exitstatus}): #{out}" unless status.success?
+  # Ruby comments are not code. Every invariant here is about what the code
+  # *does*, and a yardoc example naming +Open3.popen3+ is documentation of
+  # the very rule it appears to break. Deliberately naive: a line whose
+  # first non-space character is +#+ is skipped. A +#+ inside a string or
+  # heredoc still counts as code, which errs toward reporting.
+  def self.hits(pattern)
+    lib_files.flat_map do |path|
+      File.readlines(path, chomp: true).each_with_index.filter_map do |line, index|
+        next if line.lstrip.start_with?('#')
 
-      files = out.split("\0").reject(&:empty?)
-      raise 'git ls-files returned nothing — is this a git checkout?' if files.empty?
-
-      files
-    end
-  end
-
-  # True for a file the prose scans must skip rather than read as text.
-  #
-  # The repo tracks binary assets since the mascot landed (+assets/kuri.png+),
-  # and a PNG's bytes are not valid UTF-8 — +Regexp#match?+ raises
-  # +ArgumentError+ on them, taking the whole run down. The sniff is git's own
-  # heuristic (a NUL byte in the first block means binary), deliberately *not*
-  # +valid_encoding?+: a genuine *text* file with a broken encoding should
-  # still blow up loudly rather than be dropped from the scan, per this file's
-  # rule that a green tripwire which scanned nothing is the worst outcome.
-  def self.binary?(path)
-    File.open(path, 'rb') { |f| f.read(8000).to_s.include?("\0") }
-  end
-
-  # "path:line: text" for every line matching +pattern+.
-  def self.hits(pattern, files:, code_only: false)
-    files.flat_map do |path|
-      next [] unless File.file?(path)
-      next [] if binary?(path)
-
-      lines = code_only ? code_lines(path) : all_lines(path)
-      lines.filter_map do |line, index|
         "#{path}:#{index + 1}: #{line.strip}" if line.match?(pattern)
       end
     end
   end
 
   # Violations = hits whose path is not in +allowed+.
-  def self.confined(pattern, allowed:, files: lib_files, code_only: false)
-    hits(pattern, files: files, code_only: code_only).reject do |hit|
+  def self.confined(pattern, allowed:)
+    hits(pattern).reject do |hit|
       path = hit.split(':', 2).first
       allowed.any? { |ok| path == ok || path.start_with?(ok) }
     end
   end
 
-  # Slugs matching +pattern+ cited anywhere in +files+ but never defined as
-  # a heading in +doc+.
-  #
-  # +pattern+ must capture the slug first and a trailing +*+ second: prose
-  # may cite a whole family as a glob, which is not a dangling reference.
-  # Detecting the star beats listing every family, which would need editing
-  # each time prose names a new one.
-  #
-  # +placeholders+ is for text that looks like a slug and is not. Unused
-  # since the +D_+ check moved to +design/verify_design_tripwires.sh+; kept
-  # because the next id namespace will want it.
-  def self.dangling_slugs(pattern, heading:, doc:, files:, placeholders: [])
-    cited = files.select { |f| File.file?(f) && !binary?(f) }
-                 .flat_map { |f| File.read(f, encoding: 'UTF-8').scan(pattern) }
-                 .reject { |_slug, glob| glob == '*' }
-                 .map(&:first).uniq - placeholders
-    defined = File.read(doc).scan(heading).flatten.uniq
-    (cited - defined).sort.map { |slug| "#{slug} — cited but no heading in #{doc}" }
-  end
-
   CHECKS = [
-    Check.new(
-      'T_extraction_registry',
-      'Every format→text conversion routes through the Extractor registry.',
-      -> {
-        confined(/require '(pdf-reader|readability|reverse_markdown)'/,
-                 allowed: ['pikuri-core/lib/pikuri/extractor/', 'pikuri-pdf/lib/'])
-      }
-    ),
-
     Check.new(
       'T_subprocess_chokepoint',
       'All subprocess spawning in lib/ routes through Subprocess.spawn, ' \
@@ -149,25 +68,7 @@ module Tripwires
       -> {
         confined(/Process\.spawn|Open3\.|\bsystem\(/,
                  allowed: ['pikuri-core/lib/pikuri/subprocess.rb',
-                           'pikuri-lsp/lib/pikuri/lsp/client_wrapper.rb'],
-                 code_only: true)
-      }
-    ),
-
-    Check.new(
-      'T_single_at_exit',
-      'One process-global teardown registry, single at_exit.',
-      -> { confined(/at_exit \{/, allowed: ['pikuri-core/lib/pikuri/finalizers.rb']) }
-    ),
-
-    Check.new(
-      'T_listener_emit',
-      'Only the Agent and its ExtensionContext emit on the listener list.',
-      -> {
-        confined(/listeners\.emit/,
-                 allowed: ['pikuri-core/lib/pikuri/agent.rb',
-                           'pikuri-core/lib/pikuri/agent/extension_context.rb'],
-                 code_only: true)
+                           'pikuri-lsp/lib/pikuri/lsp/client_wrapper.rb'])
       }
     ),
 
@@ -186,50 +87,7 @@ module Tripwires
                            'pikuri-workspace/lib/pikuri/workspace/search/grep.rb',
                            'pikuri-workspace/lib/pikuri/workspace/search/utils.rb',
                            'pikuri-lsp/lib/pikuri/lsp/sources.rb',
-                           'pikuri-lsp/lib/pikuri/lsp/renderer.rb'],
-                 code_only: true)
-      }
-    ),
-
-    Check.new(
-      'T_lsp_denied_sites',
-      'In pikuri-lsp, only Sources and the Renderer consult denied?.',
-      -> {
-        confined(/denied\?/,
-                 allowed: ['pikuri-lsp/lib/pikuri/lsp/sources.rb',
-                           'pikuri-lsp/lib/pikuri/lsp/renderer.rb'],
-                 files: Dir.glob('pikuri-lsp/lib/**/*.rb').sort,
-                 code_only: true)
-      }
-    ),
-
-    Check.new(
-      'T_lsp_finding_ids',
-      'Every LSP finding id cited in the repo is defined in pikuri-lsp/design/architecture.md.',
-      -> {
-        dangling_slugs(/\b([FJHSE]_[a-z0-9_]+)(\*?)/,
-                       heading: /\*\*([FJHSE]_[a-z0-9_]+)\.\*\*/,
-                       doc: 'pikuri-lsp/design/architecture.md',
-                       files: tracked_files.grep(%r{^(pikuri-lsp/|bin/)}))
-      }
-    ),
-
-    Check.new(
-      'T_command_not_advertised',
-      'A slash command is never advertised — no prompt snippet, no tool.',
-      -> {
-        lib_files.select { |f| File.read(f).include?('Command::Registry') }
-                 .select { |f| File.read(f).match?(/system_prompt_snippets|add_tool/) }
-                 .map { |f| "#{f}: names Command::Registry alongside an advertising call" }
-      }
-    ),
-
-    Check.new(
-      'T_no_system_role',
-      'Nothing pikuri appends mid-conversation is ever role: :system.',
-      -> {
-        hits(/add_message\(role: :system/, files: lib_files) +
-          confined(/add_message\(role:/, allowed: ['pikuri-core/lib/pikuri/agent.rb'])
+                           'pikuri-lsp/lib/pikuri/lsp/renderer.rb'])
       }
     ),
 
@@ -244,107 +102,34 @@ module Tripwires
       # (a host's own instrumenter is chained *by* the gate, not installed
       # over it).
       -> {
-        hits(/RubyLLM\.chat\b/, files: lib_files, code_only: true) +
-          confined(/instrumenter\s*=[^=]/,
-                   allowed: ['pikuri-core/lib/pikuri/agent.rb'],
-                   code_only: true)
+        hits(/RubyLLM\.chat\b/) +
+          confined(/instrumenter\s*=[^=]/, allowed: ['pikuri-core/lib/pikuri/agent.rb'])
       }
     ),
 
     Check.new(
-      'T_history_encapsulated',
-      'A conversation leaves the agent only as a History; no host reads @chat.messages.',
-      -> { confined(/@chat\.messages/, allowed: ['pikuri-core/lib/pikuri/agent.rb']) }
-    ),
-
-    Check.new(
-      'T_thunderbird_no_attachment',
-      'No attachment ever ships on an outbound Thunderbird hand-off.',
+      'T_no_system_role',
+      'Nothing pikuri appends mid-conversation is ever role: :system.',
+      # The definitive silent failure: a mid-conversation +:system+ message
+      # is accepted, sent, and ignored by the model. Nothing goes red.
       -> {
-        base = 'pikuri-thunderbird/lib/pikuri/thunderbird'
-        files = %w[mailto_uri ics_event mail_compose calendar_create launcher]
-                .map { |n| "#{base}/#{n}.rb" }
-        hits(/attach/i, files: files)
+        hits(/add_message\(role: :system/) +
+          confined(/add_message\(role:/, allowed: ['pikuri-core/lib/pikuri/agent.rb'])
       }
     ),
 
     Check.new(
-      'T_tool_sharing_posture',
-      'Every file defining a Pikuri::Tool subclass declares a sharing posture.',
-      -> {
-        lib_files.select { |f| File.read(f).match?(/^\s*class\s+\w+\s*<\s*(Pikuri::)?Tool\b/) }
-                 .reject { |f| File.read(f).include?('Sharing') }
-                 .map { |f| "#{f}: defines a Tool subclass with no Sharing line" }
-      }
-    ),
-
-    Check.new(
-      'T_fts_match_via_query',
-      'Only the keyword store talks SQL, and Query is the only builder of a MATCH term.',
-      # Two halves of one seam. +MATCH+ may appear only in the store that owns
-      # the connection — the composite above it holds two stores and no SQL;
-      # and +Query+ must stay the only place a phrase term is minted, since
-      # that quoting is what makes FTS5 syntax inert in model text.
-      #
-      # The second pattern matches the *quote-wrapping of an interpolated
-      # value* — +%("#{...}")+ or +"\"#{...}\""+ — not +Query+'s +gsub+, which
-      # is unreachable code (tokenizing already drops every +"+) and so would
-      # make this half pass on zero hits.
-      lambda {
-        rag = Dir.glob('pikuri-rag/lib/**/*.rb').sort
-        confined(/\bMATCH\b/,
-                 allowed: ['pikuri-rag/lib/pikuri/rag/backend/fts5.rb'],
-                 files: rag, code_only: true) +
-          confined(/%\("#\{|\\"#\{/,
-                   allowed: ['pikuri-rag/lib/pikuri/rag/query.rb'],
-                   files: rag, code_only: true)
-      }
-    ),
-
-    Check.new(
-      'T_paths_xdg',
-      'Cache and temp paths go through Paths, never ENV directly.',
-      -> {
-        confined(/ENV\['XDG_CACHE_HOME'\]/,
-                 allowed: ['pikuri-core/lib/pikuri/paths.rb'])
-      }
-    ),
-
-    Check.new(
-      'T_no_tool_names_in_prompts',
-      'A main/binary system prompt names no wired pikuri tool.',
-      # Persona prompts are the carve-out: tool_names: and system_prompt:
-      # are co-located there, so they may name their tools.
-      -> {
-        tools = %w[bash write read grep glob file_list edit agent calculator
-                   web_search web_scrape fetch recall skill mcp_connect].join('|')
-        pattern = /`(#{tools}|task_[a-z]+|vectordb_[a-z]+|rag_[a-z]+)`/
-        files = Dir.glob('*/prompts/*.txt').reject { |f| File.basename(f).start_with?('persona-') }
-        hits(pattern, files: files.sort)
-      }
-    ),
-
-    Check.new(
-      'T_named_chapters',
-      'Book chapters are referenced by name, never by ordinal or numbered filename.',
-      -> {
-        hits(/chapters? ?\d+|\bch\.? ?\d+\b/i, files: tracked_files) +
-          hits(/\d{2}-[a-z-]+\.md/, files: tracked_files)
-      }
+      'T_single_at_exit',
+      'One process-global teardown registry, single at_exit.',
+      # A second +at_exit+ tears down in an order nobody chose, and only
+      # sometimes — the failure surfaces as a stray temp dir or an orphaned
+      # child on one machine.
+      -> { confined(/at_exit \{/, allowed: ['pikuri-core/lib/pikuri/finalizers.rb']) }
     )
-    # A decision-slug check lived here until 2026-09-12 (its id is left
-    # unspelled: this file is scanned for +T_+ ids, and a retired one would
-    # read as a live check nothing cites). The +D_+ / +R_+ slug check now
-    # belongs to +design/verify_design_tripwires.sh+, which owns
-    # the whole doc layer and runs beside this file in +rake check+ — one
-    # rule, one home. Its exemption for in-flight forward references in
-    # +design/ideas/+ went with it: an idea that wants to name a decision
-    # not yet taken writes a +Q_+ slug, which no durable doc may cite and
-    # which becomes a +D_+ on graduation.
   ].freeze
 end
 
-desc 'Check the grep tripwires AGENTS.md\'s seams declare (T_<slug> ids)'
+desc 'Check the five silent-failure tripwires AGENTS.md declares (T_<slug> ids)'
 task :tripwires do
   width = Tripwires::CHECKS.map { |c| c.id.length }.max
   failures = {}

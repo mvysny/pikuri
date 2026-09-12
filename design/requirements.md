@@ -38,7 +38,7 @@ local llama.cpp server, no cloud account, no API key, no telemetry; a feature th
 against a hosted provider breaks the posture even when nobody turns it on.
 **Enforced by.** Every `bin/` defaults `llm_server` to `http://localhost:8080`; a tool that
 reaches a hosted service carries a `== Privacy posture` yardoc section ({Pikuri::Tool::Search::Exa});
-`T_walked_path_denylist` and `T_lsp_denied_sites` keep a denied path out of the transcript.
+`T_walked_path_denylist` keeps a denied path out of the transcript.
 Otherwise review.
 **See.** README "Why this exists", `D_walked_path_denylist`, `D_corpus_trust_declaration`.
 

@@ -7,8 +7,8 @@ bundle exec rake check
 ```
 
 `rake check` (also the default task, so bare `bundle exec rake` works
-too) runs the full verification: the spec suites, then the `tripwires`
-doc-invariant checks CI enforces. `rake test` is the spec half alone —
+too) runs the full verification: the spec suites, then the seam and
+doc-layer tripwires CI enforces. `rake test` is the spec half alone —
 it fans out `rspec` across every gem in the monorepo
 (`pikuri-core/spec/`, `pikuri-skills/spec/`, etc.) — same shape
 Rails (rails/rails) uses for its multi-gem monorepo. To run a
