@@ -141,10 +141,11 @@ module Tripwires
       'T_subprocess_chokepoint',
       'All subprocess spawning in lib/ routes through Subprocess.spawn, ' \
       'except two long-lived stdio children.',
-      # Only two paths are allowed, though AGENTS.md names three
-      # exceptions: the MCP child is spawned *inside* the third-party
-      # +mcp+ gem (+MCP::Client::Stdio+), so pikuri's own
-      # +mcp/client_wrapper.rb+ contains no spawn primitive to match.
+      # Two sanctioned exceptions (stated in +pikuri-mcp/AGENTS.md+ /
+      # +pikuri-lsp/AGENTS.md+), but only one path to allow: the MCP child
+      # is spawned *inside* the third-party +mcp+ gem
+      # (+MCP::Client::Stdio+), so pikuri's own +mcp/client_wrapper.rb+
+      # contains no spawn primitive to match.
       -> {
         confined(/Process\.spawn|Open3\.|\bsystem\(/,
                  allowed: ['pikuri-core/lib/pikuri/subprocess.rb',
@@ -338,7 +339,8 @@ module Tripwires
     # the whole doc layer and runs beside this file in +rake check+ — one
     # rule, one home. Its exemption for in-flight forward references in
     # +design/ideas/+ went with it: an idea that wants to name a decision
-    # not yet taken writes a +Q_+ slug (see +D_design_docs+).
+    # not yet taken writes a +Q_+ slug, which no durable doc may cite and
+    # which becomes a +D_+ on graduation.
   ].freeze
 end
 

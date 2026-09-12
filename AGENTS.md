@@ -1,9 +1,12 @@
 # pikuri — AGENTS.md
 
-An index, not a manual: each entry is the one-line invariant ("what you
-must not break") plus pointers to where the truth and its rationale live —
-a yardoc header (`See {Class}`), a decision (`See D_<slug>`), a
-requirement (`See R_<slug>`). Never the explanation itself.
+An index, not a manual. Each entry is **one line**: the invariant in bold
+("what you must not break"), at most one clause of consequence, its
+`T_<slug>` if tripwired, and a pointer only where it adds something —
+`See D_<slug>` where a decision argues it, `See {Class}` where the
+mechanism lives under a name the rule does not already say. Never the
+explanation itself, and never an exception — that goes in the owning gem's
+file. A line that will not fit belongs in a yardoc header or a `D_`.
 **Size cap: 34 KB.** Over it, garbage-collect by *moving*, never
 summarising: a rationale to its `D_`, a per-symbol rule to its yardoc, a
 cross-symbol flow to `design/architecture.md`, a gem's own invariants and
@@ -81,25 +84,25 @@ in that gem's file. A seam *consumed* across gems (Workspace / Denylist /
 Confirmer, owned by `pikuri-workspace`) is stated once in the owner's
 file, and each consumer's carries a one-line pointer — never a restatement.
 
-- **Loop seam.** ruby_llm owns `Chat#complete`; pikuri loop-wiring lives only in `bin/pikuri-*`, `pikuri-core/lib/pikuri/agent.rb` and `pikuri-core/lib/pikuri/tool.rb`. Never build a `Chat` or attach callbacks elsewhere. See {Pikuri::Agent}.
-- **Connection seam.** A connection rides `Agent::ChatTransport` → a per-chat `RubyLLM::Context`, never a process-global `RubyLLM.configure`; **every** chat rides one (`build_chat` never calls `RubyLLM.chat`). Lone exception: `bin/pikuri-corpus`'s `RubyLLM.embed`. See {Pikuri::Agent::ChatTransport}, {Pikuri::Agent#build_context}.
-- **An extra request parameter is opaque, and rides the transport.** `ChatTransport#params` is deep-merged into the completion payload verbatim; pikuri never translates a parameter, names one, or grows a typed flag for one (a `thinking:` boolean's wire spelling differs per provider *and* per chat template). Sugar belongs in a host's config parser. See {Pikuri::Agent::ChatTransport}'s `== Extra request parameters`, `D_opaque_request_params`.
-- **Request-permit seam.** Every request through a connection takes a permit held for exactly one HTTP request — never a turn — from one process-wide registry keyed by **server**, never per agent. That registry is also the `/props` probe's memo: the probe is skipped only when *both* its facts are known (a stated `context_window` **and** a sized server), never on the cap alone. `T_request_permits`. See {Pikuri::Agent::ServerPermits}, `D_llm_request_throttle` + `D_probe_when_unknown`.
-- **Value-type passthrough.** `lib/` may reference `RubyLLM::Content` / `Attachment` / `Message` directly when wrapping would be a transparent passthrough. See {Pikuri::Agent}.
-- **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry; a new format is a registry entry, not a dispatcher arm. `T_extraction_registry`. See {Pikuri::Extractor}.
-- **Subprocess seam.** All subprocess spawning in `lib/` routes through `Pikuri::Subprocess.spawn`. Two documented exceptions, long-lived stdio children owning their teardown — the MCP and LSP children, terms in `pikuri-mcp/AGENTS.md` / `pikuri-lsp/AGENTS.md`. A bare `Process.spawn` or `Open3` is untracked and outlives the turn that started it. `T_subprocess_chokepoint`. See {Pikuri::Subprocess}.
-- **Finalizers / teardown seam.** One process-global teardown registry, single `at_exit`; resources register at their ownership boundary (process infra a `bin/` starts self-registers, agent-owned resources ride `on_close`). `T_single_at_exit`. See {Pikuri::Finalizers}, {Pikuri::Agent::Configurator}, {Pikuri::Paths.new_temp}.
-- **Capability seam (ExtensionContext).** A live `Agent` reference is read-only; everything that *acts on* a wired agent lives on `Agent::ExtensionContext`, handed only to `Extension#bind` / `#on_user_message`. Listeners no-op on unknown event variants. `T_listener_emit`. See {Pikuri::Agent::ExtensionContext}.
-- **Environment is not a secret store.** pikuri never *filters* `ENV` before spawning; config holds tokens **verbatim**, and a per-child `env:` on a config entry is the credential channel. The one systematic rewrite, `Pikuri::BundlerEnv`, *restores* what pikuri's own boot changed — a restoration, not a filter. See {Pikuri::BundlerEnv}, `D_de_bundlerized_children`.
-- **Streaming flag.** `Agent.new(..., streaming:)` is opt-in (default false) and propagates to sub-agents so the tree is consistent. See `Agent#initialize`.
-- **Interloper injection seam.** Mid-loop host→agent injection routes through `Control::Interloper` (`:user` / `:system` kinds); `run_loop` delivers at turn start and mid-turn only once a **tool batch is complete** — never from ruby_llm's `after_tool_result`, which fires before the result message exists. `clear_conversation` discards pending injections. See {Pikuri::Agent::Control::Interloper}, {Pikuri::Agent#run_loop}.
-- **Reference-text delivery seam.** *Nothing pikuri appends mid-conversation is ever `role: :system`*; every injected block routes through `Agent#append_reference_block` (a `:user` turn wrapped in `<system-reminder>`), because a mid-conversation `:system` fails silently. `T_no_system_role`. See `D_reference_text_as_user_turn`, {Pikuri::Agent#append_reference_block}.
-- **Display-line seam.** The **tool** composes its three display strings (`display_name`, `argument`, `summary`) at `execute` time — never the model — and a summary is structural, never excerpted; a renderer only styles, caps and defangs them. See {Pikuri::Tool}'s `== Display lines`, {Pikuri::Tool::Result}, `D_tool_summary_lines`.
-- **One tool return type.** `Tool#execute` answers a `Tool::Result`, always; the one `RubyLLM::Content` attachment case surfaces only inside `Tool#to_ruby_llm_tool`, never by widening `Result#to_s`. See {Pikuri::Tool::Result}, {Pikuri::Tool#to_ruby_llm_tool}, `D_tool_always_returns_result`.
-- **History seam.** A conversation leaves the agent only as an `Agent::History`; no host reads `@chat.messages`. `:system` is never exported, local-only fields reach no provider, attachments live in the history's own folder, and repair happens on load. `T_history_encapsulated`. See {Pikuri::Agent::History}, {Pikuri::Agent#load_history!}, `D_history_local_ids` / `D_history_attachments` / `D_history_load_repairs`.
-- **A turn never leaves a tool call unanswered.** Anything unwinding out of a tool batch strands calls the next turn would post as a malformed batch; an `ensure` on `run_loop` answers each one before propagating. Repair the damage, don't prevent it. See {Pikuri::Agent#run_loop}, `D_unwound_batch_repair`.
-- **The loop is unbounded — don't re-add a cap.** Nothing limits tool calls per turn, at any depth; the ceilings are `Control::Cancellable` and the context window. If a loop ever appears, reach for a repetition detector, not a cap. See `D_no_step_limit`, {Pikuri::Agent}'s `== The loop is unbounded`.
-- **Sub-agent propagation protocol.** Listeners define `for_sub_agent(**)`; a tool may define a no-arg `for_sub_agent` and is rebuilt through it when a child must hold a narrower view. What a child inherits and never gets is the policy in `pikuri-subagents/AGENTS.md`. See {Pikuri::Agent::ListenerList#for_sub_agent}.
+- **Loop seam.** ruby_llm owns `Chat#complete`; never build a `RubyLLM::Chat` or attach its callbacks outside `pikuri-core`'s `agent.rb` and `tool.rb`. See {Pikuri::Agent}.
+- **Connection seam.** Every chat rides a per-chat `RubyLLM::Context` built from an `Agent::ChatTransport`, never the process-global `RubyLLM.configure`. See {Pikuri::Agent#build_chat}.
+- **An extra request parameter is opaque.** `ChatTransport#params` is deep-merged into the payload verbatim; pikuri never translates one, names one, or grows a typed flag for it. See `D_opaque_request_params`.
+- **Request-permit seam.** A permit is held for one HTTP request, never a turn — a turn-scoped one deadlocks a parent against its own sub-agent — from one process-wide registry keyed by **server**, never per agent. `T_request_permits`. See `D_llm_request_throttle` + `D_probe_when_unknown`.
+- **Value-type passthrough.** `lib/` may reference `RubyLLM::Content` / `Attachment` / `Message` directly where wrapping would be a transparent passthrough.
+- **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry — a new format is a registry entry, not a dispatcher arm. `T_extraction_registry`.
+- **Subprocess seam.** All subprocess spawning in `lib/` routes through `Pikuri::Subprocess.spawn`; a bare `Process.spawn` or `Open3` outlives the turn that started it. `T_subprocess_chokepoint`.
+- **Finalizers / teardown seam.** One process-global teardown registry and a single `at_exit`, each resource registering at its ownership boundary. `T_single_at_exit`. See {Pikuri::Finalizers}.
+- **Capability seam.** A live `Agent` reference is read-only; everything that *acts on* a wired agent lives on `Agent::ExtensionContext`, handed only to `Extension#bind` / `#on_user_message`. `T_listener_emit`.
+- **Environment is not a secret store.** pikuri never *filters* `ENV` before spawning; config holds tokens verbatim, and a per-child `env:` is the credential channel. See `D_de_bundlerized_children`.
+- **Streaming flag.** `Agent.new(..., streaming:)` is opt-in and propagates to sub-agents, so the tree is consistent.
+- **Interloper injection seam.** Mid-loop host→agent injection routes through `Control::Interloper`, delivered at turn start or once a tool batch is complete — never inside one. See {Pikuri::Agent::Control::Interloper}.
+- **Reference-text delivery seam.** *Nothing pikuri appends mid-conversation is ever `role: :system`* — a mid-conversation `:system` message fails silently. `T_no_system_role`. See {Pikuri::Agent#append_reference_block}, `D_reference_text_as_user_turn`.
+- **Display-line seam.** The **tool** composes its three display strings at `execute` time — never the model, and never a renderer, which only styles, caps and defangs them. See {Pikuri::Tool}'s `== Display lines`, `D_tool_summary_lines`.
+- **One tool return type.** `Tool#execute` answers a `Tool::Result`, always; the attachment case surfaces only inside `Tool#to_ruby_llm_tool`. See `D_tool_always_returns_result`.
+- **History seam.** A conversation leaves the agent only as an `Agent::History`; no host reads `@chat.messages`. `T_history_encapsulated`. See `D_history_local_ids` / `D_history_attachments` / `D_history_load_repairs`.
+- **A turn never leaves a tool call unanswered.** An `ensure` on `run_loop` answers every call stranded by an unwinding batch — repair the damage, don't prevent it. See `D_unwound_batch_repair`.
+- **The loop is unbounded — don't re-add a cap.** Nothing limits tool calls per turn, at any depth; if a runaway ever appears, reach for a repetition detector. See `D_no_step_limit`.
+- **Sub-agent propagation protocol.** Listeners define `for_sub_agent(**)`, and a tool may define a no-arg one to be rebuilt narrower for a child. See {Pikuri::Agent::ListenerList#for_sub_agent}, `pikuri-subagents/AGENTS.md`.
 
 ### Out of scope
 

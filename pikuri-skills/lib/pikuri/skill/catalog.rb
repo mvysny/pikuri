@@ -16,6 +16,22 @@ module Pikuri
     # and {Bundled} (the on-disk scanner). Hosts that read skills from
     # something other than the filesystem (virtual FS, hardcoded
     # registry) subclass directly.
+    #
+    # == +paths:+ is not access control
+    #
+    # A gated skill ({Skill#gated?}) is withheld from the catalog render and
+    # refused by name until a matching file is touched — but nothing is
+    # *restricted*, because the gated party controls the trigger: a model that
+    # wants a hidden skill need only read a file its globs match. The honest
+    # formulation is **unreachable by ignorance, not by permission**, and
+    # ignorance is not a security boundary. Anything wanting a real
+    # restriction wants +disable-model-invocation:+, which pikuri does not
+    # implement.
+    #
+    # This catalog is itself deliberately *unfiltered*: frozen, session-less
+    # holding, with the gate in its callers. So a host enumerating {#list} for
+    # a skill picker re-exposes every gated skill — a picker asks
+    # {Activation} instead.
     class Catalog
       # Frontmatter +name+ cap per the Agent Skills standard.
       MAX_NAME_LENGTH = 64
