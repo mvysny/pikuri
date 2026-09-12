@@ -28,6 +28,70 @@ rather than restating.
 
 ---
 
+## D_tripwire_bar — Five tripwires, and the set is closed (2026-09-12)
+
+**Status:** Accepted; shipped 2026-09-12. Cuts twelve of seventeen checks;
+`tasks/tripwires.rake` went 378 → 167 lines. An eighteenth, the decision-slug
+link checker, had just moved to `design/verify_design_tripwires.sh` with the
+doc layer.
+
+**Context.** The tripwires began as the executable form of grep one-liners that
+used to sit in AGENTS.md and rot unrun. That was a good move, and then the
+mechanism kept paying for itself in the only currency it had: more checks.
+Eighteen at the peak, and the *support* code was the tell — a tracked-file
+walker with a NUL-byte binary sniffer (added because the mascot PNG crashed the
+prose scans), a dangling-slug link checker with a glob-family exemption and a
+placeholder list, an all-lines-vs-code-lines flag, a hardcoded roster of fifteen
+tool names. That is a *checker framework*, the kind of thing pikuri declines to
+build everywhere else in the tree.
+
+Nor were the checks buying much. One scanned every tracked file for
+`/chapters? ?\d+/` to catch a doc nit; two were link checkers for slugs; one
+verified that the *word* "Sharing" appeared in a file; the LSP denied-sites
+check was a strict subset of `T_walked_path_denylist` — same call, same allowed
+files, narrower scan. And the one with a hardcoded roster of tool names goes
+*negative* once it stales, because the green line still reads as coverage.
+(Retired ids are left unspelled throughout: a cited id with no check fails the
+doc script.)
+
+**Decision.** One bar: a check exists only where breaking the seam is
+**invisible** — every spec stays green and the diff looks reasonable — and the
+consequence is a security hole or a protocol failure. A grep must say so in one
+line, over `lib/` only. **The set is closed at five; a new invariant does not
+get a new id**, it goes in AGENTS.md as prose and stays unchecked. The five:
+`T_subprocess_chokepoint`, `T_walked_path_denylist`, `T_request_permits`,
+`T_no_system_role`, `T_single_at_exit`. Cutting the doc and prose checks also
+deleted `tracked_files`, `binary?`, `dangling_slugs`, `all_lines` and the
+`code_only:` flag, which is most of why the file more than halved. Every cut
+invariant kept its AGENTS.md line: the rule was never the check, the check was
+the backstop.
+
+**Rejected: a bar with no cap** ("only add a check that clears it"). An
+unwritten version of the bar is what the file already had, and every cut check
+was, on its day, someone judging that it cleared. A number is what makes the
+rule enforceable without re-litigating it per check.
+
+**Rejected: keeping them all, since the framework is already paid for.** It is
+not — it is paid per false positive, and per contributor who reads seventeen
+green lines as seventeen guarantees.
+
+**Rejected: keeping the two slug link-checkers.** A dangling slug is a real
+defect, and it is `design/verify_design_tripwires.sh`'s to catch: that script
+owns the doc layer and runs beside the tripwires in `rake check`. One rule, one
+home.
+
+**Rejected: moving the cut checks to a lint-only, non-CI task.** A check nobody
+runs is the exact thing the tripwires were invented to replace. Delete or
+enforce; there is no third state.
+
+**Consequences.** Things are now unchecked and will occasionally break: a prompt
+may name a tool, a chapter may get an ordinal, a new tool may ship without a
+`Sharing:` line. That is the deal — all cheap to spot in review and cheap to fix
+after. Anyone tempted to re-add a check for one of them is arguing with this
+entry. Renaming a surviving slug still needs a full reference sweep, and a check
+and its citations come and go in one commit: the doc script fails either way
+round.
+
 ## D_opaque_request_params — An extra request parameter rides the transport as an opaque table, never a typed flag (2026-09-08)
 
 **Status:** Accepted; shipped 2026-09-08 as `ChatTransport#params`, applied in
@@ -1331,8 +1395,8 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
 `assets/kuri.png`, shown in `README.md`. The *icons* built from him are
 downstream and belong to whichever host needs them; pikuri-web was the
 first to build a set, and records its own icon decisions on its own side.
-(Foreign decision slugs are deliberately not cited here — the slug tripwire
-holds every `D_` in this repo to a heading in this file, and a library
+(Foreign decision slugs are deliberately not cited here — every `D_` in
+this repo is expected to resolve to a heading in this file, and a library
 should not know a shell's decision ids anyway.)
 
 **Context.** pikuri-web needed a PWA icon and discovered pikuri had no
@@ -1940,7 +2004,8 @@ tool does the same thing.
 **Status:** Accepted; implemented 2026-08-28 as a `Sharing:` line (or
 `== Sharing` section) on every tool, with the vocabulary defined once in
 {Pikuri::Tool} and the threading contract in {Pikuri::Agent}. The
-AGENTS.md *Conventions* bullet carries the invariant and its grep tripwire.
+AGENTS.md *Conventions* bullet carries the invariant, unchecked
+(`D_tripwire_bar`).
 
 **Context.** A host wanting ten agents in one Ruby VM has to know, per
 tool, whether one instance may serve all ten. Nothing answered it.
@@ -5383,8 +5448,7 @@ stale-swept at core load). Per-symbol mechanics and their full why —
 in-home rather than `/tmp`, factory rather than memoized accessor, the
 reap/sweep contract — live in {Pikuri::Paths.new_temp} /
 {Pikuri::Paths.sweep_stale_temps!}. The invariant ("cache & temp paths go
-through `Paths`") plus its `ENV['XDG_CACHE_HOME']` grep tripwire live in
-AGENTS.md *Conventions*.
+through `Paths`") lives in AGENTS.md *Conventions*.
 
 **Alternatives rejected.**
 

@@ -47,8 +47,8 @@ steps:
       # so CI cannot drift from the local check. Tripwires run *after* the
       # specs so a drifted doc invariant never masks a real test failure. It
       # all runs as the `ci` user rather than as a separate root command: the
-      # chown above makes the checkout ci-owned, and two of the tripwires
-      # shell out to `git ls-files`, which refuses a repo owned by another
+      # chown above makes the checkout ci-owned, and the doc-layer script
+      # shells out to `git ls-files`, which refuses a repo owned by another
       # user.
       - useradd -m ci && chown -R ci:ci .
       - su ci -c 'export HOME=/home/ci BUNDLE_PATH=vendor/bundle && bundle install --jobs 4 --retry 3 && bundle exec rake check'

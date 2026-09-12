@@ -53,7 +53,7 @@ Rules that keep the split from drifting:
 - **One home per fact; the others link.** A one-line restatement that saves a jump is fine — repeat the *fact*, defer the *explanation*. Compressing a `D_` entry into a bullet here is a third copy, not a summary.
 - **`decisions.md` argues, `requirements.md` states, `comparison.md` is about *them* not us, `architecture.md` composes and never argues.** A paragraph explaining *why* in any file but `decisions.md` has drifted; move it and cite the `D_`.
 - **A `D_` is earned by what happened, not by having had an alternative:** it shaped what the project is (reverse it and the README's first paragraph changes), or it cost research the next person would otherwise redo. A tool, a library among equals, the CI host, a version bump — a comment at the site of the choice, never an entry. Only decisions already taken; ideas, TODOs and open questions go to `design/ideas/`. A shipped decision that is reversed keeps its entry as a tombstone. Nothing about `design/` itself or its tooling is an entry.
-- **An `R_` is a promise the README's pitch makes, made an official rule — and the owner writes it.** An agent never adds, edits or retires one; it proposes, in conversation or as a drafted entry in `design/ideas/`. The owner's ruler: allow the opposite everywhere — is it still pikuri? "Nothing leaves the machine by default", "no agent holds all three trifecta legs" → not pikuri → `R_`. "Every subprocess through the chokepoint", "nothing appended mid-conversation is `:system`" → broken in places, still pikuri → the seam rule that *keeps* a promise: a tripwired line here, named in the promise's *Enforced by*, no `R_`. A rule about one class is its yardoc. One `requirements.md`, at the root; a gem's README is a reference card and gets none.
+- **An `R_` is a promise the README's pitch makes, made an official rule — and the owner writes it.** An agent never adds, edits or retires one; it proposes, in conversation or as a drafted entry in `design/ideas/`. The owner's ruler: allow the opposite everywhere — is it still pikuri? "Nothing leaves the machine by default", "no agent holds all three trifecta legs" → not pikuri → `R_`. "Every subprocess through the chokepoint", "nothing appended mid-conversation is `:system`" → broken in places, still pikuri → the seam rule that *keeps* a promise: a seam line here, named in the promise's *Enforced by*, no `R_`. A rule about one class is its yardoc. One `requirements.md`, at the root; a gem's README is a reference card and gets none.
 - **Slugs:** `D_` decisions, `R_` requirements, `T_` tripwires (cited from a requirement's *Enforced by* or a seam line here, defined by the check), `Q_` open questions inside `design/ideas/` only — a durable doc never cites a `Q_`. Underscores throughout, backticked in prose, cited by slug never by position; `grep '^## D_' design/decisions.md` is the index.
 - **`design/verify_design_tripwires.sh`** (also `rake design_tripwires`) fails on any cited `D_` / `R_` without a heading, a `T_` without a check, an oversized `AGENTS.md`, or a `CLAUDE.md` that isn't the shim. Run it before committing a doc change.
 
@@ -71,7 +71,7 @@ Where the lasting nuggets land:
 - how one class works and why it is shaped so → its yardoc header
 - the concept, taught in order → one `book/<slug>.md` + one line in `book/README.md`
 - what a user or operator must know → `README.md` / `SECURITY.md`
-- a cross-cutting invariant ("never …") → one line in this file: rule, `T_<slug>` if tripwired, `See D_<slug>` if a `D_` exists
+- a cross-cutting invariant ("never …") → one line in this file: rule, `See D_<slug>` if a `D_` exists; prose only, since the tripwire set is closed (`D_tripwire_bar`)
 - work deferred *as a consequence of a logged decision* → that entry's *Consequences*
 
 *Layout seeded from the `design-docs` and `ideas-folder` skills (mvysny, `~/.claude/skills`); this project needs nothing from them.*
@@ -84,22 +84,28 @@ in that gem's file. A seam *consumed* across gems (Workspace / Denylist /
 Confirmer, owned by `pikuri-workspace`) is stated once in the owner's
 file, and each consumer's carries a one-line pointer — never a restatement.
 
+**Tripwires — a closed set of five; never add a `T_` rule.** A grep guards
+a seam only where breakage is *invisible* (specs stay green, the diff
+looks fine) and the consequence is a security hole or a protocol failure.
+Every other invariant below is prose, deliberately unchecked
+(`D_tripwire_bar`).
+
 - **Loop seam.** ruby_llm owns `Chat#complete`; never build a `RubyLLM::Chat` or attach its callbacks outside `pikuri-core`'s `agent.rb` and `tool.rb`. See {Pikuri::Agent}.
 - **Connection seam.** Every chat rides a per-chat `RubyLLM::Context` built from an `Agent::ChatTransport`, never the process-global `RubyLLM.configure`. See {Pikuri::Agent#build_chat}.
 - **An extra request parameter is opaque.** `ChatTransport#params` is deep-merged into the payload verbatim; pikuri never translates one, names one, or grows a typed flag for it. See `D_opaque_request_params`.
 - **Request-permit seam.** A permit is held for one HTTP request, never a turn — a turn-scoped one deadlocks a parent against its own sub-agent — from one process-wide registry keyed by **server**, never per agent. `T_request_permits`. See `D_llm_request_throttle` + `D_probe_when_unknown`.
 - **Value-type passthrough.** `lib/` may reference `RubyLLM::Content` / `Attachment` / `Message` directly where wrapping would be a transparent passthrough.
-- **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry — a new format is a registry entry, not a dispatcher arm. `T_extraction_registry`.
+- **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry — a new format is a registry entry, not a dispatcher arm.
 - **Subprocess seam.** All subprocess spawning in `lib/` routes through `Pikuri::Subprocess.spawn`; a bare `Process.spawn` or `Open3` outlives the turn that started it. `T_subprocess_chokepoint`.
 - **Finalizers / teardown seam.** One process-global teardown registry and a single `at_exit`, each resource registering at its ownership boundary. `T_single_at_exit`. See {Pikuri::Finalizers}.
-- **Capability seam.** A live `Agent` reference is read-only; everything that *acts on* a wired agent lives on `Agent::ExtensionContext`, handed only to `Extension#bind` / `#on_user_message`. `T_listener_emit`.
+- **Capability seam.** A live `Agent` reference is read-only; everything that *acts on* a wired agent lives on `Agent::ExtensionContext`, handed only to `Extension#bind` / `#on_user_message`.
 - **Environment is not a secret store.** pikuri never *filters* `ENV` before spawning; config holds tokens verbatim, and a per-child `env:` is the credential channel. See `D_de_bundlerized_children`.
 - **Streaming flag.** `Agent.new(..., streaming:)` is opt-in and propagates to sub-agents, so the tree is consistent.
 - **Interloper injection seam.** Mid-loop host→agent injection routes through `Control::Interloper`, delivered at turn start or once a tool batch is complete — never inside one. See {Pikuri::Agent::Control::Interloper}.
 - **Reference-text delivery seam.** *Nothing pikuri appends mid-conversation is ever `role: :system`* — a mid-conversation `:system` message fails silently. `T_no_system_role`. See {Pikuri::Agent#append_reference_block}, `D_reference_text_as_user_turn`.
 - **Display-line seam.** The **tool** composes its three display strings at `execute` time — never the model, and never a renderer, which only styles, caps and defangs them. See {Pikuri::Tool}'s `== Display lines`, `D_tool_summary_lines`.
 - **One tool return type.** `Tool#execute` answers a `Tool::Result`, always; the attachment case surfaces only inside `Tool#to_ruby_llm_tool`. See `D_tool_always_returns_result`.
-- **History seam.** A conversation leaves the agent only as an `Agent::History`; no host reads `@chat.messages`. `T_history_encapsulated`. See `D_history_local_ids` / `D_history_attachments` / `D_history_load_repairs`.
+- **History seam.** A conversation leaves the agent only as an `Agent::History`; no host reads `@chat.messages`. See `D_history_local_ids` / `D_history_attachments` / `D_history_load_repairs`.
 - **A turn never leaves a tool call unanswered.** An `ensure` on `run_loop` answers every call stranded by an unwinding batch — repair the damage, don't prevent it. See `D_unwound_batch_repair`.
 - **The loop is unbounded — don't re-add a cap.** Nothing limits tool calls per turn, at any depth; if a runaway ever appears, reach for a repetition detector. See `D_no_step_limit`.
 - **Sub-agent propagation protocol.** Listeners define `for_sub_agent(**)`, and a tool may define a no-arg one to be rebuilt narrower for a child. See {Pikuri::Agent::ListenerList#for_sub_agent}, `pikuri-subagents/AGENTS.md`.
@@ -145,16 +151,16 @@ gemspec.
 - **`# frozen_string_literal: true`** atop every Ruby file (`lib/`, `spec/`, `bin/*`).
 - **YARD on every public module/class/method** in `lib/`: concrete `@param` / `@return` types, `@raise` for expected exceptions, one-line summary then tags, and the local *why*.
 - **Bundler.** `bin/` scripts self-bootstrap via `require 'bundler/setup'`; pessimistic `~>` constraints.
-- **Every tool declares a sharing posture.** `Agent` is thread-unsafe (the caller serializes; never key state off `Thread.current`), so a tool reachable from two agents carries a `Sharing:` yardoc line naming `P_stateless` / `P_shared_locked` / `P_shared_benign` / `P_one_agent` plus the state's owner. A waiting tool opts into `wants_context: true` and sleeps via `context.cancellable.sleep`, never `Kernel#sleep`. `T_tool_sharing_posture`. See {Pikuri::Tool}, {Pikuri::Agent}, `D_tool_sharing_postures` + `D_rate_limiter_scope`.
+- **Every tool declares a sharing posture.** `Agent` is thread-unsafe (the caller serializes; never key state off `Thread.current`), so a tool reachable from two agents carries a `Sharing:` yardoc line naming `P_stateless` / `P_shared_locked` / `P_shared_benign` / `P_one_agent` plus the state's owner. A waiting tool opts into `wants_context: true` and sleeps via `context.cancellable.sleep`, never `Kernel#sleep`. See {Pikuri::Tool}, {Pikuri::Agent}, `D_tool_sharing_postures` + `D_rate_limiter_scope`.
 - **Diagnostics go through `Pikuri.logger_for('Name')`**, never `puts` / `warn` / `$stderr`. Listener rendering of the LLM stream on stdout via `Terminal` is not logging.
-- **Cache & temp paths go through `Paths`** (`Paths.cache` shared + persistent; `Paths.new_temp` per-process, reaped at exit); never read `ENV['XDG_CACHE_HOME']` or hardcode `~/.cache`. `T_paths_xdg`. See {Pikuri::Paths.new_temp}.
+- **Cache & temp paths go through `Paths`** (`Paths.cache` shared + persistent; `Paths.new_temp` per-process, reaped at exit); never read `ENV['XDG_CACHE_HOME']` or hardcode `~/.cache`. See {Pikuri::Paths.new_temp}.
 - **Errors are loud.** Unexpected internal state raises with the offending data. Failures the LLM can react to (bad args, HTTP errors, network blips) answer `Tool::Result.error(message)`; bugs in pikuri keep raising. Only cosmetic paths secondary to the loop may rescue-and-degrade, never library errors on the chat path.
 - **Per-gem Zeitwerk loaders**, eager-loading at boot; no `require_relative` inside a gem's `lib/`. Everything ships under `Pikuri::`, one constant per file at the Zeitwerk path (`<gem>/lib/pikuri/foo/bar.rb` → `Pikuri::Foo::Bar`); acronyms need an `inflector.inflect` entry; no top-level constants. `Pikuri::PROMPT_DIRS` is likewise cooperative — each gem appends its `prompts/`, `Pikuri.prompt(name)` searches all.
 - **Tests: rspec-core with minitest-style asserts.** `describe` / `it` but `assert_equal` / `assert` / `refute`, no RSpec matchers, no rspec-mocks (stub with `define_singleton_method` in `before`, restore in `after`). Pattern: `pikuri-core/spec/pikuri/agent_spec.rb`.
 - **Tool descriptions follow opencode-shape:** one-line summary, blank line, `Usage:` bullets. Per-arg constraints go in the *parameter* description, each with an example value (`e.g. "https://example.com"`). Universal failure-recovery guidance lives in per-binary prompts, not per-tool.
 - **Tool naming: a prefix marks a family, a universal verb goes bare.** `foo_*` = a family sharing one backing resource (`task_*`, `thunderbird_*`, `web_*`); a verb every agent knows stays bare (`read`, `bash`, `fetch`, `agent`). Don't spend an in-distribution name for symmetry. See `D_directory_listing`.
-- **No tool names in a main/binary system prompt.** `prompts/<bin>.txt` names no wired tool and restates no mechanics (those live in the tool's `description:`); stating a capability the agent observes is fine. Persona prompts (`prompts/persona-*.txt`) are the carve-out. `T_no_tool_names_in_prompts`.
-- **Book chapters are named, not numbered** — never an ordinal, anywhere: files, H1s, prose, yardoc, gemspecs, `bin/`. A new concept is one `book/<slug>.md`, one line in `book/README.md`, and fixed neighbouring "What's next" links. `T_named_chapters`.
+- **No tool names in a main/binary system prompt.** `prompts/<bin>.txt` names no wired tool and restates no mechanics (those live in the tool's `description:`); stating a capability the agent observes is fine. Persona prompts (`prompts/persona-*.txt`) are the carve-out.
+- **Book chapters are named, not numbered** — never an ordinal, anywhere: files, H1s, prose, yardoc, gemspecs, `bin/`. A new concept is one `book/<slug>.md`, one line in `book/README.md`, and fixed neighbouring "What's next" links.
 - **A CHANGELOG entry is one sentence**, new work under `[Unreleased]`, a shipped section closed. The full shape is `CHANGELOG.md`'s own preamble.
 - **User-facing docs: prefer concrete over abstract.** "Delete your home folder" beats "filesystem mutation outside the workspace" — README / SECURITY / `design/comparison.md` / book, not yardoc.
 
