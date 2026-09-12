@@ -50,7 +50,7 @@ Rules that keep the split from drifting:
 - **One home per fact; the others link.** A one-line restatement that saves a jump is fine — repeat the *fact*, defer the *explanation*. Compressing a `D_` entry into a bullet here is a third copy, not a summary.
 - **`decisions.md` argues, `requirements.md` states, `comparison.md` is about *them* not us, `architecture.md` composes and never argues.** A paragraph explaining *why* in any file but `decisions.md` has drifted; move it and cite the `D_`.
 - **A `D_` is earned by what happened, not by having had an alternative:** it shaped what the project is (reverse it and the README's first paragraph changes), or it cost research the next person would otherwise redo. A tool, a library among equals, the CI host, a version bump — a comment at the site of the choice, never an entry. Only decisions already taken; ideas, TODOs and open questions go to `design/ideas/`. A shipped decision that is reversed keeps its entry as a tombstone. Nothing about `design/` itself or its tooling is an entry.
-- **An `R_` is a property the README promises**, or the whole-tree rule that keeps it — *every*, *never*, *all*, code not yet written included. A rule about internals no user would care about is a tripwired seam line here, with no slug; a rule about one class is its yardoc.
+- **An `R_` is a promise the README's pitch makes, made an official rule — and the owner writes it.** An agent never adds, edits or retires one; it proposes, in conversation or as a drafted entry in `design/ideas/`. The owner's ruler: allow the opposite everywhere — is it still pikuri? "Nothing leaves the machine by default", "no agent holds all three trifecta legs" → not pikuri → `R_`. "Every subprocess through the chokepoint", "nothing appended mid-conversation is `:system`" → broken in places, still pikuri → the seam rule that *keeps* a promise: a tripwired line here, named in the promise's *Enforced by*, no `R_`. A rule about one class is its yardoc. One `requirements.md`, at the root; a gem's README is a reference card and gets none.
 - **Slugs:** `D_` decisions, `R_` requirements, `T_` tripwires (cited from a requirement's *Enforced by* or a seam line here, defined by the check), `Q_` open questions inside `design/ideas/` only — a durable doc never cites a `Q_`. Underscores throughout, backticked in prose, cited by slug never by position; `grep '^## D_' design/decisions.md` is the index.
 - **`design/verify_design_tripwires.sh`** (also `rake design_tripwires`) fails on any cited `D_` / `R_` without a heading, a `T_` without a check, an oversized `AGENTS.md`, or a `CLAUDE.md` that isn't the shim. Run it before committing a doc change.
 
@@ -61,14 +61,14 @@ until its file (and any sidecar folder `design/ideas/<name>/`) is gone.
 Where the lasting nuggets land:
 
 - the choice made + the alternatives rejected → a `D_` entry in `design/decisions.md` if it passes the gate above; otherwise a comment at the site of the choice
-- a promise to the user that must hold from now on → an `R_` entry in `design/requirements.md`; an internal seam → a tripwired line in this file
+- a promise the pitch makes that must hold from now on → a proposal for the owner, who writes the `R_` entry in `design/requirements.md`; the seam rule that keeps one → a line in this file
 - a new gem, or a changed responsibility → one line in the repo map (this file, or the gem's own `AGENTS.md`)
 - how the pieces work together — wiring, a flow crossing several of them → `design/architecture.md`, or that gem's
 - what other projects do → `design/comparison.md`
 - how one class works and why it is shaped so → its yardoc header
 - the concept, taught in order → one `book/<slug>.md` + one line in `book/README.md`
 - what a user or operator must know → `README.md` / `SECURITY.md`
-- a cross-cutting invariant ("never …") → this file
+- a cross-cutting invariant ("never …") → one line in this file: rule, `T_<slug>` if tripwired, `See D_<slug>` if a `D_` exists
 - work deferred *as a consequence of a logged decision* → that entry's *Consequences*
 
 *Layout seeded from the `design-docs` and `ideas-folder` skills (mvysny, `~/.claude/skills`); this project needs nothing from them.*
