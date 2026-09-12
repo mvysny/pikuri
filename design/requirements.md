@@ -5,9 +5,9 @@ requirement. A requirement *states*; it never argues: the fork behind it, if the
 `D_` entry it cites.
 
 - Cite by slug — `R_<slug>`. `grep '^## R_' design/requirements.md` is the index.
-- Slug only what is referenced from elsewhere. Most of what must hold about one class is stated
-  completely in that class's yardoc and needs no entry here; an `R_` earns its slug when a seam
-  spans gems, or when a tripwire and an `AGENTS.md` line both need something to point at.
+- **An entry is a property the README promises**, or the whole-tree rule that keeps it — *every*,
+  *never*, *all*, code not yet written included. A rule about internals no user would care about
+  is a tripwired seam line in `AGENTS.md` with no slug; a rule about one class is its yardoc.
 - Shape: `## R_<slug> — <the requirement, one sentence>`, then **Status** (Active, or
   Retired <date> — see `D_<slug>`), **Why** (one paragraph), **Enforced by** (a spec, a tripwire
   cited as `T_<slug>` — this line is that slug's home — or "review only"), **See** (the yardoc
@@ -19,42 +19,46 @@ requirement. A requirement *states*; it never argues: the fork behind it, if the
 
 ---
 
-## R_no_system_role — Nothing pikuri appends mid-conversation is ever `role: :system`
+## R_privacy_first — Nothing leaves the machine that the user did not ask to leave
 
 **Status:** Active.
-**Why.** A `:system` message added after a chat has started fails two ways, neither visible to
-anything pikuri can observe — the message is in the payload, the listener stream renders it, the
-history holds it. Qwen3.6's chat template silently drops every one past the leading header, so the
-text never reaches the model; a provider carrying `:system` in a separate field (Anthropic,
-Bedrock) merges it into the standing prompt instead, so a block meant for one turn is presented as
-though it had always been there and stays in force. Every block pikuri injects after the opening
-prompt — a skill body, a reference file, an interloper's note — therefore rides a `:user` turn
-wrapped in `<system-reminder>`.
-**Enforced by.** `T_no_system_role` — no `add_message(role: :system` anywhere in `lib/`, and
-`add_message(role:` at all confined to `pikuri-core/lib/pikuri/agent.rb`.
-**See.** {Pikuri::Agent#append_reference_block}, `D_reference_text_as_user_turn`.
+**Why.** The README's promise is that a conversation never leaves your computer unless the model
+itself calls a network tool, and it is the whole reason to pick pikuri over a hosted agent. Two
+halves keep it. A default that reaches a hosted provider, or a feature that works only against
+one, breaks it even when nobody turns it on — cloud is a transport the host passes in, never a
+fallback pikuri picks. And a path pikuri *walked* to on its own — a listing, a glob, a grep hit,
+an LSP location — passes the denylist before it is reported, or a denied `.env` leaks its name,
+and for grep a line of its content, into a transcript the user never asked to produce.
+**Enforced by.** `T_walked_path_denylist`, `T_lsp_denied_sites`; the transport half is review only
+— a default is a one-line change no grep can distinguish from a legitimate host wiring.
+**See.** {Pikuri::Workspace::Filesystem#denied?}, {Pikuri::Agent::ChatTransport},
+`D_walked_path_denylist`.
 
-## R_walked_path_denylist — A path a tool walked to is filtered against the denylist before it is reported
-
-**Status:** Active.
-**Why.** `resolve_for_read` / `resolve_for_write` gate a path the *model* supplied. A directory
-listing, a glob, a grep hit or an LSP location is a path pikuri found by itself, and nothing gated
-it — so without this pass a denied `.env` or `.git/` leaks its name, and for grep a line of its
-content, into the transcript. The `denied?` filter is the fail-closed guarantee; `rg`'s own
-pruning is an optimization layered on top, never the thing relied on.
-**Enforced by.** `T_walked_path_denylist` (the roster of files allowed to perform the filter),
-`T_lsp_denied_sites` (only `Sources` and `Renderer` perform it inside pikuri-lsp).
-**See.** {Pikuri::Workspace::Filesystem#denied?}, `D_walked_path_denylist`.
-
-## R_subprocess_chokepoint — Every subprocess a gem's `lib/` spawns goes through `Pikuri::Subprocess.spawn`
+## R_trifecta_break — The trifecta is broken by wiring, and pikuri never sanitizes tool output
 
 **Status:** Active.
-**Why.** The chokepoint puts every child in a fresh process group and tracks the pgid, so
-`Subprocess.cleanup!` can SIGTERM whole groups at exit — including work a command backgrounded
-with `&`, which `wait` alone never sees. A bare `Process.spawn` or `Open3` in a gem is untracked,
-and what it leaves running outlives the turn that started it. (Timeouts are deliberately *not*
-here: callers wrap their argv in coreutils' `timeout`.) Two long-lived stdio children are the
-documented exceptions, each owning its own teardown: the MCP client and the LSP client.
-**Enforced by.** `T_subprocess_chokepoint` — spawn primitives in `lib/` confined to
-`subprocess.rb` and `pikuri-lsp/lib/pikuri/lsp/client_wrapper.rb`.
-**See.** {Pikuri::Subprocess}, `pikuri-lsp/AGENTS.md`, `pikuri-mcp/AGENTS.md`.
+**Why.** SECURITY.md sells the trifecta-break as the headline defense: an agent holding private
+data, attacker-influenceable content and an egress path is the live wire, so pikuri keeps a
+persona to at most two of the three legs and quarantines the rest behind the sub-agent boundary.
+That only stays true if the boundary is *structural* — filtering model-facing bytes for
+injections is a guess pikuri refuses to sell as a guarantee. So every tool declares its
+`trifecta_legs` at construction, where the workspace, sandbox and confirmer that decide a leg are
+already in hand; an undeclared tool defaults to `ASSUMED`, presumed hostile on both axes, so
+forgetting fails loud rather than quiet. {Pikuri::Trifecta} only *reports* — it never blocks, and
+a clean map is never an assurance.
+**Enforced by.** `TrifectaLegs::ASSUMED` as the default; `SubAgent::Extension#configure` raises on
+a persona naming a tool no pool holds; `Trifecta.walk` is a pure function of the tree, spec'd from
+hand-built nodes.
+**See.** {Pikuri::Trifecta}, {Pikuri::Tool}, `SECURITY.md`, `D_lsp_trifecta_legs`.
+
+## R_readable_in_an_evening — The whole codebase stays small enough to read end-to-end in an evening
+
+**Status:** Active.
+**Why.** The README invites a reader to do exactly that, and the book's teaching value rests on
+it: pikuri is meant to be audited, not trusted. The rule that keeps it is negative — no layer, no
+plugin system, no abstraction and no knob that the next concrete step does not need. Growth goes
+sideways into a new bounded gem with its own threat model, never into another indirection in an
+existing one, because a reader can skip a gem they do not use but cannot skip a layer.
+**Enforced by.** Review only — this is the one requirement no grep can hold, which is why it is
+stated here rather than left as taste.
+**See.** `AGENTS.md` "Working on this codebase", `D_keep_ruby_llm`.

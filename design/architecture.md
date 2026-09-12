@@ -40,8 +40,8 @@ trimmed to its length, never the other way round.
   (one temp root, reaped at exit).
 - Untrusted bytes enter through two chokepoints and nowhere else: {Pikuri::Extractor}'s registry
   for format→text conversion, and {Pikuri::Subprocess.spawn} for anything that runs
-  (`R_subprocess_chokepoint`). Paths that reach the model are filtered on the way out
-  (`R_walked_path_denylist`).
+  (`T_subprocess_chokepoint`). Paths that reach the model are filtered on the way out
+  ({Pikuri::Workspace::Filesystem#denied?}, `R_privacy_first`).
 
 ## Flows
 
@@ -68,7 +68,7 @@ trimmed to its length, never the other way round.
    `Finalizers.register` is armed *before* the build phase, so a mid-construction raise still
    fires whatever cleanup was already declared.
 3. The agent pulls `system_prompt_snippets` from every extension and assembles the system prompt —
-   the one and only `:system` message it will ever hold (`R_no_system_role`).
+   the one and only `:system` message it will ever hold (`D_reference_text_as_user_turn`).
 4. `ContextWindowDetector` probes the server's `/props` unless both its facts are already known,
    memoizing through the same `ServerPermits` registry that rations requests.
 
