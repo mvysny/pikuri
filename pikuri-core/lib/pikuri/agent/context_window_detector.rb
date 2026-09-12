@@ -38,6 +38,14 @@ module Pikuri
     # server than the chat. A bare +:openai+ at real +api.openai.com+ gets one
     # fast +/props+ 404 that degrades to +nil+.
     #
+    # The *credential* is derived the same way, and for a sharper reason:
+    # +llama-server --api-key SECRET+ leaves only +/health+ and the +/models+
+    # endpoints public, so an unauthenticated +/props+ is a 401 — and a 401
+    # here costs both facts at once, silently (no cap to budget against, no
+    # slot count to size {ServerPermits} with). The probe therefore sends the
+    # chat's own key as +Authorization: Bearer+; a keyless server ignores a
+    # header it was never configured to check.
+    #
     # == llama.cpp router mode
     #
     # A llama.cpp *router* (the multi-instance front) answers a bare +/props+
@@ -99,15 +107,22 @@ module Pikuri
       # @param openai_base [String, nil] base URL the probe URL derives from;
       #   defaults to the live +RubyLLM.config.openai_api_base+ (passed
       #   explicitly only by tests, to avoid mutating global config)
+      # @param openai_key [String, nil] fallback credential for a transport
+      #   that overrides no key of its own, i.e. one riding the global config;
+      #   same default-and-override shape as +openai_base+, and it must stay
+      #   that way — a key resolved from a different place than the base
+      #   authenticates against the wrong server after a cross-server switch
       # @return [Props] what the server reported; {Props::NONE} for a
       #   non-+:openai+ transport, an unconfigured base, or any probe failure
-      def self.detect(transport, openai_base: RubyLLM.config.openai_api_base)
+      def self.detect(transport, openai_base: RubyLLM.config.openai_api_base,
+                      openai_key: RubyLLM.config.openai_api_key)
         return Props::NONE unless transport.provider == :openai
 
         url = props_url(openai_base)
         return Props::NONE if url.nil?
 
-        new(probe_url: url, model_id: transport.model).probe
+        new(probe_url: url, model_id: transport.model,
+            api_key: transport.api_key || openai_key).probe
       end
 
       # Derive the +/props+ URL from the OpenAI-compatible base (+/props+ is at
@@ -126,9 +141,12 @@ module Pikuri
       # @param model_id [String, nil] the chat model id, used to follow a
       #   llama.cpp router via +/props?model=<id>+ when the bare probe
       #   reports +role: router+. +nil+ or empty disables that second hop.
-      def initialize(probe_url:, model_id:)
+      # @param api_key [String, nil] sent as +Authorization: Bearer+ on every
+      #   hop; +nil+ or empty sends no header.
+      def initialize(probe_url:, model_id:, api_key: nil)
         @probe_url = probe_url
         @model_id = model_id
+        @api_key = api_key
       end
 
       # @return [Props] what the server reported; {Props::NONE} if the probe
@@ -180,13 +198,34 @@ module Pikuri
           request: { open_timeout: OPEN_TIMEOUT, timeout: READ_TIMEOUT }
         ).get(url) do |req|
           req.headers['Accept'] = 'application/json'
+          req.headers['Authorization'] = "Bearer #{@api_key}" if key?
         end
 
-        return warn_and_nil("HTTP #{response.status} from #{url}") unless response.status == 200
+        return warn_and_nil(http_failure(response.status, url)) unless response.status == 200
 
         JSON.parse(response.body)
       rescue Faraday::Error, JSON::ParserError => e
         warn_and_nil("#{e.class.name.split('::').last}: #{e.message}")
+      end
+
+      # @return [Boolean] whether there is a credential to send.
+      def key?
+        !@api_key.nil? && !@api_key.empty?
+      end
+
+      # The +warn+ line's text for a non-200 status. A bare "HTTP 401" is
+      # nobody's diagnosis of a misconfigured key, and this warning is the only
+      # signal an operator gets — the probe degrades rather than raising.
+      #
+      # @param status [Integer] the response status.
+      # @param url [String] the probed URL.
+      # @return [String] never carrying the key itself, only whether one went.
+      def http_failure(status, url)
+        line = "HTTP #{status} from #{url}"
+        return line unless [401, 403].include?(status)
+
+        sent = key? ? 'the key sent was rejected' : 'none was sent'
+        "#{line}: the server requires an API key (#{sent})"
       end
 
       # @param data [Hash] a parsed +/props+ body

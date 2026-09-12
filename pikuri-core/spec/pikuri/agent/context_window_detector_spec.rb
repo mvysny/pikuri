@@ -27,9 +27,10 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
   # "the probe learned nothing" — every failure path answers this exact value.
   let(:none) { Pikuri::Agent::ContextWindowDetector::Props::NONE }
 
-  def transport(model: 'm', provider: :openai)
+  def transport(model: 'm', provider: :openai, api_key: nil)
     Pikuri::Agent::ChatTransport.new(
-      model: model, provider: provider, assume_model_exists: provider == :openai
+      model: model, provider: provider, assume_model_exists: provider == :openai,
+      api_key: api_key
     )
   end
 
@@ -244,6 +245,106 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       end
       assert_equal none, described_class.detect(transport, openai_base: base)
       assert_includes buf.string, 'router probe'
+    end
+  end
+
+  # +llama-server --api-key SECRET+ protects /props, so the probe must send the
+  # same credential the chat does — else a 401 costs both the cap and the slot
+  # count. +openai_key:+ is passed explicitly throughout (nil where the case is
+  # "no key at all") so the specs never read global RubyLLM.config.
+  describe 'credential' do
+    # Records the Authorization header of every hop, answering a usable cap.
+    def capturing_stub(seen)
+      stubs.get(url) do |env|
+        seen << env.request_headers['Authorization']
+        [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 8192 })]
+      end
+    end
+
+    it "sends the transport's api_key as a bearer token" do
+      seen = []
+      capturing_stub(seen)
+      props = described_class.detect(transport(api_key: 'SECRET'), openai_base: base,
+                                     openai_key: nil)
+
+      assert_equal 8192, props.n_ctx
+      assert_equal ['Bearer SECRET'], seen
+    end
+
+    it 'falls back to the openai_key for a transport riding the global config' do
+      seen = []
+      capturing_stub(seen)
+      described_class.detect(transport, openai_base: base, openai_key: 'GLOBAL')
+
+      assert_equal ['Bearer GLOBAL'], seen
+    end
+
+    it "prefers the transport's own key over the global one" do
+      seen = []
+      capturing_stub(seen)
+      described_class.detect(transport(api_key: 'SECRET'), openai_base: base,
+                             openai_key: 'GLOBAL')
+
+      assert_equal ['Bearer SECRET'], seen
+    end
+
+    it 'sends no Authorization header when there is no key anywhere' do
+      seen = []
+      capturing_stub(seen)
+      described_class.detect(transport, openai_base: base, openai_key: nil)
+
+      assert_equal [nil], seen
+    end
+
+    it 'sends no Authorization header for an empty key' do
+      seen = []
+      capturing_stub(seen)
+      described_class.detect(transport(api_key: ''), openai_base: base, openai_key: '')
+
+      assert_equal [nil], seen
+    end
+
+    it 'carries the key on the router hop as well as the bare probe' do
+      seen = []
+      stubs.get(url) do |env|
+        seen << env.request_headers['Authorization']
+        if env.params['model']
+          [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 262_144 })]
+        else
+          [200, {}, JSON.generate('role' => 'router',
+                                  'default_generation_settings' => { 'n_ctx' => 0 })]
+        end
+      end
+      props = described_class.detect(transport(api_key: 'SECRET'), openai_base: base,
+                                     openai_key: nil)
+
+      assert_equal 262_144, props.n_ctx
+      assert_equal ['Bearer SECRET', 'Bearer SECRET'], seen
+    end
+
+    it 'warns that the key was rejected on a 401, without printing it' do
+      stubs.get(url) { [401, {}, ''] }
+      assert_equal none, described_class.detect(transport(api_key: 'SECRET'), openai_base: base,
+                                                openai_key: nil)
+
+      assert_includes buf.string, 'HTTP 401'
+      assert_includes buf.string, 'the key sent was rejected'
+      refute_includes buf.string, 'SECRET'
+    end
+
+    it 'warns that no key was sent on a 401 against a keyless transport' do
+      stubs.get(url) { [401, {}, ''] }
+      assert_equal none, described_class.detect(transport, openai_base: base, openai_key: nil)
+
+      assert_includes buf.string, 'none was sent'
+    end
+
+    it 'leaves an unrelated non-200 warning free of key advice' do
+      stubs.get(url) { [404, {}, ''] }
+      assert_equal none, described_class.detect(transport, openai_base: base, openai_key: nil)
+
+      assert_includes buf.string, 'HTTP 404 from'
+      refute_includes buf.string, 'API key'
     end
   end
 end

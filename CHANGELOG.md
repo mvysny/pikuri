@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `Agent::ContextWindowDetector` sending the `/props` probe unauthenticated — it now carries the transport's `api_key` (falling back to the global config's, like the base URL) as a bearer token, so a `llama-server --api-key` no longer answers 401 and silently costs both the context cap and the `ServerPermits` slot count; a 401 or 403 now says so.
 - Add `design/` — rationale and reference move there as `decisions.md`, `requirements.md` (the new `R_` namespace), `architecture.md`, `comparison.md` and `ideas/`, and each gem's `DESIGN.md` becomes `<gem>/design/architecture.md`. `CLAUDE.md` is now a one-line `@AGENTS.md` shim, so any link into the old uppercase root files or a gem's `DESIGN.md` needs repointing. See `design/decisions.md` `D_design_docs`.
 - Add `Agent::ChatTransport#params` — an opaque table of extra chat-completion keys the connection carries and ruby_llm deep-merges into every request (`params: {'chat_template_kwargs' => {'enable_thinking' => false}}` stops a Qwen thinking); pikuri translates nothing and knows no parameter by name. See `design/decisions.md` `D_opaque_request_params`.
 - Add `params:` to `Agent::ChatTransport.from_openai_server` and `Testing.fake_transport` — the host factory takes the table, and a scripted-HTTP spec can now cover a params-carrying connection instead of rewriting the request body from a Faraday adapter.
