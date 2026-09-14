@@ -1,7 +1,7 @@
 # Three cheap borrows from grok-build — one yes, one no, one chore
 
 Status: **idea, not built.** Fallout from the grok-build survey
-(`design/comparison.md`, §"Edit addressing" and §"Tool description quality").
+(`design/research.md`, `R_available_tools` and `R_tool_descriptions`).
 These were flagged there as the three cheapest borrows; grounding them
 against the actual code changed two of the three verdicts, so this note
 is as much a correction as a proposal.
@@ -101,11 +101,11 @@ contradiction, and the reason it isn't is the generalizable nugget:
 
 That test is worth applying to *every* future grok-build borrow, which
 is the main reason this note exists. It also retro-justifies why the
-description templates (§"Tool description quality") transfer while the
+description templates (`R_tool_descriptions`) transfer while the
 parallel toolsets don't.
 
-**Action:** none, except to stop citing this as a free win.
-`design/comparison.md` currently presents it as one; that line needs fixing.
+**Action:** none — `design/research.md` records the rejection and the
+vendor-vs-harness test under `R_available_tools`.
 
 ---
 
@@ -154,9 +154,9 @@ deleting this file:
   truth: {Pikuri::Workspace::Edit}'s yardoc. The *rejected* repair arm
   (with the mass-rewrite trap that killed it) is a genuine fork →
   `design/decisions.md`.
-- **#2** is already decided and documented; nothing to add beyond the
-  `design/comparison.md` fix. The vendor-vs-harness test itself is worth a line
-  in `design/comparison.md` where it will be re-read on the next survey.
+- **#2** is already decided and documented, and `design/research.md` now
+  carries both the rejection and the vendor-vs-harness test where the next
+  survey will re-read them → nothing left to backport.
 - **#3 shipped** → nothing to backport for `fetch`/`web_scrape` (a chore
   leaves no rationale). The `web_search` cap decision is a fork if it
   goes the enforce route → `design/decisions.md`; if it just deletes the

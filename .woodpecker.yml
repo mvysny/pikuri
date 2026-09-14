@@ -45,6 +45,18 @@ steps:
           get "s3://$S3_BUCKET/$CI_REPO_NAME/bundle-$KEY.tgz" bundle.tgz \
           && tar xzf bundle.tgz && echo "cache hit" || echo "cache miss"
 
+  # --- the doc layer, on its own ---
+  # A job of its own so a drifted doc fails in seconds rather than behind the
+  # whole spec suite, and on an image that has bash and git — the ruby image
+  # has both, but the script needs nothing else, so it runs before the build.
+  # `rake check` runs this same script again locally and in `test`; that is
+  # deliberate, so a contributor's inner loop cannot drift from CI.
+  - name: design-tripwires
+    image: buildpack-deps:scm
+    commands:
+      - git config --global --add safe.directory "$CI_WORKSPACE"
+      - design/verify_design_tripwires.sh
+
   - name: test
     image: *ruby_image
     environment:

@@ -76,7 +76,7 @@ module Pikuri
       private_constant :LOGGER
 
       # Subdirectory names scanned under each search base, in precedence
-      # order. No +.agents/commands+: no harness in +design/comparison.md+ defines
+      # order. No +.agents/commands+: no harness in +design/research.md+ defines
       # one, and an invented convention is worse than a missing one.
       COMMAND_SUBDIRS = ['.pikuri/commands', '.claude/commands'].freeze
       private_constant :COMMAND_SUBDIRS

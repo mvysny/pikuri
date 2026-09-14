@@ -255,7 +255,7 @@ stays a brainstorm, not a plan.
   + research to keep apart.
 - **Relationship to the sub-agent gem.** Reuse `Agent` + `Persona`
   wholesale, but the orchestration is human, not `SubAgentTool`. Worth a
-  paragraph in `design/comparison.md` so "federation (human-routed siblings)" vs
+  paragraph in `design/research.md` so "federation (human-routed siblings)" vs
   "sub-agents (LLM-routed children)" is an explicit, teachable contrast —
   it's the same distinction the detector draws between safe and unsafe
   separation.

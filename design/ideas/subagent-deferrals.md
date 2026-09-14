@@ -7,8 +7,8 @@ Rationale and the privilege-separation argument live in the YARD on
 {Pikuri::SubAgent::SubAgentTool} / {Pikuri::SubAgent::Persona} /
 {Pikuri::SubAgent::RESEARCHER} / {Pikuri::SubAgent::FILE_MINER} /
 {Pikuri::Code::GIT_REPO_RESEARCHER}; the cross-harness comparison and
-bundled-persona inventory live in [`../design/comparison.md`](../comparison.md)
-§"Sub-agents". Only the deferrals stay here.
+bundled-persona inventory live in [`design/research.md`](../research.md)
+`R_sub_agents`. Only the deferrals stay here.
 
 Related:
 

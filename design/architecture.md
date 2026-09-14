@@ -1,16 +1,14 @@
 # Architecture
 
-The bird's-eye map of the code as it is: the major pieces, how they are wired, and the flows that
-cross several of them. **The code and its yardoc are the authority; this file describes them.**
-When they disagree, fix this file.
+How the gems compose in one process — what no single symbol can say and what would be expensive to
+overturn: wiring and dependency direction, the lifecycle and threading story, the flows a newcomer
+needs, where to start reading. **Normative: the code conforms.** Change this file first, then the
+code.
 
-Keep it short. Anything true of one class belongs in that symbol's yardoc; a gem's *internal*
-cross-symbol picture belongs in its own `<gem>/design/architecture.md`; the map of which gem is
-which is `../AGENTS.md`'s, because an agent needs it on every turn. This file starts where those
-stop — how the gems work together in one process: dependency direction, the lifecycle and
-threading story, and where a newcomer should start reading. Cite `R_` for what must hold and `D_`
-for why; argue nothing here. **The first entry in each section is the ruler** — later entries are
-trimmed to its length, never the other way round.
+Not here: why (`decisions.md` — cite the `D_`), what upstream does (`research.md` — cite the `R_`),
+one symbol's behaviour (its yardoc), the module map (`../AGENTS.md`), a gem's *internal*
+cross-symbol picture (its own `<gem>/design/architecture.md`). Only the sections with content; the
+first entry in each is the ruler. Cap 12 KB — over it, research or yardoc content has crept in.
 
 ---
 
@@ -39,9 +37,9 @@ trimmed to its length, never the other way round.
   {Pikuri::Agent::ServerPermits} (one permit pool per inference *server*), {Pikuri::Paths}
   (one temp root, reaped at exit).
 - Untrusted bytes enter through two chokepoints and nowhere else: {Pikuri::Extractor}'s registry
-  for format→text conversion, and {Pikuri::Subprocess.spawn} for anything that runs
-  (`T_subprocess_chokepoint`). Paths that reach the model are filtered on the way out
-  ({Pikuri::Workspace::Filesystem#denied?}, `R_privacy_first`).
+  for format→text conversion, and {Pikuri::Subprocess.spawn} for anything that runs. Paths that
+  reach the model are filtered on the way out ({Pikuri::Workspace::Filesystem#denied?}), which is
+  what keeps the **Privacy first** promise at the file boundary.
 
 ## Flows
 
@@ -77,3 +75,11 @@ trimmed to its length, never the other way round.
 `pikuri-core/lib/pikuri/agent.rb` — its class header states the two seams, the threading
 guarantee and why the loop is unbounded; then `pikuri-core/lib/pikuri/tool.rb` for the shape every
 gem's tools take, and any `bin/pikuri-*` for forty lines that wire a whole agent.
+
+## What is deliberately absent
+
+- **No provider abstraction of our own** — multi-provider config, vision/audio and embeddings are ruby_llm's (`bin/pikuri-corpus` already uses its `embed`).
+- **No context compaction** — the `bin/` scripts `exit 1` on overflow, a demo shortcut rather than a library position (`design/ideas/context-overflow-behavior.md`).
+- **No step cap on the loop**, at any depth (`D_no_step_limit`).
+- **No batch or patch edit tool**, and no fuzzy edit addressing (`D_single_hunk_edit`).
+- **No session store**, so no resumable or worktree-isolated sub-agents.

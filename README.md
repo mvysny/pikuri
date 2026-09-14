@@ -10,7 +10,7 @@
 > — Frank Herbert, *Dune* (1965)
 
 A small Ruby AI assistant you run on your own machine, shipped as
-a family of thirteen gems in a monorepo (twelve functional gems plus
+a family of seventeen gems in a monorepo (sixteen functional gems plus
 a convenience metagem). Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
 conversation never leaves your computer unless the model itself
@@ -135,7 +135,7 @@ conversation needs no config file, and a deliberately small
 codebase that doubles as a tour of how a small agent runtime
 actually works. See [`design/decisions.md`](design/decisions.md) for the
 design rationale and the roads not taken;
-[`design/comparison.md`](design/comparison.md) places pikuri next to
+[`design/research.md`](design/research.md) places pikuri next to
 opencode and pi.
 
 ## Curious how the agentic loop actually works?

@@ -467,7 +467,7 @@ cheap, operational where structure runs out.
 
 (For the head-to-head specifics — Claude Code's exact defenses
 versus pi's and opencode's, at the code-path level —
-`design/comparison.md` has the internal survey.)
+`design/research.md` has the internal survey.)
 
 ## If the NX flag ever arrives
 

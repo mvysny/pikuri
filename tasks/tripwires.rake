@@ -2,7 +2,7 @@
 
 # Executable form of the handful of seams that break *silently*.
 #
-# The set is closed at five. *Do not add a +T_+ rule* — a new invariant
+# The set is closed at five. *Do not add a check* — a new invariant
 # goes in AGENTS.md as prose and stays unchecked. The bar the five clear:
 # breaking the seam is *invisible* (every spec stays green, the diff looks
 # reasonable) and the consequence is a security hole or a protocol
@@ -10,16 +10,17 @@
 # only. Eighteen of these once accumulated into a checker framework —
 # which were cut and why are +design/decisions.md+ +D_tripwire_bar+.
 #
-# The doc layer is not our business: slug links, file caps and the shim
-# files belong to +design/verify_design_tripwires.sh+, which runs beside
-# this file in +rake check+. It checks both directions, so a check added
-# here that nothing cites fails just as a cited id with no check does.
+# The doc layer is not our business: slug links, file caps and the
+# CLAUDE.md symlinks belong to +design/verify_design_tripwires.sh+, which
+# runs beside this file in +rake check+ and knows nothing about these
+# checks. A check carries no slug and nothing cites it — each is named by
+# what it checks, and renaming one costs an edit to this file alone.
 #
 # A failure is as often a stale expectation as a real violation, which is
-# why it prints the offending lines rather than a count. Ids are stable
-# once published: rename only with a sweep of every reference.
+# why it prints the offending lines rather than a count.
 module Tripwires
-  # One check. +body+ returns an Array of violation strings (empty = pass).
+  # One check. +id+ is a human label, not a slug. +body+ returns an Array
+  # of violation strings (empty = pass).
   Check = Struct.new(:id, :invariant, :body) do
     def run = body.call
   end
@@ -57,7 +58,7 @@ module Tripwires
 
   CHECKS = [
     Check.new(
-      'T_subprocess_chokepoint',
+      'subprocess chokepoint',
       'All subprocess spawning in lib/ routes through Subprocess.spawn, ' \
       'except two long-lived stdio children.',
       # Two sanctioned exceptions (stated in +pikuri-mcp/AGENTS.md+ /
@@ -73,7 +74,7 @@ module Tripwires
     ),
 
     Check.new(
-      'T_walked_path_denylist',
+      'walked-path denylist',
       'Every enumerating tool filters its own results against the denylist.',
       # The roster of files allowed to *perform* the walked-path filter.
       # Grep is here via +reject_denied_lines+ (a prefix filter over rg
@@ -92,7 +93,7 @@ module Tripwires
     ),
 
     Check.new(
-      'T_request_permits',
+      'per-request permit',
       'Every ruby_llm request rides a Context whose instrumenter is the permit gate.',
       # Two halves of one seam, both of which a plausible tidy-up breaks
       # silently — the throttle would simply stop gating, with every spec
@@ -108,7 +109,7 @@ module Tripwires
     ),
 
     Check.new(
-      'T_no_system_role',
+      'no mid-conversation :system',
       'Nothing pikuri appends mid-conversation is ever role: :system.',
       # The definitive silent failure: a mid-conversation +:system+ message
       # is accepted, sent, and ignored by the model. Nothing goes red.
@@ -119,7 +120,7 @@ module Tripwires
     ),
 
     Check.new(
-      'T_single_at_exit',
+      'single at_exit',
       'One process-global teardown registry, single at_exit.',
       # A second +at_exit+ tears down in an order nobody chose, and only
       # sometimes — the failure surfaces as a stray temp dir or an orphaned
@@ -129,14 +130,14 @@ module Tripwires
   ].freeze
 end
 
-desc 'Check the five silent-failure tripwires AGENTS.md declares (T_<slug> ids)'
+desc 'Check the five silent-failure tripwires AGENTS.md declares'
 task :tripwires do
   width = Tripwires::CHECKS.map { |c| c.id.length }.max
   failures = {}
 
   Tripwires::CHECKS.each do |check|
     # +uniq+ because a check built from two patterns can match one line
-    # twice (T_no_system_role's narrow and broad +add_message+ passes),
+    # twice (the :system check's narrow and broad +add_message+ passes),
     # and one offending line should be reported once.
     violations = check.run.uniq
     status = violations.empty? ? 'ok' : "FAIL (#{violations.size})"

@@ -63,7 +63,7 @@ the table:
   **kills the user-curated `fetch` whitelist** (an interactive host is
   attacker-readable), so the surviving live shape is the `bash`-egress /
   network-layer version. Gondolin's egress-proxy pattern (see
-  [`../design/comparison.md`](../comparison.md) §"Prior art deep-dive") is the
+  [`design/research.md`](../research.md) `R_permissions`) is the
   heavyweight structural version.
 - **Prompt injection inside skill descriptions?** Skills are
   user-installed text, and "user-vetted by definition"
@@ -168,7 +168,7 @@ The deep survey of PI's two isolation weights (the bubblewrap-only
 egress-proxy + secret-placeholder pattern) and opencode's
 tree-sitter-backed `(permission, glob)` permission system — plus the
 "worth borrowing" shortlist — now lives in
-[`../design/comparison.md`](../comparison.md) §"Prior art deep-dive", alongside
+[`design/research.md`](../research.md) `R_permissions`, alongside
 the higher-level permission/sandboxing comparison it extends. Findings
 reinforce pikuri's framing rather than contradict it: neither project
 ships prompt-injection defenses, both cap tool output to a tempfile,

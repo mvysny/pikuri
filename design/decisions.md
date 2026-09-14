@@ -1,39 +1,26 @@
 # Decisions
 
-Why pikuri is the way it is: one entry per decision *already taken*, with the roads not taken.
-Not what the code does (the yardoc), not what must hold (`requirements.md`), not what other
-projects do (`comparison.md`), not the shipped defenses (`../SECURITY.md`) — an entry links out
-rather than restating.
-
-- Cite an entry by slug — `D_<slug>` — never by position. `grep '^## D_' design/decisions.md` is
-  the index; there is no table of contents, and the file is never read wholesale.
-- **An entry is earned by what happened, not by having had an alternative** — every choice had a
-  fork, and a *Rejected:* paragraph manufactures one. Either gate earns it: it **shaped what
-  pikuri is** (reverse it and the README's first paragraph changes), or it **cost research the
-  next person would otherwise redo**, and then *Rejected:* says what was *done* to reject the
-  road, never only reasons about it. Neither → a comment at the site of the choice: the tool, the
-  library among equals, the CI host, a version bump. Nor is one warranted where the fork is
-  already argued somewhere durable — a road with real teaching value belongs to the book.
-- **Nothing about `design/` itself or its tooling is an entry**, and nothing not yet decided:
-  ideas, TODOs and open questions live in `design/ideas/`.
-- Entries are mutable: refine in place, newest first. A *shipped* decision that is reversed keeps
-  its entry as a tombstone (`Status: Superseded by D_<slug>`); the replacement is written fresh.
-  The roads not taken stay — they are the most valuable content in the file.
-- Shape: `## D_<slug> — <title> (<decided date>)`, then **Status**, **Context**, **Decision**,
-  one **Rejected: …** paragraph per alternative, **Consequences**. The date is *decided*
-  provenance, not a log position; git owns the edit history, so never narrate how an entry read.
-- **The first entry written is the ruler** — the one at the bottom, `D_per_process_temp`. Later
-  entries, and every clean-up pass, trim to its length; never the other way round. An entry that
-  will not fit is saying something that belongs in a yardoc header.
+Why pikuri is the way it is and not otherwise — FAQ-shaped: each entry is a question and its
+current answer. Rewrite the answer when it changes; delete the entry when nobody asks any more.
+**A reversal is a rewrite**, never a second entry and never an amendment note: the counter-
+arguments become the replacement's why-not clauses, and a reversal to *nothing* is a standalone
+why-not question. An entry is earned by what happened, not by having had an alternative — either
+it **shaped what pikuri is** (reverse it and the README's first paragraph changes), or it **cost
+research the next person would otherwise redo** (cited as its `R_`), and then a why-not says what
+was *done* to reject the road, never only reasons about it. Neither → a comment at the site of
+the choice: the tool, the library among equals, the CI host, a version bump. Nothing about
+`design/` itself is an entry, and nothing not yet decided — ideas, TODOs and open questions live
+in `design/ideas/`. Not here either: what the code does (the yardoc), what other projects do
+(`research.md`), the shipped defenses (`../SECURITY.md`) — an entry links out rather than
+restating. Cite by slug, `D_<slug>`, never by position; `grep '^## D_' design/decisions.md` is the
+index, and the file is never read wholesale. Entries run newest first, so **the ruler is the
+oldest, at the bottom — `D_per_process_temp`**: later entries trim to its length, never the other
+way round. When you have written one, re-read it against the entry above, check it says nothing
+the yardoc already says, and cut what is left over.
 
 ---
 
-## D_tripwire_bar — Five tripwires, and the set is closed (2026-09-12)
-
-**Status:** Accepted; shipped 2026-09-12. Cuts twelve of seventeen checks;
-`tasks/tripwires.rake` went 378 → 167 lines. An eighteenth, the decision-slug
-link checker, had just moved to `design/verify_design_tripwires.sh` with the
-doc layer.
+## D_tripwire_bar — Why only five tripwire checks, and why does a new invariant not get one?
 
 **Context.** The tripwires began as the executable form of grep one-liners that
 used to sit in AGENTS.md and rot unrun. That was a good move, and then the
@@ -48,23 +35,22 @@ build everywhere else in the tree.
 Nor were the checks buying much. One scanned every tracked file for
 `/chapters? ?\d+/` to catch a doc nit; two were link checkers for slugs; one
 verified that the *word* "Sharing" appeared in a file; the LSP denied-sites
-check was a strict subset of `T_walked_path_denylist` — same call, same allowed
-files, narrower scan. And the one with a hardcoded roster of tool names goes
-*negative* once it stales, because the green line still reads as coverage.
-(Retired ids are left unspelled throughout: a cited id with no check fails the
-doc script.)
+check was a strict subset of the walked-path denylist one — same call, same
+allowed files, narrower scan. And the one with a hardcoded roster of tool names
+goes *negative* once it stales, because the green line still reads as coverage.
 
 **Decision.** One bar: a check exists only where breaking the seam is
 **invisible** — every spec stays green and the diff looks reasonable — and the
 consequence is a security hole or a protocol failure. A grep must say so in one
 line, over `lib/` only. **The set is closed at five; a new invariant does not
-get a new id**, it goes in AGENTS.md as prose and stays unchecked. The five:
-`T_subprocess_chokepoint`, `T_walked_path_denylist`, `T_request_permits`,
-`T_no_system_role`, `T_single_at_exit`. Cutting the doc and prose checks also
+get a check**, it goes in AGENTS.md as prose and stays unchecked. The five are
+the subprocess chokepoint, the walked-path denylist, the per-request permit, the
+ban on a mid-conversation `:system` role, and the single `at_exit`; each is
+named by what it checks, not by an id. Cutting the doc and prose checks also
 deleted `tracked_files`, `binary?`, `dangling_slugs`, `all_lines` and the
-`code_only:` flag, which is most of why the file more than halved. Every cut
-invariant kept its AGENTS.md line: the rule was never the check, the check was
-the backstop.
+`code_only:` flag, which is most of why `tasks/tripwires.rake` went 378 → 167
+lines. Every cut invariant kept its AGENTS.md line: the rule was never the
+check, the check was the backstop.
 
 **Rejected: a bar with no cap** ("only add a check that clears it"). An
 unwritten version of the bar is what the file already had, and every cut check
@@ -88,15 +74,11 @@ enforce; there is no third state.
 may name a tool, a chapter may get an ordinal, a new tool may ship without a
 `Sharing:` line. That is the deal — all cheap to spot in review and cheap to fix
 after. Anyone tempted to re-add a check for one of them is arguing with this
-entry. Renaming a surviving slug still needs a full reference sweep, and a check
-and its citations come and go in one commit: the doc script fails either way
-round.
+entry. The checks carry no ids and nothing cites them, so a rename costs a
+`tasks/tripwires.rake` edit and nothing else; the doc layer's own script,
+`design/verify_design_tripwires.sh`, knows nothing about them.
 
-## D_opaque_request_params — An extra request parameter rides the transport as an opaque table, never a typed flag (2026-09-08)
-
-**Status:** Accepted; shipped 2026-09-08 as `ChatTransport#params`, applied in
-{Pikuri::Agent#build_chat} and re-applied by
-{Pikuri::Agent#apply_transport!}.
+## D_opaque_request_params — Why does an extra request parameter ride the transport as an opaque table rather than a typed flag?
 
 **Context.** A local llama.cpp serving Qwen 3.6 will not stop thinking for any
 prompt-level trick, and a host that needs a *short* answer pays for it. On a
@@ -180,13 +162,7 @@ that shipped the adapter workaround deletes it and keeps its config spelling.
 different transports — which is what lets one model on one server be declared
 twice, once thinking and once not.
 
-## D_probe_when_unknown — The `/props` probe is skipped only when both its facts are already known (2026-09-08)
-
-**Status:** Accepted; shipped 2026-09-08. Amends `D_llm_request_throttle`'s
-"Sizing is automatic" paragraph, which held only for a transport carrying no
-explicit cap. Closes pikuri-tui's `Q_upstream_probe_skip`, so its
-`[[server]] max_concurrent_requests` key is an *override* rather than the only sizing a
-capped connection could get.
+## D_probe_when_unknown — Why probe `/props` even when the transport already states a context window?
 
 **Context.** One `/props` document answers two independent questions, and
 `ContextWindowDetector::Props` carries both: `n_ctx` is a *model-on-server*
@@ -282,16 +258,7 @@ carrying `total_slots` but no usable `n_ctx` used to be discarded wholesale
   `-c` and the next agent (or model switch) sees the new window; only the slot
   count is remembered.
 
-## D_llm_request_throttle — One permit per HTTP request, taken in ruby_llm's instrumenter (2026-09-08)
-
-**Status:** Accepted; shipped 2026-09-08 as
-{Pikuri::Agent::ServerPermits} + {Pikuri::Agent::RequestThrottle}. Widens
-`ContextWindowDetector.detect` to return a `Props(n_ctx:, total_slots:)`
-and makes `Agent#build_chat` always go through a `RubyLLM::Context`.
-Supersedes pikuri-web's host-side `ThrottledAdapter` (and the
-throttle-at-the-request entry in *that* repo's design/decisions.md, which someone
-landing this should mark superseded): its `ModelCatalog.from_llms(permits:)`
-becomes `ServerPermits.limit` calls.
+## D_llm_request_throttle — Why is an inference permit held for one HTTP request rather than for a turn?
 
 **Context.** {Pikuri::Agent}'s threading yardoc invites hosts to run N
 agents one-thread-each, and answers only "will they corrupt each other?".
@@ -398,8 +365,8 @@ Measured against ruby_llm 1.16.0 and a live llama.cpp router on
 - **`build_chat`'s `RubyLLM.chat` branch is gone**, so a no-override
   transport now rides a plain config dup too (identical model resolution).
   That is what makes the throttle unconditional — and it lifts the old
-  caveat that `faraday_adapter` was honoured only on the override path.
-  `T_request_permits` guards both halves.
+  caveat that `faraday_adapter` was honoured only on the override path. The
+  per-request permit check in `tasks/tripwires.rake` guards both halves.
 - **Waiting is slice-polled, not signalled.** `Cancellable#cancel!` must stay
   a bare flag write callable from a SIGINT trap, so it can signal no
   condition variable; the waiter wakes every `Cancellable::SLICE_SECONDS`
@@ -417,15 +384,7 @@ Measured against ruby_llm 1.16.0 and a live llama.cpp router on
 - {Pikuri::VectorDb::Embedder} calls `RubyLLM.embed` outside any `Agent`, on
   the global config, so embedding stays unthrottled.
 
-## D_no_step_limit — The loop is unbounded; a tool-call count was the wrong axis (2026-09-08)
-
-**Status:** Accepted; shipped 2026-09-08. Deletes
-`Pikuri::Agent::Control::StepLimit`, `Pikuri::Agent::Synthesizer`,
-`Event::FallbackNotice`, `Agent.new(step_limit:)`, `Persona#max_steps`, and
-`Agent::STEP_BUDGET_RESULT`. Tombstones the salvage half of
-`D_unwound_batch_repair` (edited in place). The deleted summarizer's prompt,
-message-walk and construction traps are preserved in
-`design/ideas/context-overflow-behavior.md` §The deleted summarizer.
+## D_no_step_limit — Why no step cap on the loop?
 
 **Context.** `StepLimit` capped tool calls per turn, with an `on_exhausted:
 :raise | :synthesize` policy; on `:synthesize` a nested tools-free `Agent`
@@ -515,10 +474,7 @@ in a local. That whole wrinkle is gone; `unanswered_results` loses an arm and
 
 ---
 
-## D_tool_summary_lines — The tool composes its own display line, in code (2026-09-07)
-
-**Status:** Accepted; shipped 2026-09-07. Graduated from
-`design/ideas/tool-summary-lines.md`.
+## D_tool_summary_lines — Why does the tool compose its own display lines in code, rather than the model or the renderer?
 
 **Context.** Three chromes (pikuri's `Listener::Terminal`, pikuri-web's
 `SseListener`, pikuri-tui's conversation view) each printed
@@ -618,10 +574,7 @@ live on {Pikuri::Tool::Result}: **structural, never excerpted** and
 
 ---
 
-## D_tool_always_returns_result — One return type, and the attachment rides inside it (2026-09-08)
-
-**Status:** Accepted; shipped 2026-09-08. Refines `D_tool_summary_lines`,
-which had rejected an attachment-carrying `Result`.
+## D_tool_always_returns_result — Why does `Tool#execute` always answer a `Result`, with the attachment riding inside it?
 
 **Context.** A day after shipping display lines, `Tool#execute` had three
 success shapes — a bare `String`, a `Tool::Result`, a `RubyLLM::Content` —
@@ -696,12 +649,7 @@ and its authored summary reaches the listeners untouched. No tool sees this.
 
 ---
 
-## D_calculator_functions — `math.` is an optional prefix, and `radians` ships with the trigonometry (2026-09-07)
-
-**Status:** Accepted, shipped: `Tool::Calculator::FUNCTIONS` / `CONSTANTS`, the
-`NAME` arm of the parser's `atom` rule, and the radians warning in the
-`expression` parameter description. Refines the module's original "no
-variables, functions, or booleans" scope note, which never had an entry here.
+## D_calculator_functions — Why is `math.` an optional prefix, and why does `radians` ship with the trigonometry?
 
 **Context.** A local model, asked for a great-circle distance, called the tool
 with `6371 * math.acos(math.sin(60.1699) * math.sin(41.3874) + …)` and got
@@ -784,15 +732,7 @@ model already knows being rejected.
 
 ---
 
-## D_briefing_with_mail — One binary with a `--with-mail` flag that raises, not a second binary (2026-09-02)
-
-**Status:** Accepted, shipped: `--with-mail` in `pikuri-rag/bin/pikuri-briefing`,
-`prompts/pikuri-briefing-mail.txt`, the reworded no-egress paragraph in
-`prompts/pikuri-briefing.txt`, the `#mail_wired?` check, and the two-legged
-boot paragraph. The extension half is `D_thunderbird_surfaces`, and the
-two-run lesson is `book/trifecta-detector.md` §"One flag, one extra leg, and
-the same verdict". One piece stays deliberately unbuilt — the correspondent
-allowlist, now tracked in `design/ideas/thunderbird.md`'s deferred work.
+## D_briefing_with_mail — Why one briefing binary with a `--with-mail` flag that raises, rather than a second binary?
 
 **Context.** Stage 0 (`D_briefing_wiring`) is the first pikuri agent holding
 exactly *one* trifecta leg. Stage 1 adds read-only local mail, so presence
@@ -879,14 +819,7 @@ query, is deferred until a week of real use makes the pool intolerable.
 
 ---
 
-## D_thunderbird_surfaces — A narrowing `surfaces:` on the extension, not a hand-wiring host (2026-09-02)
-
-**Status:** Accepted, shipped: `Thunderbird::Extension.new(surfaces:)`,
-`#mail_wired?`, and the per-surface `SURFACE_USAGE` split of the usage
-snippet. The consumer this was built for — `bin/pikuri-briefing --with-mail`,
-the two-legged reading of the briefing agent — shipped alongside it; its own
-forks (the flag, and the binary raising where this extension deliberately
-carries on) are `D_briefing_with_mail`.
+## D_thunderbird_surfaces — Why a narrowing `surfaces:` on the extension rather than a host that hand-wires the tools it wants?
 
 **Context.** `#configure` wired all five inbound tools whenever their stores
 existed: mail search + read + contact search on a Gloda index, both calendar
@@ -963,14 +896,7 @@ be false by the host's own choice.
 
 ---
 
-## D_briefing_wiring — `bin/pikuri-briefing` hardcodes the two declarations and watches by default, inverting its sibling twice (2026-09-02)
-
-**Status:** Accepted, shipped: `pikuri-rag/bin/pikuri-briefing` plus
-`pikuri-rag/prompts/pikuri-briefing.txt`. Stage 1 shipped after it as
-`D_briefing_with_mail`, and the two-stage lesson landed as a section of
-`book/trifecta-detector.md` rather than the chapter this once planned. The
-correspondent allowlist is the one piece still deliberately unbuilt
-(`design/ideas/thunderbird.md`).
+## D_briefing_wiring — Why does `bin/pikuri-briefing` hardcode its two declarations and watch by default, inverting its sibling twice?
 
 **Context.** A user gathers meeting notes from every customer by hand and
 wants an agent to prepare them for the next meeting. They are strict: no
@@ -1097,13 +1023,7 @@ inconsistency.
   to two and changes the human's obligations completely — shipped as
   `D_briefing_with_mail`, taught in `book/trifecta-detector.md`.
 
-## D_rag_gem — Hybrid retrieval is a new gem on top of the vector primitive, composed at the `Backend` (2026-09-02)
-
-**Status:** Accepted, fully shipped — `pikuri-rag` with `Rag::Extension`,
-`Rag::Backend::Hybrid`, `Rag::Query`, `Tools::Search` / `Tools::Find`,
-`rag_read` / `rag_reindex` as the vectordb classes under `family: 'rag'`,
-`bin/pikuri-briefing`, `book/rag.md`, and the exclusivity guards both ways.
-`design/ideas/rag.md` is deleted with this entry.
+## D_rag_gem — Why is hybrid retrieval a new gem on top of the vector primitive rather than a mode of it?
 
 **Context.** `vectordb_search` answers *precision*: top-k chunks, reranked,
 a snippet each. A small corpus of short notes where any omission matters
@@ -1239,14 +1159,7 @@ on. The two extensions are mutually exclusive on one agent.
   `book/vectordb.md` gains a pointer where it says "no keyword index
   underneath".
 
-## D_corpus_trust_declaration — The corpus declares `private:` / `trusted:`; the tools derive, and `reindex` declares nothing (2026-09-02)
-
-**Status:** Accepted, fully shipped: `VectorDb::Extension#private?` /
-`#trusted?`, the required `legs:` kwarg on `Tools::Search` / `Tools::Read`,
-`TrifectaLegs::NONE` on `Tools::Reindex`, `--private` / `--trusted` plus a
-per-source collection name in `bin/pikuri-corpus`, and the two new paragraphs
-in `book/vectordb.md`. `design/ideas/vectordb-trust-declaration.md` is deleted with
-this entry.
+## D_corpus_trust_declaration — Why does the corpus declare `private:` / `trusted:` while the tools only derive?
 
 **Context.** The three `vectordb_*` tools hardcoded
 `private: false, untrusted: :hard`, with `Tools::Search`'s own comment naming
@@ -1389,15 +1302,7 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
 
 ---
 
-## D_kuri_mascot — pikuri's mascot is a pika named Kuri, in a grey Talus coat (2026-08-29)
-
-**Status:** Accepted, shipped 2026-08-29 as `assets/kuri.svg` +
-`assets/kuri.png`, shown in `README.md`. The *icons* built from him are
-downstream and belong to whichever host needs them; pikuri-web was the
-first to build a set, and records its own icon decisions on its own side.
-(Foreign decision slugs are deliberately not cited here — every `D_` in
-this repo is expected to resolve to a heading in this file, and a library
-should not know a shell's decision ids anyway.)
+## D_kuri_mascot — Why is pikuri's mascot a pika named Kuri, in a grey Talus coat?
 
 **Context.** pikuri-web needed a PWA icon and discovered pikuri had no
 mascot at all. Picking one is a decision for *this* repo, not for a
@@ -1495,11 +1400,7 @@ when something actually needs it.
 
 ---
 
-## D_model_owns_thinking — Send no thinking configuration; the model's own default stands (2026-08-29)
-
-**Status:** Accepted 2026-08-29; describes shipped behaviour, no code change.
-Companion to `D_thinking_block_replay`, which owns what happens to a thinking
-block pikuri has already *stored*.
+## D_model_owns_thinking — Why send no thinking configuration at all?
 
 **Context.** pikuri sets no thinking / reasoning parameter on any request.
 `with_thinking` appears nowhere in the repo, and `Agent` exposes no
@@ -1590,13 +1491,7 @@ The defect is latent, for a host that constructs `ChatTransport.new(provider:
 
 ---
 
-## D_thinking_block_replay — Drop the whole thinking block on a model switch, and only from the wire (2026-08-29)
-
-**Status:** Accepted; implemented 2026-08-29. See
-{Pikuri::Agent#load_history!}, {Pikuri::Agent#apply_transport!},
-{Pikuri::Agent::History::Message#to_ruby_llm}. Supersedes the thinking-signature
-paragraph in `D_history_load_repairs`, which rode in as a corollary and was
-wrong on both halves.
+## D_thinking_block_replay — Why drop the whole thinking block on a model switch, and only from the wire?
 
 **Context.** A resumed or mid-session-switched conversation can carry an
 assistant turn whose reasoning was produced by a *different* model. The
@@ -1705,15 +1600,7 @@ provider sees (`id`, `kind`); stripped thinking is the same kind of thing, and
 
 ---
 
-## D_unwound_batch_repair — Answer the dangling calls on the way out, don't prevent the damage (2026-08-28)
-
-**Status:** Accepted; implemented 2026-08-28 as an `ensure` on
-{Pikuri::Agent#run_loop} calling a private `repair_dangling_tool_calls!`, three
-public `*_RESULT` constants on `Agent`, and
-`pikuri-core/spec/pikuri/agent/unwind_repair_spec.rb`. Graduated from
-`design/ideas/unwind-mid-tool-batch.md` (deleted). Amended 2026-09-08 by
-`D_no_step_limit`: the fourth source and the salvage-ordering constraint below
-went with the step limit, along with `STEP_BUDGET_RESULT`.
+## D_unwound_batch_repair — Why answer the dangling tool calls on the way out rather than prevent the damage?
 
 **Context.** ruby_llm's `complete_once` appends the assistant `tool_calls`
 message *before* running any tool, so anything unwinding out of a batch leaves
@@ -1816,12 +1703,7 @@ in-flight exception raise: that is pikuri having lost a batch on a turn that
 succeeded, and an `ensure` with no exception to clobber is a safe place to be
 loud.
 
-## D_gloda_locks_mcp_does_not — A lock where it is one method, one-agent-only where it is a pool (2026-08-28)
-
-**Status:** Accepted; implemented 2026-08-28. {Pikuri::Thunderbird::Gloda}
-and {Pikuri::Thunderbird::Calendar} are `P_shared_locked`; MCP and LSP stay
-`P_one_agent`. The postures and their contracts live in each class's
-`== Sharing`.
+## D_gloda_locks_mcp_does_not — Why does Gloda take a lock where MCP and LSP are one-agent-only?
 
 **Context.** `D_tool_sharing_postures` left a per-tool list of "should this
 one be improved?" Two items looked identical — an unguarded collaborator
@@ -1890,13 +1772,7 @@ two axes stay independent, now with a worked example.
 
 ---
 
-## D_tool_cancellation — An interruptible sleep on the token, opted into per tool (2026-08-28)
-
-**Status:** Accepted; implemented 2026-08-28 as
-{Pikuri::Agent::Control::Cancellable#sleep} + `Cancellable::NEVER`, a
-`cancellable:` argument through `Tool#run` / `#to_ruby_llm_tool`, and
-`web_search` as the first consumer (the {Pikuri::Tool::Search::RateLimiter}
-pacing wait).
+## D_tool_cancellation — Why is an interruptible sleep opted into per tool rather than given to every tool?
 
 **Context.** Cancellation only fired at `before_tool_call`, so a tool that had
 already started could not be interrupted at all. The sharpest case is the
@@ -1999,13 +1875,7 @@ making cancellation reachable from more places makes it likelier. Settled by
 `D_unwound_batch_repair`, which found the real scope — any exception out of a
 tool does the same thing.
 
-## D_tool_sharing_postures — A yardoc posture per tool, not a machine-readable field (2026-08-28)
-
-**Status:** Accepted; implemented 2026-08-28 as a `Sharing:` line (or
-`== Sharing` section) on every tool, with the vocabulary defined once in
-{Pikuri::Tool} and the threading contract in {Pikuri::Agent}. The
-AGENTS.md *Conventions* bullet carries the invariant, unchecked
-(`D_tripwire_bar`).
+## D_tool_sharing_postures — Why is a tool's sharing posture a yardoc line rather than a machine-readable field?
 
 **Context.** A host wanting ten agents in one Ruby VM has to know, per
 tool, whether one instance may serve all ten. Nothing answered it.
@@ -2105,12 +1975,7 @@ retype — security logic a real host must reimplement — is demonstrated. So a
 posture on a demo-only class states a *limit of that class*, never a backlog
 item.
 
-## D_rate_limiter_scope — A limiter is scoped to the resource it protects, never to the agent (2026-08-28)
-
-**Status:** Accepted; already the implementation
-({Pikuri::Tool::Search::DuckDuckGo::LIMITER} and its siblings are
-class-level constants) — logged 2026-08-28 because the fork is invisible in
-the code and a per-agent limiter is the plausible "fix" someone reaches for.
+## D_rate_limiter_scope — Why is a rate limiter scoped to the resource it protects rather than to the agent?
 
 **Context.** "Is the DDG rate limiter per agent or per tool instance?" is
 the natural question and both answers are wrong. What the limiter protects
@@ -2157,12 +2022,7 @@ queued agent abandon the wait on a cancel without inventing a failure.
 Bounding the wait so a backed-up provider is *skipped* stays deferred — it is
 only coherent with two or more providers wired.
 
-## D_search_engine_selection — The engine list is a validated set, and DuckDuckGo lost its exemption (2026-08-27)
-
-**Status:** Accepted; implemented 2026-08-27 as
-{Pikuri::Tool::Search::Engines.resolve} / `.config_from_h` +
-`Tool::WebSearch.from_h`, wired from the `search:` block of
-`~/.pikuri-examples-config.yaml`.
+## D_search_engine_selection — Why is the search-engine list a validated set, and why did DuckDuckGo lose its exemption?
 
 **Context.** `Engines#initialize` seeded the cascade with
 `[DuckDuckGo.new]` and only ever *appended* keyed providers, so DuckDuckGo
@@ -2234,12 +2094,7 @@ tripwire, deletable once no config file in the wild has one. Order in
 `engines:` will keep looking like priority to anyone who has not read the
 docs, which is a cost the set accepts.
 
-## D_history_value_type — A conversation leaves as a typed value, not a bag of hashes (2026-08-27)
-
-**Status:** Accepted; implemented 2026-08-27 as {Pikuri::Agent::History} +
-`Agent#export_history` / `#load_history!`. Closes issue #1. Graduated from
-`design/ideas/history-round-trip.md`, now retired. Prior art for every decision in
-this family: `design/comparison.md` §"Conversation persistence and resume".
+## D_history_value_type — Why does a conversation leave the agent as a typed value rather than a bag of hashes?
 
 **Context.** Two downstream shells need conversation continuity —
 pikuri-web switches between stored conversations, pikuri-tui wants
@@ -2318,9 +2173,7 @@ different lifecycle must not.** grok-build's folder-trust store is the
 clinching case — a trust decision has to outlive any one session, so it
 lives in a global TOML, not a session file.
 
-## D_history_container — One JSON object, and JSONL is a sniff away (2026-08-27)
-
-**Status:** Accepted; implemented 2026-08-27. See {Pikuri::Agent::History}.
+## D_history_container — Why is a saved conversation one JSON object rather than JSONL?
 
 **Context.** A chat client writes often and reads rarely, so appending
 rather than rewriting looks like the obvious shape — three of the five
@@ -2380,10 +2233,7 @@ event log as ground truth with the model-facing transcript as a rebuildable
 cache, and pikuri-web plans exactly that split. `History` is the derived
 snapshot, and a derived snapshot wants wholesale rewrite.
 
-## D_history_attachments — Two encodings, one folder, and files that rot (2026-08-27)
-
-**Status:** Accepted; implemented 2026-08-27. See
-{Pikuri::Agent::History#save}, {Pikuri::Agent::History::Attachment}.
+## D_history_attachments — Why two attachment encodings in one folder, and why are the files allowed to rot?
 
 **Context.** `Workspace::Read` hands the model images as a
 `RubyLLM::Content` whose attachment source is a **workspace path**. An
@@ -2439,10 +2289,7 @@ as `UTF-8` from a source file and `ASCII-8BIT` from base64, and two
 differently-tagged copies are not `==` — which would quietly break the one
 property the design rests on.
 
-## D_history_local_ids — Every message gets an id pikuri mints and no provider sees (2026-08-27)
-
-**Status:** Accepted; implemented 2026-08-27. See
-{Pikuri::Agent::History.mint_id}, `Agent#track_message`.
+## D_history_local_ids — Why does every message get an id pikuri mints and no provider ever sees?
 
 **Context.** Does a stored message need an id, and does anything upstream
 supply one? Verified against ruby_llm 1.16 rather than assumed: **no
@@ -2494,11 +2341,7 @@ does carry per-item ids that must be replayed (grok-build stores one for
 exactly this), and ruby_llm 1.16 has no Responses provider. If it grows one,
 ids stop being purely local and this decision needs revisiting.
 
-## D_history_load_repairs — The file is a record; the repair happens on the way in (2026-08-27)
-
-**Status:** Accepted; implemented 2026-08-27. See
-{Pikuri::Agent#load_history!},
-{Pikuri::Agent::History#repair_interrupted_tool_calls}.
+## D_history_load_repairs — Why repair a loaded conversation on the way in rather than on the way out?
 
 **Context.** A stored conversation can describe something a provider will
 refuse. An assistant turn carrying `tool_calls` plus the results answering it
@@ -2555,10 +2398,7 @@ recovery that fires only when needed and says more.
   That stays a *shell* concern, where a picker may still want to show "saved
   by a different harness".
 
-## D_release_one_otp — One OTP code for sixteen pushes; stdin only, and re-run to recover (2026-08-25)
-
-**Status:** Accepted; implemented 2026-08-25 in the top-level `Rakefile`
-(`rake release`). Graduated from `design/ideas/release-otp-fatigue.md`, now retired.
+## D_release_one_otp — Why one OTP code for sixteen pushes, taken on stdin only?
 
 **Context.** A release pushes sixteen gems, and at rubygems.org MFA level
 `ui_and_api` every `gem push` is challenged — so a release meant sixteen
@@ -2671,9 +2511,7 @@ rather than surfacing as a 403 deep in the fan-out.
   version number is spent forever — so the rehearsal is what makes changing
   this task safe.
 
-## D_lsp_direct_not_mcp — Write the LSP client; don't bridge one through MCP (2026-08-18)
-
-**Status:** Accepted, shipped as `pikuri-lsp`.
+## D_lsp_direct_not_mcp — Why write the LSP client rather than bridge somebody else's through MCP?
 
 **Context.** `pikuri-mcp` already exists, and maintained LSP↔MCP bridges do
 too: isaacphi/mcp-language-server, Tritlo/lsp-mcp, bug-ops/mcpls,
@@ -2725,11 +2563,7 @@ skipping.
 
 ---
 
-## D_lsp_operation_surface — Ten operations from shipped harnesses; relay server glitches, never work around them (2026-08-18)
-
-**Status:** Accepted, shipped. The enum is static and hardcoded in
-{Pikuri::Lsp::Operation}; adding or removing a value is one line, so this is
-a floor rather than a ceiling.
+## D_lsp_operation_surface — Why these ten LSP operations, and why relay a server glitch rather than work around it?
 
 **Context.** Six live runs against ruby-lsp and jdtls found a real pattern,
 and then the pattern turned on the method that produced it: *every server is
@@ -2810,10 +2644,7 @@ diagnostics tool, as reminders appended to tool output.
 
 ---
 
-## D_lsp_no_startup_timeout — No clock anywhere; block on the index and let the human be the timeout (2026-08-18)
-
-**Status:** Accepted, shipped. One half of the original decision — *spawn
-at boot* — was reversed before shipping; see Consequences.
+## D_lsp_no_startup_timeout — Why is there no startup timeout anywhere in the LSP client?
 
 **Context.** ruby-lsp indexes this repo in seconds; a cold jdtls import of a
 Gradle multi-module project took 78 seconds (`J_warm_start`), during which
@@ -2868,10 +2699,7 @@ the first call blocks, unbounded.
 
 ---
 
-## D_lsp_scheme_fallback — Standard first, one hardcoded `jdt:` row, and never dereference a URI the server chose (2026-08-18)
-
-**Status:** Accepted, shipped as `Lsp::Sources::SCHEME_REQUESTS`, which
-holds exactly one row.
+## D_lsp_scheme_fallback — Why one hardcoded `jdt:` row rather than a general URI-scheme fallback?
 
 **Context.** A result is not always a file. jdtls answers a library
 definition with
@@ -2935,9 +2763,7 @@ document.
 
 ---
 
-## D_lsp_hover_file_uris — Rewrite the `file:` URIs inside hover prose; link only what `read` would open (2026-08-19)
-
-**Status:** Accepted, shipped as `Lsp::Renderer#rewrite_file_uris`.
+## D_lsp_hover_file_uris — Why rewrite the `file:` URIs inside hover prose?
 
 **Context.** `hover` is the only one of the ten operations whose answer is
 *prose* rather than rows. The other nine come back as `Location` /
@@ -3003,13 +2829,7 @@ dereferenced either way (`D_lsp_scheme_fallback`).
 
 ---
 
-## D_lsp_document_sync — Re-open the document around every call; never send an edit stream (2026-08-18, revised 2026-08-19)
-
-**Status:** Accepted, shipped. The policy and its mechanics are
-{Pikuri::Lsp::ClientWrapper#open_document} and
-{Pikuri::Lsp::ClientWrapper#close_document}; the measurements behind it are the
-`S_` family in `pikuri-lsp/design/architecture.md` §Measurements; the teaching version is
-`book/lsp.md`.
+## D_lsp_document_sync — Why re-open the document around every LSP call rather than send an edit stream?
 
 **Context.** LSP's document model assumes the client is a text editor: you
 `didOpen` a document, stream `didChange` edits as a human types, and the server
@@ -3135,10 +2955,7 @@ deferral is a scheduling choice:
 
 ---
 
-## D_lsp_trifecta_legs — `:no_egress` despite a child that goes online, and `untrusted: :hard` unconditionally (2026-08-18)
-
-**Status:** Accepted, shipped on the tool. The posture as it stands is
-`pikuri-lsp/design/architecture.md` §"Threat model"; this entry is the forks.
+## D_lsp_trifecta_legs — Why is the `lsp` tool `:no_egress` when its child goes online, and `untrusted: :hard` unconditionally?
 
 **Context.** `Mcp::Extension` declares `ASSUMED` unconditionally, and both
 gems spawn a user-configured foreign stdio binary with inherited env and no
@@ -3202,10 +3019,7 @@ sake when no verdict moves. This is the stronger case, where one does.
 
 ---
 
-## D_de_bundlerized_children — Every long-lived child is de-bundlerized; no unset sentinel in config (2026-08-18)
-
-**Status:** Accepted, shipped. `Pikuri::BundlerEnv` in pikuri-core; applied by
-`Code::Bash`, `Mcp::ClientWrapper` and `Lsp::ClientWrapper`.
+## D_de_bundlerized_children — Why is every long-lived child de-bundlerized, and why is there no unset sentinel in config?
 
 **Context.** pikuri boots under `bundler/setup`, and Bundler implements that by
 rewriting the process environment — injecting `BUNDLE_GEMFILE` / `RUBYOPT`,
@@ -3249,10 +3063,7 @@ spelling would need a translation layer where none exists today.
 
 ---
 
-## D_no_skills_in_sub_agents — A persona's brief is complete on arrival; no catalog, no `skill` tool (2026-08-17)
-
-**Status:** Accepted; no code change. The plumbing that already enforces it
-stays exactly as it is (see the third rejected alternative).
+## D_no_skills_in_sub_agents — Why does a sub-agent get no skill catalog and no `skill` tool?
 
 **Context.** Two halves of "does a sub-agent get skills?" were settled by
 different accidents, and neither was settled on purpose.
@@ -3346,14 +3157,7 @@ three other legs.
 
 ---
 
-## D_reference_text_as_user_turn — Mid-conversation reference text is a wrapped `:user` turn, never `:system` (2026-08-17)
-
-**Status:** Accepted, shipped 2026-08-17, and confirmed the same day through
-the shipped path — `bin/pikuri-code` against
-`unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`, where the model now reports the two
-skills a `paths:` promotion had just put in play. The A/B below was a
-hand-patched probe (`ext.announce` redefined on the singleton); this is the
-library doing it.
+## D_reference_text_as_user_turn — Why is mid-conversation reference text a wrapped `:user` turn rather than `:system`?
 
 **Context.** Everything pikuri appends to a live conversation on its own
 initiative — pikuri-memory's per-turn prefetch, a host-loaded skill body
@@ -3425,7 +3229,7 @@ nothing else.
 
 grok-build's Anthropic converter does the same thing, and grok-build never
 hits it because it has no mid-conversation system message to split out
-(`design/comparison.md`, *grok-build's injection channel*).
+(`design/research.md` `R_synthetic_user_turns`).
 
 **Decision.** One channel for all of it. `Agent#append_reference_block`
 appends `role: :user` with the content wrapped in
@@ -3533,11 +3337,7 @@ what grok-build does too, and it means one grep finds every injection.
   silent-delivery bug: a fallback path is an *alibi*, and any test of an
   automatic tier has to disable the manual one.
 
-## D_slash_commands — Two registries, a user turn, and no scheduling function (2026-08-16)
-
-**Status:** Accepted, shipped: `Pikuri::Command::Registry` / `Renderer` /
-`Extension` in `pikuri-skills`, wired in `bin/pikuri-code` and
-`bin/pikuri-assistant`. `design/ideas/slash-commands.md` is deleted with this entry.
+## D_slash_commands — Why two command registries, a user turn, and no scheduling function?
 
 **Context.** Moving the `wh` bundle from `~/.claude/skills/wh/SKILL.md` to
 `~/.claude/commands/wh.md` made it invisible to pikuri twice over: the catalog
@@ -3633,12 +3433,7 @@ three namespaces, is **host built-in > command > skill**.
   just read that name in the startup banner. Nothing in that branch reaches
   the conversation, so the gate leaks nothing to the model.
 
-## D_command_inlining_legs — No bash pre-execution, and `@path` is not a refusal (2026-08-16)
-
-**Status:** Accepted, shipped in `Command::Registry`. Graduates whether or not
-the command surface survives: *"just add bash pre-execution, Claude Code has
-it"* is the recurring temptation, and the answer is not reconstructible from
-code that never grew the feature.
+## D_command_inlining_legs — Why no bash pre-execution in a slash command, and why is `@path` not a refusal?
 
 **Context.** Claude Code expands two more things in a command body. `` !`cmd` ``
 runs a shell command *before the prompt is sent* and inlines its stdout, gated
@@ -3682,7 +3477,7 @@ command while still being ignored on a skill.
   compatibility asymmetry, and the two halves are only defensible together:
   the key is one of the six official Agent Skills fields, so refusing it on
   the shipped skill surface would break catalogs doing nothing wrong by
-  carrying a field the standard defines (`design/comparison.md`'s finding 3 is the
+  carrying a field the standard defines (`R_skills`' finding 3 is the
   general form — a key the host doesn't implement is advertised anyway). On
   the command surface the key is not spec, it is Claude Code's own, and its
   documented job is gating the pre-execution pikuri refuses.
@@ -3695,10 +3490,12 @@ command while still being ignored on a skill.
   discoverability failure one layer up.
 - **`RefusedError` is host-facing**, never reaching a tool, so the
   `"Error: …"`-string convention for model-visible failures does not apply.
+- **The answer outlives the command surface.** *"Just add bash
+  pre-execution, Claude Code has it"* is the recurring proposal, and it is not
+  reconstructible from code that never grew the feature — which is why this
+  entry stands even though nothing shipped for it.
 
-## D_command_substitution — Fence-aware, and the append reads the body the same way (2026-08-16)
-
-**Status:** Accepted, shipped in `Command::Renderer`.
+## D_command_substitution — Why is command substitution fence-aware, and why does the append read the body the same way?
 
 **Context.** Measured against Claude Code 2.1.233 (headless, throwaway project,
 reproduced on two models): the expansion is wrapped in
@@ -3754,15 +3551,7 @@ and only when the directory holds a sidecar.
 - **`wh.md` interpolates nothing and rides the append**, which is the correct
   reading of it and the reason the gate is shared.
 
-## D_skill_path_activation — A `paths:` skill is not in play until its path fires (2026-08-16)
-
-**Status:** Accepted, shipped 2026-08-17. One qualification the decision did
-not anticipate: a promotion reaches the model only through mid-loop injection,
-so an agent built without an `interloper:` has no channel to un-hide a skill
-on. Rather than hide what nothing can bring back, the gate comes off wholesale
-there — `Skill::Activation::Open` plus a warning naming the skills that stayed
-advertised. `bin/pikuri-code` wires an interloper for exactly this reason,
-though the REPL enqueues nothing itself.
+## D_skill_path_activation — Why is a `paths:` skill out of play until its path fires?
 
 **Context.** The axis is *what the catalog advertises, and when the body
 arrives*. `Skill::Extension` contributes an `<available_skills>`
@@ -3825,7 +3614,7 @@ own placement:
    startup banner keeps reporting what is *installed*.
 
 Prior art and the read of grok-build's implementation live in
-`design/comparison.md` (*Skills → Frontmatter*, and *→ How grok-build's
+`design/research.md` `R_skills` (*Frontmatter*, and *How grok-build's
 conditional activation actually works*).
 
 **Alternatives rejected.**
@@ -3893,7 +3682,7 @@ conditional activation actually works*).
   `AvailableSkills` registry entirely (`has_skill()` refuses it), and
   Claude Code was then observed doing the same, down to returning the
   identical "unknown skill" message it returns for a name that exists
-  nowhere (`design/comparison.md`, *Skills → Frontmatter*, finding 4). One
+  nowhere (`R_skills`, *Frontmatter*, finding 4). One
   harness is noise; two independent ones are a signal, and this is the
   same convergence argument that chose the top-level `paths:` spelling —
   applying it to the spelling and declining it for the semantics would
@@ -3980,7 +3769,7 @@ conditional activation actually works*).
   distinction, from the other direction); and a skill is announced at most
   once per conversation, the set cleared by `Extension#on_conversation_reset`
   so `clear_conversation` re-hides correctly. Both were then observed in
-  Claude Code before pikuri wrote a line of it — `design/comparison.md`
+  Claude Code before pikuri wrote a line of it — `design/research.md`
   finding 4.
   **Every place that enumerates the catalog is part of the change, not just
   the render** — `SkillTool`'s not-found error lists the *activated* names,
@@ -4060,6 +3849,12 @@ conditional activation actually works*).
   a repeated load. What the trim does *not* touch: `Filesystem#readable:`
   over `catalog.roots` is load-bearing for reading **sidecar files**, not
   merely a direct-`read` fallback for `SKILL.md`.
+- **An agent with no interloper gets no gate at all.** A promotion reaches the
+  model only through mid-loop injection, so hiding a skill there would hide
+  what nothing can bring back. `Skill::Activation::Open` leaves every skill
+  advertised and warns, naming the ones that stayed — `bin/pikuri-code` wires
+  an interloper for exactly this reason, though its REPL enqueues nothing
+  itself.
 - **Reopen when** one of these trips: (1) the untrusted-description
   position becomes a real finding rather than a theoretical one, which
   argues for the placement move above; (2) activation counts per session
@@ -4068,10 +3863,7 @@ conditional activation actually works*).
 
 ---
 
-## D_keep_ruby_llm — Decline the piece, keep the gem (2026-08-16)
-
-**Status:** Accepted; nothing to implement. Reviewed against the reopen
-criteria below on 2026-08-16 and reaffirmed.
+## D_keep_ruby_llm — Why keep ruby_llm rather than write the transport ourselves?
 
 **Context.** pikuri has only ever spoken the OpenAI-compatible
 `/v1/chat/completions` shape — a local llama.cpp server by default, the
@@ -4148,12 +3940,7 @@ than silently stops applying, and deleted the moment the fix ships
 
 ---
 
-## D_single_hunk_edit — `occurrence` pays the uniqueness tax; no batch tool, no patch tool (2026-08-15)
-
-**Status:** Accepted and shipped. `Workspace::Edit` gains `occurrence:`;
-no second edit tool ships. `design/ideas/feedback.txt`'s *"edit is search-replace
-only"* is cut with this
-entry.
+## D_single_hunk_edit — Why does `edit` pay the uniqueness tax with `occurrence` rather than ship a batch or a patch tool?
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring: *"`edit` is
 search-replace only. Painful for a rename-across-a-file or a method move. A
@@ -4252,15 +4039,11 @@ second edit tool.
   (`anchor.rs`, `scheme.rs`, `benchmark.rs`) — line-range replace with the
   staleness hole closed by per-line hashes. It closes that hole by
   *fingerprint*, not equality, so it trades in a small silent wrong-edit
-  window that `old_string` doesn't have; `design/comparison.md` works the numbers.
+  window that `old_string` doesn't have; `R_available_tools` works the numbers.
 
 ---
 
-## D_keep_calculator — The unconfirmed arithmetic path, kept even where bash exists (2026-08-15)
-
-**Status:** Accepted; no code change. `calculator` stays wired in all ten
-`bin/pikuri-*` demos. `design/ideas/feedback.txt`'s *"`calculator` is a smell"* is
-cut with this entry.
+## D_keep_calculator — Why keep the `calculator` tool where `bash` is already wired?
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring: *"`calculator` is a
 smell. If the model can't add, a tool won't save it; if it can, bash/python
@@ -4331,10 +4114,7 @@ shell.
 
 ---
 
-## D_walked_path_denylist — Two layers, and the cheap one is never the guarantee (2026-08-15)
-
-**Status:** Accepted, shipped. `Filesystem#denied?` plus `rg --glob` pruning
-across `Listing` / `Search::Glob` / `Search::Grep`.
+## D_walked_path_denylist — Why two denylist layers, with the cheap one never the guarantee?
 
 **Context.** `AllowAll`'s credential denylist (`~/.ssh`, `~/.aws`, …,
 `/etc/shadow`) was enforced in exactly one place: `resolve_for_read` /
@@ -4412,17 +4192,7 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 
 ---
 
-## D_bundle_trust_grading — Trust is per search base, and the workspace is not asked (2026-08-16)
-
-**Status:** Accepted, fully shipped: `Bundle::Base`,
-`Catalog#untrusted_level`, `SkillTool` consuming it, and the third boot
-question in `bin/pikuri-code`. The record lives in the shared `Pikuri::Bundle`
-namespace rather than under `Catalog` because slash commands
-(`D_slash_commands`) grade the same way from the same bases: duplicating it
-would have a host build two parallel arrays out of one pair of booleans, and
-handing `Command::Registry` a `Skill::Catalog::Base` would read as a command
-being a kind of skill. `design/ideas/bundle-trust-grading.md` is deleted with
-this entry; its one open thread moved to `design/ideas/security-open-questions.md`.
+## D_bundle_trust_grading — Why is trust graded per search base rather than asked of the workspace?
 
 **Context.** {Pikuri::Skill::SkillTool} declared `untrusted: :hard`
 unconditionally, with a comment naming the gap: "the tool cannot tell a
@@ -4544,6 +4314,11 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   it covers `~/.claude/skills`: the roots ride in `readable:`, never
   `writable:`). One rule does not carry over: a *refused* command never taints,
   because its bytes cannot reach the context at all.
+- **The record lives in the shared `Pikuri::Bundle` namespace**, not under
+  `Catalog`, because slash commands (`D_slash_commands`) grade the same way
+  from the same bases. Duplicating it would have a host build two parallel
+  arrays out of one pair of booleans, and handing `Command::Registry` a
+  `Skill::Catalog::Base` would read as a command being a kind of skill.
 - **Left open:** folding home skill roots into a workspace's `readable:` while
   declaring that workspace trusted is the vouched-for-island problem arriving
   through the back door — `Filesystem` raises on `AllowAll` + `trusted:` for
@@ -4553,12 +4328,7 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
 
 ---
 
-## D_directory_listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
-
-**Status:** Accepted, fully shipped: `Workspace::Listing`, `read`'s recovering
-refusal, the `file_list` tool, and the depth-1 boot snapshot on
-`Workspace::Extension`. `design/ideas/directory-listing.md` is deleted with this
-entry, and `design/ideas/feedback.txt`'s *"a real directory listing"* is cut.
+## D_directory_listing — Why is a directory listing its own tool rather than glob's job?
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring, opened where every
 model opens — orienting in the repo — and reported: *"`glob *` gave me ten
@@ -4710,7 +4480,7 @@ Rejected, all of them consequences of wanting a second level:
   Rejected: a `file_read` / `file_write` sweep over the siblings — it spends
   the most in-distribution tool names in existence for nothing semantic, is a
   breaking change to every host's persona `tool_names:`, and makes pikuri the
-  one row that doesn't line up in `design/comparison.md`'s parity table. So why
+  one row that doesn't line up in `R_sub_agents`' parity table. So why
   prefix *this* one? Not collision — grammar. `read`/`write`/`edit` are
   transitive verbs with an implied object convention supplies ("a file");
   `list` has none, and "list *what*?" is live in a wiring that also carries
@@ -4734,11 +4504,7 @@ Rejected, all of them consequences of wanting a second level:
 
 ---
 
-## D_no_static_poisoned_flag — No declared `poisoned:` on a node (2026-08-12)
-
-**Status:** Accepted (won't build); no code change. Closes the last open
-question in `design/ideas/trifecta-detector.md`, which is deleted with this entry —
-the detector's homes are {Pikuri::Trifecta} and `book/trifecta-detector.md`.
+## D_no_static_poisoned_flag — Why is there no declared `poisoned:` flag on a trifecta node?
 
 **Context.** Propagation grades every parent as drivable: whatever it is
 told, it will faithfully relay or launder. Right for `pikuri-computer`, whose
@@ -4795,12 +4561,7 @@ it. A detector whose alarms can be declared away is a detector nobody trusts.
 
 ---
 
-## D_write_custody_axis — No synced-folder egress axis on writes (2026-08-12)
-
-**Status:** Accepted (won't build); no code change. The gap it leaves is
-stated at {Pikuri::Workspace::Write}'s `trifecta_legs:` declaration site and
-named in `book/trifecta-detector.md` §"The edges, stated plainly" — neither
-is a to-do any more.
+## D_write_custody_axis — Why no synced-folder egress axis on writes?
 
 **Context.** `Write` and `Edit` ship {Pikuri::Tool::TrifectaLegs::NONE}: a
 local write is not an external sink, and the observation reports an outcome
@@ -4894,11 +4655,7 @@ additive, so that can only ever harden a verdict.
 
 ---
 
-## D_trifecta_map_orphans — A tool nothing can call gets no line on the map (2026-08-12)
-
-**Status:** Accepted; no code change — the silence is what
-{Pikuri::Trifecta.build} already produces, now pinned by
-`pikuri-core/spec/pikuri/trifecta_build_spec.rb`.
+## D_trifecta_map_orphans — Why does a tool nothing can call get no line on the trifecta map?
 
 **Context.** {Pikuri::Code::Extension} registers `git_clone` on the
 sub-agent-only pool unconditionally, solely for the `GIT_REPO_RESEARCHER`
@@ -4955,12 +4712,7 @@ muted.
 
 ---
 
-## D_egress_axis_shape — Two orthogonal egress axes, no invented persona (2026-08-12)
-
-**Status:** Accepted; implemented 2026-08-12 in
-{Pikuri::Tool::TrifectaLegs}. Folds in two earlier forks that never had a
-home: the `egress_human_author` drop (2026-08-09) and the rejected
-proxy-visible middle rung.
+## D_egress_axis_shape — Why two orthogonal egress axes rather than an invented persona?
 
 **Context.** The detector's egress leg started as one graded axis
 (`none < human_approver < autonomous`) reading *payload visibility* — did a
@@ -5051,12 +4803,7 @@ shipped wiring's verdict changed.
 
 ---
 
-## D_blob_spotter_alphabets — Single-alphabet encodings count, at their own longer thresholds (2026-08-08)
-
-**Status:** Accepted; implemented 2026-08-08 in
-{Pikuri::Thunderbird::ComposeGuard}. Supersedes an inline "hex and base32
-stay out" note that lived in `#body_blob_note`'s yardoc, moved here under
-the pre-2026-08-04 relocation rule above.
+## D_blob_spotter_alphabets — Why do single-alphabet encodings count, at their own longer thresholds?
 
 **Context.** The blob spotter soft-warns when a compose body carries an
 encoded dump — the lazy way to walk a secret past a skimming human. Its
@@ -5103,11 +4850,7 @@ are the thing being looked for. The guard's character is unchanged — a
 paste / dumb-attack guard, not an exfil control; widening the alphabets
 raises the attacker's cost by one token of prompt.
 
-## D_headless_os_agent — No app launching, and the sandbox masks the session's IPC surface (2026-08-06)
-
-**Status:** Accepted. The mask ships in
-{Pikuri::Code::Bash::Sandbox::FullFsNoNet::SESSION_IPC_MASKS}; app launching
-was never built and now won't be.
+## D_headless_os_agent — Why does the OS agent launch no apps, and why does the sandbox mask the session's IPC surface?
 
 **Context.** `pikuri-os` advises on GUI config (it prints the `gsettings`
 command rather than applying it), and "let it launch apps / `xdg-open` a
@@ -5206,14 +4949,7 @@ legitimate wants those sockets.
 - `Bubblewrap` needs no change: it binds an allowlist that never included
   `/run/user`, so the coding agent never had the channel.
 
-## D_no_agent_sudo — Privileged actions are a human hand-off, never agent-held root (2026-08-06)
-
-**Status:** Accepted. Already the shipped behaviour on both legs (the
-`EACCES` read hand-off of `D_permission_wall_handoff`, and
-{Pikuri::Workspace::WriteGate}'s "sudo it yourself" short-circuit for an
-unwritable write). The 2026-08-06 addition is one prompt clause splitting
-*read* hand-offs (paste the output back) from *state-change* hand-offs
-(say when it's done, the agent verifies itself).
+## D_no_agent_sudo — Why is a privileged action a human hand-off rather than agent-held root?
 
 **Context.** `pikuri-os` operates the real host but runs unprivileged, so
 anything needing root — installing a package, editing `/etc`, restarting a
@@ -5292,11 +5028,7 @@ ordinary next user turn.
 
 ---
 
-## D_context_window_sources — The `/props` probe, never ruby_llm's model registry (2026-08-04)
-
-**Status:** Accepted; the behaviour has always shipped this way
-({Pikuri::Agent::ContextWindowDetector}). Logged 2026-08-04 when the
-argument moved out of that class's yardoc.
+## D_context_window_sources — Why read the context window from the `/props` probe rather than ruby_llm's model registry?
 
 **Context.** A context-window cap is only worth emitting if a host can *act*
 on it — warn, compact, or switch models before
@@ -5326,10 +5058,7 @@ failure path is a debug log rather than a raise.
 
 ---
 
-## D_permission_wall_handoff — An honest `EACCES` beats prompt guidance (2026-07-18)
-
-**Status:** Accepted; the read-vs-mutate sub-bullets were removed in
-`f917226`. Validated live 2026-07-18 ("Is my SSD healthy?").
+## D_permission_wall_handoff — Why let an honest `EACCES` through rather than steer around it in the prompt?
 
 **Context.** `pikuri-os` runs unprivileged inside a bwrap user namespace
 where `sudo` doesn't work, so anything genuinely needing root must be handed
@@ -5370,11 +5099,7 @@ paste-back ask — unprompted, and reaching for the NVMe-specific tool first.
 
 ---
 
-## D_fake_transport — Fake the HTTP backend, not the agent (2026-07-18)
-
-**Status:** Accepted; shipped for single-agent 2026-07-17
-({Pikuri::Testing}), export boundary settled 2026-07-18. Graduated from
-`design/ideas/fake-llm.md`.
+## D_fake_transport — Why fake the HTTP backend rather than the agent?
 
 **Context.** Unit-testing agent behaviour needs no server and no network,
 but mocking the *agent* tests nothing — the value is in the real `run_loop`,
@@ -5426,11 +5151,7 @@ Mechanics + limitations: {Pikuri::Testing}.
 
 ---
 
-## D_per_process_temp — Two named `Paths` methods, not `cache(session:)` (2026-07-14)
-
-**Status:** Accepted; implemented 2026-07-14 (`Paths.new_temp` +
-`Paths.sweep_stale_temps!`). Graduated from `design/ideas/session-scoped-store.md`,
-now retired.
+## D_per_process_temp — Why two named `Paths` methods rather than `cache(session:)`?
 
 **Context.** Two concurrent `pikuri-thunderbird` processes shared a *fixed*
 snapshot path (`~/.cache/pikuri/thunderbird/{mail,calendar}/`), so they
