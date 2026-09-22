@@ -73,6 +73,14 @@ moved:
   binary rather than an observed record, and is marked **[unverified]**
   where it appears. **[verified 2026-08, CLI 2.1.220–2.1.247]**
 
+`R_subscription_transport` (September 2026) has no clone behind it; it was read from shipped docs:
+
+- hermes-agent's Claude-subscription provider — hermes-agent PRs `#117451` (the core seams,
+  merged 2026-09-20) and `#117622` (the catalog entry), the standalone plugin repo
+  `NousResearch/hermes-plugin-claude-subscription-directsdk` at catalog pin `f1c1220`, and
+  Anthropic's own help article on the Agent SDK and Claude plans. Read 2026-09-22; nothing in
+  the entry was run here, so every claim is **[docs]**.
+
 ## R_project_scopes — What each project in the field is, and how big its loop is
 
 The set spans very different scopes; nothing about anyone's size is a target.
@@ -189,6 +197,63 @@ rather than opencode's SDK-of-SDKs or langchainrb's everything-in-house: pikuri'
 written against the OpenAI tool-call shape, and ruby_llm preserves that as the canonical form.
 The bundled `bin/pikuri-*` scripts are hardcoded for the local llama.cpp setup; multi-provider
 wiring is a `bin/`-level change, not a library rewrite.
+
+## R_subscription_transport — hermes-agent reaches a subscription by driving the vendor's own CLI
+
+Every provider in `R_provider_abstraction` is HTTP plus an API key. hermes-agent shipped the
+exception on 2026-09-20: a model provider whose transport is the unmodified `claude` executable,
+so the bytes ride the user's Claude Pro/Max subscription instead of a Developer Platform key.
+
+- **Two halves, and only the reusable one is in-tree.** Core got generic external-process-provider
+  seams — `ProviderProfile` hooks (`setup_status`, `discover_models`, …), a provider-native
+  `reasoning_details` replay carrier, picker plumbing; the vendor-specific transport was pushed to
+  its own repo under a stated "Hermes does not bundle vendor-specific subscription transports
+  in-tree" policy, and installs as a pinned catalog plugin. **[docs]**
+- **The provider owns no credential.** It never opens, copies, refreshes or prints the CLI's auth
+  files; an inherited API key or custom Anthropic endpoint is a hard error before spawn, naming
+  the variable without printing it, rather than a silent HTTP fallback. **[docs]**
+- **One child process per `chat.completions.create`**, in a private temp dir and its own process
+  group, cancelled tree-wide so the `node` behind the npm shim cannot outlive the
+  request. **[docs]**
+- **The load-bearing trick is a per-request loopback relay.** The plugin binds an ephemeral port
+  on a random route, points the child's `ANTHROPIC_BASE_URL` at it, forwards only the *first*
+  Messages request upstream and refuses the rest locally — native 2.1.263 attempts extra
+  generations despite `--max-turns 1` and disabled HTTP retries. **[docs]**
+- **The same relay rescues the real answer**: it captures streamed text, signed thinking, tool
+  arguments, usage and stop reason before the CLI's own recovery can replace a completed response
+  with synthetic error text. Native auth headers pass through memory, unlogged. **[docs]**
+- **Everything agentic in the child is switched off** so the host keeps its loop: native tools,
+  skills, setting sources and autocompaction disabled, and MCP advertising only Hermes' current
+  tool inventory with inert callbacks denied execution by native `dontAsk`. **[docs]**
+- **History is replayed in full on every request** — historical user frames carry
+  `shouldQuery:false` and each takes a zero-turn acknowledgment, the last frame queries; there is
+  no parked native session. Tool schemas and the system prompt arrive through a private native
+  settings file plus `CLAUDE_CODE_EXTRA_BODY` rather than argv or env, clearing the OS
+  per-string limit. **[docs]**
+- **Replay against a CLI wrecked prompt caching until one native annotation was removed.** A real
+  187K-token run read 6,989 of 190,840 input tokens from cache (3.66%); disabling the native
+  token-budget reminder — which replay reconstructs across the cache boundary — restored ~98%
+  cache reads. **[docs]**
+- **Setup interrogates the CLI, never the vendor's API**: `claude auth status` for login, then the
+  `initialize` handshake for the account's own model picker, both at zero upstream
+  requests. **[docs]**
+- **It meters exactly like `claude -p`, and the interactive TUI is the cheap path.** Measured on a
+  Pro plan 2026-09-09, both `-p` and this provider spent ~8.9 session points per list-dollar
+  against interactive Claude Code's 5.4 and 4.9 — a server-side weighting that hits every
+  `-p`/SDK harness alike. **[docs]**
+- **The seam is a version, not an API.** Qualified against Claude Code 2.1.263, with replay
+  acknowledgments and extra-body behaviour called out as version-sensitive interfaces rather than
+  a public arbitrary-history guarantee. **[docs]**
+- **The policy underneath moved twice in 2026.** Anthropic's separate per-plan Agent SDK credit,
+  which explicitly covered third-party apps authenticating with a Claude subscription, was paused
+  on 2026-06-15; such usage draws from ordinary subscription limits again. **[docs]**
+
+**Takeaway.** Mechanically this is reachable from pikuri's seams: a `ChatTransport` whose base URL
+is a local relay, plus a `Subprocess.spawn`ed CLI, is the whole of it. What it costs is the
+promises. A vendor CLI as transport pins the harness to one build of someone else's binary, and
+the admission relay exists only to fight that binary's own retry behaviour — a threat model that
+never closes, because the far side of the socket is free to change next release. Nor is it a
+privacy win: the subscription route is a hosted provider like any other.
 
 ## R_tool_abstraction — How a tool is defined, schema'd and validated in each project
 
