@@ -25,10 +25,6 @@ module Pikuri
       class DuckDuckGo
         # @return [String] HTML search endpoint
         ENDPOINT = 'https://html.duckduckgo.com/html/'
-        # @return [String] User-Agent sent with each request; DDG often rejects
-        #   a missing or obviously-bot UA.
-        USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
-                     '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
         # @return [Integer] default number of results returned.
         DEFAULT_MAX_RESULTS = 10
         # @return [RateLimiter] paces calls (DDG bans IPs that hammer the HTML
@@ -57,7 +53,8 @@ module Pikuri
         def search(query, max_results: DEFAULT_MAX_RESULTS,
                    cancellable: Pikuri::Agent::Control::Cancellable::NEVER)
           LIMITER.call(cancellable: cancellable) do
-            response = Faraday.get(ENDPOINT, { q: query }, { 'User-Agent' => USER_AGENT })
+            # DDG soft-blocks a bot-looking request, so it goes out dressed as a browser.
+            response = Scraper.browser_connection(ENDPOINT).get(ENDPOINT, { q: query })
             unless response.success?
               if response.status == 429 || response.status >= 500
                 raise Engines::Unavailable, "HTTP #{response.status}"

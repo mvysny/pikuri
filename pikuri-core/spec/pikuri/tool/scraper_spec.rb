@@ -100,6 +100,40 @@ RSpec.describe Pikuri::Tool::Scraper, '.fetch' do
   end
 end
 
+# The request as it leaves the socket, through Faraday's real net_http
+# adapter: header order is decided there, so the test adapter can't see it.
+RSpec.describe Pikuri::Tool::Scraper, '.fetch on the wire' do
+  before do
+    @server = TCPServer.new('127.0.0.1', 0)
+    @request_lines = Queue.new
+    @thread = Thread.new do
+      client = @server.accept
+      lines = []
+      while (line = client.gets) && line != "\r\n"
+        lines << line.chomp
+      end
+      @request_lines << lines
+      client.write "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+      client.close
+    end
+  end
+
+  after do
+    @thread.kill
+    @server.close
+  end
+
+  it 'sends Host as the first header, with the port, then the Firefox User-Agent, then Accept' do
+    port = @server.addr[1]
+    described_class.fetch("http://127.0.0.1:#{port}/page")
+    headers = @request_lines.pop.drop(1)
+    assert_equal "Host: 127.0.0.1:#{port}", headers[0]
+    assert_equal "User-Agent: #{Pikuri::Tool::Scraper::USER_AGENT}", headers[1]
+    assert_equal "Accept: #{Pikuri::Tool::Scraper::ACCEPT}", headers[2]
+    assert_includes Pikuri::Tool::Scraper::USER_AGENT, 'Firefox/'
+  end
+end
+
 # End-to-end +.visit+ tests covering behavior layered on top of
 # +fetch+ — the trailing-whitespace strip and the
 # +Pikuri::Extractor+ → +FetchError+ mapping. Which extractor renders

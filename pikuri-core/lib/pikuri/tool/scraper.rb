@@ -26,10 +26,12 @@ module Pikuri
       # observation; anything else bubbles up so genuine bugs stay visible.
       class FetchError < StandardError; end
 
-      # @return [String] User-Agent sent with each request; many sites reject a
-      #   missing or obviously-bot UA.
-      USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
-                   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      # @return [String] User-Agent sent with each request: Firefox ESR on
+      #   Linux. Sites reject a bot-looking UA and some a stale one (technical.city
+      #   drops +Chrome/120+), so bump it to each new ESR, roughly yearly. ESR,
+      #   not rapid release: a rapid-release version goes stale in weeks, on a
+      #   cadence Mozilla keeps changing.
+      USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0'
       # @return [String] +Accept+ header, so content-negotiating servers hand
       #   back something usable: HTML first, then +application/pdf+, then +text/*+.
       ACCEPT = 'text/html,application/xhtml+xml,application/pdf,text/*;q=0.8'
@@ -97,10 +99,7 @@ module Pikuri
         raise FetchError, "too many redirects fetching #{url}" if limit.zero?
 
         response = begin
-          Faraday.new(request: { open_timeout: OPEN_TIMEOUT, timeout: READ_TIMEOUT }).get(url) do |req|
-            req.headers['User-Agent'] = USER_AGENT
-            req.headers['Accept']     = ACCEPT
-          end
+          browser_connection(url).get(url) { |req| req.headers['Accept'] = ACCEPT }
         rescue Faraday::Error => e
           raise FetchError, "#{e.class.name.split('::').last} fetching #{url}: #{e.message}"
         end
@@ -116,6 +115,30 @@ module Pikuri
         else
           raise FetchError, "HTTP #{response.status} fetching #{url}: #{excerpt(response.body)}"
         end
+      end
+
+      # A Faraday connection that imitates a browser — Firefox — to +url+'s host:
+      # +Host+ first, then {USER_AGENT}, with the {OPEN_TIMEOUT} / {READ_TIMEOUT}
+      # budget. For a page meant for people in a browser, which a site defends
+      # against bots (web pages, DuckDuckGo's HTML results):
+      #
+      #   Scraper.browser_connection(ENDPOINT).get(ENDPOINT, { q: query })
+      #
+      # Not for an API meant for programs (Brave's, Exa's): call plain Faraday
+      # there, as the client pikuri is — imitating a browser buys nothing.
+      # Headers set on a request land after these two, keeping the browser order.
+      #
+      # @param url [String] absolute HTTP(S) URL; its host and port become +Host+
+      # @return [Faraday::Connection] good for that one host only
+      def self.browser_connection(url)
+        uri = URI(url)
+        # Host first, as browsers send it: Net::HTTP would append it last, and a
+        # browser UA with a trailing Host draws Cloudflare's 403 challenge.
+        headers = {
+          'Host' => uri.port == uri.default_port ? uri.host : "#{uri.host}:#{uri.port}",
+          'User-Agent' => USER_AGENT
+        }
+        Faraday.new(headers: headers, request: { open_timeout: OPEN_TIMEOUT, timeout: READ_TIMEOUT })
       end
 
       # Display line for a downloaded body — what the model got, plus the full
