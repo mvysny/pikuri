@@ -136,14 +136,43 @@ RSpec.describe 'Agent request throttling' do
       props = Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: n_ctx, total_slots: total_slots)
       @original_detect = Pikuri::Agent::ContextWindowDetector.method(:detect)
       # A local, not @probes: the block's self is the detector class.
-      Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*_, **_|
-        probes << props
+      Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |probed, **_|
+        probes << probed.model
         props
       end
     end
 
     def probe_count
       @probes.length
+    end
+
+    # The probe waits for the first turn, so every agent here is served one.
+    def served(transport)
+      agent(transport).tap { |a| a.run_loop(user_message: 'hi') }
+    end
+
+    it 'probes nothing at construction' do
+      stub_props
+      built = agent(transport(context_window: nil))
+
+      assert_equal 0, probe_count
+      assert_nil built.context_window_cap
+      refute permits.sized?(server)
+    ensure
+      built&.close
+    end
+
+    # The reason the probe waits: against a router, /props?model=<id> loads that
+    # model, and a host switching before its first turn would load one for nothing.
+    it 'probes only the model switched to before the first turn' do
+      stub_props
+      built = agent(transport(model: 'boot-model', context_window: nil))
+      built.run_loop(user_message: 'hi', transport: transport(model: 'chosen-model', context_window: nil))
+
+      assert_equal ['chosen-model'], @probes
+      assert_equal 16_384, built.context_window_cap
+    ensure
+      built&.close
     end
 
     after do
@@ -155,7 +184,7 @@ RSpec.describe 'Agent request throttling' do
     it 'seeds the permit size and the context cap from one probe' do
       stub_props
       # context_window: nil is what leaves the probe to run.
-      built = agent(transport(context_window: nil))
+      built = served(transport(context_window: nil))
 
       assert_equal 16_384, built.context_window_cap
       assert_equal 4, permits.for(server).permits
@@ -166,7 +195,7 @@ RSpec.describe 'Agent request throttling' do
     it 'leaves a host-set limit alone' do
       stub_props
       permits.limit(server, 1)
-      built = agent(transport(context_window: nil))
+      built = served(transport(context_window: nil))
 
       assert_equal 1, permits.for(server).permits
     ensure
@@ -177,7 +206,7 @@ RSpec.describe 'Agent request throttling' do
     # wins over the probed n_ctx and says nothing about the server's slots.
     it 'sizes the server even when the transport carries an explicit cap' do
       stub_props
-      built = agent(transport(context_window: 8192))
+      built = served(transport(context_window: 8192))
 
       assert_equal 8192, built.context_window_cap
       assert_equal 4, permits.for(server).permits
@@ -189,7 +218,7 @@ RSpec.describe 'Agent request throttling' do
     it 'skips the probe when the cap is stated and the server is already sized' do
       stub_props
       permits.limit(server, 2)
-      built = agent(transport(context_window: 8192))
+      built = served(transport(context_window: 8192))
 
       assert_equal 8192, built.context_window_cap
       assert_equal 2, permits.for(server).permits
@@ -200,7 +229,7 @@ RSpec.describe 'Agent request throttling' do
 
     it 'probes a shared server once across capped agents — the registry is the memo' do
       stub_props
-      built = Array.new(3) { agent(transport(context_window: 8192)) }
+      built = Array.new(3) { served(transport(context_window: 8192)) }
 
       assert_equal 4, permits.for(server).permits
       assert_equal 1, probe_count
@@ -213,7 +242,7 @@ RSpec.describe 'Agent request throttling' do
     # one always probes. Only the slot count is remembered.
     it 'still probes per agent when no cap is stated' do
       stub_props
-      built = Array.new(3) { agent(transport(context_window: nil)) }
+      built = Array.new(3) { served(transport(context_window: nil)) }
 
       assert_equal [16_384] * 3, built.map(&:context_window_cap)
       assert_equal 3, probe_count
@@ -225,8 +254,9 @@ RSpec.describe 'Agent request throttling' do
     # transport, and the parent's probe already sized the server.
     it 'costs a sub-agent spawn no probe of its own' do
       stub_props
-      parent = agent(transport(context_window: nil))
-      child = agent(parent.transport.with(context_window: parent.context_window_cap))
+      parent = served(transport(context_window: nil))
+      # A fresh script on the same server: the parent's own one is spent.
+      child = served(transport(context_window: parent.context_window_cap))
 
       assert_equal 16_384, child.context_window_cap
       assert_equal 4, permits.for(server).permits
@@ -240,8 +270,8 @@ RSpec.describe 'Agent request throttling' do
     # one while it runs — so it is recorded as unlimited rather than re-asked.
     it 'records an answer that carried no slot count' do
       stub_props(n_ctx: 8192, total_slots: nil)
-      first = agent(transport(context_window: 4096))
-      second = agent(transport(context_window: 4096))
+      first = served(transport(context_window: 4096))
+      second = served(transport(context_window: 4096))
 
       assert_same permits::UNLIMITED, permits.for(server)
       assert_equal({ permits.key_for(server) => nil }, permits.sizes)
@@ -256,7 +286,7 @@ RSpec.describe 'Agent request throttling' do
     # first agent asked gets asked again.
     it 'asks again after a probe that failed' do
       stub_props(n_ctx: nil, total_slots: nil)
-      built = Array.new(2) { agent(transport(context_window: 4096)) }
+      built = Array.new(2) { served(transport(context_window: 4096)) }
 
       assert_equal({}, permits.sizes)
       assert_equal 2, probe_count

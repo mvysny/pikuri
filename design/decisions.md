@@ -20,6 +20,41 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_deferred_cap_probe — Why does the `/props` probe wait for the first turn rather than run in `Agent.new`?
+
+**Context.** Against a llama.cpp router, `/props?model=<id>` is not a lookup:
+the router spins up that model's instance to answer it. pikuri-tui and
+pikuri-web build their agent at startup with the configured default model,
+and a user who picks another model before typing anything paid a cold load of
+the default for nothing — the switch already waits for `run_loop` (the chat is
+thread-confined), but the construction probe did not.
+
+**Decision.** `Agent.new` announces only the transport's stated cap, and
+`run_loop` probes once per construction or switch, after the switch is applied
+and before the first request. The probe now targets the transport the turn
+really uses, so a construct-then-switch costs one probe, for the chosen model.
+`ServerPermits` is still sized before `RequestThrottle` first asks, and a
+`ContextCap` still precedes every `Tokens`. A probe that fails is not retried
+next turn, or a server with no `/props` would draw a 404 on every turn.
+
+**Alternatives rejected.**
+
+- **Hosts build the agent lazily.** Both hosts need the agent before the first
+  turn — `load_history!`, `/clear`, extension binding — so each would have to
+  stand in for it on every one of those paths, twice over, and pikuri-chat,
+  pikuri-code and the rest would keep probing eagerly.
+- **A public "resolve the cap now" method** for a host that wants the cap shown
+  at once. A UI thread calling it blocks for up to `READ_TIMEOUT`, and no host
+  needs it yet.
+
+**Consequences.**
+
+- **A capless transport shows no cap until the first turn** — a status line
+  reads `ctx 12k`, not `12k/16k`, after a `load_history!`. A stated cap still
+  shows at once.
+- **The first turn carries the probe's latency** — on a router, the cold load
+  the chat request would otherwise have paid.
+
 ## D_tripwire_bar — Why only five tripwire checks, and why does a new invariant not get one?
 
 **Context.** The tripwires began as the executable form of grep one-liners that
@@ -209,7 +244,7 @@ What that buys, in the cases that matter:
 The last row is the shape downstream config lands in, and the fourth is the
 whole honest cost: one pointless request per process against a remote paid API
 a host had opted out of. `detect` tolerates the 404 and answers `Props::NONE`,
-so it is latency at boot, not breakage — and the `provider == :openai` gate
+so it is latency on the first turn, not breakage — and the `provider == :openai` gate
 means an Anthropic-family transport still never probes at all.
 
 Folded in, since it is the same conflation one layer down: a `/props` body

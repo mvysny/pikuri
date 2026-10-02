@@ -42,7 +42,7 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
     end
 
     # The :openai transport triggers {Pikuri::Agent::ContextWindowDetector}'s
-    # /props probe at construction (derived from openai_api_base). Answer it
+    # /props probe at the first turn (derived from openai_api_base). Answer it
     # like a real llama.cpp single-model server so the realistic full path —
     # cap detection included — runs without a NotFound from the test adapter.
     test_stubs.get('/props') do

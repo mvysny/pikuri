@@ -267,8 +267,9 @@ module Pikuri
 
     # @return [Integer, nil] resolved context-window cap — the
     #   {ChatTransport#context_window} if given, else the
-    #   {ContextWindowDetector} probe; +nil+ when neither yields one.
-    #   Re-resolved on every model switch.
+    #   {ContextWindowDetector} probe; +nil+ when neither yields one. Until
+    #   the first {#run_loop} only a stated cap is known, since the probe
+    #   waits for the turn (see {#run_loop}'s "Resolving the cap").
     attr_reader :context_window_cap
 
     # Final assistant message content for the most recent {#run_loop} — the
@@ -302,13 +303,29 @@ module Pikuri
     # == Switching models mid-conversation
     #
     # A +transport:+ differing from the current one switches the chat to it
-    # (via {#apply_transport!}), re-resolves the cap, and emits
-    # {Event::ModelSwitched} + a fresh {Event::ContextCap}. The switch is
+    # (via {#apply_transport!}), emits {Event::ModelSwitched}, and leaves the
+    # cap to be re-resolved below. The switch is
     # confined to the top of this method because the chat is
     # single-thread-confined — a background thread mutating the connection
     # mid-completion would tear an in-flight stream. The conversation is
     # *not* re-baselined: same conversation, new model, so message count and
     # running context size carry over. +nil+ keeps the current model.
+    #
+    # == Resolving the cap
+    #
+    # The +/props+ probe runs here, on the first turn after construction or
+    # after a switch, never in {#initialize}: against a llama.cpp router,
+    # +/props?model=<id>+ loads that model, and a host that switches before
+    # its first turn would load one it never talks to. Here the turn's real
+    # transport is already applied, so a construct-then-switch costs one probe,
+    # for the model actually used. It runs before the first request, so
+    # {ServerPermits} is sized by the time {RequestThrottle} asks, and the
+    # fresh {Event::ContextCap} precedes every {Event::Tokens}. It runs after
+    # the cancellation reset, so a Ctrl+C during a cold load is not wiped —
+    # the turn's next cancellation point raises it — and after the
+    # {EmptyTurnError} guard, since a turn that sends nothing has nothing to
+    # budget. See +design/decisions.md+
+    # +D_deferred_cap_probe+.
     #
     # == Repairing an unwound tool batch
     #
@@ -358,6 +375,8 @@ module Pikuri
          SEPARATE_SYSTEM_FIELD_PROVIDERS.include?(@chat.model.provider.to_s)
         raise EmptyTurnError, @chat.model.provider
       end
+
+      detect_and_emit_context_cap! if @cap_pending
 
       unless blank
         # Append the user turn, emit it, then run the memory dispatch — so any
@@ -656,9 +675,12 @@ module Pikuri
                         ))
       end
 
-      # Context-window cap on the stream before any Tokens event; re-fires
-      # on each model switch (see {#apply_transport!}).
-      detect_and_emit_context_cap!
+      # Only a stated cap goes on the stream now, so a listener has one before
+      # the first turn; the probe waits for that turn (see {#run_loop}'s
+      # "Resolving the cap").
+      @context_window_cap = @transport.context_window
+      @cap_pending = true
+      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
 
       # The runtime capability facade — the ONLY object granting
       # emission / raw-tool / close-handler capabilities; the Agent exposes
@@ -705,11 +727,14 @@ module Pikuri
     # skipped only when *both* of its answers are already in hand — a stated cap
     # and a {ServerPermits.sized?} server (+design/decisions.md+
     # +D_probe_when_unknown+). The cap rides {ChatTransport}, so a switch
-    # resolves the *new* transport's cap. Shared by {#run_configure} and
-    # {#apply_transport!}.
+    # resolves the *new* transport's cap. Called from {#run_loop} once per
+    # construction or switch, whatever the probe answered: a failed probe is
+    # not retried every turn, which would charge a server without +/props+ a
+    # 404 per turn.
     #
     # @return [void]
     def detect_and_emit_context_cap!
+      @cap_pending = false
       # Probe the server this transport targets: after a cross-server switch
       # the chat points at +@transport.api_base+, but the global config still
       # names the old server — so derive the base from the transport.
@@ -736,7 +761,8 @@ module Pikuri
     # +nil+-model fill before the structural compare, so a transport
     # deferring to the default model doesn't switch spuriously.
     # +Chat#with_model+ keeps history and callbacks. Emits
-    # {Event::ModelSwitched}, then re-resolves and re-emits the cap. The new
+    # {Event::ModelSwitched} and marks the cap for {#run_loop} to re-resolve
+    # right after. The new
     # transport's +params+ replace the old one's, so a switch cannot leave a
     # thinking-off kwarg on a connection that never asked for one.
     #
@@ -767,7 +793,7 @@ module Pikuri
       @transport = filled
       strip_foreign_thinking!
       @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
-      detect_and_emit_context_cap!
+      @cap_pending = true
     end
 
     # Build the chat for +transport+ — always through a dedicated

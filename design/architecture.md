@@ -45,7 +45,10 @@ first entry in each is the ruler. Cap 12 KB — over it, research or yardoc cont
 
 **A turn** ({Pikuri::Agent#run_loop}, one thread, unbounded in tool calls):
 
-1. `run_loop` resets `Cancellable`, drains any queued `Interloper` message, appends the user turn
+1. `run_loop` applies a pending model switch, resets `Cancellable`, and — on the first turn after
+   construction or a switch — has `ContextWindowDetector` probe the server's `/props` unless both
+   its facts are already known, memoizing through the same `ServerPermits` registry that rations
+   requests (`D_deferred_cap_probe`). It drains any queued `Interloper` message, appends the user turn
    itself and only then calls `RubyLLM::Chat#complete` — never `#ask`, which bundles append and
    complete atomically and leaves no seam to inject between. ruby_llm owns the iteration from
    here (`D_no_step_limit`).
@@ -67,8 +70,7 @@ first entry in each is the ruler. Cap 12 KB — over it, research or yardoc cont
    fires whatever cleanup was already declared.
 3. The agent pulls `system_prompt_snippets` from every extension and assembles the system prompt —
    the one and only `:system` message it will ever hold (`D_reference_text_as_user_turn`).
-4. `ContextWindowDetector` probes the server's `/props` unless both its facts are already known,
-   memoizing through the same `ServerPermits` registry that rations requests.
+4. Only a cap the transport states is announced; nothing is probed until the first turn.
 
 ## Where to start reading
 

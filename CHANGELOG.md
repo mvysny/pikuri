@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `Agent.new` loading a model the host was about to switch away from — the `/props` probe now waits for the first `run_loop`, after any switch, so a llama.cpp router loads only the model actually used; until then `Agent#context_window_cap` holds only a stated cap. See `design/decisions.md` `D_deferred_cap_probe`.
 - Fix `Agent::ContextWindowDetector` sending the `/props` probe unauthenticated — it now carries the transport's `api_key` (falling back to the global config's, like the base URL) as a bearer token, so a `llama-server --api-key` no longer answers 401 and silently costs both the context cap and the `ServerPermits` slot count; a 401 or 403 now says so.
 - Fix `Tool::Scraper.fetch` drawing 403 challenge pages from Cloudflare-fronted sites and dropped connections from others — it now sends `Host` as the first header, as browsers do, and a current Firefox ESR `User-Agent` instead of the stale Chrome 120 one, through the new `Tool::Scraper.browser_connection`, which `Search::DuckDuckGo` now shares.
 - Add `design/` — rationale and reference move there as `decisions.md` (FAQ-shaped `D_` entries), `architecture.md`, `research.md` (the prior-art `R_` namespace) and `ideas/`, each gem's `DESIGN.md` becomes `<gem>/design/architecture.md`, and every `CLAUDE.md` is now a symlink to the `AGENTS.md` beside it. Repoint any link into the old uppercase root docs or a gem's `DESIGN.md`; `AGENTS.md` "Design docs" has the new map.
