@@ -59,8 +59,12 @@ module Pikuri
     #
     # @param model [String] model id the fake reports (any string; the fake
     #   server "knows" it)
-    # @param context_window [Integer] baked onto the transport so
-    #   {Agent#detect_and_emit_context_cap!} skips the real +/props+ HTTP probe
+    # @param context_window [Integer] baked onto the transport as its stated
+    #   cap, so {Agent#context_window_cap} is known from construction. It does
+    #   not skip the +/props+ probe: that still runs on the first turn unless
+    #   {Agent::ServerPermits} already sizes +api_base+, and it dials
+    #   for real, since the scripted adapter serves only the chat. Against the
+    #   default +.invalid+ host it fails fast and degrades to +nil+.
     # @param api_base [String] the transport's base URL. Never dialed (the
     #   adapter answers), but a host may key display/config off it — pass the
     #   base of the connection this fake impersonates so a UI resolves its name.
