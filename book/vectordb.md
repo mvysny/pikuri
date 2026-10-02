@@ -138,9 +138,12 @@ batch-size  = 2048
 ubatch-size = 2048
 
 [unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M]
-jinja = 1
-hf-repo = unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
-ctx-size = 65536
+jinja       = 1
+hf-repo     = unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+ctx-size    = 65536
+temp        = 0.6
+top-p       = 0.95
+top-k       = 20
 ```
 
 The file path is your choice — the router only knows about it
@@ -173,6 +176,16 @@ the reranker (whose pairs are query + one chunk, ~600 tokens
 typical). If you change the chunker to larger windows, bump both
 values up to match — llama.cpp will refuse, not truncate, when
 an input exceeds `batch-size`.
+
+**Why the `temp` / `top-p` / `top-k` lines on Qwen3.6.** pikuri
+sends no sampling parameters with its requests, so the server
+decides how adventurous the model's word choice is. These are the
+Qwen3 family's recommended thinking-mode values. The unsloth GGUF
+already carries them in its metadata, and llama.cpp uses them as
+defaults, so today the lines change nothing. They put the values in
+one place you can see and tweak, and they still apply if you swap in
+a GGUF that doesn't carry them. A value a client does send in its
+request still wins over the preset.
 
 Restart the router pointing at the presets:
 
