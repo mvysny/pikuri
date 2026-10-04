@@ -4970,6 +4970,11 @@ legitimate wants those sockets.
   `ps`/`lsblk`/`smartctl` and every file read. The masked runtime dir is
   user-owned and writable, so a program wanting its own socket there still
   works.
+- **GUI config stays advice — applying it is declined, not deferred.** A
+  `gsettings set` is a dconf write, which needs the masked session bus, so
+  the agent prints the command and the human runs it — the same hand-off
+  as `D_no_agent_sudo`. Don't re-add an apply arm: it means reopening the
+  bus, which is the egress channel above.
 - Residual paths out, all human-gated and none silent: the **system** bus
   stays bound (`systemctl status` needs it) — a transient unit there is
   polkit-gated and pops an *authentication dialog on the user's desktop*
@@ -5057,8 +5062,8 @@ ordinary next user turn.
   `apt-cache policy` names the exact candidate version with the network
   severed. The agent can confirm a package exists and what it would install
   before handing off — the network barrier never fires on that leg.
-- **This closes the "package installation" item** that sat in
-  `design/ideas/pikuri-os.md`'s deferred list as "post-v1". It is not deferred
+- **This closes the "package installation" item** that sat on the OS
+  agent's deferred list as "post-v1". It is not deferred
   work; it is declined by posture, and the hand-off already ships.
 
 ---

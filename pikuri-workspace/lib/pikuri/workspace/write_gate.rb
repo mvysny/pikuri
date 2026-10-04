@@ -21,6 +21,12 @@ module Pikuri
     # it (its confirmer is mandatory; +confirm_all_writes+ only decides whether
     # new-file writes go through too); {Edit} stays promptless unless a confirmer
     # is passed, then every edit routes through it.
+    #
+    # If a frequent-writing agent ever wants some writes to skip the prompt,
+    # grow an allowlist of safe paths (deny-by-default = confirm, like
+    # +PASSIVE_BINARIES+), never a denylist of sensitive ones — the denylist
+    # loses the enumeration game. Confirming every write is that allowlist,
+    # empty.
     module WriteGate
       module_function
 

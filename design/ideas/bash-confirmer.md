@@ -1,9 +1,8 @@
 # Bash confirmer: deferred work beyond the passive-command detector
 
 Status: **deferred brainstorm** — design space mapped, not scheduled.
-This note collects the deferred bash-confirmation-gate ideas pulled out
-of [`pikuri-os.md`](pikuri-os.md)'s fatigue list so each has room
-to breathe. Four so far — three on the **volume** axis (fewer, more
+This note collects the deferred bash-confirmation-gate ideas, born on the
+OS agent's confirmation-fatigue list. Four so far — three on the **volume** axis (fewer, more
 meaningful prompts), one on the **comprehension** axis (understand the
 prompts that remain):
 
@@ -28,9 +27,9 @@ obey the same governing invariant (stated in "The invariant" below):
 
 ## Related
 
-- [`pikuri-os.md`](pikuri-os.md) §"Deferred / not yet built" —
-  where this was born; the OS-helper is one of the two agents that would
-  use it (the coding agent is the other, and the likelier winner — see
+- [The OS-assistant chapter](../../book/os-assistant.md) §"Confirmation
+  fatigue — the passive-command detector" — what already ships; the
+  OS-helper is one of the two agents that would use this note (the coding agent is the other, and the likelier winner — see
   below).
 - [`more-confirmers.md`](more-confirmers.md) — the sibling
   human-in-the-loop confirmer shapes (the author seat, the reason
@@ -126,8 +125,8 @@ category as the static allowlist, just runtime-populated, and it cannot
 touch the confirmer protocol even in principle. Not a smarter approval
 mode.
 
-So the governing invariant, which this note owns for every item in it
-(`pikuri-os.md` points here for it): **AI may
+So the governing invariant, which this note owns for every item in it:
+**AI may
 *translate* a command, but code and the human *decide* — never an AI
 ✓/⚠ verdict.** The grant must originate from a *human keystroke*; an LLM
 proposing "add this to the allowlist" would be exactly the AI-approver

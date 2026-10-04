@@ -8,9 +8,8 @@ Offline Linux/OS helper agent + OS-integration tools for the
 answer questions about the machine, find and open files, read logs and
 explain errors, advise on configuration. It is the federation's
 privacy-first `@os` member shipped as a standalone single agent (walked
-through in [the guide's OS-assistant chapter](../book/os-assistant.md); see
-[`design/ideas/pikuri-os.md`](../design/ideas/pikuri-os.md) for the design
-origin and the work still deferred).
+through in [the guide's OS-assistant chapter](../book/os-assistant.md); the
+cross-class rationale is [`design/architecture.md`](design/architecture.md)).
 
 Posture (the load-bearing parts):
 

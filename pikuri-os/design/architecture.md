@@ -9,13 +9,14 @@ it graduated into the book's OS-assistant chapter and the Sandbox seam
 ([`../pikuri-code/AGENTS.md`](../../pikuri-code/AGENTS.md)) plus the
 Confirmer / Workspace seams
 ([`../pikuri-workspace/AGENTS.md`](../../pikuri-workspace/AGENTS.md)). What remains for this file
-is the file-index story, which no single class owns:
+is what no single class owns:
 
 1. the choice of backend engine (`localsearch` vs `recoll`), spanning
    {Pikuri::Os::LocalSearch} + {Pikuri::Os::Recoll} + the selection in
    {Pikuri::Os::Extension};
 2. why keyword recall is the whole file-search posture and semantic
-   search (`pikuri-vectordb`) is deliberately declined here.
+   search (`pikuri-vectordb`) is deliberately declined here;
+3. whether the default local model is deep enough for diagnosis.
 
 ## File search: keyword recall, not embeddings
 
@@ -137,3 +138,18 @@ Sources: local measurement (above);
 [recoll.org](https://www.recoll.org/),
 [Recoll (Wikipedia)](https://en.wikipedia.org/wiki/Recoll),
 [Tracker SupportedFormats](https://wiki.gnome.org/Projects/Tracker/SupportedFormats).
+
+## Model fit: is ~3 B active enough to diagnose?
+
+The default `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` splits the question in
+two. Factual recall scales with *total* params — 35 B is ample for FHS,
+man pages, apt. The worry was reasoning depth, which scales with the ~3 B
+*active* budget: a causal chain like "service failed → the log says Y →
+therefore Z" might come out shallow. Initial testing says it doesn't — the
+model carries a real diagnosis end to end, not just flag recall. The
+design hedges anyway: the agent iterates with tools rather than
+one-shotting, and verifies recall by *reading* (a man page beats a
+remembered flag). **Revisit** if longer causal chains show the active
+budget falling short. Why an MoE at all, and the same-tier and
+dedicated-box swaps, is the book's first-conversation chapter
+([`book/chat.md`](../../book/chat.md) §"Why a mixture-of-experts model").

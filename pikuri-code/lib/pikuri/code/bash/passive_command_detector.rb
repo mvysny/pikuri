@@ -25,8 +25,8 @@ module Pikuri
       # feature, what "passive" excludes vs. merely can't prove, the four
       # recovery strategies and the residual each accepts, PATH-hijack, and the
       # git-hardening containment behind +allow_git:+ — lives in
-      # +pikuri-code/design/architecture.md+ (*Passive-command auto-approval*). See also
-      # +design/ideas/pikuri-os.md+ and +design/ideas/bash-confirmer.md+.
+      # +pikuri-code/design/architecture.md+ (*Passive-command auto-approval*); the
+      # deferred work beyond it is +design/ideas/bash-confirmer.md+.
       #
       # == The decision rule (deny-by-default)
       #

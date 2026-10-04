@@ -6,7 +6,8 @@ human-in-the-loop confirmer ideas surfaced while scoping web access for
 quarantined in the `RESEARCHER` sub-agent (no filesystem), reached via
 the `agent` tool, gated on the task prompt before dispatch —
 `SubAgent::Extension.new(personas:, confirmer:)` (see
-[`pikuri-os.md`](pikuri-os.md) §"Internet access"). That gate is
+[the OS-assistant chapter](../../book/os-assistant.md) §"Part 2 — The third
+leg returns"). That gate is
 now the **full author seat**: `Confirmer#ask` returns
 `Approved(new_request_detail)` / `Rejected(reason)`, the task is offered
 `editable: true` so the human *rewrites* rather than rubber-stamps, and a
@@ -42,8 +43,8 @@ Related, already worked out:
   (`web_search` reaches an engine pikuri picked, `fetch` a host the model
   chose) that motivates the whole file. Both shipped as
   {Pikuri::Tool::TrifectaLegs}' two egress axes.
-- [`pikuri-os.md`](pikuri-os.md) §"Internet access" — "the third
-  leg returns," the deferred chapter these feed.
+- [The OS-assistant chapter](../../book/os-assistant.md) §"Part 2 — The
+  third leg returns" — the shipped gate these extend.
 
 ## Why these exist
 
