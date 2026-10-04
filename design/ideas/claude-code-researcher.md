@@ -6,7 +6,7 @@ The `researcher` persona (`pikuri-subagents/lib/pikuri/sub_agent/researcher.rb`)
 runs on pikuri's own loop with `web_search` / `web_scrape` / `fetch` over
 whatever model the parent uses. The idea: a second backend that runs the
 unmodified `claude` binary (`claude -p`, WebSearch + WebFetch only) inside a
-Docker container, so a research task gets Opus, Anthropic's search, and
+Docker container, so a research task gets a Claude model, Anthropic's search, and
 Claude Code's fetch path — **billed to the user's own Claude subscription**,
 not an API key. The subscription is the point: an API key on the same volume
 is far more expensive.
@@ -76,12 +76,6 @@ is far more expensive.
   Anthropic, n=2, one model. It is a *rate* difference, not more tokens.
   <https://github.com/NousResearch/hermes-plugin-claude-subscription-directsdk>
 
-## Open questions
-
-- `Q_per_persona_transport` — the cheaper sibling: let a `Persona` name its
-  own `ChatTransport` (today it inherits the parent's). Gets a stronger
-  model for research in-tree, provider-agnostic (a bigger local model on a
-  second llama.cpp server qualifies). Does not get the subscription billing.
 ## Claude web tools vs the researcher's — researched 2026-10-04
 
 | researcher | Claude Code (`claude -p`) | claude.ai chat |
@@ -151,10 +145,38 @@ is far more expensive.
 - **Name (was `Q_tool_name`): `claude_researcher`.** Names the vendor
   (the opt-in is visible in the tool list) and the job; a family prefix is
   not implied — there is one tool.
+- **Model: always `--model <m>`**, so which model runs
+  never depends on the plan's default (Opus 5.5 on Pro and Max today). `m`
+  is an optional extension parameter, default `sonnet`, passed to `claude`
+  verbatim; a bad value surfaces as `claude`'s own error in
+  `Tool::Result.error`. Sonnet as the default because Opus burns the shared
+  subscription quota faster.
+  - `sonnet` is an alias, not a pinned id: it resolves to "the recommended
+    version for your provider" (Anthropic: Sonnet 5.5, 2026-10-04), and the
+    mapping is built into the Claude Code version. With the v1 version pin
+    it moves only when the gem bumps the pin. A full id
+    (`claude-sonnet-5-5`) pins the model as well.
+    <https://code.claude.com/docs/en/model-config>
 - **Image provenance (was `Q_image_provenance`):** opting in to this gem
   *is* the user's permission to build the Docker image and install
   `@anthropic-ai/claude-code` from npm inside it. The opt-in docs say so in
   those words; nothing is built until the user wires the gem.
+- **v1 pins the Claude Code version.** The gem names one exact
+  `@anthropic-ai/claude-code` version (2.1.289 today, the one the lockdown
+  was verified on). The Dockerfile installs it as a build argument, and the
+  image tag carries the version, so a bump means a new tag and pikuri
+  rebuilds when that tag is missing. No stamp, no updater.
+  `DISABLE_AUTOUPDATER=1` in the container: in a `--rm` container
+  Claude Code's own updater would only download into a throwaway layer.
+  - Why: the lockdown is verified per version. A pin means the version
+    that runs is one somebody verified, and a bad npm release never lands
+    unattended.
+  - Bumping is a release chore: re-run the *Tool lockdown* check below on
+    the new version, then bump the pin.
+  - Cost: the CLI falls behind between bumps, and so does the `sonnet`
+    alias. Whether Anthropic ever turns away old CLI versions is not
+    known; if a pinned version stops working, the error surfaces as
+    `claude`'s own, in `Tool::Result.error`.
 - **Scraping quality (was `Q_measure_scraping`): no measurement.** Trust
   WebFetch on the strength of Claude Code's and claude.ai's research in
   practice. The caveat: that quality is mostly search + model, and the
@@ -170,6 +192,26 @@ is far more expensive.
   `-p` rate. Show remaining quota? Fall back to the local researcher when
   exhausted? v1 just surfaces `claude`'s own limit error as the tool's
   `Tool::Result.error`.
+- **Daily updates instead of the pin.** A daily npm update is only safe if
+  every run re-checks the lockdown, because an update that changes what
+  `--tools` means could hand the model Bash, and Bash can read
+  `CLAUDE_CODE_OAUTH_TOKEN`. The two come together:
+  - *Per-run lockdown check:* `--output-format stream-json`; before
+    trusting the result, require the `init` event's
+    `tools == ["WebFetch","WebSearch"]` and `mcp_servers == []`, otherwise
+    kill the container and answer a loud `Tool::Result.error` naming what
+    showed up.
+  - *Updater:* the image holds only Node; the CLI lives in a named volume
+    (npm prefix), mounted `:ro` for research runs. When a call finds the
+    stamp under `Paths.cache` older than one day (hard-coded, no knob), it
+    first runs `npm install -g @anthropic-ai/claude-code@latest` into the
+    volume through `Subprocess.spawn`, with a display line. A missing
+    binary means install whatever the stamp says. A `flock` on the stamp
+    serializes parallel calls and processes (`P_shared_locked`). A failed
+    update logs a warning, keeps the old binary and leaves the stamp
+    stale, so the next call retries.
+  - The opt-in docs then add "and re-downloads Claude Code from npm once a
+    day".
 
 ## Tool lockdown — verified 2026-10-04 on Claude Code 2.1.289
 
@@ -192,6 +234,8 @@ no MCP servers, no skills, no slash commands, `apiKeySource: none`
   answer a prompt in a container.
 - `--setting-sources ""` ignores user/project/local settings (hooks,
   permissions, MCP); harmless belt-and-braces in an empty container.
+- `--model <m>` (see *Decided*) is added to this; it was not part of the
+  verified run.
 - Not `--bare`: it ignores `CLAUDE_CODE_OAUTH_TOKEN`, so no subscription.
 - Subagent *types* still show in `init.agents`, but without the `Agent`
   tool they cannot be spawned. Built-in plugins (telemetry etc.) still
