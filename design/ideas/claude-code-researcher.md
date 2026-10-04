@@ -60,6 +60,21 @@ is far more expensive.
   `--bare` mode does not read it. An `ANTHROPIC_API_KEY` in the env outranks
   it and `-p` always uses a present key, so the container must not inherit
   one. <https://code.claude.com/docs/en/authentication>
+  - **Verified 2026-10-04 on 2.1.289:** a token from `claude setup-token`,
+    run with nothing else to log in with
+    (`env -u ANTHROPIC_API_KEY HOME=<empty dir> CLAUDE_CODE_OAUTH_TOKEN=…
+    claude -p … --model sonnet --output-format stream-json --verbose`,
+    cwd outside any project), answered with `init` reporting
+    `apiKeySource: "none"` (subscription) and
+    `model: "claude-sonnet-5-5"`.
+  - **The container mirrors that run:** an empty `HOME` (no host
+    `~/.claude` credentials or settings), a cwd with no project (on the
+    host, `-p` loaded pikuri's `CLAUDE.md` from cwd), and the token passed
+    as the only `-e`; `docker run` passes no host env by default, so
+    `ANTHROPIC_API_KEY` cannot leak in.
+  - The same run *without* the lockdown flags listed `Bash`, `Write`,
+    `Edit`, `Task`, `Workflow` and more in `init.tools`: a bare `claude -p`
+    hands the model everything it needs to read the token and send it out.
 - **What would break the terms:** pikuri reading the CLI's
   `.credentials.json` or the token and calling the Messages API itself.
   The binary must stay the client.
@@ -152,7 +167,8 @@ is far more expensive.
   `Tool::Result.error`. Sonnet as the default because Opus burns the shared
   subscription quota faster.
   - `sonnet` is an alias, not a pinned id: it resolves to "the recommended
-    version for your provider" (Anthropic: Sonnet 5.5, 2026-10-04), and the
+    version for your provider" (Anthropic: Sonnet 5.5 — on 2.1.289,
+    `init` reported `claude-sonnet-5-5`, 2026-10-04), and the
     mapping is built into the Claude Code version. With the v1 version pin
     it moves only when the gem bumps the pin. A full id
     (`claude-sonnet-5-5`) pins the model as well.
