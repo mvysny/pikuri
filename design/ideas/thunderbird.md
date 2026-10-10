@@ -20,11 +20,17 @@ answered, it graduates the same way and this note shrinks again.
 
 Each needs a live install or a comm-central read; none blocks what ships.
 
-- **Does importing an `.ics` with `ATTENDEE` lines onto a CalDAV calendar mail
-  invites?** Import usually isn't an organize-action, so probably not — but
-  unverified, and {Pikuri::Thunderbird::CalendarCreate}'s missing `attendees`
-  param (below) waits on the answer: an autonomous invite would break the
-  no-send seam.
+- **Does an auto-scheduling CalDAV server honour `SCHEDULE-AGENT=CLIENT` on an
+  imported `ATTENDEE`?** Thunderbird itself sends nothing on import
+  (comm-central: `putItemsIntoCal` → `destCal.addItem` → a plain PUT, no
+  iTIP). But an RFC 6638 `calendar-auto-schedule` server (Nextcloud/Sabre,
+  iCloud, Fastmail) schedules *on the PUT* whenever the event has an
+  `ORGANIZER` that is the owner, so the human's "import" click would mail
+  invites the human never saw offered. RFC 6638 §7.1 says the server must not
+  schedule an attendee marked `SCHEDULE-AGENT=CLIENT` (or omit `ORGANIZER`
+  entirely, which makes it no scheduling object) — so the `attendees` param
+  (below) is buildable once one real server is seen honouring it. Google's
+  CalDAV is the likeliest to ignore it.
 - **Calendar WAL cadence.** A WAL DB's change counter bumps only on checkpoint,
   so the calendar staleness signal should eventually pair the counter with
   `-wal` size+mtime. Deferred until the calendar path takes live writes between
@@ -32,9 +38,6 @@ Each needs a live install or a comm-central read; none blocks what ships.
 - **Gloda counter cadence across a real poll** — sizing only, for retry/backoff.
   If the ~1 s spurious rebuild ever bites, the fix is the content-triple
   de-churn (`max(id)` / `count(*)` / `sum(deleted)`) instead of the bare counter.
-- **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond bit 8)
-  against comm-central. Read-path nicety only: create hands off an `.ics` and
-  lets Thunderbird set its own flags on import.
 
 ## Deferred work
 
@@ -56,7 +59,8 @@ Each needs a live install or a comm-central read; none blocks what ships.
   `book/trifecta-detector.md` land — so build it when a week of real use
   makes the pool intolerable, and record it in `design/architecture.md` (it narrows the
   read surface) plus a `D_` entry if a fork turns out to be real.
-- **`attendees` on calendar-create** — gated on the CalDAV-invite question above.
+- **`attendees` on calendar-create** — gated on the `SCHEDULE-AGENT` question
+  above; each emitted `ATTENDEE` carries `SCHEDULE-AGENT=CLIENT`.
 - **Attachments on compose** — the author-not-approver draft doesn't need them,
   and a path/URL reopens the staging problem.
 - **Calendar date-filter timezone frame.** Bounds compare in the machine-local
@@ -73,8 +77,6 @@ Each needs a live install or a comm-central read; none blocks what ships.
   read allowlist** beyond Gloda + calendar, a deliberate seam decision — so build
   it only if the derived graph proves too thin in practice.
 - **`.msf` (Mork), maildir, mbox fallbacks** — the `available?`-probed second arm
-  for a Gloda-disabled host, and what would also unlock attachment *bodies*
-  (Gloda gives names only). Build only when such a host is a real user.
-- **Zero-disk snapshot medium.** An `:memory:` DB instead of the on-disk copy,
-  for a host that must leave nothing on disk — a knob, not a default (see
-  {Pikuri::Thunderbird::DatabaseSnapshot} for why on-disk wins otherwise).
+  for a Gloda-disabled host. Build only when such a host is a real user.
+  Attachment *bodies*, which need the same on-disk store, are brainstormed in
+  [`thunderbird-attachments.md`](thunderbird-attachments.md).

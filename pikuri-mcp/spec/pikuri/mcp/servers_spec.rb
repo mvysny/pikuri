@@ -172,7 +172,7 @@ RSpec.describe Pikuri::Mcp::Servers do
     end
 
     it 'propagates input-parameter descriptions to the RubyLLM wire schema' do
-      # RubyLLM::Tool#params_schema is the JSON Schema that ships to
+      # RubyLLM::Tool#parameters_schema is the JSON Schema that ships to
       # the provider for tool calling. Asserting against it directly
       # verifies that per-property descriptions from the MCP server's
       # input_schema make it all the way through deep_dup +
@@ -182,7 +182,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       servers.register_tools_with_agent('test', ctx)
 
       echo = ctx.added_tools.find { |t| t.name == 'test__echo' }
-      schema = echo.new.params_schema
+      schema = echo.new.parameters_schema
       assert_equal 'object', schema['type']
       assert_includes schema['required'], 'message'
       assert_equal 'The message to echo back verbatim.',
@@ -191,7 +191,7 @@ RSpec.describe Pikuri::Mcp::Servers do
                    schema.dig('properties', 'message', 'type')
 
       divide = ctx.added_tools.find { |t| t.name == 'test__divide' }
-      div_schema = divide.new.params_schema
+      div_schema = divide.new.parameters_schema
       assert_equal 'The numerator.',
                    div_schema.dig('properties', 'a', 'description')
       assert_equal 'The denominator. Must be non-zero.',
@@ -205,7 +205,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       ctx = fake_ctx
       servers.register_tools_with_agent('test', ctx)
       echo = ctx.added_tools.find { |t| t.name == 'test__echo' }
-      schema = echo.new.params_schema
+      schema = echo.new.parameters_schema
       refute schema.key?('$schema'), "expected $schema URI to be stripped, got: #{schema.inspect}"
     ensure
       servers&.close

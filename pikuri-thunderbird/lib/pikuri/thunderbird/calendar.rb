@@ -49,7 +49,8 @@ module Pikuri
 
       # @return [Integer] +HAS_RECURRENCE+ bit in +cal_events.flags+ — set on
       #   the master row of any event with an RRULE/RDATE (Thunderbird's
-      #   +CAL_ITEM_FLAG+). Airtight for the master, same as {ALL_DAY_FLAG}.
+      #   +CAL_ITEM_FLAG+, comm-central +calStorageHelpers.sys.mjs+). Airtight
+      #   for the master, same as {ALL_DAY_FLAG}.
       RECURRENCE_FLAG = 16
 
       # @param calendar_dbs [Array<String>] existing calendar store paths

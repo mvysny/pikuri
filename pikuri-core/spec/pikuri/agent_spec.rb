@@ -36,20 +36,20 @@ RSpec.describe Pikuri::Agent do
         self
       end
 
-      def with_tool(tool)
+      def with_tools(tool)
         instance = tool.is_a?(Class) ? tool.new : tool
         @tools[instance.name.to_sym] = instance
         self
       end
 
-      # Records each model switch as a [model, provider, assume_exists]
+      # Records each model switch as a [model, provider, assume_model_exists]
       # triple so specs can assert +apply_transport!+ forwarded the full
-      # transport (and used ruby_llm's +assume_exists:+ kwarg name). The
+      # transport (and used ruby_llm's +assume_model_exists:+ kwarg name). The
       # history (not just the latest) survives, mirroring a real Chat.
       attr_reader :model_switches
 
-      def with_model(model_id, provider: nil, assume_exists: false)
-        (@model_switches ||= []) << [model_id, provider, assume_exists]
+      def with_model(model_id, provider: nil, assume_model_exists: false)
+        (@model_switches ||= []) << [model_id, provider, assume_model_exists]
         self
       end
 
@@ -62,11 +62,11 @@ RSpec.describe Pikuri::Agent do
         self
       end
 
-      # Records each +with_params+ install, so a switch spec can assert the new
+      # Records each +with_provider_options+ install, so a switch spec can assert the new
       # transport's parameters replaced the old one's rather than merging.
       attr_reader :params_installs
 
-      def with_params(**params)
+      def with_provider_options(params)
         (@params_installs ||= []) << params
         self
       end
@@ -86,11 +86,11 @@ RSpec.describe Pikuri::Agent do
         @messages.last
       end
 
-      # Mirrors +RubyLLM::Chat#reset_messages!+ (clears the in-memory
-      # log). +#clear_conversation+ calls it, then re-applies the system
+      # Mirrors +RubyLLM::Chat#messages=+ (replaces the in-memory log).
+      # +#clear_conversation+ calls it with +[]+, then re-applies the system
       # prompt via +#with_instructions+.
-      def reset_messages!
-        @messages.clear
+      def messages=(list)
+        @messages = list.to_a
       end
 
       def ask(message, &block)
@@ -455,7 +455,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal 'sek', ev.to.api_key
       end
 
-      # +Chat#with_params+ replaces rather than merges, so the install must be
+      # +Chat#with_provider_options+ replaces rather than merges, so the install must be
       # unconditional: a switch onto a connection carrying no parameters has to
       # clear the previous one's, and neither +with_model+ nor +with_context+
       # touches them.
@@ -724,6 +724,17 @@ RSpec.describe Pikuri::Agent do
                                                            content: '42', summary: 'Returned 2 bytes')
     end
 
+    it 'forwards an attachment result as its text note, keeping the bytes off the listener stream' do
+      image = RubyLLM::Attachment.new(StringIO.new('x' * 2048), filename: 'shot.png')
+      fake_chat.fire(:before_tool_call, tool_call)
+      fake_chat.fire(:after_tool_result, ['Read image: shot.png', image])
+
+      assert_includes recorder.events,
+                      Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: 'echo',
+                                                           content: 'Read image: shot.png',
+                                                           summary: 'Returned image/png, 2.0 kB')
+    end
+
     it 'does not pass a streaming block when streaming: defaults to false' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') { |c| c.add_listener recorder }
@@ -800,9 +811,9 @@ RSpec.describe Pikuri::Agent do
 
     it 'populates Event::Tokens fields from the underlying RubyLLM::Message' do
       msg = RubyLLM::Message.new(
-        role: :assistant, content: 'reply', model_id: 'qwen3-35b',
+        role: :assistant, content: 'reply', model: 'qwen3-35b',
         input_tokens: 12_453, output_tokens: 320,
-        cached_tokens: 12_000, cache_creation_tokens: 256,
+        cache_read_tokens: 12_000, cache_write_tokens: 256,
         thinking_tokens: 80
       )
 
@@ -894,9 +905,9 @@ RSpec.describe Pikuri::Agent do
                         interloper: interloper) { |c| c.add_listener recorder }
       interloper.inject_system_message('reference text')
 
-      opener = Struct.new(:role, :tool_calls, :content, :thinking, :input_tokens, :output_tokens,
-                          :cached_tokens, :cache_creation_tokens, :thinking_tokens, :model_id)
-                     .new(:assistant, { 'call_1' => :whatever }, nil, nil, 1, 1, nil, nil, nil, 'm')
+      opener = Struct.new(:role, :tool_calls, :content, :thinking, :tokens, :model)
+                     .new(:assistant, { 'call_1' => :whatever }, nil, nil,
+                          RubyLLM::Tokens.new(input: 1, output: 1), 'm')
       fake_chat.fire(:after_message, opener)
 
       assert_equal [], fake_chat.added_messages

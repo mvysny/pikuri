@@ -16,13 +16,13 @@ RSpec.describe 'Pikuri::Trifecta.build' do
 
       def messages = []
       def with_instructions(_text) = self
-      def with_tool(tool) = tap { @tools << tool }
+      def with_tools(tool) = tap { @tools << tool }
       def after_message(&_block) = self
       def before_tool_call(&_block) = self
       def after_tool_result(&_block) = self
       def with_context(*, **) = self
       def with_model(*, **) = self
-      def with_params(**) = self
+      def with_provider_options(_) = self
       def add_message(*, **) = self
     end.new
   end

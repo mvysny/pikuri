@@ -24,10 +24,13 @@ module Pikuri
     #
     # == Deferred: attendees
     #
-    # No +attendees+ parameter — an imported +ATTENDEE+ line *might* trigger
-    # CalDAV meeting invites, which would be an autonomous send; that's unverified
-    # (see +design/ideas/thunderbird.md+), so the whole capability waits rather than risk
-    # it. A self-authored event with no attendees can't invite anyone.
+    # No +attendees+ parameter. Thunderbird's import sends no iTIP itself (it is
+    # a plain +addItem+, so a plain CalDAV PUT), but an RFC 6638 auto-scheduling
+    # server mails invites on that PUT — an autonomous send the human's import
+    # click never offered. +SCHEDULE-AGENT=CLIENT+ should stop it, which no
+    # real server has yet been seen to honour (see +design/ideas/thunderbird.md+),
+    # so the whole capability waits rather than risk it. A self-authored event
+    # with no attendees can't invite anyone.
     #
     # Sharing: +P_one_agent+ — it holds a {Profile} and writes an +.ics+ per
     # call. As {MailCompose}, the binding constraint is the human at the import

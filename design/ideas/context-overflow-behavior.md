@@ -283,12 +283,11 @@ end
 Four things in there are non-obvious. `tool_calls` is a **Hash**, hence
 `each_value`, and it is insertion-ordered. Results pair by
 `tool_call_id`, which lives on the `:tool` message, not on the call.
-`msg.content` on an assistant turn is **not always a String** (an
-attachment observation is a `RubyLLM::Content`), hence the `is_a?`
-guard — drop it and a multimodal turn interpolates as `#<RubyLLM::Content
-...>` into the prompt. And **calls with no matching result are dropped**:
-the call that tripped the budget never executed, so rendering a
-nonexistent result invents evidence.
+`msg.content` carries only an image observation's note — the bytes ride
+in `msg.attachments` — so the rendered evidence says an image was there,
+not what it showed. And **calls with no matching result are dropped**: the
+call that tripped the budget never executed, so rendering a nonexistent
+result invents evidence.
 
 That last rule is where this connects to the open problem below. The
 `load_history!` pointer notes that `History` only *validates* the

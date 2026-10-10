@@ -154,8 +154,8 @@ module Pikuri
 
       # Model-resolution kwargs to spread into +RubyLLM.chat+ /
       # +RubyLLM::Context#chat+. Excludes the connection fields (those configure
-      # the +Context+, not the +chat+ call) and +params+ (a +with_params+ call
-      # on the built chat).
+      # the +Context+, not the +chat+ call) and +params+ (a
+      # +with_provider_options+ call on the built chat).
       #
       # @return [Hash{Symbol => String, Symbol, Boolean, nil}]
       def chat_kwargs

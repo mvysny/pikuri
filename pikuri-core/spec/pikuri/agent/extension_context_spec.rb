@@ -2,7 +2,7 @@
 
 RSpec.describe Pikuri::Agent::ExtensionContext do
   # Bare-minimum chat stand-in: records tools registered via
-  # +with_tool+, which is the only chat surface the context touches.
+  # +with_tools+, which is the only chat surface the context touches.
   let(:fake_chat_class) do
     Class.new do
       attr_reader :tools
@@ -11,7 +11,7 @@ RSpec.describe Pikuri::Agent::ExtensionContext do
         @tools = []
       end
 
-      def with_tool(tool)
+      def with_tools(tool)
         @tools << tool
         self
       end

@@ -59,6 +59,7 @@ examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examp
 
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+api_key = examples_config['llm_api_key']
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-wire-check [options]'
@@ -163,7 +164,11 @@ end
 puts
 puts "Phase 2 — what #{model} actually reads"
 
-conn = Faraday.new(url: server) { |f| f.options.timeout = 30 }
+# A server started with --api-key answers 401 to both endpoints below without it.
+conn = Faraday.new(url: server) do |f|
+  f.options.timeout = 30
+  f.headers['Authorization'] = "Bearer #{api_key}" if api_key
+end
 
 rendered =
   begin
