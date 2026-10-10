@@ -1,8 +1,9 @@
 # Reading Thunderbird mail attachments
 
-Status: **brainstorm, nothing built.** Spun off from
-[`thunderbird.md`](thunderbird.md)'s last deferred bullet (".msf / maildir /
-mbox fallbacks … would also unlock attachment *bodies*").
+Status: **brainstorm, nothing built; storage assumptions validated** against a
+real Thunderbird 157 profile's Gmail IMAP account (see § "Validation results").
+Spun off from [`thunderbird.md`](thunderbird.md)'s last deferred bullet (".msf /
+maildir / mbox fallbacks … would also unlock attachment *bodies*").
 
 ## The gap
 
@@ -47,20 +48,39 @@ The Gloda row we already fetch gives `folderID → folderLocations.folderURI` pl
   fail loud when it doesn't resolve, rather than guess between `-1` siblings.
   Folder names with filesystem-illegal characters get hashed by Thunderbird
   (`NS_MsgHashIfNecessary`). Defer that until a real folder hits it.
+  - *Verified:* the key `[scheme, userName, hostname]` (scheme `imap` for
+    `type=imap`, `mailbox` otherwise) → `directory-rel` with `[ProfD]`
+    expanded resolved every Gloda folder of the IMAP account. Path segments
+    map as `a/b/c` → `a.sbd/b.sbd/c`.
+  - *Verified:* Gloda's `folderURI` is **not valid RFC 3986**. It holds raw
+    `[Gmail]` brackets and spaces, so Ruby's `URI()` raises on it. Split it
+    with a regex (`scheme://user@host/path`) and percent-decode the user
+    (`%40`) and the path.
+  - *Verified:* the store kind is **per server**
+    (`mail.server.serverN.storeContractID`, `…/berkeleystore;1` = mbox).
+    `mail.serverDefaultStoreContractID` was absent from `prefs.js`, so read the
+    per-server pref, not the global default.
 - **Within the folder:**
-  - *Local `Mail/` mbox:* `messageKey` is the offset. Seek there, check that a
-    `From - ` line starts there and that the `Message-ID:` matches, and read up
-    to the next separator.
   - *IMAP mbox:* the offset (`storeToken`) is only in the `.msf` Mork summary.
-    Parsing Mork is the gnarly road. **Lean:** a linear scan of the folder's
-    mbox for the `Message-ID:` header. It is grep speed, and Gmail's
-    `[Gmail]/All Mail` is the worst case at a few GB. Skip rows whose
-    `X-Mozilla-Status` has the expunged bit set. Add a per-folder
-    `Message-ID → offset` memo, invalidated by size+mtime the way the FTS
-    rebuild is, only if the scan proves slow in practice.
+    Parsing Mork is the gnarly road. **Decided:** a linear scan of the folder's
+    mbox for the `Message-ID:` header, skipping copies whose
+    `X-Mozilla-Status` has the expunged bit (`0x0008`) set. Measured at
+    ~0.5 s for a 440 MB `[Gmail]/All Mail` (warm page cache), so **no
+    `Message-ID → offset` memo**. Within one mbox a Message-ID can appear
+    twice with neither copy expunged. All such copies seen were
+    byte-identical, so the first live copy wins.
+  - *Local `Mail/` mbox:* the architecture doc says `messageKey` is the offset
+    here. **Not verified** (Local Folders was empty on the profile), and
+    recent Thunderbird decouples the key from the `storeToken`. The
+    Message-ID scan works on any mbox, so **use the scan for local folders
+    too** and drop the seek-to-key path. That is one code path, and it trusts
+    nothing about `messageKey`.
   - *Maildir:* one file per message under `cur/`. Scan the headers for the
     Message-ID, or use the `storeToken` filename if we ever read `.msf`.
-  - *Gmail label fan-out:* the same Message-ID sits in several folders. Any
+    Not seen on the profile. Defer it until a maildir user shows up and fail
+    loud on a non-berkeley store.
+  - *Gmail label fan-out:* the same Message-ID sits in several folders, and
+    Gloda has a row per folder (`[Gmail]/All Mail` plus a user label). Any
     copy works, so try the row's own folder first, then the other Gloda rows
     for that `headerMessageID`.
 - **Not stored offline.** This happens when the account has "Keep messages on
@@ -81,21 +101,41 @@ mbox read is safe live.
 
 ### Gloda may already know the MIME parts (`Q_gloda_attachment_infos`)
 
-From memory of comm-central, not verified: Gloda's fundamental attributes include
-`attachmentInfos`. Each entry is a serialized `GlodaAttachment`
-(`name, contentType, size, part, externalUrl, isExternal`), stored in
-`messages.jsonAttributes` under that attribute's id from
-`attributeDefinitions`. If a live profile confirms it:
+**Confirmed.** `attributeDefinitions` has `attachmentInfos` as id **51**
+(`attachmentTypes` is 49). `messages.jsonAttributes["51"]` is a list of
+**positional arrays**, not objects with named keys:
+
+```
+["<file name>", "application/pdf", 1357206, "1.2", null, false]
+  name          contentType        size     part   externalUrl  isExternal
+```
+
+On the IMAP account: 1088 messages carry it, 1286 attachments in all, part
+depth `1.N` (1238) or `1.N.M` (48). By type: `application/ics` 649 (Gmail
+invites), `application/pdf` 506, images 67, `message/rfc822` 13, office formats
+about 20, and a long tail. The findings go to the architecture doc's storage
+section, next to the attribute ids 57–61 already recorded there.
 
 - `thunderbird_mail_read` can list `invoice.pdf (application/pdf, 84 kB)` with
   no mbox access. That alone is a cheap, separate improvement.
-- The **MIME part number** (`1.2`) addresses the attachment exactly in the MIME
-  tree, so there is no name matching during the walk.
-- `isExternal` (a detached / "deleted attachment" stub) can be refused up front.
-
-**To verify:** dump `attributeDefinitions` and one `jsonAttributes` of a
-message with a PDF on the real box. The findings go to the architecture doc's
-storage section, next to the attribute ids 57–61 already recorded there.
+- The **MIME part number** addresses the attachment exactly. All 1286 part
+  numbers resolved to a leaf in an independent MIME walk of the stored
+  message (Thunderbird numbering: root `1`, children `1.1`, `1.2`, …).
+- **`contentType` is better than the MIME header.** In 7 cases the part says
+  `application/octet-stream` and Gloda says `text/csv`, `text/x-patch`,
+  `application/pkcs12`, … (it apparently sniffs the extension). Pass Gloda's
+  value as the Extractor's `content_type:` hint.
+- **`size` is the decoded size, with exceptions.** 1227 of 1286 matched the
+  decoded bytes exactly, and every binary part did. `-1` means unknown (29,
+  inline images). Every `message/rfc822` part has `0` (13). Text parts are off
+  by a few percent (17, line-ending or charset normalization). Display it,
+  never enforce it; the cap uses the encoded length (§ Caps).
+- **`isExternal` is not the detached-stub flag** this file assumed. It is never
+  set on the IMAP account (it marks a part whose bytes live at a remote URL), and
+  no `text/x-moz-deleted` or `X-Mozilla-External-Attachment-URL` stub exists
+  in its mboxes. Refuse detached stubs **in the MIME walk** by those markers.
+  Still skip an `isExternal` entry when listing, because there are no local
+  bytes to read.
 
 ### MIME parsing (`Q_mime_parser`)
 
@@ -103,26 +143,48 @@ The input is attacker-controlled by definition, and MIME is notoriously gnarly:
 nested multiparts, RFC 2231 / encoded-word filenames, base64 vs
 quoted-printable, `message/rfc822` forwards, broken boundaries.
 
-- **Hand-rolled walker.** Stdlib does the decoding (`unpack1('m')` /
-  `unpack1('M')`), so the walker is roughly 100 lines and stays "readable in an
-  evening". But every edge case becomes ours, on adversarial input.
-- **The `mail` gem.** It is the de-facto Ruby MIME library (ActionMailbox sits
-  on it), well-known and widely used, which fits the "popular dependency is OK"
-  rule. It is heavy for one call site, and pikuri-thunderbird currently depends
-  only on `sqlite3`.
+Gloda's `attachmentInfos` already supplies the decoded name, the content type
+and the part number, so what is left is "walk to part `1.2`, undo the transfer
+encoding". A hand-rolled walker for that is about 20 lines and matched all 1286
+part numbers in validation. It still loses to the `mail` gem, because v2's
+`message/rfc822` rendering needs RFC 2047 header decoding, which stdlib lacks.
+A hand-rolled walker would be thrown away then.
 
-**Lean: the `mail` gem**, for parse-only use (`Mail.read_from_string`, walk
-`#attachments` / `#parts`, `#decoded`). A parser bug on hostile input is
-exactly where an evening's code loses. Revisit if its load time or footprint
-bites.
+**Decided: the `mail` gem, parse-only.** It is the de-facto Ruby MIME library
+(ActionMailbox sits on it), which fits the "popular dependency is OK" rule. The
+whole walk is one line:
+
+```ruby
+part = gloda_part.split('.').drop(1).reduce(mail) { |node, i| node.parts.fetch(i.to_i - 1) }
+part.decoded  # base64 / quoted-printable undone
+```
+
+Measured on the profile with `mail` 2.9.1: on a 1.87 MB message the walk
+returned the PDF part with its exact Gloda size.
+
+- **Dependency graph:** `mail` → `mini_mime`, `logger`, `net-smtp`,
+  `net-imap` (→ `date`), `net-pop`. The three `net-*` → `net-protocol` →
+  `timeout`. On Ruby 3.3 only `mail` and `mini_mime` are new: the `net-*` are
+  bundled gems and the rest are default gems.
+- **Size:** `mail` is a 387 KB .gem, 4 MB unpacked, 66K lines of which ~54K
+  are Ragel-generated tables under `lib/mail/parsers/`. `mini_mime` is 34 KB.
+- **Load and parse:** `require 'mail'` takes ~80 ms (`sqlite3`: ~12 ms).
+  Parsing the 1.87 MB message plus decoding the PDF took ~110 ms. Both are
+  fine per tool call.
+- **An SMTP client in the no-egress gem.** `require 'mail'` eagerly loads
+  `Net::SMTP` (IMAP and POP load lazily). No tool reaches it, so it is not a
+  trifecta leg, but at graduation the architecture doc's no-egress seam says in
+  so many words: `mail` is parse-only, `deliver` / `delivery_method` are never
+  called. It is a sentence, not a tripwire (the set is closed).
 
 ## The tool
 
 **Shape:** like `read` / `fileindex_read`, a line-paged cat-n window over
-`Pikuri::Extractor.extract_paged(StringIO.new(bytes), content_type:)`. The MIME
-part's `Content-Type` is the `content_type:` hint, and the registry still
-sniffs, so a PDF mislabelled `application/octet-stream` still gets claimed by
-pikuri-pdf's `%PDF-` check.
+`Pikuri::Extractor.extract_paged(StringIO.new(bytes), content_type:)`. Gloda's
+`contentType` is the `content_type:` hint, because it beats the part's own
+header (see `Q_gloda_attachment_infos`). The registry still sniffs, so a PDF
+mislabelled `application/octet-stream` still gets claimed by pikuri-pdf's
+`%PDF-` check.
 
 ```
 thunderbird_mail_attachment_read(message_id:, attachment:, offset: 1, limit: 2000)
@@ -142,10 +204,13 @@ thunderbird_mail_attachment_read(message_id:, attachment:, offset: 1, limit: 200
   number. **Lean:** the listing numbers them (`1. invoice.pdf …`) and the param
   takes that **index**. That is unambiguous and short, and the model copies it
   from the listing. This only holds if the listing and the reader enumerate the
-  *same* list in the *same* order, so both must come from one source: Gloda's
-  `attachmentInfos` if `Q_gloda_attachment_infos` holds, or the MIME walk if
-  not (and then `thunderbird_mail_read` also has to touch the mbox, which I'd
-  rather avoid). A wrong index gets an error listing the attachments, the
+  *same* list in the *same* order, so both must come from one source.
+  **Decided:** Gloda's `attachmentInfos`, whose `part` the reader then looks
+  up in the MIME tree, so `thunderbird_mail_read` never touches the mbox.
+  Switch `thunderbird_mail_read`'s listing off `c2attachmentNames` at the same
+  time. That column **omits `message/rfc822` parts**: 13 messages list a
+  forwarded mail in `attachmentInfos` but have an empty name list. In every
+  other case the order of the two matched. A wrong index gets an error listing the attachments, the
   `directory_refusal` move, so the model recovers in one step.
 - **Display line.** The summary is `"Read 120 lines of a PDF attachment"`, never
   the filename, for the same reason `MailRead` reports a size and not the
@@ -174,9 +239,11 @@ thunderbird_mail_attachment_read(message_id:, attachment:, offset: 1, limit: 200
   `RubyLLM::Attachment`, but it needs a file path, so we'd stage the decoded bytes
   under `Paths.new_temp`. **Lean: v2.** The text formats are the asked-for case,
   and staging is a decision of its own (see the privacy caveat below).
-- **`message/rfc822`** (a forwarded mail as an attachment): render it as
-  headers + text body via the same MIME walk. Its *nested* attachments are out
-  of v1, because addressing them needs a path handle (`2.1`), not an index.
+- **`message/rfc822`** (a forwarded mail as an attachment): **v2**, refused in
+  v1 with a message saying so. v2 renders it as headers + text body, using
+  `mail`'s encoded-word decoding. Its *nested* attachments need a path handle
+  (`2.1`), not an index, so they are a later step again. Gloda records every
+  such part with `size` `0`.
 - **Refuse:** archives, `winmail.dat` (TNEF), S/MIME / PGP encrypted parts (and
   never touch the OpenPGP key material to decrypt them), and detached / deleted
   attachment stubs.
@@ -185,7 +252,8 @@ thunderbird_mail_attachment_read(message_id:, attachment:, offset: 1, limit: 200
 
 - **A decoded-size cap** (say 25 MB, roughly a typical provider's attachment
   limit) is checked *before* decoding where the encoded length tells us, so a
-  hostile 2 GB part never lands in memory.
+  hostile 2 GB part never lands in memory. It uses the encoded length, never
+  Gloda's `size`, which can be `-1` or `0`.
 - **Paging** caps the output, as for `read`. pikuri-pdf parses lazily, so a
   500-page PDF's first window parses a handful of pages.
 
@@ -224,16 +292,25 @@ scanned-PDF hint) carried by `page.kind`. All three readers then share the
 exact trailer phrasing the model is trained on. That is its own small commit
 before this feature.
 
-## Validation before building
+## Validation results
 
-All of these need the real profile (none was found on this dev box):
+Run against a real Thunderbird 157 profile (snap), scoped to its Gmail IMAP
+account. Gloda was read from a copy, since Thunderbird was running, and the
+mboxes were read live.
 
-1. `Q_gloda_attachment_infos`: dump `attributeDefinitions` and a PDF-bearing
-   message's `jsonAttributes`.
-2. Does the Gmail IMAP account actually have an offline store, i.e. are
-   `ImapMail/imap.gmail.com/*` mboxes populated, and with full messages
-   including attachments (not headers-only / MIME-parts-on-demand)?
-3. How long does a Message-ID scan of `[Gmail]/All Mail` take (for the
-   `Q_locate` memo decision)?
-4. Is it mbox or maildir on that profile (`mail.serverDefaultStoreContractID`
-   in `prefs.js`)?
+1. `Q_gloda_attachment_infos`: **holds**, with positional arrays. Details in
+   that section.
+2. **Offline store present, with full bodies.** The Gmail mboxes under
+   `ImapMail/imap.gmail.com/` are populated. All 1088 attachment-bearing
+   Gloda rows were found by Message-ID in their own folder's mbox, with every
+   attachment part fully present (base64 decodes to the exact Gloda size,
+   `%PDF-` magic intact). No copies carried the expunged bit. The mbox is CRLF
+   with a `From - <ctime>` separator, as the architecture doc says. So no
+   headers-only or parts-on-demand stubs were found, though the "not stored
+   offline" error stays for accounts configured otherwise.
+3. **Scan speed:** one Message-ID scan of the 440 MB `[Gmail]/All Mail` took
+   0.4–0.5 s. Indexing every Message-ID in it took 0.55 s. Page cache was warm,
+   and a cold-disk figure wasn't measurable without root. No memo is needed.
+4. **mbox.** Every server says `berkeleystore` in its own `storeContractID`,
+   and the global `mail.serverDefaultStoreContractID` is unset (see
+   `Q_locate`).
