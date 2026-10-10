@@ -77,5 +77,6 @@ Each needs a live install or a comm-central read; none blocks what ships.
   read allowlist** beyond Gloda + calendar, a deliberate seam decision — so build
   it only if the derived graph proves too thin in practice.
 - **`.msf` (Mork), maildir, mbox fallbacks** — the `available?`-probed second arm
-  for a Gloda-disabled host, and what would also unlock attachment *bodies*
-  (Gloda gives names only). Build only when such a host is a real user.
+  for a Gloda-disabled host. Build only when such a host is a real user.
+  Attachment *bodies*, which need the same on-disk store, are brainstormed in
+  [`thunderbird-attachments.md`](thunderbird-attachments.md).
