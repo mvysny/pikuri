@@ -27,6 +27,9 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
   let(:tool_call_arguments) { { 'text' => 'hi' } }
 
   before do
+    # ruby_llm 2.1 caches Faraday connections process-wide; drop any an earlier
+    # spec built, or the Faraday.new stub below is never reached.
+    RubyLLM::Transport::Connection.cache.clear
     @captured_requests = []
     captured = @captured_requests
 

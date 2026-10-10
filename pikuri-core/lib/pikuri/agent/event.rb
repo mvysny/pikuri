@@ -88,7 +88,9 @@ module Pikuri
       # The observation a tool produced ({Tool#run}'s return), plus the
       # one-line +summary+ a chrome shows in its place (+"Returned 23 search
       # results"+). Recoverable failures arrive as +"Error: ..."+ strings, not
-      # exceptions, and their summary is that message.
+      # exceptions, and their summary is that message. An image observation
+      # arrives as its text note (+"Read image: shot.png (2048 bytes, …)"+); the
+      # bytes go to the model only.
       #
       # +tool_call_id+ pairs this with its {ToolCall} by key, so a renderer
       # needs no assumption about call→result ordering.

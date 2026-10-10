@@ -43,7 +43,7 @@ Every fact lives in exactly one of these; the others link to it.
 - **Connection seam.** Every chat rides a per-chat `RubyLLM::Context` built from an `Agent::ChatTransport`, never the process-global `RubyLLM.configure`. See {Pikuri::Agent#build_chat}.
 - **An extra request parameter is opaque.** `ChatTransport#params` is deep-merged into the payload verbatim; pikuri never translates one, names one, or grows a typed flag for it. See `D_opaque_request_params`.
 - **Request-permit seam.** A permit is held for one HTTP request, never a turn — a turn-scoped one deadlocks a parent against its own sub-agent — from one process-wide registry keyed by **server**, never per agent. See `D_llm_request_throttle`, `D_probe_when_unknown`.
-- **Value-type passthrough.** `lib/` may reference `RubyLLM::Content` / `Attachment` / `Message` directly where wrapping would be a transparent passthrough.
+- **Value-type passthrough.** `lib/` may reference `RubyLLM::Attachment` / `Message` directly where wrapping would be a transparent passthrough.
 - **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry — a new format is a registry entry, not a dispatcher arm.
 - **Subprocess seam.** All subprocess spawning in `lib/` routes through `Pikuri::Subprocess.spawn`; a bare `Process.spawn` or `Open3` outlives the turn that started it.
 - **Finalizers / teardown seam.** One process-global teardown registry and a single `at_exit`, each resource registering at its ownership boundary. See {Pikuri::Finalizers}.

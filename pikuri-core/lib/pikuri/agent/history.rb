@@ -197,9 +197,12 @@ module Pikuri
         #   each call went out; an id it has nothing for stores +nil+s.
         # @return [Message]
         def self.from_ruby_llm(msg, id:, kind: 'user', summary: nil, tool_call_lines: {})
-          text, attachments = split_content(msg.content)
+          attachments = msg.attachments.map do |a|
+            Attachment.new(mime: a.mime_type, filename: a.filename.to_s, bytes: a.content)
+          end
+          t = msg.tokens
           new(
-            id: id, role: msg.role.to_s, kind: kind, content: text, attachments: attachments,
+            id: id, role: msg.role.to_s, kind: kind, content: msg.content.to_s, attachments: attachments,
             summary: summary,
             tool_calls: (msg.tool_calls || {}).values.map do |c|
               lines = tool_call_lines[c.id] || {}
@@ -207,27 +210,14 @@ module Pikuri
                            display_name: lines[:display_name], argument: lines[:argument])
             end,
             tool_call_id: msg.tool_call_id,
-            model_id: msg.model_id,
+            model_id: msg.model,
             thinking: msg.thinking && Thinking.new(text: msg.thinking.text, signature: msg.thinking.signature),
-            tokens: msg.tokens && Tokens.new(
-              input: msg.tokens.input, output: msg.tokens.output, cached: msg.tokens.cached,
-              cache_creation: msg.tokens.cache_creation, thinking: msg.tokens.thinking
-            )
+            # ruby_llm gives every message a Tokens, all-nil where nothing was
+            # counted; +nil+ keeps "no usage" out of the export.
+            tokens: (Tokens.new(input: t.input, output: t.output, cached: t.cache_read,
+                               cache_creation: t.cache_write, thinking: t.thinking) if t.to_h.any?)
           )
         end
-
-        # @param content [String, RubyLLM::Content, nil]
-        # @return [Array(String, Array<Attachment>)]
-        def self.split_content(content)
-          return ['', []] if content.nil?
-          return [content, []] if content.is_a?(String)
-          return [content.to_s, []] unless content.respond_to?(:attachments)
-
-          [content.text.to_s, content.attachments.map do |a|
-            Attachment.new(mime: a.mime_type, filename: a.filename.to_s, bytes: a.content)
-          end]
-        end
-        private_class_method :split_content
 
         # Rebuild the +RubyLLM::Message+ this was taken from.
         #
@@ -245,25 +235,17 @@ module Pikuri
           replayed = thinking if keep_thinking
           RubyLLM::Message.new(
             role: role.to_sym,
-            content: ruby_llm_content,
+            content: content,
+            attachments: attachments.map { |a| RubyLLM::Attachment.new(StringIO.new(a.bytes), filename: a.filename) },
             tool_calls: calls.empty? ? nil : calls,
             tool_call_id: tool_call_id,
-            model_id: model_id,
+            model: model_id,
             thinking: replayed && RubyLLM::Thinking.build(
               text: replayed.text, signature: replayed.signature
             ),
-            tokens: tokens && RubyLLM::Tokens.build(**tokens.to_h)
+            tokens: tokens && RubyLLM::Tokens.new(input: tokens.input, output: tokens.output, cache_read: tokens.cached,
+                                                  cache_write: tokens.cache_creation, thinking: tokens.thinking)
           )
-        end
-
-        private
-
-        def ruby_llm_content
-          return content if attachments.empty?
-
-          RubyLLM::Content.new(content).tap do |c|
-            attachments.each { |a| c.add_attachment(StringIO.new(a.bytes), filename: a.filename) }
-          end
         end
       end
 

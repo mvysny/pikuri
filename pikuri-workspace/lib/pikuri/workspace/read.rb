@@ -42,9 +42,9 @@ module Pikuri
     # == Image attachments
     #
     # PNG/JPEG/GIF/WebP (magic-byte detected) route to {.format_image} ahead of
-    # the binary sniff, answering the one {Pikuri::Tool::Result} in pikuri whose
-    # +content+ is a +RubyLLM::Content+: a metadata note ("Read image: …") the
-    # model cites, plus the file as an attachment the model looks at.
+    # the binary sniff, answering the one {Pikuri::Tool::Result} in pikuri with
+    # +attachments+: a metadata note ("Read image: …") as +content+ for the
+    # model to cite, plus the file as an attachment the model looks at.
     # +offset+/+limit+ are ignored (no line paging). Over
     # {MAX_IMAGE_BYTES} → +"Error: image too large…"+ rather than a payload the
     # provider rejects; no auto-resize (see +design/ideas/coding-agent.md+). Vision
@@ -162,8 +162,8 @@ module Pikuri
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] maximum lines
       # @return [Tool::Result] text/PDF → the cat-n slice (+"Read 214 lines"+);
-      #   a supported image → a +RubyLLM::Content+ {Tool::Result#content} with
-      #   the file attached (see "Image attachments"); else
+      #   a supported image → a note with the file in
+      #   {Tool::Result#attachments} (see "Image attachments"); else
       #   {Pikuri::Tool::Result.error}
       def self.read(workspace:, path:, offset:, limit:)
         return Tool::Result.error("offset must be >= 1, got #{offset}") if offset < 1
@@ -296,8 +296,8 @@ module Pikuri
       # avoids loading bytes just to over-cap them, and +RubyLLM::Attachment+
       # base64-encodes lazily at format time.
       #
-      # The one place a {Tool::Result#content} is a +RubyLLM::Content+ rather
-      # than a String: the attached bytes *are* the observation, so the display
+      # The one place a {Tool::Result} carries +attachments+: the attached
+      # bytes *are* the observation, so the display
       # line is derived from mime and size rather than authored here (see
       # {Pikuri::Tool::Result}'s +== Text or an attachment+).
       #
@@ -314,7 +314,7 @@ module Pikuri
         end
 
         note = "Read image: #{path} (#{size} bytes, #{mime})"
-        Tool::Result.new(content: RubyLLM::Content.new(note, [resolved.to_s]),
+        Tool::Result.new(content: note, attachments: [RubyLLM::Attachment.new(resolved.to_s)],
                          summary: Pikuri::Tool.one_line(note))
       end
       private_class_method :format_image

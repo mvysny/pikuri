@@ -68,9 +68,7 @@ RSpec.describe 'Pikuri::Tool display lines' do
     end
 
     it 'names the mime and size of a multimodal observation' do
-      content = RubyLLM::Content.new('note').tap do |c|
-        c.add_attachment(StringIO.new('x' * 2048), filename: 'shot.png')
-      end
+      content = ['note', RubyLLM::Attachment.new(StringIO.new('x' * 2048), filename: 'shot.png')]
 
       assert_equal 'Returned image/png, 2.0 kB', Pikuri::Tool.describe_content(content)
     end

@@ -39,7 +39,7 @@ RSpec.describe Pikuri::Tool::Result do
   end
 
   describe 'validation' do
-    it 'refuses content that is neither a String nor a RubyLLM::Content' do
+    it 'refuses content that is not a String' do
       err = assert_raises(ArgumentError) { described_class.new(content: 42, summary: 'x') }
       assert_includes err.message, 'Integer'
     end
@@ -50,23 +50,23 @@ RSpec.describe Pikuri::Tool::Result do
   end
 
   describe 'an attachment observation' do
-    let(:content) { RubyLLM::Content.new('Read image: shot.png', []) }
+    let(:image) { RubyLLM::Attachment.new(StringIO.new('png'), filename: 'shot.png') }
 
     it 'reports itself as one, and answers the note for to_s' do
-      result = described_class.new(content: content, summary: 'Read image')
+      result = described_class.new(content: 'Read image: shot.png', attachments: [image], summary: 'Read image')
 
       assert result.attachment?
       refute result.error?
       assert_equal 'Read image: shot.png', result.to_s
     end
 
-    it 'is what the ruby_llm wrapper hands over bare, so content_like? passes' do
+    it 'crosses into ruby_llm as a [text, *attachments] Array' do
       # The Result cannot pass ruby_llm's is_a? test, so the wrapper unwraps
       # exactly this case — and only this case.
-      wrapper = tool(->(text:) { described_class.new(content: content, summary: text) })
+      wrapper = tool(->(text:) { described_class.new(content: 'note', attachments: [image], summary: text) })
                 .to_ruby_llm_tool.new
 
-      assert_kind_of RubyLLM::Content, wrapper.execute(text: 'ignored')
+      assert_equal ['note', image], wrapper.execute(text: 'ignored')
     end
 
     it 'keeps the Result for text, so the authored summary reaches the listeners' do

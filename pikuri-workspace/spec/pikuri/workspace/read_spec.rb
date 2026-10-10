@@ -229,8 +229,8 @@ RSpec.describe Pikuri::Workspace::Read do
   describe 'image attachments' do
     # Per-format magic-byte detection is covered in
     # spec/pikuri/file_type_spec.rb. These specs cover Read's routing
-    # contract: that a sniff-recognised image flows through to a
-    # RubyLLM::Content with the right metadata, ordering ahead of the
+    # contract: that a sniff-recognised image flows through to an
+    # attachment Result with the right metadata, ordering ahead of the
     # binary refusal, and the 5 MB size cap.
     PNG_MAGIC = "\x89PNG\r\n\x1a\n".b
 
@@ -241,20 +241,18 @@ RSpec.describe Pikuri::Workspace::Read do
       path
     end
 
-    it 'answers a Result whose content is a RubyLLM::Content with the file attached' do
+    it 'answers a Result carrying the note as content and the file as an attachment' do
       path = write_image('shot.png', PNG_MAGIC)
 
       result = described_class.read(workspace: workspace, path: 'shot.png', offset: 1, limit: 2000)
 
       assert result.attachment?, "expected an attachment Result, got #{result.inspect}"
-      content = result.content
-      assert_kind_of RubyLLM::Content, content
-      assert_equal 1, content.attachments.length
-      attachment = content.attachments.first
+      assert_equal 1, result.attachments.length
+      attachment = result.attachments.first
       assert_equal path.to_s, attachment.source.to_s
       assert_equal 'image/png', attachment.mime_type
-      assert_includes content.text, 'Read image: shot.png'
-      assert_includes content.text, "(#{path.size} bytes, image/png)"
+      assert_includes result.content, 'Read image: shot.png'
+      assert_includes result.content, "(#{path.size} bytes, image/png)"
     end
 
     it 'refuses images larger than MAX_IMAGE_BYTES with an Error string the model can react to' do
@@ -276,7 +274,7 @@ RSpec.describe Pikuri::Workspace::Read do
 
       result = described_class.read(workspace: workspace, path: 'nul.png', offset: 1, limit: 2000)
 
-      assert_kind_of RubyLLM::Content, result.content
+      assert result.attachment?, "expected an attachment Result, got #{result.inspect}"
     end
 
     it 'leaves non-image binaries (no magic) on the binary refusal path' do

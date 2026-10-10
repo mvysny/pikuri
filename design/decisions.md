@@ -132,8 +132,8 @@ slot {Pikuri::Testing.fake_transport} needs, so a params-carrying connection
 could not be fake-tested at all.
 
 **Decision.** `ChatTransport` grows a `params` field, and `Agent` hands it to
-ruby_llm's own `Chat#with_params`, which deep-merges it into the completion
-payload before serialization. The table is **opaque**: pikuri validates only its
+ruby_llm's own `Chat#with_provider_options`, which deep-merges it into the
+completion payload before serialization. The table is **opaque**: pikuri validates only its
 *shape* — a Hash, naming no key twice — translates nothing, and knows no
 parameter by name. Keys are deep-symbolized on the way in, without which a table
 read from a host's TOML would land a second `"temperature"` beside the payload's
@@ -170,8 +170,8 @@ the chat wrong. A sub-agent would silently start thinking again.
 it works. But it makes every host wanting a request key own an HTTP
 body-rewriter pinned to ruby_llm's middleware order; two hosts wanting one
 would own two, and neither could combine it with a scripted fake.
-`Chat#with_params` is available under the `~> 1.16` constraint pikuri already
-carries, so the workaround was buying nothing.
+`Chat#with_provider_options` is ruby_llm's own seam for exactly this, so the
+workaround was buying nothing.
 
 **Rejected: guarding the merge.** `Utils.deep_merge` lets a table overwrite
 `messages`, `tools` or `stream` and wedge the loop, or `model` and send one the
@@ -553,14 +553,12 @@ live on {Pikuri::Tool::Result}: **structural, never excerpted** and
   things named "tool result", `Tool::Result` (what `execute` returns) and
   `Agent::Event::ToolResult` (what listeners see); they are the same thing
   at two stages.
-- **A `Result` that may wrap `RubyLLM::Content`.** Rejected here, then
-  accepted a day later by a third route neither option below considered —
-  see `D_tool_always_returns_result`. The two rejected *ways* stand: stash
-  the summary in a per-call slot (a second single-slot pairing trick), or
-  extend `content_like?` through `ruby_llm_patches.rb` (another monkey-patch
-  to carry across bumps). What was wrong here was the inference that
-  therefore `Result` must hold a `String` — an attachment needs no stash,
-  because its display line is derivable from mime and size.
+- **A `Result` that holds text only.** An attachment observation would then
+  need its summary stashed in a per-call slot (a second single-slot pairing
+  trick) or ruby_llm patched to accept a `Result` (a monkey-patch to carry
+  across bumps). Neither is needed: an attachment's display line is
+  derivable from mime and size, so `Result` carries the bytes beside the
+  text — see `D_tool_always_returns_result`.
 - **A `tool:` reference on the events instead of strings.** Events are plain
   serializable `Data` (pikuri-web ships them over SSE, a history replay
   synthesizes them), and three cases have no `Pikuri::Tool` to reference at
@@ -612,7 +610,8 @@ live on {Pikuri::Tool::Result}: **structural, never excerpted** and
 ## D_tool_always_returns_result — Why does `Tool#execute` always answer a `Result`, with the attachment riding inside it?
 
 **Context.** A day after shipping display lines, `Tool#execute` had three
-success shapes — a bare `String`, a `Tool::Result`, a `RubyLLM::Content` —
+success shapes — a bare `String`, a `Tool::Result`, ruby_llm's own multimodal
+value —
 and 26 `@return` tags spent three lines each re-explaining which arrived
 when. A tool author had no test for choosing between them, and
 `Tool#describe_result`, the hook for summarizing a bare String, had ended up
@@ -621,40 +620,38 @@ with zero overrides in the whole tree.
 **Decision.** `execute` answers a `Result`, always. `Result.error(message,
 detail:)` is the recoverable failure (content keeps every line the model
 needs, the summary takes only the first — a `ValidationError` reprints the
-schema). `Result#content` is a `String` except for an **attachment
-observation**, where it is a `RubyLLM::Content`. `Tool#run` enforces the
+schema). `Result#content` is always the `String` the model reads; an
+**attachment observation** adds the bytes as `Result#attachments`
+(`RubyLLM::Attachment`s) beside a short note. `Tool#run` enforces the
 type, wrapping a bare String from a third-party `Tool` through
 `Tool.describe_content` rather than refusing it. `Tool#describe_result` is
 deleted.
 
-The union survives in exactly one place, the four-line wrapper in
+The distinction survives in exactly one place, the four-line wrapper in
 `to_ruby_llm_tool`: ruby_llm hands the *same* value to `after_tool_result`
-and to the `:tool` message it builds, and the latter tests `content_like?`
-— an `is_a?(RubyLLM::Content)` a `Result` cannot pass. So an attachment is
-handed over bare and its display line is *derived*; text keeps the `Result`
-and its authored summary reaches the listeners untouched. No tool sees this.
+and to the `:tool` message it builds, and sends attachments only for an
+`Array` of Strings and `Attachment`s — a test a `Result` cannot pass. So an
+attachment crosses as `[content, *attachments]` and its display line is
+*derived*; text keeps the `Result` and its authored summary reaches the
+listeners untouched. Listeners get the note as `Event::ToolResult#content`,
+never the bytes. No tool sees this.
 
 **Alternatives rejected.**
 
-- **`O_result_to_s_returns_content` — let `Result#to_s` answer the
-  `RubyLLM::Content`, so one value serves both callbacks.** It works, today,
-  on ruby_llm 1.16.0's `tool_payload.to_s` — which is exactly what makes it
-  dangerous. A `to_s` that returns a non-String breaks its contract
-  everywhere else: interpolation silently renders
-  `#<Pikuri::Tool::Result:0x…>` (Ruby falls back to the default `to_s`
-  rather than raising) and `String(result)` raises `TypeError`. Verified
-  both. Nothing in the suite would catch the day ruby_llm interpolates.
+- **`O_patch_split_result` — teach ruby_llm's `Tool.split_result` to
+  recognise a `Result`, so one value serves both callbacks.** It is a
+  `:nodoc:` internal on the live tool path — a monkey-patch to carry across
+  every bump (`D_keep_ruby_llm`) — bought to save one line in the wrapper.
 - **`O_summary_side_channel` — unwrap in the wrapper for every call and pass
   the summary out of band.** `ExecuteContext` is a frozen `Data` whose
   `.default` is a process-wide singleton, so the slot would have to live on
   the wrapper instance — action at a distance replacing an `is_a?`, to buy
   an authored summary for the one observation that has nothing to author
   from.
-- **`O_result_subclasses_content` — make `Result < RubyLLM::Content` so
-  `content_like?` passes.** Subclassing a third-party value type to smuggle
-  a field, and it changes the wire format of *every* text tool result (a
-  `Content` with no attachments serializes as a content array, not a plain
-  string) to fix the one case that is an attachment.
+- **`O_result_subclasses_array` — make `Result < Array` so ruby_llm's
+  `Array` test passes.** Subclassing a core collection to smuggle a summary
+  field, and every text result would then cross as an Array too — to fix the
+  one case that is an attachment.
 - **Leaving the three-way union and only tidying the rdoc.** The cheaper
   half of this was real — 26 tags restating one convention — but the
   ambiguity was in the API, not the prose: nothing told an author when to
@@ -670,15 +667,15 @@ and its authored summary reaches the listeners untouched. No tool sees this.
   parameter. Its remaining non-`Result` branch is no longer "a pikuri tool
   that returned a String" but the three payloads that never went through
   `Tool#run`: an MCP tool's String, ruby_llm's unavailable-tool `Hash`, and
-  an unwrapped attachment `Content`.
+  an unwrapped attachment `Array`.
 - ~120 `"Error: ..."` returns became `Result.error(...)`, and the `Error: `
   prefix now lives in one place. Refusal *composers* that build message text
   for a caller to return (`WriteGate.check`, `Search::Utils
   .oversized_root_refusal`, `Read.directory_refusal`, `GitClone#parse_url`)
   stay as they are — the entry point wraps them, and `Result.error` does not
   double an existing prefix.
-- A tool returning something that is neither String, `Content` nor `Result`
-  now raises from `Result#initialize` instead of being silently `to_s`'d by
+- A tool returning something that is neither a String nor a `Result` now
+  raises from `Result#initialize` instead of being silently `to_s`'d by
   ruby_llm. That is the loud-errors rule, and it can only fire on
   third-party tool code.
 
@@ -1696,8 +1693,7 @@ which `D_tool_sharing_postures` already asks for on separate grounds.
   mechanism sitting on top of it. And it makes cancel *less* responsive: cancel
   latency becomes "when the current tool returns", which forecloses the
   direction we want, where a long-running tool blocked in IO polls the flag and
-  aborts itself. (`RubyLLM::Tool::Halt` is the same idea wearing ruby_llm's own
-  API, and loses for the same two reasons.)
+  aborts itself.
 - **Repair at turn start instead**, symmetric with the load path. Strictly
   later: the damaged chat is observable to the host in between (an
   `export_history`, a listener, a UI redraw), and the cause — which is what
@@ -2175,18 +2171,12 @@ nobody in the field has needed.
 - **The issue's `[Hash, ...]`.** A top-level array can never grow a sibling
   key. An envelope can — which matters because extension state is a live
   question (below). That alone settled envelope-vs-array.
-- **Building on `RubyLLM::Message#to_h`.** It is not a serializer: it passes
-  `tool_calls` through as a live `Hash{String => RubyLLM::ToolCall}` and
-  `content` as a live `Content` whenever attachments exist, so `to_json` on
-  it yields object `to_s` garbage. It also is not the inverse of
-  `Message.new` — thinking flattens to two sibling keys going out and is
-  taken as an object coming in. Once you are hand-writing the load half
-  anyway, own both directions.
-- **Patching `to_h` in `ruby_llm_patches.rb`.** That file is for defects on
-  the live chat path, each pinned to an upstream issue. `to_h` is not broken
-  for its purpose (Rails persistence) — it is just not our format. Building
-  a disk format on a monkey-patched third-party method inverts the whole
-  argument: the point is to stop depending on ruby_llm's internal shape.
+- **Building on `RubyLLM::Message#to_h`.** It serializes cleanly since
+  ruby_llm 2.0, but it is ruby_llm's format for its Rails persistence, and
+  it moves when ruby_llm does — 2.0 renamed `model_id` to `model` and every
+  token key. A file one pikuri wrote must load in the next whatever ruby_llm
+  did in between, and pikuri's own per-message fields (`id`, `kind`, the
+  display strings) have no slot in it.
 - **`Marshal` or any binary form.** Unreadable, unhand-editable, and
   version-fragile across Ruby releases — for artifacts that outlive the
   process.
@@ -2271,7 +2261,7 @@ snapshot, and a derived snapshot wants wholesale rewrite.
 ## D_history_attachments — Why two attachment encodings in one folder, and why are the files allowed to rot?
 
 **Context.** `Workspace::Read` hands the model images as a
-`RubyLLM::Content` whose attachment source is a **workspace path**. An
+`RubyLLM::Attachment` whose source is a **workspace path**. An
 exported conversation therefore has to decide what an attachment *is* on
 disk.
 
@@ -2371,10 +2361,11 @@ branches need not invent identity for records that never had it.
   message pikuri never saw is simply absent, and export mints it a fresh id
   rather than pairing it with another message's.
 
-**Consequences.** Re-check on a ruby_llm upgrade: OpenAI's *Responses* API
-does carry per-item ids that must be replayed (grok-build stores one for
-exactly this), and ruby_llm 1.16 has no Responses provider. If it grows one,
-ids stop being purely local and this decision needs revisiting.
+**Consequences.** OpenAI's *Responses* API does carry per-item ids that must
+be replayed (grok-build stores one for exactly this), and ruby_llm 2.x speaks
+it — but pikuri pins `:openai` to Chat Completions (`Agent#build_context`).
+Unpin it and ids stop being purely local; this decision then needs
+revisiting.
 
 ## D_history_load_repairs — Why repair a loaded conversation on the way in rather than on the way out?
 
@@ -3914,8 +3905,8 @@ fights ours, **decline the piece, keep the gem** — the pattern already set by
 `D_context_window_sources`, which refuses ruby_llm's model registry for a
 `/props` probe without touching the dependency. A defect on our path gets an
 upstream issue plus a small monkeypatch, guarded so it fails at boot rather
-than silently stops applying, and deleted the moment the fix ships
-({Pikuri::RubyLlmPatches}).
+than silently stops applying, and deleted the moment the fix ships — the
+streaming error-parse patch lived one release (ruby_llm #837, gone in 2.0).
 
 **Alternatives rejected.**
 
@@ -3926,15 +3917,15 @@ than silently stops applying, and deleted the moment the fix ships
   client entirely — `VectorDb::Embedder`'s `RubyLLM.embed` (the documented
   lone Connection-seam exception), `Mcp::Servers` synthesizing raw
   `RubyLLM::Tool` subclasses, `Workspace::Read`'s shipped image
-  observations (real multimodal `Content`, not the stub a first pass
-  assumed), and pikuri-tui downstream. We would also own the exact surface
+  observations (real multimodal `RubyLLM::Attachment`s, not the stub a first
+  pass assumed), and pikuri-tui downstream. We would also own the exact surface
   that produced the motivating bug — SSE framing, partial-chunk buffering,
   the `[DONE]` sentinel, error-body shapes — forever, instead of once.
 - **Adopt `ruby-openai`** (single-provider client; own only the loop, tool
   dispatch and value types above it). The strongest of the three, and the
   right target *if* a criterion below ever trips: Faraday-native like us, so
   one HTTP stack in the process and `Pikuri::Testing`'s seam survives; the
-  dependency delta is −3 gems (`marcel`, `ruby_llm-schema` — already
+  dependency delta is −3 gems (`marcel`, `schematist` — already
   replaced by `Tool::Parameters` — and `faraday-retry`). Rejected only
   because it buys that against the same swap cost above, for a stack that is
   otherwise stable.
@@ -3946,8 +3937,8 @@ than silently stops applying, and deleted the moment the fix ships
   new fake harness across every gem's specs. Vendor backing pays for a
   moving API surface; ours is frozen.
 - **Wrapping the leaked `RubyLLM` value types** to make a future swap cheap.
-  They are public API three ways — `Workspace::Read` *returns* a
-  `RubyLLM::Content`, `Pikuri::Tool` *subclasses* `RubyLLM::Tool`, and MCP
+  They are public API three ways — `Workspace::Read` *returns*
+  `RubyLLM::Attachment`s, `Pikuri::Tool` *subclasses* `RubyLLM::Tool`, and MCP
   tools *are* `RubyLLM::Tool`s — so a swap is a major-version break either
   way. An anti-corruption layer bought for a swap we've decided against is
   the just-in-case abstraction AGENTS.md rejects; the **Value-type
@@ -3965,9 +3956,14 @@ than silently stops applying, and deleted the moment the fix ships
   need and cannot reach through `RubyLLM::Context`.
 - Criterion 1 has been tested once and did not trip: the motivating crash
   was one 20-line method, found in two shapes, fixed upstream in a month.
-  Criterion 2 currently trends the other way — ruby_llm's
-  `providers/<vendor>/` → `protocols/<wire-format>/` refactor is upstream
-  converging on the single-wire-format view we already hold.
+  Criterion 2 was tested by the 2.0 rewrite (2026-09) and did not trip:
+  `:openai` moved to the Responses API by default, declined in place with
+  one config line (`openai_protocol = :chat_completions`, since llama.cpp and
+  every OpenAI-compatible server speak Chat Completions); the port was
+  renames plus one shape, `Tool::Result#attachments`, replacing the removed
+  `RubyLLM::Content`. The `providers/<vendor>/` → `protocols/<wire-format>/`
+  split it shipped is upstream converging on the single-wire-format view we
+  already hold.
 - If a criterion does trip, spike before committing: a `ruby-openai` client
   plus tool-call delta-merge and one round-trip against llama.cpp, driven by
   `Pikuri::Testing`'s existing scripted-SSE specs, to replace the ~550-LOC
@@ -5082,9 +5078,9 @@ server's *launched* `n_ctx`, i.e. the real window) and an explicit
 
 **Alternatives rejected.**
 
-- **`RubyLLM::Model::Info#context_window`** (the obvious source, and free) —
+- **`RubyLLM::Model#context_window`** (the obvious source, and free) —
   it's a static `models.json` lookup, so it returns `nil` for every
-  `assume_exists` local id, `nil` for anything past the snapshot, and —
+  `assume_model_exists` local id, `nil` for anything past the snapshot, and —
   worst — a **frozen** value for models it *does* know: a window bumped
   256k → 1M still reports the old number. A cap you must caveat defeats its
   only job, and a confidently-wrong number is worse than `nil`. Not

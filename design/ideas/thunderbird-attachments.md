@@ -170,8 +170,8 @@ thunderbird_mail_attachment_read(message_id:, attachment:, offset: 1, limit: 200
   `Extractor::Unsupported` → `"no reader for application/pdf on this host"`.
   `bin/pikuri-thunderbird` should then require one PDF arm. Check what it loads
   today.
-- **Images** (`Q_images`): `read` attaches PNG/JPEG/GIF/WebP as
-  `RubyLLM::Content`, but it needs a file path, so we'd stage the decoded bytes
+- **Images** (`Q_images`): `read` attaches PNG/JPEG/GIF/WebP as a
+  `RubyLLM::Attachment`, but it needs a file path, so we'd stage the decoded bytes
   under `Paths.new_temp`. **Lean: v2.** The text formats are the asked-for case,
   and staging is a decision of its own (see the privacy caveat below).
 - **`message/rfc822`** (a forwarded mail as an attachment): render it as

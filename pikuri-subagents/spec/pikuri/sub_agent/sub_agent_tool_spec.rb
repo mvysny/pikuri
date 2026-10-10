@@ -6,7 +6,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   # on +ask+, and exposes +tools+ for assertions. Keeps sub-agent specs
   # network-free.
   #
-  # +RubyLLM::Model::Info+ stand-in just so +Pikuri::Agent#initialize+
+  # +RubyLLM::Model+ stand-in just so +Pikuri::Agent#initialize+
   # can read +@chat.model.context_window+ and +@chat.model.id+ for
   # +ContextWindowDetector+.
   fake_model = Struct.new(:context_window, :id).new(nil, 'm')
@@ -33,11 +33,11 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         self
       end
 
-      def with_params(**)
+      def with_provider_options(_)
         self
       end
 
-      def with_tool(tool)
+      def with_tools(tool)
         @tools << tool
         self
       end

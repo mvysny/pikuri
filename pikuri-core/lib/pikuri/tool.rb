@@ -61,8 +61,8 @@ module Pikuri
   #
   # There is no second success shape to choose between: an *attachment*
   # observation (the image {Pikuri::Workspace::Read} answers for a PNG) is a
-  # +Result+ whose {Result#content} is a +RubyLLM::Content+, and the sole place
-  # that distinction is visible is the four-line wrapper in
+  # +Result+ with non-empty {Result#attachments}, and the sole place that
+  # distinction is visible is the four-line wrapper in
   # {#to_ruby_llm_tool}, which no tool reads.
   #
   # == Sharing: may one instance serve two agents?
@@ -225,12 +225,13 @@ module Pikuri
     # the status the reader needs. ruby_llm's unavailable-tool +Hash+ passes its
     # +:error+ through the same way.
     #
-    # @param content [String, RubyLLM::Content, Hash] whatever {Tool#run}
-    #   returned
+    # @param content [String, Array<String, RubyLLM::Attachment>, Hash]
+    #   whatever reached +after_tool_result+ — an Array is an attachment
+    #   observation as {#to_ruby_llm_tool} hands it over
     # @return [String] one line
     def self.describe_content(content)
       return one_line(content[:error].to_s) if content.is_a?(Hash) && content[:error]
-      return describe_ruby_llm_content(content) if content.is_a?(RubyLLM::Content)
+      return describe_attachments(content) if content.is_a?(Array) && content.any?(RubyLLM::Attachment)
 
       text = content.to_s
       return one_line(text.lines.first.to_s) if text.start_with?('Error:')
@@ -283,17 +284,17 @@ module Pikuri
       value.is_a?(Array) ? value.join(', ') : value.to_s
     end
 
-    # @param content [RubyLLM::Content]
+    # @param parts [Array<String, RubyLLM::Attachment>] holding at least one
+    #   attachment
     # @return [String] +"Returned image/png, 40.2 kB"+, or the mime alone when
     #   the size isn't free
-    def self.describe_ruby_llm_content(content)
-      attachment = content.attachments.first
-      return "Returned #{content.text.to_s.bytesize} bytes" if attachment.nil?
+    def self.describe_attachments(parts)
+      attachment = parts.find { |p| p.is_a?(RubyLLM::Attachment) }
 
       size = attachment_bytesize(attachment)
       size ? "Returned #{attachment.mime_type}, #{format_bytes(size)}" : "Returned #{attachment.mime_type}"
     end
-    private_class_method :describe_ruby_llm_content
+    private_class_method :describe_attachments
 
     # @param attachment [RubyLLM::Attachment]
     # @return [Integer, nil] the attachment's size, or +nil+ when reading it
@@ -385,7 +386,7 @@ module Pikuri
     end
 
     # Build a synthetic +RubyLLM::Tool+ subclass wrapping this Tool — what
-    # +RubyLLM::Chat#with_tool+ accepts. ruby_llm instantiates it and routes
+    # +RubyLLM::Chat#with_tools+ accepts. ruby_llm instantiates it and routes
     # tool calls through +#execute(**args)+, which delegates to {#run}.
     #
     # A wrapper is per *agent* even when this +Tool+ is shared between several,
@@ -398,20 +399,14 @@ module Pikuri
     # == The one place a Result is unwrapped
     #
     # ruby_llm hands the *same* value to +after_tool_result+ and to the +:tool+
-    # message it builds, where the test is +content_like?+ — an +is_a?+ against
-    # +RubyLLM::Content+ that a {Result} cannot pass. So an attachment
-    # {Result#content} is handed over bare and its display line is derived
-    # ({.describe_content}: mime plus size, which is all the structure there
-    # is); text keeps the +Result+, so {Result#summary} reaches the listeners
-    # verbatim. Those two lines below are the whole boundary — {#run} answers a
+    # message it builds, and sends attachments only for a value that *is* an
+    # Array of Strings and +RubyLLM::Attachment+s — a test a {Result} cannot
+    # pass. So an attachment Result crosses as +[content, *attachments]+ and
+    # its display line is derived ({.describe_content}: mime plus size, which
+    # is all the structure there is); text keeps the +Result+, which ruby_llm
+    # stores as {Result#to_s}, so {Result#summary} reaches the listeners
+    # verbatim. That one line below is the whole boundary — {#run} answers a
     # +Result+ either way, and no tool sees this.
-    #
-    # Do not "simplify" it by teaching {Result#to_s} to answer the
-    # +RubyLLM::Content+: ruby_llm's +tool_payload.to_s+ would pass it through
-    # and the attachment would survive, but a +to_s+ that breaks its contract
-    # renders as +#<Pikuri::Tool::Result:0x…>+ under interpolation and raises
-    # +TypeError+ under +String()+ — silently, in whichever caller reaches it
-    # first.
     #
     # @param context [ExecuteContext] passed to {#run} on every call; see the
     #   +== Cancellation+ section.
@@ -424,12 +419,12 @@ module Pikuri
 
       Class.new(RubyLLM::Tool) do
         description(tool_desc)
-        params(schema)
+        parameters(schema)
 
         define_singleton_method(:name) { tool_name }
         define_method(:execute) do |**args|
           result = pikuri_tool.run(args, context)
-          result.attachment? ? result.content : result
+          result.attachment? ? [result.content, *result.attachments] : result
         end
         define_method(:pikuri_tool) { pikuri_tool }
       end

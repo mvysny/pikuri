@@ -408,7 +408,7 @@ module Pikuri
     # teardown handlers), everything stays alive; nothing is re-probed or
     # re-connected. Resets, in order:
     #
-    # 1. Chat history (+Chat#reset_messages!+, which also drops every injected
+    # 1. Chat history (+Chat#messages = []+, which also drops every injected
     #    reference block), then re-applies a freshly **re-assembled** prompt —
     #    {#assemble_system_prompt} re-pulls every extension's snippets, so
     #    dynamic sections refresh (a resident memory persona, a re-read
@@ -424,7 +424,7 @@ module Pikuri
     #
     # @return [void]
     def clear_conversation
-      @chat.reset_messages!
+      @chat.messages = []
       @message_meta.clear
       @system_prompt = assemble_system_prompt
       @chat.with_instructions(@system_prompt)
@@ -621,7 +621,7 @@ module Pikuri
       # One context per agent, so an opting-in +execute+ never has to nil-check
       # what it was handed.
       context = Tool::ExecuteContext.new(cancellable: @cancellable || Control::Cancellable::NEVER)
-      @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool(context: context)) }
+      @tools.each { |t| @chat.with_tools(t.to_ruby_llm_tool(context: context)) }
 
       # Wire @chat for the event stream and controls via ruby_llm's three
       # registered callbacks. (The per-chunk streaming callback is separate
@@ -670,8 +670,7 @@ module Pikuri
         pending[:summary] = summary
         @listeners.emit(Event::ToolResult.new(
                           tool_call_id: pending[:tool_call_id], name: pending[:name],
-                          content: result.is_a?(Tool::Result) ? result.content : result,
-                          summary: summary
+                          content: tool_result_content(result), summary: summary
                         ))
       end
 
@@ -788,8 +787,8 @@ module Pikuri
 
       old = @transport
       @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
-      @chat.with_model(filled.model, provider: filled.provider, assume_exists: filled.assume_model_exists)
-      @chat.with_params(**filled.params)
+      @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
+      @chat.with_provider_options(filled.params)
       @transport = filled
       strip_foreign_thinking!
       @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
@@ -809,7 +808,7 @@ module Pikuri
     # @param transport [ChatTransport]
     # @return [RubyLLM::Chat]
     def build_chat(transport)
-      build_context(transport).chat(**transport.chat_kwargs).with_params(**transport.params)
+      build_context(transport).chat(**transport.chat_kwargs).with_provider_options(transport.params)
     end
 
     # A +RubyLLM::Context+ carrying +transport+'s connection overrides on the
@@ -846,6 +845,10 @@ module Pikuri
         # prompt then arrives under a role token the model was not trained
         # on. pikuri targets local servers first, so ask for `system`.
         c.openai_use_system_role = true if c.respond_to?(:openai_use_system_role=)
+        # ruby_llm defaults :openai to OpenAI's Responses API (+/v1/responses+);
+        # llama.cpp and the other OpenAI-compatible servers pikuri targets speak
+        # Chat Completions, which OpenAI itself still serves too.
+        c.openai_protocol = :chat_completions
         c.instrumenter = RequestThrottle.new(
           key: permit_key(slug, c), cancellable: @cancellable, chain: c.instrumenter
         )
@@ -1012,14 +1015,30 @@ module Pikuri
     # A {Pikuri::Tool} answers its own summary; everything else is derived. The
     # +else+ is not a pikuri tool falling back — it is the three payloads that
     # never went through {Pikuri::Tool#run}: an MCP tool's String, ruby_llm's
-    # unavailable-tool +Hash+, and an attachment +RubyLLM::Content+ the wrapper
-    # unwrapped ({Pikuri::Tool#to_ruby_llm_tool}).
+    # unavailable-tool +Hash+, and the +[note, *attachments]+ Array the wrapper
+    # unwrapped an attachment {Pikuri::Tool::Result} into
+    # ({Pikuri::Tool#to_ruby_llm_tool}).
     #
-    # @param result [Pikuri::Tool::Result, String, RubyLLM::Content, Hash] what
-    #   ruby_llm handed +after_tool_result+.
+    # @param result [Pikuri::Tool::Result, String, Array<String,
+    #   RubyLLM::Attachment>, Hash] what ruby_llm handed +after_tool_result+.
     # @return [String] the one-line result summary for the listener stream.
     def summarize_tool_result(result)
       result.is_a?(Tool::Result) ? result.summary : Tool.describe_content(result)
+    end
+
+    # {Event::ToolResult#content} for +result+: an attachment observation
+    # arrives as its text note, so a listener never holds the bytes.
+    #
+    # @param result [Pikuri::Tool::Result, String, Array<String,
+    #   RubyLLM::Attachment>, Hash] what ruby_llm handed +after_tool_result+.
+    # @return [String, Hash] the observation text; ruby_llm's unavailable-tool
+    #   +Hash+ passes through.
+    def tool_result_content(result)
+      case result
+      when Tool::Result then result.content
+      when Array then result.grep(String).join("\n\n")
+      else result
+      end
     end
 
     # Whether a turn's thinking may be replayed to +current+ — true only where
@@ -1059,12 +1078,12 @@ module Pikuri
     def strip_foreign_thinking!
       current = @chat.model&.id
       @chat.messages.map! do |msg|
-        next msg if keep_thinking?(msg.thinking, msg.model_id, current)
+        next msg if keep_thinking?(msg.thinking, msg.model, current)
 
         meta = @message_meta.delete(msg) || { id: History.mint_id, kind: 'user' }
         stripped = RubyLLM::Message.new(
           role: msg.role, content: msg.content, tool_calls: msg.tool_calls,
-          tool_call_id: msg.tool_call_id, model_id: msg.model_id,
+          tool_call_id: msg.tool_call_id, model: msg.model, attachments: msg.attachments,
           tokens: msg.tokens, raw: msg.raw, thinking: nil
         )
         @message_meta[stripped] = meta.merge(
@@ -1200,12 +1219,12 @@ module Pikuri
       @listeners.emit(Event::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
 
       @listeners.emit(Event::Tokens.new(
-                        input: msg.input_tokens,
-                        output: msg.output_tokens,
-                        cached: msg.cached_tokens,
-                        cache_creation: msg.cache_creation_tokens,
-                        thinking: msg.thinking_tokens,
-                        model_id: msg.model_id
+                        input: msg.tokens.input,
+                        output: msg.tokens.output,
+                        cached: msg.tokens.cache_read,
+                        cache_creation: msg.tokens.cache_write,
+                        thinking: msg.tokens.thinking,
+                        model_id: msg.model
                       ))
     end
 

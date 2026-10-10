@@ -313,7 +313,7 @@ module Pikuri
       # observation contract uses.
       Class.new(RubyLLM::Tool) do
         description(prefixed_desc)
-        params(schema)
+        parameters(schema)
 
         define_singleton_method(:name) { namespaced_name }
 

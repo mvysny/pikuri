@@ -85,7 +85,7 @@ module Pikuri
       # @param ruby_llm_tool [Class] subclass of +RubyLLM::Tool+
       # @return [void]
       def add_raw_tool(ruby_llm_tool)
-        @chat.with_tool(ruby_llm_tool)
+        @chat.with_tools(ruby_llm_tool)
         nil
       end
 

@@ -25,7 +25,7 @@ module Pikuri
     # +D_probe_when_unknown+).
     #
     # This probe and an explicit {ChatTransport#context_window} are the *only*
-    # cap sources: +RubyLLM::Model::Info#context_window+ is deliberately never
+    # cap sources: +RubyLLM::Model#context_window+ is deliberately never
     # consulted (why: +design/decisions.md+ +D_context_window_sources+).
     #
     # == The openai-provider gate + auto-derived URL

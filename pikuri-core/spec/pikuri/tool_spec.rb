@@ -126,7 +126,7 @@ RSpec.describe Pikuri::Tool do
 
     it 'is a RubyLLM::Tool subclass that advertises pikuri\'s schema' do
       assert_operator rl_tool, :<, RubyLLM::Tool
-      schema = rl_tool.new.params_schema
+      schema = rl_tool.new.parameters_schema
       assert_equal 'echo', rl_tool.name
       assert_equal 'Echoes the input back.', rl_tool.description
       assert_equal 'object', schema['type']
@@ -146,7 +146,7 @@ RSpec.describe Pikuri::Tool do
         execute: ->(count:) { (count + 1).to_s }
       ).to_ruby_llm_tool
 
-      missing = typed.new.call({})
+      missing = typed.new.call
       assert missing.error?, "expected pikuri-style error, got #{missing.inspect}"
       assert_includes missing.content, 'Missing required parameter `count`'
 
