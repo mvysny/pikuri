@@ -20,6 +20,38 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_thunderbird_attachment_bytes — Why read attachments from the offline mbox, found by Message-ID, rather than over IMAP or by Gloda's `messageKey`?
+
+**Context.** Gloda has every message's decoded text and its attachment *list*,
+but never the bytes, so "what does the invoice say?" dead-ended at a file
+name. The bytes exist only in Thunderbird's offline store, outside the two
+SQLite files pikuri-thunderbird had ever opened.
+
+**Decision.** `thunderbird_mail_attachment_read` widens the read allowlist to
+`prefs.js` and the mbox files, maps a Gloda folder to its mbox through
+`prefs.js`, and finds the message by a linear scan for its `Message-ID:`
+header; the `mail` gem walks to Gloda's part number. Both tools number
+Gloda's `attachmentInfos`, so `thunderbird_mail_read` never touches the mbox.
+The verified storage facts are in `pikuri-thunderbird/design/architecture.md`
+§ "Mail: mbox on disk"; the mechanics in {Pikuri::Thunderbird::MessageStore}.
+
+**Alternatives rejected.**
+
+- **Fetch the part over IMAP** — always complete, but it is egress from a gem
+  whose posture is that nothing speaks IMAP. A message not stored offline
+  answers "open it in Thunderbird" instead.
+- **Seek by `messageKey`** — it is the IMAP UID under `ImapMail/`, not an
+  offset; the offset lives only in the `.msf` Mork summary, a format nobody
+  should parse for one lookup. The scan was measured at ~0.5 s over a 440 MB
+  `[Gmail]/All Mail`, so no offset memo either.
+- **Number the attachments from a MIME walk** — the listing would then have to
+  read the mbox too, and `c2attachmentNames`, the cheap list, omits forwarded
+  mails. Gloda's `attachmentInfos` resolved all 1286 part numbers on the real
+  profile.
+- **A hand-rolled MIME walker** — ~20 lines matched every part, but forwarded
+  mails (deferred) need RFC 2047 header decoding stdlib lacks, so the walker
+  would be thrown away; the `mail` gem is parse-only here.
+
 ## D_deferred_cap_probe — Why does the `/props` probe wait for the first turn rather than run in `Agent.new`?
 
 **Context.** Against a llama.cpp router, `/props?model=<id>` is not a lookup:

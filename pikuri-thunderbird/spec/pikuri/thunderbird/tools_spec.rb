@@ -9,11 +9,14 @@ describe 'pikuri-thunderbird tools' do
     db = SQLite3::Database.new(path)
     db.execute_batch(<<~SQL)
       CREATE TABLE messagesText_content(docid INTEGER PRIMARY KEY, c0body, c1subject, c2attachmentNames, c3author, c4recipients);
-      CREATE TABLE messages(id INTEGER PRIMARY KEY, folderID INTEGER, date INTEGER, headerMessageID TEXT, deleted INTEGER);
+      CREATE TABLE messages(id INTEGER PRIMARY KEY, folderID INTEGER, date INTEGER, headerMessageID TEXT, deleted INTEGER, jsonAttributes TEXT);
       CREATE TABLE folderLocations(id INTEGER PRIMARY KEY, folderURI TEXT, dirtyStatus INTEGER, name TEXT, indexingPriority INTEGER);
+      CREATE TABLE attributeDefinitions(id INTEGER PRIMARY KEY, attributeType INTEGER, extensionName TEXT, name TEXT, parameter BLOB);
+      INSERT INTO attributeDefinitions VALUES (51,0,'built-in','attachmentInfos',NULL);
       INSERT INTO folderLocations VALUES (1,'imap://x/INBOX',0,'INBOX',50);
       INSERT INTO messagesText_content VALUES (1,'Please find the invoice attached.','Invoice 2024','invoice.pdf','Alice <a@acme.com>','me@example.com');
-      INSERT INTO messages VALUES (1,1,#{Time.utc(2026, 3, 1).to_i * 1_000_000},'<a@x>',0);
+      INSERT INTO messages VALUES (1,1,#{Time.utc(2026, 3, 1).to_i * 1_000_000},'<a@x>',0,
+        '{"51":[["invoice.pdf","application/pdf",84000,"1.2",null,false]]}');
     SQL
     db.close
     path
@@ -144,7 +147,7 @@ describe 'pikuri-thunderbird tools' do
         out = tool.run('message_id' => '<a@x>').to_s
         assert_match(/Subject: Invoice 2024/, out)
         assert_match(/invoice attached/, out)
-        assert_match(/Attachments: invoice.pdf/, out)
+        assert_match(%r{Attachments:\n  1\. invoice\.pdf \(application/pdf, [\d.]+ kB\)}, out)
         assert_match(/Error: no message/, tool.run('message_id' => '<nope@x>').to_s)
         g.close
       end

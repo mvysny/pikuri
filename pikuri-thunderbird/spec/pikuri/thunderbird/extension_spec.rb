@@ -48,7 +48,7 @@ describe Pikuri::Thunderbird::Extension do
       write_calendar(dir)
       Dir.mktmpdir do |cache|
         c, names = tool_names(dir, cache)
-        assert_equal %w[thunderbird_mail_search thunderbird_mail_read
+        assert_equal %w[thunderbird_mail_search thunderbird_mail_read thunderbird_mail_attachment_read
                         thunderbird_contact_search
                         thunderbird_calendar_search thunderbird_calendar_read].sort,
                      names.sort
@@ -65,7 +65,7 @@ describe Pikuri::Thunderbird::Extension do
         c = FakeConfigurator.new
         ext = Extension.new(profile_dir: dir, cache_dir: cache, surfaces: %i[mail])
         ext.configure(c)
-        assert_equal %w[thunderbird_mail_search thunderbird_mail_read].sort,
+        assert_equal %w[thunderbird_mail_search thunderbird_mail_read thunderbird_mail_attachment_read].sort,
                      c.tools.map(&:name).sort
         assert_equal 1, c.closers.size, 'no calendar backend was opened'
         assert ext.mail_wired?

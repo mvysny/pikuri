@@ -19,7 +19,7 @@ Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri
   module Thunderbird
-    # Legs of the five inbound tools: a mailbox and a calendar are private by
+    # Legs of the six inbound tools: a mailbox and a calendar are private by
     # *domain*, and their contents are written by whoever mailed you.
     #
     # The +private: true+ is the one place the framework declares that leg for

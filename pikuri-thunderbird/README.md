@@ -4,9 +4,12 @@ Search and read your **local** Thunderbird mail and calendars from a pikuri
 agent — reading Thunderbird's own on-disk profile, never touching the
 network. Part of the [pikuri](https://codeberg.org/mvysny/pikuri) family.
 
-The default surface is read-only and egress-free: four inbound tools
+The default surface is read-only and egress-free: six inbound tools
 (`thunderbird_mail_search` / `thunderbird_mail_read` /
-`thunderbird_calendar_search` / `thunderbird_calendar_read`). An agent wired
+`thunderbird_mail_attachment_read` / `thunderbird_contact_search` /
+`thunderbird_calendar_search` / `thunderbird_calendar_read`). The attachment
+reader opens a PDF or text attachment from the mail Thunderbird keeps on your
+disk; it never downloads one. An agent wired
 with only these has your private mailbox and untrusted message content but no
 way to send anything out — the lethal trifecta is broken by construction.
 
@@ -22,7 +25,10 @@ corresponded with. See [`design/architecture.md`](design/architecture.md).
 
 - Linux, with Thunderbird installed (snap or apt).
 - For mail search: Thunderbird's global search index (Gloda) enabled — the
-  default. For calendar: events must be cached to disk (a local calendar, or
+  default.
+- For attachments: mail kept on this computer ("Keep messages for this
+  account on this computer", the IMAP default). A PDF needs a PDF reader
+  registered — the demo registers pikuri-pdf. For calendar: events must be cached to disk (a local calendar, or
   a network calendar with "Offline Support" turned on).
 
 ## Try it

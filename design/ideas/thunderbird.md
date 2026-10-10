@@ -74,9 +74,10 @@ Each needs a live install or a comm-central read; none blocks what ships.
 - **Thunderbird's address book proper** (`abook.sqlite` / the collected-addresses
   store) — a source *separate* from Gloda's derived participant graph, holding
   manually-curated contacts the user may never have mailed. It would **extend the
-  read allowlist** beyond Gloda + calendar, a deliberate seam decision — so build
+  read allowlist** beyond Gloda, calendar and the mbox store, a deliberate seam decision — so build
   it only if the derived graph proves too thin in practice.
 - **`.msf` (Mork), maildir, mbox fallbacks** — the `available?`-probed second arm
   for a Gloda-disabled host. Build only when such a host is a real user.
-  Attachment *bodies*, which need the same on-disk store, are brainstormed in
-  [`thunderbird-attachments.md`](thunderbird-attachments.md).
+  Attachment bytes already come from the mbox store
+  ({Pikuri::Thunderbird::MessageStore}); what attachments still lack is in
+  [`thunderbird-attachments-v2.md`](thunderbird-attachments-v2.md).

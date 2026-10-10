@@ -15,7 +15,9 @@ files Thunderbird already wrote.
 - **Mail** rides Thunderbird's Gloda index (`global-messages-db.sqlite`),
   which has already MIME-decoded, HTML-stripped, and split every message
   into body / subject / attachment-names / author / recipients. pikuri
-  treats it as a pre-decoded corpus.
+  treats it as a pre-decoded corpus. Gloda never had attachment *bytes*, so
+  reading one goes to Thunderbird's offline mbox store (§ "Mail: mbox on
+  disk").
 - **Calendar** reads the `calendar-data/*.sqlite` stores, whose events are
   normalized columns (no ICS parser for the common case).
 
@@ -24,21 +26,22 @@ files Thunderbird already wrote.
 Email is the textbook lethal trifecta. The three legs:
 
 1. **Private data** — the mailbox and calendars. Inherently present.
-2. **Untrusted content** — every message body, subject, and attachment name
-   is authored by whoever sent the mail, i.e. potentially an attacker.
-   Inherently present.
+2. **Untrusted content** — every message body, subject, attachment name and
+   attachment is authored by whoever sent the mail, i.e. potentially an
+   attacker. Inherently present.
 3. **Egress** — the ability to send data out.
 
-**The default surface removes leg 3 entirely.** The five tools
+**The default surface removes leg 3 entirely.** The six tools
 `thunderbird_mail_search`, `thunderbird_mail_read`,
-`thunderbird_contact_search`, `thunderbird_calendar_search`, and
-`thunderbird_calendar_read` are all inbound-only, and they are all `Extension`
+`thunderbird_mail_attachment_read`, `thunderbird_contact_search`,
+`thunderbird_calendar_search`, and `thunderbird_calendar_read` are all
+inbound-only, and they are all `Extension`
 gives unless a host opts into an outbound leg. An agent wired with just these (plus, say, a calculator) has legs 1
 and 2 but no way to send anything anywhere, so a prompt injection buried in a
 message body has no exfiltration channel. That is the "trifecta broken by
 construction" posture `bin/pikuri-corpus` and `bin/pikuri-memory` demo.
 
-A host can also take *fewer* than five: `Extension.new(surfaces: %i[mail])`
+A host can also take *fewer* than six: `Extension.new(surfaces: %i[mail])`
 wires the mailbox and neither the address book nor the calendar. That changes
 nothing about legs 1 and 2 — mail search alone carries both, and presence is a
 union — so the trifecta map prints the same advisory and the same leg count
@@ -48,6 +51,19 @@ fewer query surfaces is three fewer. Since the detector cannot show that
 (`design/decisions.md` `D_thunderbird_surfaces`), a host that narrows owes its user a
 sentence naming what the remaining pool actually is — "your whole mailbox", not
 "your correspondence with this customer".
+
+**Attachments raise severity, not the leg count.** `thunderbird_mail_attachment_read`
+pours an attachment's text into the context: the same leg 2 as a body, so
+it carries the same legs as `thunderbird_mail_read`. It is worse in degree —
+a PDF carries far more injection text than a body, and no human ever reads
+it — and every attachment is a stranger's *file* fed to a parser, which a
+workspace file mostly is not. The PDF arm the host picks is therefore a
+posture choice: pikuri-pdf is pure Ruby, so memory-safe, and its realistic
+risk is a parser DoS (no per-call timeout today; Ruby's `Timeout` is unsafe
+and pages are parsed lazily); pikuri-extractors runs native converters but in
+a networkless one-shot container, the stronger choice for a mail host.
+Reading an attachment is *inbound*, so it does not touch the outbound "no
+attachment ever ships" invariant below.
 
 The bundled `bin/pikuri-thunderbird` deliberately goes one step further — it
 wires both outbound `allow_` flags to demo the *whole* surface — so it does
@@ -106,7 +122,10 @@ a crash can strand it until it's next overwritten or the dir is cleared
 
 The credential stores that share the profile directory (`logins.*`,
 `key4.db`, `cert9.db`, `openpgp.sqlite`, …) are **never** opened — the
-backends touch only `global-messages-db.sqlite` and `calendar-data/*.sqlite`.
+backends touch only the allowlist in § "Files never touched".
+
+The attachment reader adds **no** at-rest copy: it decodes in memory, from
+the mbox Thunderbird already keeps in plaintext.
 
 ## Outbound is a human-gated v2, never an autonomous send
 
@@ -249,7 +268,8 @@ populated Thunderbird). The per-symbol *why* lives in the class yardocs; this
 is the shared evidence base, and the ground truth a v2 builder will need.
 
 Caveat: all of this is one real install (snap; Gmail + iCloud IMAP; CalDAV
-calendars). The code is otherwise tested only against synthetic fixtures built
+calendars); the attachment facts were re-probed on it at Thunderbird 157
+(2026-10), against the Gmail account. The code is otherwise tested only against synthetic fixtures built
 to this schema — a first run against a real profile is still the true smoke
 test.
 
@@ -291,7 +311,21 @@ A complete, pre-decoded search index. Tables that matter:
   {Gloda::Contacts#domains_seen} for the recipient-novelty warn.
 - **`attributeDefinitions` / `messageAttributes`** — extensible per-message
   attributes; ids seen: 57 `tag`, 58 `star`, 59 `read`, 60 `repliedTo`,
-  61 `forwarded`. (Relevant to churn — see the change counter below.)
+  61 `forwarded`. (Relevant to churn — see the change counter below.) Ids are
+  assigned per profile, so code looks one up by `name`.
+- **`attachmentInfos`** (id 51 there) — the attachment list, stored in
+  `messages.jsonAttributes` under the attribute's id as **positional arrays**
+  `[name, contentType, size, part, externalUrl, isExternal]`. Verified over
+  all 1286 attachments of the IMAP account: every `part` resolved to the right
+  leaf of the stored message (root `1`, children `1.1`, `1.2`, …); `contentType`
+  beats the part's own header (7 parts said `application/octet-stream` where
+  Gloda, going by the file name, said `text/csv` etc.); `size` is the decoded
+  size for every binary part, but `-1` when unknown, `0` for every
+  `message/rfc822`, and a few percent off for text. `isExternal` marks a part
+  whose bytes are at a remote URL — never set on IMAP, and **not** the flag
+  for a detached attachment (that is a `text/x-moz-deleted` part). The FTS
+  column `c2attachmentNames` **omits forwarded mails**, which is why the
+  listing numbers this list instead.
 - Ignore: `imConversations*`, `ext_mimeTypes`.
 
 **The mozporter sharp edge.** Both FTS tables use Mozilla's custom `mozporter`
@@ -331,19 +365,41 @@ nearly, not perfectly, complete. (Also seen: 1571 rows with a null/blank
 `folderID` — irrelevant to Gloda-only reads, which take the body from
 `c0body`.)
 
-### Mail: mbox on disk (the unbuilt fallback's substrate)
+### Mail: mbox on disk — where attachment bytes live
 
-Not used by v1 (Gloda serves it fully); recorded for the deferred family-B
-fallback. Mail is **mbox** (extensionless files, `file(1)` "Mailbox text"),
-under `ImapMail/<server>/` (IMAP, subfolders nest via `<Folder>.sbd/`) and
-`Mail/` (Local Folders, Feeds); each mbox is shadowed by a `<Folder>.msf`
-**Mork** summary (ignorable — Gloda has the decoded text + folder map). A
-correct mbox reader would need: CRLF line endings; the dash-prefixed
-`From - <ctime>` separator (not classic `From <addr>`); server-defined folder
-names (Gmail INBOX is uppercase — never hardcode); and honoring the
-`X-Mozilla-Status`/`Status2` **deleted-but-not-compacted** bit. `messageKey`
-is *not* a universal seek offset — IMAP UID for `ImapMail/`, byte offset only
-for local `Mail/` — which is why a Gloda→mbox hybrid read was rejected.
+Read only by {Pikuri::Thunderbird::MessageStore}, for
+`thunderbird_mail_attachment_read`; search and body reads stay on Gloda. Mail
+is **mbox** (extensionless files, `file(1)` "Mailbox text"), under
+`ImapMail/<server>/` (IMAP, subfolders nest via `<Folder>.sbd/`) and `Mail/`
+(Local Folders, Feeds), each shadowed by a `<Folder>.msf` **Mork** summary.
+
+- **Format:** CRLF line endings; the dash-prefixed `From - <ctime>` separator
+  (not classic `From <addr>`); server-defined folder names (Gmail INBOX is
+  uppercase — never hardcode); the `X-Mozilla-Status` **expunged** bit
+  (`0x0008`) marks a deleted-but-not-compacted copy — common enough that a
+  reader must skip it.
+- **Which directory:** `prefs.js` is the only map from an account to its store
+  directory (`mail.server.serverN.directory-rel` / `.hostname` / `.userName` /
+  `.type`); a second account on one host gets a `-1` directory. The store kind
+  is per server (`.storeContractID`, `…/berkeleystore;1` = mbox,
+  `…/maildirstore;1` = one file per message); the global
+  `mail.serverDefaultStoreContractID` was absent. Gloda's `folderURI`s are
+  **not RFC 3986** (raw `[Gmail]` brackets and spaces — Ruby's `URI()` raises),
+  so they are split by regex and percent-decoded.
+- **Which message:** `messageKey` is the IMAP UID under `ImapMail/`, and the
+  byte offset lives only in the `.msf`; whether it is an offset for local
+  `Mail/` was not re-verified. So the reader finds a message by **scanning for
+  its `Message-ID:` header**: ~0.5 s through a 440 MB `[Gmail]/All Mail` (warm
+  page cache), fast enough that no offset memo is kept. A `Message-ID:` line
+  inside a *body* (a forwarded mail) is skipped; the few Message-IDs seen twice
+  in one mbox were byte-identical copies, so the first live one wins.
+- **Coverage:** all 1088 attachment-bearing IMAP messages were in the offline
+  store with full bodies; an account syncing headers only would answer "not
+  stored on this computer" per call.
+- **Read live, without a snapshot:** an mbox has no SQLite-style lock, and a
+  multi-GB copy per read is absurd. Thunderbird appends new mail and compacts
+  by renaming a new file over the old, so one fd held for the whole scan stays
+  self-consistent; a message appended mid-read is not in Gloda yet anyway.
 
 ### Calendar stores (`calendar-data/`)
 
@@ -456,8 +512,10 @@ opens a window, the human reviews and commits.
 
 The guarantee is an **allowlist, not a blocklist**: the backends open only
 `global-messages-db.sqlite` and `calendar-data/*.sqlite` (plus their snapshot
-copies), and discovery reads `profiles.ini`. Nothing else in the profile
-directory is ever opened — so no enumeration of what-to-avoid is load-bearing,
+copies), discovery reads `profiles.ini`, and the attachment reader reads
+`prefs.js` (its `mail.server.*` lines only — passwords live in `logins.json`,
+not there) and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
+the profile directory is ever opened — so no enumeration of what-to-avoid is load-bearing,
 and a wrong name below changes nothing.
 
 For orientation, the profile dir (the same dir as the Gloda file) also holds

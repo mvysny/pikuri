@@ -2,10 +2,12 @@
 
 require 'tmpdir'
 require 'sqlite3'
+require 'json'
 
 describe Pikuri::Thunderbird::Gloda::Mail do
   Gloda = Pikuri::Thunderbird::Gloda unless defined?(Gloda)
-  Mail = Pikuri::Thunderbird::Gloda::Mail
+  # Not +Mail+: a top-level constant of that name would replace the mail gem.
+  GlodaMail = Pikuri::Thunderbird::Gloda::Mail
 
   D1 = Time.at(1_600_000_000)
   D2 = Time.at(1_600_100_000)
@@ -14,6 +16,7 @@ describe Pikuri::Thunderbird::Gloda::Mail do
 
   # A fixture Gloda DB mirroring the real schema, with a Gmail-style duplicate
   # (same Message-ID in INBOX + All Mail), a deleted row, and a header-less row.
+  # attachmentInfos sits at id 7, not the 51 seen live: ids are per profile.
   def make_gloda(dir)
     path = File.join(dir, 'global-messages-db.sqlite')
     db = SQLite3::Database.new(path)
@@ -23,15 +26,20 @@ describe Pikuri::Thunderbird::Gloda::Mail do
         c0body, c1subject, c2attachmentNames, c3author, c4recipients);
       CREATE TABLE messages(
         id INTEGER PRIMARY KEY, folderID INTEGER, date INTEGER,
-        headerMessageID TEXT, deleted INTEGER);
+        headerMessageID TEXT, deleted INTEGER, jsonAttributes TEXT);
+      CREATE TABLE attributeDefinitions(
+        id INTEGER PRIMARY KEY, attributeType INTEGER, extensionName TEXT,
+        name TEXT, parameter BLOB);
+      INSERT INTO attributeDefinitions VALUES (6,0,'built-in','attachmentTypes',NULL);
+      INSERT INTO attributeDefinitions VALUES (7,0,'built-in','attachmentInfos',NULL);
       CREATE TABLE folderLocations(
         id INTEGER PRIMARY KEY, folderURI TEXT, dirtyStatus INTEGER,
         name TEXT, indexingPriority INTEGER);
-      INSERT INTO folderLocations VALUES (1,'imap://x/INBOX',0,'INBOX',50);
-      INSERT INTO folderLocations VALUES (2,'imap://x/All',0,'All Mail',20);
+      INSERT INTO folderLocations VALUES (1,'imap://me@x/INBOX',0,'INBOX',50);
+      INSERT INTO folderLocations VALUES (2,'imap://me@x/[Gmail]/All Mail',0,'All Mail',20);
     SQL
     text = db.prepare('INSERT INTO messagesText_content VALUES (?,?,?,?,?,?)')
-    msg  = db.prepare('INSERT INTO messages VALUES (?,?,?,?,?)')
+    msg  = db.prepare('INSERT INTO messages(id, folderID, date, headerMessageID, deleted) VALUES (?,?,?,?,?)')
 
     # docid 1 + its All-Mail duplicate (docid 2), same Message-ID <a@x>
     text.execute(1, 'Please find the invoice attached', 'Invoice 2024', 'invoice.pdf',
@@ -50,6 +58,9 @@ describe Pikuri::Thunderbird::Gloda::Mail do
     text.execute(5, 'another invoice with no header id', 'NoID', '', 'Dave', 'me@example.com')
     msg.execute(5, 1, D4.to_i * 1_000_000, '', 0)
 
+    db.execute('UPDATE messages SET jsonAttributes = ? WHERE id = 1',
+               [JSON.generate('7' => [['invoice.pdf', 'Application/PDF', 84_000, '1.2', nil, false],
+                                      ['logo.png', 'image/png', -1, '1.1.2', nil, false]])])
     [text, msg].each(&:close)
     db.close
     path
@@ -60,7 +71,7 @@ describe Pikuri::Thunderbird::Gloda::Mail do
     Dir.mktmpdir do |dir|
       gloda = Gloda.new(gloda_path: make_gloda(dir), cache_dir: File.join(dir, 'cache'))
       begin
-        yield Mail.new(gloda: gloda), dir
+        yield GlodaMail.new(gloda: gloda), dir
       ensure
         gloda.close
       end
@@ -113,12 +124,34 @@ describe Pikuri::Thunderbird::Gloda::Mail do
     with_mail do |mail|
       rec = mail.read(message_id: '<a@x>')
       assert_includes rec[:body], 'invoice attached'
-      assert_equal 'invoice.pdf', rec[:attachment_names]
       assert_equal 'INBOX', rec[:folder]
       assert_kind_of Time, rec[:date]
 
       assert_includes mail.read(message_id: 'gloda:5')[:body], 'no header id'
       assert_nil mail.read(message_id: '<does-not-exist@x>')
+    end
+  end
+
+  it "lists attachments in Gloda's order, the content type lowercased" do
+    with_mail do |mail|
+      atts = mail.read(message_id: '<a@x>')[:attachments]
+
+      assert_equal %w[invoice.pdf logo.png], atts.map(&:name)
+      assert_equal 'application/pdf', atts.first.content_type
+      assert_equal ['1.2', 84_000, false], [atts.first.part, atts.first.size, atts.first.external]
+      assert_empty mail.read(message_id: '<b@x>')[:attachments]
+    end
+  end
+
+  it 'lists every folder holding a copy, the read row first' do
+    with_mail do |mail|
+      # The read picks the newest row; both copies share a date, so the order
+      # is whichever row came first, and the other folder must follow it.
+      uris = mail.read(message_id: '<a@x>')[:folder_uris]
+
+      assert_equal ['imap://me@x/INBOX', 'imap://me@x/[Gmail]/All Mail'].sort, uris.sort
+      assert_equal 2, uris.size
+      assert_equal ['imap://me@x/INBOX'], mail.read(message_id: 'gloda:5')[:folder_uris]
     end
   end
 end

@@ -21,6 +21,14 @@ require 'yaml'
 require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-thunderbird' # pulls in pikuri-core
+require 'pikuri-pdf' # PDF → text extractor (see registration below)
+
+# Explicit opt-in (requiring pikuri-pdf alone changes nothing): teach the
+# Extractor registry to read PDFs, so thunderbird_mail_attachment_read can open
+# a PDF attachment. Every attachment is a stranger's file; pikuri-pdf is pure
+# Ruby (memory-safe, no subprocess, no network), and a host wanting the
+# stronger posture registers pikuri-extractors' networkless container instead.
+Pikuri::Extractors::PDF.register
 
 profile_dir = nil
 

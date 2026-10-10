@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'json'
+
 module Pikuri
   module Thunderbird
     class Gloda
@@ -65,20 +67,27 @@ module Pikuri
           dedup(rows).first(limit)
         end
 
-        # Full decoded body + headers + attachment names for one message.
+        # Full decoded body + headers + attachments for one message.
+        #
+        # +folder_uris+ is every folder holding a copy, this row's own first —
+        # Gmail fans one message out over its labels, and any copy carries the
+        # same attachment bytes.
         #
         # @param message_id [String] the {#search} handle (an RFC +Message-ID+
         #   or a +gloda:<id>+ fallback).
         # @return [Hash, nil] +{message_id:, date:, from:, to:, subject:,
-        #   folder:, attachment_names:, body:}+, or +nil+ if not found.
+        #   folder:, folder_uris: Array<String>, attachments: Array<Attachment>,
+        #   body:}+, or +nil+ if not found.
+        # @raise [NoMatchingPatternError] on an +attachmentInfos+ entry of a
+        #   shape Gloda never wrote.
         def read(message_id:)
           gloda_id = message_id.to_s[/\Agloda:(\d+)\z/, 1]
           where, bind = gloda_id ? ['m.id = ?', gloda_id.to_i] : ['m.headerMessageID = ?', message_id]
-          row = @gloda.with_fresh_db do |db|
-            db.execute(<<~SQL, [bind]).first
+          row, attr_id, uris = @gloda.with_fresh_db do |db|
+            row = db.execute(<<~SQL, [bind]).first
               SELECT m.id, m.headerMessageID, m.date,
-                     c.c0body, c.c1subject, c.c2attachmentNames, c.c3author, c.c4recipients,
-                     fl.name AS folder
+                     c.c0body, c.c1subject, c.c3author, c.c4recipients,
+                     fl.name, fl.folderURI, m.jsonAttributes
               FROM messages m
               JOIN messagesText_content c ON c.docid = m.id
               LEFT JOIN folderLocations fl ON fl.id = m.folderID
@@ -86,18 +95,46 @@ module Pikuri
               ORDER BY m.date DESC
               LIMIT 1
             SQL
+            next unless row
+
+            # Attribute ids are assigned per profile at Gloda's creation, so
+            # look this one up by name rather than hardcoding the 51 seen live.
+            attr_id = db.get_first_value(
+              "SELECT id FROM attributeDefinitions WHERE extensionName = 'built-in' AND name = 'attachmentInfos'"
+            )
+            header_msgid = row[1]
+            uris = if header_msgid.to_s.empty?
+                     []
+                   else
+                     db.execute(<<~SQL, [header_msgid]).flatten
+                       SELECT fl.folderURI FROM messages m JOIN folderLocations fl ON fl.id = m.folderID
+                       WHERE m.headerMessageID = ? AND m.deleted = 0
+                     SQL
+                   end
+            [row, attr_id, uris]
           end
           return nil unless row
 
-          id, header_msgid, date_us, body, subj, attach, author, recipients, folder = row
+          id, header_msgid, date_us, body, subj, author, recipients, folder, folder_uri, json = row
           {
             message_id: header_msgid && !header_msgid.empty? ? header_msgid : "gloda:#{id}",
             date: to_time(date_us), from: author, to: recipients, subject: subj,
-            folder: folder, attachment_names: attach.to_s, body: body.to_s
+            folder: folder, folder_uris: [folder_uri, *uris].compact.uniq,
+            attachments: attachments(json, attr_id), body: body.to_s
           }
         end
 
         private
+
+        # @param json [String, nil] +messages.jsonAttributes+.
+        # @param attr_id [Integer, nil] the +attachmentInfos+ attribute id.
+        # @return [Array<Attachment>] in Gloda's order — the order the listing
+        #   numbers them, so the reader resolves the same index.
+        def attachments(json, attr_id)
+          return [] if json.nil? || attr_id.nil?
+
+          (JSON.parse(json)[attr_id.to_s] || []).map { |entry| Attachment.from_gloda(entry) }
+        end
 
         # @return [Array<Array>] raw result rows (see {#row_to_hit} for shape).
         def fts_search(db, query:, from:, to:, subject:, after:, before:, folder:, fetch:)

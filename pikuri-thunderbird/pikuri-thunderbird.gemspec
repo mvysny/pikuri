@@ -61,4 +61,9 @@ Gem::Specification.new do |spec|
   # We only ever open the plain tables + build our own FTS5 — never
   # Gloda's mozporter-tokenized fts3 vtable, which the gem cannot resolve.
   spec.add_dependency 'sqlite3', '~> 2.9'
+
+  # Parse-only MIME, to walk a stored message to one attachment part. Never
+  # used to send: `require 'mail'` loads Net::SMTP, but nothing here calls
+  # Mail#deliver or delivery_method.
+  spec.add_dependency 'mail', '~> 2.9'
 end

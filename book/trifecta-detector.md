@@ -634,6 +634,7 @@ pikuri-briefing [:private, :untrusted_hard]
   rag_reindex []
   thunderbird_mail_search [:private, :untrusted_hard]
   thunderbird_mail_read [:private, :untrusted_hard]
+  thunderbird_mail_attachment_read [:private, :untrusted_hard]
   thunderbird_contact_search [:private, :untrusted_hard]
 ```
 
@@ -697,7 +698,7 @@ shipping it that way is deliberate — the honest reading is what
 makes this section's point land.
 
 Meanwhile the wiring is *narrower* than it could be: the mail gem
-bundles five inbound tools, and the flag takes three. The calendar
+bundles six inbound tools, and the flag takes four. The calendar
 is off, though it would answer "which meeting is coming up".
 
 Neither shows, and the reason is arithmetic:

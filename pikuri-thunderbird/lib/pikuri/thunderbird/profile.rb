@@ -94,6 +94,10 @@ module Pikuri
       #   +available?+ gate).
       def gloda? = File.file?(gloda_path)
 
+      # @return [String] Thunderbird's preferences, which map each mail
+      #   account to its store directory (see {MessageStore}).
+      def prefs_path = File.join(@dir, 'prefs.js')
+
       # @return [String] the calendar stores directory.
       def calendar_dir = File.join(@dir, 'calendar-data')
 

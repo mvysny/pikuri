@@ -45,11 +45,14 @@ RSpec.describe 'Thunderbird trifecta legs' do
   end
 
   describe 'the tools' do
-    it 'tags the five inbound tools identically' do
+    it 'tags the six inbound tools identically' do
       %i[MailSearch MailRead ContactSearch CalendarSearch CalendarRead].each do |const|
         tool = Pikuri::Thunderbird.const_get(const).new(backend: nil)
         assert_equal Pikuri::Thunderbird::INBOUND_LEGS, tool.trifecta_legs, const.to_s
       end
+      # An attachment is untrusted the way a body is, so it adds no new leg.
+      tool = Pikuri::Thunderbird::MailAttachmentRead.new(backend: nil, store: nil)
+      assert_equal Pikuri::Thunderbird::INBOUND_LEGS, tool.trifecta_legs
     end
 
     it 'tags mail_compose as an approver-gated hand-off' do
