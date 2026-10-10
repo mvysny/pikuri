@@ -111,6 +111,6 @@ RSpec.describe 'Workspace::Read on a registered PDF extractor' do
 
     result = read('short.pdf', offset: 99)
 
-    assert_equal 'Error: offset 99 is beyond end of file (2 lines total)', result
+    assert_equal 'Error: offset 99 is beyond end of PDF (2 lines total)', result
   end
 end

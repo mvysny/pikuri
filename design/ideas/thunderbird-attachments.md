@@ -283,14 +283,11 @@ thunderbird_mail_attachment_read(message_id:, attachment:, offset: 1, limit: 200
 
 ## Prerequisite refactor: hoist the page renderer (`Q_hoist_render_page`)
 
-`render_page` (cat-n body + "Use offset=N to continue" trailer) already exists
-twice: `Pikuri::Workspace::Read` and `Pikuri::Os::FileindexRead`, near-identical.
-This tool would be the third copy. **Lean:** hoist it into core next to
-`Extractor::Page`. One option is `Extractor::Page#render(empty_note:)`
-returning a `Tool::Result`, with kind-specific wording (`PDF lines`, the
-scanned-PDF hint) carried by `page.kind`. All three readers then share the
-exact trailer phrasing the model is trained on. That is its own small commit
-before this feature.
+**Done.** The three copies (`Workspace::Read`, `Os::FileindexRead`,
+`VectorDb::Tools::Read`) now answer through `Pikuri::Tool::Result.page(page,
+name:, numbered:, empty_note:)`. It is a `Tool::Result` factory beside
+`.error`, not `Extractor::Page#render`, so the format seam never depends on the
+tool layer. This tool calls it with `name: 'attachment'`.
 
 ## Validation results
 

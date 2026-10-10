@@ -18,7 +18,8 @@ module Pikuri
     #
     # +offset+ / +limit+ page exactly as in {Pikuri::Workspace::Read},
     # windowed through {Pikuri::Extractor.extract_paged} (a +StringIO+ over
-    # the stored text) with the same +cat -n+ + trailer, caps, and markers.
+    # the stored text) and rendered by {Pikuri::Tool::Result.page}, so the
+    # +cat -n+ prefix, trailer and caps are +read+'s own.
     #
     # Sharing: +P_stateless+ — the backend is a stateless module over a
     # read-only index, so one instance serves any number of agents.
@@ -26,9 +27,6 @@ module Pikuri
       # @return [Integer] default +limit+ (lines per call); the shared
       #   page default, so it matches +read+.
       DEFAULT_LIMIT = Pikuri::Extractor::PAGE_DEFAULT_LIMIT
-
-      # @return [String] human-readable byte cap for the trailer.
-      MAX_BYTES_LABEL = "#{Pikuri::Extractor::PAGE_MAX_BYTES / 1024} KB"
 
       # @return [String] opencode-shape description (summary + Usage).
       DESCRIPTION = <<~DESC
@@ -90,46 +88,8 @@ module Pikuri
         page = Pikuri::Extractor.extract_paged(
           StringIO.new(text), content_type: 'text/plain', offset: offset, limit: limit
         )
-        render_page(page)
+        Pikuri::Tool::Result.page(page, empty_note: '(No indexed text for this file.)')
       end
-
-      # Render a {Pikuri::Extractor::Page} as +cat -n+ + a paging trailer,
-      # mirroring {Pikuri::Workspace::Read}'s formatting.
-      #
-      # @param page [Pikuri::Extractor::Page]
-      # @return [Pikuri::Tool::Result] the window (+"Read N lines"+), the
-      #   no-indexed-text note, or {Pikuri::Tool::Result.error}
-      def self.render_page(page)
-        if page.total_lines.zero?
-          note = '(No indexed text for this file.)'
-          return Pikuri::Tool::Result.new(content: note, summary: note)
-        end
-
-        if page.lines.empty?
-          return Pikuri::Tool::Result.error("offset #{page.start_line} is beyond end of file " \
-                                            "(#{page.total_lines} lines total)")
-        end
-
-        last = page.start_line + page.lines.length - 1
-        body = page.lines.each_with_index
-                   .map { |line, i| format("%6d\t%s", i + page.start_line, line) }
-                   .join("\n")
-
-        trailer =
-          if page.byte_capped
-            "(Output capped at #{MAX_BYTES_LABEL}. Showing lines #{page.start_line}-#{last}. " \
-              "Use offset=#{last + 1} to continue.)"
-          elsif page.more
-            total = page.total_lines ? " of #{page.total_lines}" : ''
-            "(Showing lines #{page.start_line}-#{last}#{total}. Use offset=#{last + 1} to continue.)"
-          else
-            "(End of file - total #{page.total_lines} lines)"
-          end
-
-        Pikuri::Tool::Result.new(content: "#{body}\n\n#{trailer}",
-                                 summary: "Read #{Pikuri::Tool.pluralize(page.lines.length, 'line')}")
-      end
-      private_class_method :render_page
     end
   end
 end

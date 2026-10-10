@@ -79,6 +79,63 @@ module Pikuri
             summary: Tool.one_line(text.lines.first))
       end
 
+      # The observation for one {Pikuri::Extractor::Page} window — what every
+      # line-paged reader answers, so they all share the trailer the model
+      # learns to page by:
+      #
+      #   page = Pikuri::Extractor.extract_paged(StringIO.new(text), offset: 3, limit: 2)
+      #   Tool::Result.page(page).content
+      #   # =>      3	gamma
+      #   #         4	delta
+      #   #
+      #   #    (Showing lines 3-4 of 9. Use offset=5 to continue.)
+      #
+      # A +:pdf+ page words itself as one (+"Showing PDF lines"+, +"End of
+      # PDF"+), and an empty one answers the scanned-image hint over
+      # +empty_note+. An +offset+ past the end is an {.error}.
+      #
+      # @param page [Pikuri::Extractor::Page] the window to render.
+      # @param name [String] what the document is called in the end-of-document
+      #   trailer and the past-the-end error, e.g. +"file"+, +"attachment"+.
+      # @param numbered [Boolean] +cat -n+ prefix each line (+"%6d\t"+); pass
+      #   +false+ where nothing cites line numbers back, to save tokens.
+      # @param empty_note [String] the whole observation for an empty document.
+      # @return [Result] summary +"Read 214 lines"+ / +"Read 3 PDF lines"+ for a
+      #   rendered window.
+      def self.page(page, name: 'file', numbered: true, empty_note: "(Empty #{name})")
+        pdf = page.kind == :pdf
+        what = pdf ? 'PDF' : name
+        if page.lines.empty?
+          if page.total_lines.zero?
+            note = pdf ? '(PDF has no extractable text; likely scanned image content)' : empty_note
+            return new(content: note, summary: Tool.one_line(note))
+          end
+
+          return error("offset #{page.start_line} is beyond end of #{what} (#{page.total_lines} lines total)")
+        end
+
+        lines = pdf ? 'PDF lines' : 'lines'
+        last = page.start_line + page.lines.length - 1
+        body = if numbered
+                 page.lines.each_with_index.map { |line, i| format("%6d\t%s", i + page.start_line, line) }.join("\n")
+               else
+                 page.lines.join("\n")
+               end
+        trailer =
+          if page.byte_capped
+            "(Output capped at #{Extractor::PAGE_MAX_BYTES / 1024} KB. Showing #{lines} " \
+              "#{page.start_line}-#{last}. Use offset=#{last + 1} to continue.)"
+          elsif page.more
+            total = page.total_lines ? " of #{page.total_lines}" : ''
+            "(Showing #{lines} #{page.start_line}-#{last}#{total}. Use offset=#{last + 1} to continue.)"
+          else
+            "(End of #{what} - total #{page.total_lines} lines)"
+          end
+
+        new(content: "#{body}\n\n#{trailer}",
+            summary: "Read #{Tool.pluralize(page.lines.length, pdf ? 'PDF line' : 'line')}")
+      end
+
       # @param content [String] the text the model reads; for an attachment
       #   observation, the note beside the bytes.
       # @param summary [String] the display line; see the two rules above.

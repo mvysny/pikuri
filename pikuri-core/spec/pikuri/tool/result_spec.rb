@@ -38,6 +38,53 @@ RSpec.describe Pikuri::Tool::Result do
     end
   end
 
+  describe '.page' do
+    def page(lines, start_line: 1, total_lines: lines.length, more: false, byte_capped: false, kind: :text)
+      Pikuri::Extractor::Page.new(lines: lines, start_line: start_line, total_lines: total_lines,
+                                  more: more, byte_capped: byte_capped, kind: kind)
+    end
+
+    it 'renders a cat -n window with a continue trailer' do
+      text = %w[alpha beta gamma delta epsilon zeta eta theta iota].join("\n")
+      window = Pikuri::Extractor.extract_paged(StringIO.new(text), offset: 3, limit: 2)
+      result = described_class.page(window)
+
+      assert_equal "     3\tgamma\n     4\tdelta\n\n(Showing lines 3-4 of 9. Use offset=5 to continue.)",
+                   result.content
+      assert_equal 'Read 2 lines', result.summary
+    end
+
+    it 'names the document in the end trailer and in the past-the-end error' do
+      assert_includes described_class.page(page(%w[a b]), name: 'attachment').content,
+                      '(End of attachment - total 2 lines)'
+      assert_equal 'Error: offset 9 is beyond end of attachment (2 lines total)',
+                   described_class.page(page([], start_line: 9, total_lines: 2), name: 'attachment').content
+    end
+
+    it 'joins lines plainly when not numbered' do
+      assert_equal "a\nb\n\n(End of file - total 2 lines)", described_class.page(page(%w[a b]), numbered: false).content
+    end
+
+    it 'reports the byte cap when the total is unknown' do
+      result = described_class.page(page(%w[a b], total_lines: nil, more: true, byte_capped: true))
+
+      assert_includes result.content, '(Output capped at 50 KB. Showing lines 1-2. Use offset=3 to continue.)'
+    end
+
+    it 'answers the empty note for an empty document' do
+      assert_equal '(Empty file)', described_class.page(page([])).content
+      assert_equal '(nothing indexed)', described_class.page(page([]), empty_note: '(nothing indexed)').content
+    end
+
+    it 'words a PDF as one, and an empty PDF as likely scanned' do
+      result = described_class.page(page(['--- Page 1 ---', 'x'], kind: :pdf))
+
+      assert_includes result.content, '(End of PDF - total 2 lines)'
+      assert_equal 'Read 2 PDF lines', result.summary
+      assert_includes described_class.page(page([], kind: :pdf), empty_note: '(unused)').content, 'scanned image'
+    end
+  end
+
   describe 'validation' do
     it 'refuses content that is not a String' do
       err = assert_raises(ArgumentError) { described_class.new(content: 42, summary: 'x') }

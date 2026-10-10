@@ -31,11 +31,12 @@ module Pikuri
       #
       # Reads are line-windowed by {Pikuri::FileType.read_as_text_paged} — the
       # same windower and caps as {Pikuri::Workspace::Read}, returning a
-      # {Pikuri::Extractor::Page}, but with no +cat -n+ prefix (nothing edits
-      # these; the citation unit is the +source+, and dropping the prefix saves
-      # tokens). Extraction routes through the same {Pikuri::Extractor} registry
-      # the {Indexer} uses, so a read matches what was indexed exactly (modulo
-      # later edits), +"--- Page N ---"+ markers included. Images / binaries /
+      # {Pikuri::Extractor::Page} rendered by {Pikuri::Tool::Result.page}, but
+      # with no +cat -n+ prefix (nothing edits these; the citation unit is the
+      # +source+, and dropping the prefix saves tokens). Extraction routes
+      # through the same {Pikuri::Extractor} registry the {Indexer} uses, so a
+      # read matches what was indexed exactly (modulo later edits),
+      # +"--- Page N ---"+ markers included. Images / binaries /
       # vanished file / malformed PDF come back as +"Error: ..."+, not raises.
       #
       # Sharing: +P_shared_locked+, as {Search} — a locked {Backend} plus an
@@ -46,11 +47,6 @@ module Pikuri
         #   (number of lines returned per call). Aliases the shared
         #   {Pikuri::Extractor::PAGE_DEFAULT_LIMIT}.
         DEFAULT_LIMIT = Pikuri::Extractor::PAGE_DEFAULT_LIMIT
-
-        # @return [String] human-readable form of the shared byte cap
-        #   ({Pikuri::Extractor::PAGE_MAX_BYTES}) for the continuation
-        #   marker.
-        MAX_BYTES_LABEL = "#{Pikuri::Extractor::PAGE_MAX_BYTES / 1024} KB"
 
         # @return [String] the tool-name prefix the default tool set shares.
         DEFAULT_FAMILY = 'vectordb'
@@ -142,7 +138,8 @@ module Pikuri
             return Pikuri::Tool::Result.error("\"#{source}\" resolves outside the corpus root.")
           end
 
-          render(Pikuri::FileType.read_as_text_paged(resolved, offset: offset, limit: limit), source: source)
+          Pikuri::Tool::Result.page(Pikuri::FileType.read_as_text_paged(resolved, offset: offset, limit: limit),
+                                    name: 'document', numbered: false, empty_note: "(#{source} is empty)")
         rescue Errno::ENOENT
           Pikuri::Tool::Result.error("indexed document \"#{source}\" is no longer on disk; the index may be stale " \
                                      "(run #{family}_reindex to refresh).")
@@ -168,46 +165,6 @@ module Pikuri
           resolved.to_s == base || resolved.to_s.start_with?(base + File::SEPARATOR)
         end
         private_class_method :contained?
-
-        # Format a {Pikuri::Extractor::Page} as the observation: the lines
-        # joined plain (no +cat -n+ prefix), followed by a trailer keyed
-        # on the citation +source+ that tells the model whether to page
-        # on. PDF pages already carry their +"--- Page N ---"+ markers
-        # from the extractor.
-        #
-        # @param page [Pikuri::Extractor::Page]
-        # @param source [String] the citation, used in the empty /
-        #   end-of-document messages.
-        # @return [Pikuri::Tool::Result] the window (+"Read 214 lines"+), the
-        #   empty-document note, or {Pikuri::Tool::Result.error}
-        def self.render(page, source:)
-          if page.lines.empty?
-            if page.total_lines.zero?
-              note = "(#{source} is empty)"
-              return Pikuri::Tool::Result.new(content: note, summary: note)
-            end
-
-            return Pikuri::Tool::Result.error("offset #{page.start_line} is beyond end of document " \
-                                              "(#{page.total_lines} lines total).")
-          end
-
-          last = page.start_line + page.lines.length - 1
-          body = page.lines.join("\n")
-          trailer =
-            if page.byte_capped
-              "(Output capped at #{MAX_BYTES_LABEL}. Showing lines #{page.start_line}-#{last}. " \
-                "Use offset=#{last + 1} to continue.)"
-            elsif page.more
-              total = page.total_lines ? " of #{page.total_lines}" : ''
-              "(Showing lines #{page.start_line}-#{last}#{total}. Use offset=#{last + 1} to continue.)"
-            else
-              "(End of #{source} — #{page.total_lines} lines.)"
-            end
-
-          Pikuri::Tool::Result.new(content: "#{body}\n\n#{trailer}",
-                                   summary: "Read #{Pikuri::Tool.pluralize(page.lines.length, 'line')}")
-        end
-        private_class_method :render
       end
     end
   end

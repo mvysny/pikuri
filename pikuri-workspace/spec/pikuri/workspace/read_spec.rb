@@ -118,7 +118,7 @@ RSpec.describe Pikuri::Workspace::Read do
 
       result = described_class.read(workspace: workspace, path: 'bulky.txt', offset: 1, limit: 2000).to_s
 
-      assert_includes result, "Output capped at #{Pikuri::Workspace::Read::MAX_BYTES_LABEL}."
+      assert_includes result, 'Output capped at 50 KB.'
       assert_match(/Use offset=\d+ to continue\./, result)
     end
   end

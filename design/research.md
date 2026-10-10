@@ -613,7 +613,7 @@ describes. Pikuri's version is cheaper and fits a codebase meant to be read in a
 grok-build's is the only one of the two that cannot go stale. The portable lesson is narrower than
 the machinery: **a number that appears in a description should be interpolated from the constant
 that enforces it, not typed twice.** Pikuri already does this where the cap is a constant
-(`Read`'s `MAX_BYTES_LABEL` / `MAX_IMAGE_BYTES_LABEL`) and does not where it isn't (`web_search`'s
+(`Read`'s `MAX_IMAGE_BYTES_LABEL`, `Grep`'s `MAX_BYTES_LABEL`) and does not where it isn't (`web_search`'s
 "Defaults to 10; most providers cap this at 20" sits next to a hard-coded `max_results: 10`).
 Closing that gap is the whole portable half of grok-build's template machinery.
 

@@ -19,7 +19,9 @@ march on.
 
 ## [Unreleased]
 
+- Add `Pikuri::Tool::Result.page`, the one renderer of an `Extractor::Page` window that `read`, `fileindex_read` and `vectordb_read` now share, so all three page with the same trailer (`vectordb_read`'s end-of-document line now reads `(End of document - total N lines)`).
 - **Breaking:** pikuri-core now depends on ruby_llm `~> 2.1` (was `~> 1.16`), whose fix for the streaming error-parse crash retires `Pikuri::RubyLlmPatches`, and `:openai` chats stay on Chat Completions rather than ruby_llm 2's Responses default. Code touching ruby_llm directly follows its [upgrade guide](https://rubyllm.com/upgrading/) — e.g. `RubyLLM::Content` is removed and `with_params` is now `with_provider_options`; see `design/decisions.md` `D_keep_ruby_llm`.
+- Fix `fileindex_read` raising `NoMethodError` on indexed text larger than its 50 KB window; it now reports the byte cap and pages on like `read`.
 - Fix `bin/pikuri-wire-check` asking `/apply-template` and `/props` unauthenticated — it now sends `llm_api_key` from the examples config as a bearer token, so a `llama-server --api-key` no longer answers 401 and skips phase 2.
 - Fix `Agent.new` loading a model the host was about to switch away from — the `/props` probe now waits for the first `run_loop`, after any switch, so a llama.cpp router loads only the model actually used; until then `Agent#context_window_cap` holds only a stated cap. See `design/decisions.md` `D_deferred_cap_probe`.
 - Fix `Agent::ContextWindowDetector` sending the `/props` probe unauthenticated — it now carries the transport's `api_key` (falling back to the global config's, like the base URL) as a bearer token, so a `llama-server --api-key` no longer answers 401 and silently costs both the context cap and the `ServerPermits` slot count; a 401 or 403 now says so.

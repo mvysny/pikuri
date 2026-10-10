@@ -64,6 +64,17 @@ RSpec.describe Pikuri::Os::FileindexRead do
         restore_backend_read(original)
       end
     end
+
+    it 'reports the byte cap on indexed text larger than one window' do
+      original = stub_backend_read { |_path| "#{'x' * 1000}\n" * 200 }
+      begin
+        out = described_class.read(path: '/x', backend: backend).to_s
+        assert_includes out, 'Output capped at 50 KB.'
+        assert_match(/Use offset=\d+ to continue\./, out)
+      ensure
+        restore_backend_read(original)
+      end
+    end
   end
 
   if LOCALSEARCH_AVAILABLE

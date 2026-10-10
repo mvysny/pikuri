@@ -110,7 +110,7 @@ describe Pikuri::VectorDb::Tools::Read do
       result = read(source: 'doc.md')
       assert_includes result, 'alpha'
       assert_includes result, 'gamma'
-      assert_match(/End of doc\.md — 3 lines\./, result)
+      assert_includes result, '(End of document - total 3 lines)'
     end
 
     it 'does NOT prefix lines with cat -n numbers' do

@@ -22,8 +22,9 @@ module Pikuri
     # == Truncation rules
     #
     # Line/byte windowing is delegated to {Pikuri::FileType.read_as_text_paged},
-    # which returns a {Pikuri::Extractor::Page} this tool renders (same windower
-    # backs +VectorDb::Tools::Read+). Two limits, first to fire wins: a line
+    # which returns a {Pikuri::Extractor::Page} this tool renders through
+    # {Pikuri::Tool::Result.page} (the one paging trailer every reader shares).
+    # Two limits, first to fire wins: a line
     # limit ({DEFAULT_LIMIT}, overridable via +limit+) and a byte cap
     # ({MAX_BYTES}, not a parameter, bypassable by paging via +offset+). Lines
     # over {MAX_LINE_LENGTH} are truncated with {LINE_TRUNCATION_MARKER}. (The
@@ -83,9 +84,6 @@ module Pikuri
       #   the joining newline; rendered output is larger due to the +"%6d\t"+
       #   prefix).
       MAX_BYTES = Pikuri::Extractor::PAGE_MAX_BYTES
-
-      # @return [String] human-readable {MAX_BYTES} for the continuation marker.
-      MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
       # @return [Integer] hard size cap on inline-attached images (Anthropic's
       #   per-image limit; same order on OpenAI/Gemini). Above it we refuse
@@ -187,7 +185,7 @@ module Pikuri
         # the exact-bytes guard is Edit's +old_string+ match; the ledger only
         # attests "engaged via read".
         workspace.mark_read(resolved)
-        render_page(page)
+        Tool::Result.page(page)
       rescue Filesystem::Error => e
         Tool::Result.error(e.message)
       rescue Errno::EACCES => e
@@ -233,61 +231,6 @@ module Pikuri
         "#{base} It cannot be listed: #{e.message}"
       end
       private_class_method :directory_refusal
-
-      # Render a {Pikuri::Extractor::Page} as the cat-n observation (6-col line
-      # number, tab, truncated content) plus a trailer telling the model whether
-      # to page on. PDF pages carry +"--- Page N ---"+ markers from the
-      # extractor; +kind+ only changes trailer wording.
-      #
-      # @param page [Pikuri::Extractor::Page]
-      # @return [Tool::Result] the observation, carrying +"Read N lines"+ where
-      #   a page was rendered; the empty-file note or
-      #   {Pikuri::Tool::Result.error} otherwise.
-      def self.render_page(page)
-        if page.lines.empty?
-          if page.total_lines.zero?
-            note = empty_message(page)
-            return Tool::Result.new(content: note, summary: Pikuri::Tool.one_line(note))
-          end
-
-          return Tool::Result.error("offset #{page.start_line} is beyond end of file " \
-                                    "(#{page.total_lines} lines total)")
-        end
-
-        noun = page.kind == :pdf ? 'PDF ' : ''
-        last = page.start_line + page.lines.length - 1
-        body = page.lines.each_with_index.map { |line, i| format("%6d\t%s", i + page.start_line, line) }.join("\n")
-
-        trailer =
-          if page.byte_capped
-            "(Output capped at #{MAX_BYTES_LABEL}. Showing #{noun}lines #{page.start_line}-#{last}. " \
-              "Use offset=#{last + 1} to continue.)"
-          elsif page.more
-            total = page.total_lines ? " of #{page.total_lines}" : ''
-            "(Showing #{noun}lines #{page.start_line}-#{last}#{total}. " \
-              "Use offset=#{last + 1} to continue.)"
-          else
-            "(End of #{page.kind == :pdf ? 'PDF' : 'file'} - total #{page.total_lines} lines)"
-          end
-
-        Tool::Result.new(content: "#{body}\n\n#{trailer}",
-                         summary: "Read #{page.lines.length} #{noun}lines")
-      end
-      private_class_method :render_page
-
-      # Empty-document message by kind: a scanned/text-free PDF gets an
-      # LLM-actionable hint rather than the plain "(Empty file)".
-      #
-      # @param page [Pikuri::Extractor::Page]
-      # @return [String]
-      def self.empty_message(page)
-        if page.kind == :pdf
-          '(PDF has no extractable text; likely scanned image content)'
-        else
-          '(Empty file)'
-        end
-      end
-      private_class_method :empty_message
 
       # Build a multimodal observation: a metadata note ("Read image: …") plus
       # the file attached, both arriving in the same +tool_result+ turn. Over
