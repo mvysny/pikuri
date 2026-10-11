@@ -364,6 +364,17 @@ What stays on the command line is what changes *per run*: the prompt
 itself, and operational toggles like `--no-sandbox` (the coding-agent chapter) — a
 security switch you'd never want silently persisted in a file.
 
+Every chat script also takes `--system-prompt FILE`, which swaps the
+script's own system prompt for the contents of `FILE` — say, a
+`pirate.txt` holding *"You are a pirate. Answer every question in
+pirate speak."* Two things still get appended after yours: the facts
+the script knows about this run (today's date, and for `pikuri-code`
+the project root, your `AGENTS.md` / `CLAUDE.md` and where scratch
+space lives), and the sections each extension adds — the Thunderbird
+mail rules, a list of available skills, and so on. Your prompt changes
+what the agent is told, never which tools it holds: the trifecta map
+the script prints is the same with or without it.
+
 ## Search providers and their privacy trade-offs
 
 `web_search` is a cascade across whichever providers you selected. The

@@ -47,6 +47,7 @@ end
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model  = examples_config['llm_model']  || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
 
+custom_prompt = nil
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-os [options] [initial message...]'
   opts.separator ''
@@ -61,6 +62,10 @@ parser = OptionParser.new do |opts|
   opts.on('--yolo', 'Combines --no-sandbox + --no-confirm. Use only in a throwaway environment.') do
     sandbox_enabled = false
     confirm_enabled = false
+  end
+  opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
+                                  '(extensions still append their own sections).') do |v|
+    custom_prompt = File.read(v).rstrip
   end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -129,7 +134,7 @@ sandbox = if sandbox_enabled
 prompt_names = [:'os-assistant']
 prompt_names << :'os-network-online' if internet_enabled
 prompt_names << :'agent-loop'
-system_prompt = Pikuri.prompts(*prompt_names)
+system_prompt = custom_prompt || Pikuri.prompts(*prompt_names)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new

@@ -52,10 +52,15 @@ server = examples_config['llm_server'] || 'http://localhost:8080'
 model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
 streaming = false
 
+custom_prompt = nil
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-openlibrary [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
+  opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
+                                  '(extensions still append their own sections).') do |v|
+    custom_prompt = File.read(v).rstrip
+  end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -72,7 +77,7 @@ end
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
-system_prompt = Pikuri.prompts(:'pikuri-openlibrary', :'agent-loop')
+system_prompt = custom_prompt || Pikuri.prompts(:'pikuri-openlibrary', :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 # The one hardcoded MCP server. The argv is the exact `docker run`

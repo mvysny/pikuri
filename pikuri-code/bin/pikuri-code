@@ -52,6 +52,7 @@ end
 
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+custom_prompt = nil
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-code [options] [initial message...]'
   opts.separator ''
@@ -74,6 +75,10 @@ parser = OptionParser.new do |opts|
     sandbox_enabled = false
     confirm_enabled = false
     yolo = true
+  end
+  opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
+                                  '(extensions still append their own sections).') do |v|
+    custom_prompt = File.read(v).rstrip
   end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -353,7 +358,7 @@ sandbox = if sandbox_enabled
 # rediscover, and get wrong" — and the base prompt's guardrails
 # project-shaped rather than safety theater. The same review calls the
 # standing prefix too heavy: when it gets trimmed, these two go last.
-system_prompt = Pikuri.prompts(:'coding-system-prompt', :'agent-loop')
+system_prompt = custom_prompt || Pikuri.prompts(:'coding-system-prompt', :'agent-loop')
 context_paths = [
   Pathname.new(Dir.home).join('.claude', 'CLAUDE.md'),
   ['AGENTS.md', 'CLAUDE.md'].map { |f| filesystem.project_root.join(f) }.find(&:file?)

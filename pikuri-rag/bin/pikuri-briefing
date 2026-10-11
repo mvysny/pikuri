@@ -97,6 +97,7 @@ watch           = true
 use_qdrant      = false
 with_mail       = false
 
+custom_prompt = nil
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-briefing [options] [initial message...]'
   opts.separator ''
@@ -112,6 +113,10 @@ parser = OptionParser.new do |opts|
           'Persist the index in a self-managed Qdrant container (requires docker) ' \
           'plus a keyword index under the pikuri cache, so a corpus indexed once ' \
           'stays indexed across runs') { use_qdrant = true }
+  opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
+                                  '(extensions still append their own sections).') do |v|
+    custom_prompt = File.read(v).rstrip
+  end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -161,9 +166,9 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 # surface's own search-and-ground discipline arrives with the extension,
 # not from here; the fragment owns only what no gem can know — that one
 # source is the user's own writing and the other is not.)
-system_prompt = Pikuri.prompts(*[:'pikuri-briefing',
-                                 (:'pikuri-briefing-mail' if with_mail),
-                                 :'agent-loop'].compact)
+system_prompt = custom_prompt || Pikuri.prompts(*[:'pikuri-briefing',
+                                                  (:'pikuri-briefing-mail' if with_mail),
+                                                  :'agent-loop'].compact)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nIndexed notes folder: #{source}"
 

@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `--system-prompt FILE` to every chat script in `bin/`, replacing the script's bundled system prompt while the run's facts and every extension's `system_prompt_snippets` are still appended; see `book/chat.md`.
 - Add `thunderbird_mail_attachment_read`, which reads one attachment's text from Thunderbird's offline mbox store, never over the network, parsed with the new `mail` gem dependency; see `design/decisions.md` `D_thunderbird_attachment_bytes`.
 - **Breaking:** `Pikuri::Thunderbird::Gloda::Mail#read` returns `attachments:` (`Gloda::Attachment`s, which `thunderbird_mail_read` now lists numbered) and `folder_uris:` in place of `attachment_names:`. A caller reading `attachment_names` maps `attachments` to their `name`.
 - Add `Pikuri::Tool::Result.page`, the one renderer of an `Extractor::Page` window that `read`, `fileindex_read` and `vectordb_read` now share, so all three page with the same trailer (`vectordb_read`'s end-of-document line now reads `(End of document - total N lines)`).

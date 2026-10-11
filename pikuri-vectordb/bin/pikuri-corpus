@@ -70,6 +70,7 @@ use_chroma      = false
 corpus_private  = false
 corpus_trusted  = false
 
+custom_prompt = nil
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-corpus [options] [initial message...]'
   opts.separator ''
@@ -81,6 +82,10 @@ parser = OptionParser.new do |opts|
   opts.on('--trusted', 'Declare every source in the corpus as your own, reviewed in the form the model reads it (drops the untrusted leg) — read Extension#trusted? before using this on your own folder') { corpus_trusted = true }
   opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires docker) instead of in-RAM InMemory — the recommended persistent backend') { use_qdrant = true }
   opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires docker) instead of in-RAM InMemory') { use_chroma = true }
+  opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
+                                  '(extensions still append their own sections).') do |v|
+    custom_prompt = File.read(v).rstrip
+  end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -135,7 +140,7 @@ Pikuri::Extractors::PDF.register
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
-system_prompt = Pikuri.prompts(:'pikuri-corpus', :'agent-loop')
+system_prompt = custom_prompt || Pikuri.prompts(:'pikuri-corpus', :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nIndexed corpus root: #{source}"
 

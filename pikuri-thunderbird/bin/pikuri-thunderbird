@@ -39,12 +39,17 @@ examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examp
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model  = examples_config['llm_model']  || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
 
+custom_prompt = nil
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-thunderbird [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
   opts.on('--profile-dir DIR', 'Thunderbird profile directory (overrides auto-discovery).') do |d|
     profile_dir = d
+  end
+  opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
+                                  '(extensions still append their own sections).') do |v|
+    custom_prompt = File.read(v).rstrip
   end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -63,7 +68,7 @@ end
 # Thin identity base only — the mail/calendar usage guidance, untrusted-content
 # policy, and draft-hand-off stance are contributed by Thunderbird::Extension's
 # system_prompt_snippets (in lockstep with the allow_ flags wired below).
-system_prompt = Pikuri.prompt(:thunderbird)
+system_prompt = custom_prompt || Pikuri.prompt(:thunderbird)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
