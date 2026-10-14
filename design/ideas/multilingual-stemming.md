@@ -60,8 +60,11 @@ This file is that deferral picked up, with Finnish as the first language.
   would still catch *Nokian* ↔ *Nokia*, but it would add a second native
   dependency for the first language. Revisit with a real corpus.
 - **Compound parts are split by `STRUCTURE`, not `WORDBASES`**, as an option of
-  the Voikko adapter, not of the seam. Indexing the parts lets "kone" find
-  "tietokone", which is a large part of Finnish recall.
+  the Voikko adapter, not of the seam, **on by default**. Indexing the parts
+  lets "kone" find "tietokone", which is a large part of Finnish recall, and
+  recall is the point. The cost: longer bm25 document lengths, and a
+  `rag_find` ("every note mentioning kone") broader than the literal word.
+  Measure the ranking cost on a real corpus once it ships.
   - `WORDBASES` gives each part's *root*, so derivations go back to verbs:
     *yritys* → *yrittää* + `+ys`. It also drops parts:
     *versionhallintajärjestelmää* lists *versio*, *hallita*, *järjestelmä*
@@ -166,13 +169,6 @@ stay consistent.
 
 **Wiring: `Rag::Extension.new(stemmer:)`** passes the stemmer on to
 `Backend::Fts5.new` and to `Tools::Search` / `Tools::Find`.
-
-## Open questions
-
-- **`Q_compounds_default`:** is the compound split on by default? Indexing the
-  parts inflates bm25 document lengths and makes `rag_find` ("every note
-  mentioning kone") broader than the literal word. Lean **on**, since recall is
-  the point for Finnish; measure the ranking cost on a real corpus first.
 
 ## Alternative kept open: a stemming container
 
