@@ -76,6 +76,16 @@ This file is that deferral picked up, with Finnish as the first language.
     + *kone*. That costs one extra analysis per part.
   - A bound prefix that does not analyse alone (*esi* in *esikäsittelin*)
     falls back to its surface form, like any unknown word.
+- **A stemmer change raises in v1 and rebuilds in v2.** An index built with
+  one stemmer and queried with another quietly returns nothing. So the index
+  stores `#id` in a one-row meta table, with a schema version, since the
+  `stems` column already invalidates every existing index.
+  - v1: on a mismatch, raise, since errors are loud. The message names
+    `rag_reindex` and both ids.
+  - v2: rebuild automatically.
+  - A `voikko-fi` upgrade is not a mismatch: it changes a few words' analyses,
+    not the whole index, and libvoikko exposes no dictionary version to put in
+    the id anyway.
 
 ## Resolved by the gem's release
 
@@ -126,7 +136,7 @@ A duck, so a lambda or a Voikko adapter both qualify:
   their union, which is the "run every stemmer, index the union" shape
   `D_rag_gem` sketched.
 - `#id` → `String`: names the stemmer and its configuration, e.g.
-  `"voikko-fi+identity"`. It is written into the index, see `Q_stemmer_change`.
+  `"voikko-fi+identity"`. It is written into the index, so a stemmer change is caught (decided above).
 
 The default is the identity stemmer (`[word]`). With porter kept in the
 tokenizer that is exactly today's behaviour.
@@ -159,14 +169,6 @@ stay consistent.
 
 ## Open questions
 
-- **`Q_stemmer_change`:** an index built with one stemmer and queried with
-  another quietly returns nothing. Store `#id` (and a schema version, since the
-  `stems` column already invalidates every existing index) in a one-row meta
-  table. On a mismatch, should it raise (errors are loud) or rebuild
-  automatically? Lean **raise**, with a message naming `rag_reindex` and the
-  two ids. A `voikko-fi` upgrade is not a mismatch: it changes a few words'
-  analyses, not the whole index, and libvoikko exposes no dictionary version
-  to put in the id anyway.
 - **`Q_compounds_default`:** is the compound split on by default? Indexing the
   parts inflates bm25 document lengths and makes `rag_find` ("every note
   mentioning kone") broader than the literal word. Lean **on**, since recall is
