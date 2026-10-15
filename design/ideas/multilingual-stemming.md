@@ -162,7 +162,7 @@ A duck with three methods:
   indexed under, a superset of `#stems`. For Voikko that adds the compound
   parts; a stemmer that does not split answers `#stems`.
 - `#id` → `String`: names the stemmer and its configuration, e.g.
-  `"voikko-fi+identity"`. It is written into the index, so a stemmer change is caught (decided above).
+  `"voikko-fi+compounds"`. It is written into the index, so a stemmer change is caught (decided above).
 
 The default is the identity stemmer (`[word]` from both). With porter kept in
 the tokenizer that is exactly today's behaviour.
