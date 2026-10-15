@@ -1,33 +1,34 @@
 # frozen_string_literal: true
 
 require 'spec_helper'
+require 'voikko'
 
 describe Pikuri::Rag::Stemmer::Voikko do
-  # Stands in for a +::Voikko+ handle, so the suite needs no libvoikko:
-  # +analyses+ maps a word to its readings, each [base_form, [morpheme, ...]].
-  def fake_voikko(analyses)
-    analysis = Data.define(:base_form, :morphemes)
-    morpheme = Data.define(:text)
+  # Stands in for a +::Voikko+ handle, so the suite needs no libvoikko, while
+  # the readings are the gem's own +Voikko::Analysis+ values: +requiring+ the
+  # gem binds no native code, and +#morphemes+ is its real decoding.
+  # +readings+ maps a word to libvoikko's attributes, one hash per reading.
+  def fake_voikko(readings)
     Object.new.tap do |voikko|
       voikko.define_singleton_method(:language) { 'fi' }
       voikko.define_singleton_method(:analyze) do |word|
-        analyses.fetch(word, []).map do |base_form, parts|
-          analysis.new(base_form, parts&.map { |text| morpheme.new(text) })
-        end
+        readings.fetch(word, []).map { |attributes| ::Voikko::Analysis.new(word, attributes) }
       end
     end
   end
 
   let(:voikko) do
     fake_voikko(
-      'kadun' => [['katu', ['kadun']], ['katua', ['kadun']]],
-      'nokia' => [['noki', ['nokia']], ['Nokia', ['nokia']]],
-      'tietokoneella' => [['tietokone', %w[tieto koneella]]],
-      'tieto' => [['tieto', ['tieto']]],
-      'koneella' => [['kone', ['koneella']]],
-      'wikipediassa' => [['Wikipedia', %w[wiki pediassa]]],
-      'wiki' => [['wiki', ['wiki']]],
-      'katu' => [['katu', nil]]
+      'kadun' => [{ 'BASEFORM' => 'katu', 'STRUCTURE' => '=ppppp' },
+                  { 'BASEFORM' => 'katua', 'STRUCTURE' => '=ppppp' }],
+      'nokia' => [{ 'BASEFORM' => 'noki', 'STRUCTURE' => '=ppppp' },
+                  { 'BASEFORM' => 'Nokia', 'STRUCTURE' => '=ipppp' }],
+      'tietokoneella' => [{ 'BASEFORM' => 'tietokone', 'STRUCTURE' => '=ppppp=pppppppp' }],
+      'tieto' => [{ 'BASEFORM' => 'tieto', 'STRUCTURE' => '=ppppp' }],
+      'koneella' => [{ 'BASEFORM' => 'kone', 'STRUCTURE' => '=pppppppp' }],
+      'wikipediassa' => [{ 'BASEFORM' => 'Wikipedia', 'STRUCTURE' => '=ippp=pppppppp' }],
+      'wiki' => [{ 'BASEFORM' => 'wiki', 'STRUCTURE' => '=pppp' }],
+      'katu' => [{ 'BASEFORM' => 'katu' }]
     )
   end
   let(:stemmer) { described_class.new(voikko) }
@@ -80,21 +81,13 @@ describe Pikuri::Rag::Stemmer::Voikko do
     end
   end
 
-  # The fake above is only as good as its likeness to the gem, so check the
-  # same shapes against the real libvoikko where one is installed.
+  # The readings above are hand-written, so check the same shapes against the
+  # real libvoikko where one is installed.
   describe 'against libvoikko' do
     let(:stemmer) do
-      begin
-        require 'voikko'
-      rescue LoadError => e
-        skip "no libvoikko here: #{e.message.lines.first}"
-      end
-      begin
-        handle = ::Voikko.new(language: 'fi')
-      rescue ::Voikko::Error => e
-        skip "no voikko-fi here: #{e.message}"
-      end
-      described_class.new(handle)
+      described_class.new(::Voikko.new(language: 'fi'))
+    rescue LoadError, ::Voikko::Error => e
+      skip "no libvoikko + voikko-fi here: #{e.message.lines.first}"
     end
 
     it 'stems an inflected word and a lower-cased proper noun' do

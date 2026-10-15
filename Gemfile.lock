@@ -1,6 +1,6 @@
 GIT
   remote: https://github.com/mvysny/ruby-voikko.git
-  revision: 90bf2807963f59aa87f2dc8237ddad0f148a2be5
+  revision: fae2bf53b1bdc5f88e570468067b1c7cabb86574
   branch: master
   specs:
     voikko (0.1.0)
