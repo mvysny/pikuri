@@ -65,6 +65,11 @@ This file is that deferral picked up, with Finnish as the first language.
   recall is the point. The cost: longer bm25 document lengths, and a
   `rag_find` ("every note mentioning kone") broader than the literal word.
   Measure the ranking cost on a real corpus once it ships.
+  - **The index splits; the query does not.** The index holds the whole
+    lemma beside its parts, so a query for *kone* still finds *tietokone*.
+    Splitting the query too would only lose precision: `rag_find tietokone`
+    would turn into `("tietokone" OR "tieto" OR "kone")` and return every note
+    mentioning *kone*. This is why the seam has two methods (below).
   - `WORDBASES` gives each part's *root*, so derivations go back to verbs:
     *yritys* → *yrittää* + `+ys`. It also drops parts:
     *versionhallintajärjestelmää* lists *versio*, *hallita*, *järjestelmä*
@@ -85,13 +90,22 @@ This file is that deferral picked up, with Finnish as the first language.
     `base_forms` on each piece stays the adapter's job.
   - A bound prefix that does not analyse alone (*esi* in *esikäsittelin*)
     falls back to its surface form, like any unknown word.
-- **A stemmer change raises in v1 and rebuilds in v2.** An index built with
-  one stemmer and queried with another quietly returns nothing. So the index
+- **A stemmer change rebuilds the keyword index.** An index built with one
+  stemmer and queried with another quietly returns nothing. So the index
   stores `#id` in a one-row meta table, with a schema version, since the
-  `stems` column already invalidates every existing index.
-  - v1: on a mismatch, raise, since errors are loud. The message names
-    `rag_reindex` and both ids.
-  - v2: rebuild automatically.
+  `stems` column already invalidates every existing index. A missing meta
+  table counts as a mismatch.
+  - On a mismatch, `Fts5.new` drops and recreates its table, and logs both
+    ids. `Hybrid`'s "indexed means both stores hold it" rule does the rest:
+    `#count` answers 0 and `#sources_with_hashes` nothing, so
+    `index_if_empty!` or the Watcher's boot sweep refills both stores. A host
+    running neither gets an empty `rag_find` until `rag_reindex`, as with a
+    fresh `:memory:` index today.
+  - Raising was rejected: `Rag::Extension.new` opens the store, so the raise
+    would stop the host booting, and the `rag_reindex` it named would never
+    be reachable.
+  - The cost is re-embedding the whole corpus once per stemmer change, since
+    a refill goes through both stores.
   - A `voikko-fi` upgrade is not a mismatch: it changes a few words' analyses,
     not the whole index, and libvoikko exposes no dictionary version to put in
     the id anyway.
@@ -137,18 +151,27 @@ percentages as rough. Versions: `voikko` 0.1.0, libvoikko 4.3.3, voikko-fi
 
 ## The seam
 
-A duck, so a lambda or a Voikko adapter both qualify:
+A duck with three methods:
 
-- `#stems(word)` → `Array<String>`: every form to index under, lower-cased,
-  never empty (an unknown word answers itself). Several forms is normal: Voikko
-  returns one analysis per reading of an ambiguous word, and the index takes
-  their union, which is the "run every stemmer, index the union" shape
-  `D_rag_gem` sketched.
+- `#stems(word)` → `Array<String>`: the forms a *query* word searches for,
+  lower-cased, never empty (an unknown word answers itself). Several forms is
+  normal: Voikko returns one analysis per reading of an ambiguous word, and
+  the query ORs their union, which is the "run every stemmer, index the
+  union" shape `D_rag_gem` sketched.
+- `#index_stems(word)` → `Array<String>`: the forms a *document* word is
+  indexed under, a superset of `#stems`. For Voikko that adds the compound
+  parts; a stemmer that does not split answers `#stems`.
 - `#id` → `String`: names the stemmer and its configuration, e.g.
   `"voikko-fi+identity"`. It is written into the index, so a stemmer change is caught (decided above).
 
-The default is the identity stemmer (`[word]`). With porter kept in the
-tokenizer that is exactly today's behaviour.
+The default is the identity stemmer (`[word]` from both). With porter kept in
+the tokenizer that is exactly today's behaviour.
+
+Spiked on 2026-10-15 against libvoikko with the gem's master: the gem's API
+covers the adapter as it is, with no change wanted. *tietokoneella* →
+*tietokone* + *tieto* + *kone*; lower-cased proper nouns still analyse
+(*helsingissä* → *Helsinki*); `Morpheme`'s hyphen fields go unused, because
+`Query.tokenize` already splits *linja-autossa*.
 
 ## Where it plugs in
 
@@ -159,7 +182,7 @@ stay consistent.
 
 **Index side: `Fts5#upsert`.**
 - Add a `stems` column: the chunk's tokens (via `Query.tokenize`, so index and
-  query split words the same way), each run through `#stems`, joined by
+  query split words the same way), each run through `#index_stems`, joined by
   spaces.
 - `text` becomes `UNINDEXED` payload, still what a hit returns to the model.
 - Cost: the stems column is stored beside the text, roughly doubling the FTS
