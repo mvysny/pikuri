@@ -51,7 +51,7 @@ This file is that deferral picked up, with Finnish as the first language.
   `bin/` script. It has no novel threat model, so it is not a new gem either.
   - `pikuri-rag` neither requires nor depends on `voikko`; only the host does.
   - Zeitwerk eager-loading never touches the native library.
-  - The adapter only calls `#analyze` and reads `#base_form` / `#structure`,
+  - The adapter only calls `#analyze` and reads `#base_form` / `#morphemes`,
     so its specs use a fake handle and CI needs no libvoikko.
 - **An unknown word answers its surface form only**, with no Snowball stem as
   well. Snowball is erratic on exactly these words: *nokian* / *nokialla* →
@@ -77,9 +77,12 @@ This file is that deferral picked up, with Finnish as the first language.
     *versionhallintajärjestelmää* → *versio* + *hallinta* + *järjestelmä*;
     *kahdeksankymmentä* → *kahdeksan* + *kymmenen*; *tietokoneella* → *tieto*
     + *kone*. That costs one extra analysis per part.
-  - The cutting itself is requested from the gem
-    ([ruby-voikko#1](https://github.com/mvysny/ruby-voikko/issues/1)), since
-    it decodes libvoikko's own format; until it ships, the adapter cuts.
+  - The gem does the cutting
+    ([ruby-voikko#1](https://github.com/mvysny/ruby-voikko/issues/1), on its
+    master, unreleased past 0.1.0, which the root `Gemfile` tracks):
+    `Analysis#morphemes` → `Array<Voikko::Morpheme>` (`text` without its
+    hyphens, `standard_case`), or `nil` with no `STRUCTURE`. It only cuts;
+    `base_forms` on each piece stays the adapter's job.
   - A bound prefix that does not analyse alone (*esi* in *esikäsittelin*)
     falls back to its surface form, like any unknown word.
 - **A stemmer change raises in v1 and rebuilds in v2.** An index built with
