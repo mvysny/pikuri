@@ -45,7 +45,9 @@ module Pikuri
   # targeting a specific sub-agent's replies. Per-sub-agent scripting is a
   # future upgrade (dispatch by model id / distinct fake +api_base+).
   # Tool-call *streaming* (fragmented +tool_calls+ deltas) is not modelled;
-  # {Script#stream} streams text only.
+  # {Script#stream} streams text only. Only the LLM is faked: MCP servers are
+  # not, so a fake-backed spec leaves the MCP registry empty, or an agent
+  # wiring +Pikuri::Mcp+ spawns the real servers it configures.
   module Testing
     # Build a fake transport from a scripted conversation. Pass a block that
     # calls {Script} verbs in the order the model should "reply"; each verb
