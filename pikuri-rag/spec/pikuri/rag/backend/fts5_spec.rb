@@ -151,9 +151,106 @@ describe Pikuri::Rag::Backend::Fts5 do
     end
   end
 
+  describe 'stemming' do
+    # Index side splits the compound, query side does not — the shape
+    # Stemmer::Voikko answers.
+    let(:stemmer) do
+      Object.new.tap do |s|
+        s.define_singleton_method(:id) { 'test' }
+        s.define_singleton_method(:stems) { |w| { 'kadulla' => ['katu'] }.fetch(w, [w]) }
+        s.define_singleton_method(:index_stems) do |w|
+          { 'kadulla' => ['katu'], 'tietokoneella' => %w[tietokone tieto kone] }.fetch(w, [w])
+        end
+      end
+    end
+    let(:fts) { Pikuri::Rag::Backend::Fts5.new(stemmer: stemmer) }
+
+    before do
+      fts.upsert(chunks: [chunk('fi.md:0', 'fi.md', 'Tietokoneella kadulla.')])
+    end
+
+    it 'indexes the index stems, and only them' do
+      assert_equal [['fi.md', 1]], fts.find(terms: ['"katu"'])
+      assert_equal [['fi.md', 1]], fts.find(terms: ['"kone"'])
+      assert_equal [], fts.find(terms: ['"kadulla"'])
+    end
+
+    it 'still answers the original text' do
+      assert_equal 'Tietokoneella kadulla.', fts.keyword_query(match: '"katu"', top_k: 1).first.chunk.text
+    end
+
+    it 'exposes the stemmer queries must use' do
+      assert_same stemmer, fts.stemmer
+    end
+  end
+
   describe 'the store' do
     it 'defaults to an in-process index' do
       assert_equal ':memory:', fts.store
+    end
+
+    describe 'built with another stemmer or schema' do
+      def stemmer(id)
+        Object.new.tap do |s|
+          s.define_singleton_method(:id) { id }
+          s.define_singleton_method(:index_stems) { |w| [w] }
+        end
+      end
+
+      around do |example|
+        Dir.mktmpdir do |dir|
+          @path = File.join(dir, 'fts.sqlite3')
+          @log = StringIO.new
+          original_io = Pikuri.log_io
+          Pikuri.log_io = @log
+          example.run
+        ensure
+          Pikuri.log_io = original_io
+        end
+      end
+
+      def reopen(id)
+        fts = Pikuri::Rag::Backend::Fts5.new(store: @path, stemmer: stemmer(id))
+        yield fts
+      ensure
+        fts&.close
+      end
+
+      it 'keeps an index opened with the same stemmer' do
+        reopen('a') { |f| f.upsert(chunks: [chunk('acme.md:0', 'acme.md', 'Acme pricing.')]) }
+        reopen('a') { |f| assert_equal 1, f.count }
+        assert_empty @log.string
+      end
+
+      # Empty is Hybrid's cue to refill both stores; a stale index would
+      # instead quietly answer nothing for every stemmed query.
+      it 'empties an index built with another stemmer, and says so' do
+        reopen('a') { |f| f.upsert(chunks: [chunk('acme.md:0', 'acme.md', 'Acme pricing.')]) }
+        reopen('b') do |f|
+          assert_equal 0, f.count
+          f.upsert(chunks: [chunk('acme.md:0', 'acme.md', 'Acme pricing.')])
+        end
+        reopen('b') { |f| assert_equal 1, f.count }
+        assert_includes @log.string, 'stemmer a, opened with schema 2, stemmer b'
+      end
+
+      it 'empties an index from before the schema was versioned' do
+        db = SQLite3::Database.new(@path)
+        db.execute(<<~SQL)
+          CREATE VIRTUAL TABLE chunks USING fts5(
+            id UNINDEXED, source UNINDEXED, hash UNINDEXED, text, tokenize='porter unicode61')
+        SQL
+        db.execute("INSERT INTO chunks VALUES ('acme.md:0', 'acme.md', 'h1', 'Acme pricing.')")
+        db.close
+
+        reopen('a') { |f| assert_equal 0, f.count }
+        assert_includes @log.string, 'built with an unversioned schema'
+      end
+
+      it 'logs nothing for a brand-new index' do
+        reopen('a') { |f| assert_equal 0, f.count }
+        assert_empty @log.string
+      end
     end
 
     it 'reloads a file-backed index without re-indexing' do

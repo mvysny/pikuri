@@ -35,6 +35,20 @@ module Pikuri
       #   degraded search, it is a different question — which is exactly why
       #   this needs a vector store beside it rather than instead of it.
       #
+      # == Stemming
+      #
+      # Words are stemmed in Ruby by a {Pikuri::Rag::Stemmer}, before FTS5
+      # sees them: each chunk is indexed under its words' +#index_stems+, and
+      # a {Pikuri::Rag::Query} built with the same stemmer searches their
+      # +#stems+. {#stemmer} is that one stemmer, so the tools ask the backend
+      # for it rather than being handed a second, possibly different one.
+      #
+      # An index records the stemmer's +#id+ and {SCHEMA_VERSION}. Opened with
+      # any other, or built before either was recorded, it drops its table and
+      # starts empty, which is the cue {Hybrid} needs to refill both stores
+      # (its "Indexed means both stores hold it"): an index built by one
+      # stemmer and queried by another would quietly find nothing.
+      #
       # == Thread-safety
       #
       # Thread-safe. A +sqlite3+ connection is not safe for concurrent use, and
@@ -42,23 +56,32 @@ module Pikuri
       # every statement runs under one reentrant +Monitor+ — the posture
       # {Pikuri::VectorDb::Backend::InMemory} takes, for the same reason.
       class Fts5
+        LOGGER = Pikuri.logger_for('Rag::Backend::Fts5')
+
         # @return [String] +store:+ value for an index that lives only as long
         #   as the process.
         MEMORY_STORE = ':memory:'
 
-        # The table. +text+ is the only indexed column; the other three ride
-        # along as +UNINDEXED+ payload, so a hit rebuilds its
-        # {Pikuri::VectorDb::Chunk} without a second lookup and a word in a
-        # filename never scores as a word in the document.
+        # @return [Integer] the table layout's version, recorded beside the
+        #   stemmer id; bump it whenever {SCHEMA} changes, so an old index
+        #   rebuilds instead of failing.
+        SCHEMA_VERSION = 2
+
+        # The table. +stems+, the chunk's words run through the stemmer, is the
+        # only indexed column; the other four ride along as +UNINDEXED+
+        # payload, so a hit rebuilds its {Pikuri::VectorDb::Chunk} without a
+        # second lookup and a word in a filename never scores as a word in the
+        # document.
         #
-        # +porter+ stems English before +unicode61+ folds case and strips
-        # diacritics, so "meetings" matches "meeting" — and only in English
-        # (see the +Rag+ namespace doc).
+        # +porter+ still stems English after the Ruby stemmer, before
+        # +unicode61+ folds case and strips diacritics, so "meetings" matches
+        # "meeting" whichever stemmer is wired: a Finnish stemmer passes an
+        # English word through unchanged.
         #
         # @return [String] the +CREATE VIRTUAL TABLE+ statement.
         SCHEMA = <<~SQL
-          CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
-            id UNINDEXED, source UNINDEXED, hash UNINDEXED, text,
+          CREATE VIRTUAL TABLE chunks USING fts5(
+            id UNINDEXED, source UNINDEXED, hash UNINDEXED, text UNINDEXED, stems,
             tokenize='porter unicode61'
           )
         SQL
@@ -66,16 +89,22 @@ module Pikuri
         # @param store [String, Pathname] SQLite path, or {MEMORY_STORE} (the
         #   default). {Pikuri::Rag::Extension} says which to pair with which
         #   vector backend.
+        # @param stemmer [#stems, #index_stems, #id] see {Pikuri::Rag::Stemmer}.
         # @return [Fts5]
-        def initialize(store: MEMORY_STORE)
+        def initialize(store: MEMORY_STORE, stemmer: Pikuri::Rag::Stemmer::Identity)
           @store = store.to_s
+          @stemmer = stemmer
           @lock = Monitor.new
           @db = SQLite3::Database.new(@store)
-          @db.execute(SCHEMA)
+          open_table
         end
 
         # @return [String] the path this instance opened, or {MEMORY_STORE}.
         attr_reader :store
+
+        # @return [#stems, #index_stems, #id] the stemmer this index is built
+        #   with, which every query against it must use too.
+        attr_reader :stemmer
 
         # Insert-or-replace by +chunk.id+.
         #
@@ -185,8 +214,9 @@ module Pikuri
         # note whose two words sit in different chunks — under the default
         # 512-token chunker, any note past a couple of kilobytes.
         #
-        # @param terms [Array<String>] one FTS5 phrase term per word, from
-        #   {Pikuri::Rag::Query.terms}.
+        # @param terms [Array<String>] one FTS5 expression per word, from
+        #   {Pikuri::Rag::Query.terms}: a phrase, or an OR group of the word's
+        #   stems.
         # @return [Array<Array(String, Integer)>] +[source, matched_chunks]+,
         #   unordered. The count is the document's chunks matching *at least
         #   one* term, each counted once, because the chunks matching every
@@ -221,7 +251,48 @@ module Pikuri
 
         private
 
-        # @param term [String] a single FTS5 phrase term.
+        # Create the table, or keep the one on disk when it was built with this
+        # {SCHEMA_VERSION} and stemmer; otherwise drop it. +IMMEDIATE+ so a
+        # second process opening the same file waits rather than racing the
+        # drop.
+        #
+        # @return [void]
+        def open_table
+          @lock.synchronize do
+            @db.transaction(:immediate) do
+              built_with = table?('meta') ? @db.get_first_row('SELECT schema_version, stemmer FROM meta') : nil
+              next if built_with == [SCHEMA_VERSION, @stemmer.id]
+
+              if table?('chunks')
+                was = built_with ? "schema #{built_with[0]}, stemmer #{built_with[1]}" : 'an unversioned schema'
+                LOGGER.warn("Rebuilding the keyword index at #{@store}: built with #{was}, opened " \
+                            "with schema #{SCHEMA_VERSION}, stemmer #{@stemmer.id}. It is empty " \
+                            'until the next index run refills it.')
+              end
+              @db.execute('DROP TABLE IF EXISTS chunks')
+              @db.execute('DROP TABLE IF EXISTS meta')
+              @db.execute(SCHEMA)
+              @db.execute('CREATE TABLE meta (schema_version INTEGER NOT NULL, stemmer TEXT NOT NULL)')
+              @db.execute('INSERT INTO meta VALUES (?, ?)', [SCHEMA_VERSION, @stemmer.id])
+            end
+          end
+        end
+
+        # @param name [String]
+        # @return [Boolean] whether the database holds a table of that name.
+        def table?(name)
+          !@db.get_first_value("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                               [name]).nil?
+        end
+
+        # @param text [String] a chunk's text.
+        # @return [String] its words' +#index_stems+, space-separated, one run
+        #   per occurrence so bm25 still counts term frequency.
+        def stems_of(text)
+          Pikuri::Rag::Query.tokenize(text).flat_map { |word| @stemmer.index_stems(word) }.join(' ')
+        end
+
+        # @param term [String] one word's expression from {Pikuri::Rag::Query.terms}.
         # @return [Hash{String => Array<String>}] +source+ → matching chunk ids.
         def chunk_ids_by_source(term)
           rows = @lock.synchronize do
@@ -234,8 +305,8 @@ module Pikuri
         # @return [void]
         def insert(chunks)
           chunks.each do |c|
-            @db.execute('INSERT INTO chunks (id, source, hash, text) VALUES (?, ?, ?, ?)',
-                        [c.id, c.source, c.metadata[:hash], c.text])
+            @db.execute('INSERT INTO chunks (id, source, hash, text, stems) VALUES (?, ?, ?, ?, ?)',
+                        [c.id, c.source, c.metadata[:hash], c.text, stems_of(c.text)])
           end
         end
 

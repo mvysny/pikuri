@@ -141,6 +141,36 @@ describe Pikuri::Rag::Tools::Find do
       assert_includes execute('meeting'), 'acme-2026-07-02.md'
     end
 
+    describe 'with a stemmer that splits compounds when indexing' do
+      let(:hybrid) do
+        stemmer = Object.new.tap do |s|
+          s.define_singleton_method(:id) { 'test' }
+          s.define_singleton_method(:stems) { |w| { 'tietokoneella' => ['tietokone'] }.fetch(w, [w]) }
+          s.define_singleton_method(:index_stems) do |w|
+            { 'tietokoneella' => %w[tietokone tieto kone] }.fetch(w, [w])
+          end
+        end
+        Pikuri::Rag::Backend::Hybrid.new(vectors: vectors,
+                                         keywords: Pikuri::Rag::Backend::Fts5.new(stemmer: stemmer))
+      end
+
+      before do
+        hybrid.upsert(chunks: [chunk('compound.md:0', 'compound.md', 'Tietokoneella.'),
+                               chunk('plain.md:0', 'plain.md', 'Kone.')],
+                      vectors: Array.new(2) { [1.0, 0.0] })
+        @root.join('compound.md').write("a\n")
+        @root.join('plain.md').write("a\n")
+      end
+
+      it 'finds the compound by its part' do
+        assert_equal %w[compound.md plain.md], execute('kone').scan(/^(\S+\.md) —/).flatten
+      end
+
+      it 'does not widen the compound to its parts' do
+        assert_equal %w[compound.md], execute('tietokoneella').scan(/^(\S+\.md) —/).flatten
+      end
+    end
+
     it 'is a no-match line, not an error, when nothing matches' do
       populate
       assert_includes execute('kubernetes'), 'No indexed document contains all of'

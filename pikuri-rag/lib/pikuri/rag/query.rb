@@ -6,9 +6,18 @@ module Pikuri
     # list of terms to AND at the document level, and one OR expression to
     # rank by +bm25()+.
     #
-    #   Query.terms('Acme pricing')        # => ['"acme"', '"pricing"']
-    #   Query.any('what did we discuss?')  # => '"what" OR "did" OR "we" OR "discuss"'
-    #   Query.terms('   ')                 # => []
+    #   identity = Stemmer::Identity
+    #   Query.terms('Acme pricing', stemmer: identity)        # => ['"acme"', '"pricing"']
+    #   Query.any('what did we discuss?', stemmer: identity)  # => '"what" OR "did" OR "we" OR "discuss"'
+    #   Query.terms('   ', stemmer: identity)                 # => []
+    #
+    # Each word is searched by its +#stems+, so a word with several readings
+    # becomes an OR group within its term:
+    #
+    #   Query.terms('kadun hinnat', stemmer: finnish)   # => ['("katu" OR "katua")', '"hinta"']
+    #
+    # The stemmer must be the index's ({Backend::Fts5#stemmer}): the index
+    # holds stems, so a query stemmed differently finds nothing.
     #
     # +MATCH+ is a mini-language — +AND+ / +OR+ / +NOT+, +*+ prefixes, +^+
     # anchors, +col:+ filters, phrase quotes, +()+ and +{}+ grouping — so a
@@ -22,9 +31,10 @@ module Pikuri
     # expression that cannot match, so the caller answers the model instead of
     # asking SQLite a question with no terms in it.
     module Query
-      # One quoted phrase term per word.
+      # One term per word: its stem as a quoted phrase, or its stems as an OR
+      # group of them.
       #
-      #   Query.terms('Acme pricing')   # => ['"acme"', '"pricing"']
+      #   Query.terms('Acme pricing', stemmer: Stemmer::Identity)   # => ['"acme"', '"pricing"']
       #
       # A list, not the juxtaposed +'"acme" "pricing"'+ FTS5 reads as an
       # implicit AND, because that AND is row-scoped and a row is a chunk —
@@ -32,10 +42,11 @@ module Pikuri
       # says what it costs.
       #
       # @param text [String] model-supplied terms, e.g. +"Acme pricing"+.
-      # @return [Array<String>] one FTS5 phrase term per word; empty when
+      # @param stemmer [#stems] the index's stemmer.
+      # @return [Array<String>] one FTS5 expression per word; empty when
       #   +text+ holds no letters or digits.
-      def self.terms(text)
-        tokenize(text).map { |t| phrase(t) }
+      def self.terms(text, stemmer:)
+        tokenize(text).map { |word| any_of(stemmer.stems(word)) }
       end
 
       # The OR form: any token may match, and +bm25()+ does the ranking.
@@ -47,13 +58,14 @@ module Pikuri
       #
       # @param text [String] model-supplied query, e.g.
       #   +"what did we agree about pricing?"+.
-      # @return [String, nil] an FTS5 +MATCH+ expression, or +nil+ when +text+
-      #   holds no letters or digits.
-      def self.any(text)
-        tokens = tokenize(text)
-        return nil if tokens.empty?
+      # @param stemmer [#stems] the index's stemmer.
+      # @return [String, nil] an FTS5 +MATCH+ expression ORing every stem of
+      #   every word, or +nil+ when +text+ holds no letters or digits.
+      def self.any(text, stemmer:)
+        stems = tokenize(text).flat_map { |word| stemmer.stems(word) }.uniq
+        return nil if stems.empty?
 
-        tokens.map { |t| phrase(t) }.join(' OR ')
+        stems.map { |stem| phrase(stem) }.join(' OR ')
       end
 
       # Split +text+ into lower-cased runs of letters and digits.
@@ -85,6 +97,15 @@ module Pikuri
         %("#{token.gsub('"', '""')}")
       end
       private_class_method :phrase
+
+      # @param stems [Array<String>] one word's stems, never empty.
+      # @return [String] +'"katu"'+, or +'("katu" OR "katua")'+ for several.
+      def self.any_of(stems)
+        return phrase(stems.first) if stems.one?
+
+        "(#{stems.map { |stem| phrase(stem) }.join(' OR ')})"
+      end
+      private_class_method :any_of
     end
   end
 end

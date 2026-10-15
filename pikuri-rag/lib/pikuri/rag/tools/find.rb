@@ -57,7 +57,8 @@ module Pikuri
           - Reading every listed document in full only pays off when they are short. Over long documents, use rag_search to locate the relevant passages instead.
         DESC
 
-        # @param backend [#find] a {Pikuri::Rag::Backend::Hybrid}.
+        # @param backend [#find, #stemmer] a {Pikuri::Rag::Backend::Hybrid};
+        #   the terms are stemmed with its +#stemmer+.
         # @param root [Pathname] the corpus root —
         #   {Pikuri::VectorDb::Indexer#root}. Each listed +source+ is stat'd
         #   relative to it.
@@ -85,20 +86,20 @@ module Pikuri
         # Run the listing and format the observation. Public so specs can
         # exercise it without constructing a Tool wrapper.
         #
-        # @param backend [#find]
+        # @param backend [#find, #stemmer]
         # @param root [Pathname]
         # @param terms [String] as supplied by the LLM.
         # @return [Pikuri::Tool::Result] the listing (+"Found 8 documents"+),
         #   or {Pikuri::Tool::Result.error}.
         def self.execute(backend:, root:, terms:)
-          phrases = Pikuri::Rag::Query.terms(terms)
-          if phrases.empty?
+          per_word = Pikuri::Rag::Query.terms(terms, stemmer: backend.stemmer)
+          if per_word.empty?
             return Pikuri::Tool::Result.error("no searchable terms in #{terms.to_s.strip.inspect} — " \
                                               'pass a word, a name or an id.')
           end
 
-          listed = phrases.join(' ')
-          rows = backend.find(terms: phrases).sort_by { |source, count| [-count, source] }
+          listed = per_word.join(' ')
+          rows = backend.find(terms: per_word).sort_by { |source, count| [-count, source] }
           if rows.empty?
             return Pikuri::Tool::Result.new(content: "No indexed document contains all of: #{listed}.",
                                             summary: 'Found 0 documents')

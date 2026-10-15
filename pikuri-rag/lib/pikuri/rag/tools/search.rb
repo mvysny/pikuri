@@ -13,8 +13,9 @@ module Pikuri
       #
       # * *Vector leg* — embed the query, {Pikuri::VectorDb::Backend#query} for
       #   {CANDIDATE_K} candidates. Answers "is this on the same topic?".
-      # * *Keyword leg* — {Pikuri::Rag::Query.any} then +#keyword_query+ for
-      #   {CANDIDATE_K}. Answers "does this contain the words?", which is what
+      # * *Keyword leg* — {Pikuri::Rag::Query.any}, stemmed by the backend's
+      #   stemmer, then +#keyword_query+ for {CANDIDATE_K}. Answers "does this
+      #   contain the words?", which is what
       #   rescues +invoice #4471+ and a customer's name from an embedder that
       #   ranks rare tokens badly.
       #
@@ -86,8 +87,9 @@ module Pikuri
 
         # @param embedder [#embed] anything implementing
         #   +embed(Array<String>) -> Array<Array<Float>>+.
-        # @param backend [#query, #keyword_query] a
-        #   {Pikuri::Rag::Backend::Hybrid}.
+        # @param backend [#query, #keyword_query, #stemmer] a
+        #   {Pikuri::Rag::Backend::Hybrid}; the keyword leg stems the query
+        #   with its +#stemmer+.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's declaration,
         #   derived by {Pikuri::Rag::Extension} via
         #   {Pikuri::VectorDb::CorpusLegs.derive}. Required — a default here
@@ -121,7 +123,7 @@ module Pikuri
         # can exercise it without constructing a Tool wrapper.
         #
         # @param embedder [#embed]
-        # @param backend [#query, #keyword_query]
+        # @param backend [#query, #keyword_query, #stemmer]
         # @param reranker [#rerank, nil]
         # @param query [String]
         # @return [Pikuri::Tool::Result] the formatted observation (+"Found 8
@@ -130,7 +132,7 @@ module Pikuri
           return Pikuri::Tool::Result.error('query is empty') if query.nil? || query.strip.empty?
 
           vector_hits = backend.query(vector: embedder.embed([query]).first, top_k: CANDIDATE_K)
-          match = Pikuri::Rag::Query.any(query)
+          match = Pikuri::Rag::Query.any(query, stemmer: backend.stemmer)
           keyword_hits = match ? backend.keyword_query(match: match, top_k: CANDIDATE_K) : []
 
           # Trimmed to CANDIDATE_K because the *union* of two 50-deep legs is

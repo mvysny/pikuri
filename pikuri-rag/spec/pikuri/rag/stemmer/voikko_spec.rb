@@ -108,5 +108,18 @@ describe Pikuri::Rag::Stemmer::Voikko do
     it 'names the handle’s language in its id' do
       assert_equal 'voikko-fi+compounds', stemmer.id
     end
+
+    it 'finds inflected and compound words through FTS5' do
+      fts = Pikuri::Rag::Backend::Fts5.new(stemmer: stemmer)
+      fts.upsert(chunks: [Pikuri::VectorDb::Chunk.new(
+        id: 'a.md:0', source: 'a.md', text: 'Helsingissä tietokoneella.', metadata: { hash: 'h' }
+      )])
+      search = ->(text) { fts.find(terms: Pikuri::Rag::Query.terms(text, stemmer: stemmer)) }
+      assert_equal [['a.md', 1]], search.('Helsinki')
+      assert_equal [['a.md', 1]], search.('koneen')
+      assert_equal [['a.md', 1]], search.('tietokoneet')
+    ensure
+      fts&.close
+    end
   end
 end

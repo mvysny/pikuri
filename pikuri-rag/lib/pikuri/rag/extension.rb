@@ -52,6 +52,18 @@ module Pikuri
     # full re-embed at every boot. That is why this is a paragraph and not a
     # check: nothing here can tell whether +backend:+ persists.
     #
+    # == Stemming
+    #
+    # +stemmer:+ decides what a word is indexed and searched under. The
+    # default, {Stemmer::Identity}, leaves it to FTS5's English +porter+. For
+    # Finnish, add the +voikko+ gem to the host and pass
+    #
+    #   stemmer: Pikuri::Rag::Stemmer::Voikko.new(::Voikko.new(language: 'fi'))
+    #
+    # Changing the stemmer of a file-backed +store:+ empties the keyword index
+    # at boot, and the next index run refills both stores, re-embedding the
+    # whole corpus (see {Backend::Fts5}'s "Stemming").
+    #
     # == Changed your embedder or chunker? Reindex fully.
     #
     # Same as {Pikuri::VectorDb::Extension}: the change signal is the file's
@@ -120,13 +132,14 @@ module Pikuri
       # @param store [String, Pathname] SQLite path for the keyword index, or
       #   +":memory:"+ (the default). See "Which store to pair with which
       #   backend".
+      # @param stemmer [#stems, #index_stems, #id] see "Stemming".
       # @return [Extension]
       def initialize(backend:, source:,
                      embedder: nil, reranker: nil, chunker: nil,
                      private: false, trusted: false,
-                     store: Backend::Fts5::MEMORY_STORE)
+                     store: Backend::Fts5::MEMORY_STORE, stemmer: Stemmer::Identity)
         @backend  = Backend::Hybrid.new(vectors: backend,
-                                        keywords: Backend::Fts5.new(store: store))
+                                        keywords: Backend::Fts5.new(store: store, stemmer: stemmer))
         @embedder = embedder || Pikuri::VectorDb::Embedder.new
         @reranker = reranker
         @chunker  = chunker || Pikuri::VectorDb::Chunker::FixedWindow.new(size: 512, overlap: 50)

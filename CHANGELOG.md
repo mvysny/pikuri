@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Add `stemmer:` to `Pikuri::Rag::Extension`, which stems in Ruby before FTS5 sees a word; the default `Stemmer::Identity` keeps today's English matching, and `Stemmer::Voikko` over the `voikko` gem stems Finnish to dictionary forms and splits compounds.
+- **Breaking:** the `pikuri-rag` keyword index records its schema version and stemmer, and an index built before or with another one empties itself on open, so the first boot after upgrading re-embeds the whole corpus. Nothing to do beyond letting the boot sweep or `rag_reindex` run.
 - Fix `rag_search` and `rag_find` cutting a query word at each decomposed accent (NFD, as macOS and some PDFs write "ö"), so `Schrödinger` searched for `schro` and `dinger` — `Pikuri::Rag::Query.tokenize` now NFC-normalises first.
 - Add `--system-prompt FILE` to every chat script in `bin/`, replacing the script's bundled system prompt while the run's facts and every extension's `system_prompt_snippets` are still appended; see `book/chat.md`.
 - Add `thunderbird_mail_attachment_read`, which reads one attachment's text from Thunderbird's offline mbox store, never over the network, parsed with the new `mail` gem dependency; see `design/decisions.md` `D_thunderbird_attachment_bytes`.

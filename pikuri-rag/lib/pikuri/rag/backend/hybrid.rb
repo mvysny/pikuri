@@ -68,6 +68,11 @@ module Pikuri
         #   boot and whose +#close+ it calls at teardown.
         attr_reader :keywords
 
+        # @return [#stems, #index_stems, #id] the keyword store's
+        #   {Fts5#stemmer}, which a {Pikuri::Rag::Query} against {#keyword_query}
+        #   or {#find} must be built with.
+        def stemmer = @keywords.stemmer
+
         # Insert-or-replace by +chunk.id+ in both stores.
         #
         # @param chunks [Array<Pikuri::VectorDb::Chunk>]
@@ -126,7 +131,7 @@ module Pikuri
         #   first. See {Fts5#keyword_query} for the score's scale.
         def keyword_query(match:, top_k:) = @keywords.keyword_query(match: match, top_k: top_k)
 
-        # @param terms [Array<String>] phrase terms from
+        # @param terms [Array<String>] one expression per word, from
         #   {Pikuri::Rag::Query.terms}.
         # @return [Array<Array(String, Integer)>] +[source, matched_chunks]+
         #   for every document holding all of them. See {Fts5#find}.

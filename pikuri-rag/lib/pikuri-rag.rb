@@ -37,9 +37,9 @@ module Pikuri
   # refuses the other's tool names at +configure+, because the two answer the
   # same question with different promises.
   #
-  # *Stemming is English-only*, being FTS5's built-in +porter+: "meetings"
-  # matches "meeting", and nothing analogous happens in any other language. A
-  # current limitation rather than a design position.
+  # *Stemming is English by default*, being FTS5's built-in +porter+:
+  # "meetings" matches "meeting". Finnish is {Stemmer::Voikko}, passed to
+  # {Extension} as +stemmer:+; other languages are not stemmed yet.
   #
   # The threat model is +pikuri-vectordb+'s, unchanged — same corpus, same
   # +private:+ / +trusted:+ declaration ({Pikuri::VectorDb::Extension#trusted?}
