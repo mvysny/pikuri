@@ -2,26 +2,8 @@
 
 `Pikuri::Testing.fake_transport` shipped for single-agent use (why:
 `D_fake_transport`; mechanics + limitations: {Pikuri::Testing}). pikuri-tui's
-chat and code shells run their real agent on it. What is left:
-
-## Computer shell port (pikuri-tui) — needs test-isolation seams
-
-`Computer::App#default_build_agent` wires `Os::Extension` +
-`Thunderbird::Extension`, which probe the host at build:
-- **Thunderbird profile.** `Profile.discover(profile_dir: nil)` finds the dev
-  machine's *real* profile (opens real mail) and raises on an ambiguous
-  install. A test must pass `profile_dir:` → an empty temp dir (deterministic:
-  Gloda absent → inbound tools omitted, outbound tools harmlessly wired).
-- **Machine facts.** `Os::SystemInfo#prompt_section` spawns `inxi -b`
-  synchronously at *every* agent build (confirmed) — ~30 builds ⇒ ~30 spawns,
-  slow + machine-coupled. Needs a spec-level stub of `Os::SystemInfo.new`
-  (define_singleton_method, the pikuri convention) returning a fast fake.
-- **Sandbox.** `config.sandbox: true` builds `FullFsNoNet`, whose bwrap probe
-  may raise; the computer spec should boot with `sandbox: false` (confirm no
-  test asserts the sandbox wiring).
-
-Once those three are handled, the port mirrors chat/code (swap `&build_agent`
-→ `transport:`, delete `ComputerStubAgent`, add the render test).
+chat and code shells run their real agent on it (the computer shell's port is
+pikuri-tui's own idea). What is left here:
 
 ## `Q_subagent_scripting`
 
