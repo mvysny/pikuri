@@ -77,6 +77,9 @@ This file is that deferral picked up, with Finnish as the first language.
     *versionhallintajärjestelmää* → *versio* + *hallinta* + *järjestelmä*;
     *kahdeksankymmentä* → *kahdeksan* + *kymmenen*; *tietokoneella* → *tieto*
     + *kone*. That costs one extra analysis per part.
+  - The cutting itself is requested from the gem
+    ([ruby-voikko#1](https://github.com/mvysny/ruby-voikko/issues/1)), since
+    it decodes libvoikko's own format; until it ships, the adapter cuts.
   - A bound prefix that does not analyse alone (*esi* in *esikäsittelin*)
     falls back to its surface form, like any unknown word.
 - **A stemmer change raises in v1 and rebuilds in v2.** An index built with
