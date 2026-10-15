@@ -59,8 +59,9 @@ mismatch empties itself for `Hybrid`'s both-stores rule to refill.
 
 **Consequences.**
 
-- No pikuri gem depends on `voikko`: the host injects an open handle, so pikuri stays MIT beside
-  GPL-2 `voikko-fi`, and CI needs no libvoikko. `bin/pikuri-briefing --finnish` is the host.
+- No pikuri gem depends on `voikko` at runtime: the host injects an open handle, so pikuri stays
+  MIT beside GPL-2 `voikko-fi`, and CI needs no libvoikko. pikuri-rag takes it as a development
+  dependency for its specs; `bin/pikuri-briefing --finnish` is the host.
 - The keyword file roughly doubles, `stems` stored beside `text`.
 - A `voikko-fi` upgrade does not rebuild: it shifts a few words, and libvoikko exposes no
   dictionary version to record.

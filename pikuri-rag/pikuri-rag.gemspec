@@ -74,4 +74,14 @@ Gem::Specification.new do |spec|
   # the keyword half needs no external service — the same dependency
   # pikuri-thunderbird already takes for Gloda.
   spec.add_dependency 'sqlite3', '~> 2.9'
+
+  # voikko (Finnish morphology, FFI to the distro's libvoikko) backs
+  # +Stemmer::Voikko+, yet only as a development dependency: the stemmer
+  # takes an open handle the host injects and never requires the gem, so
+  # pikuri stays MIT beside GPL-2 +voikko-fi+ and an English-only host
+  # installs no native binding (see design/decisions.md D_ruby_stemming).
+  # The specs need it for real +Voikko::Analysis+ values, and
+  # +bin/pikuri-briefing --finnish+ is the in-repo host. 0.2 brings
+  # +Analysis#morphemes+ and +Voikko#language+.
+  spec.add_development_dependency 'voikko', '~> 0.2'
 end
