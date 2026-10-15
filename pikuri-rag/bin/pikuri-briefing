@@ -72,6 +72,9 @@ require 'pikuri-pdf'
 # Also checkout-mode-only (not in this gem's gemspec): the read-only mail
 # surface --with-mail wires. Nothing is registered unless the flag is on.
 require 'pikuri-thunderbird'
+# Also checkout-mode-only: the Finnish stemmer --finnish wires. Requiring it
+# binds no native code; only Voikko.new needs the distro's libvoikko.
+require 'voikko'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
@@ -96,6 +99,7 @@ source          = File.expand_path('~/notes')
 watch           = true
 use_qdrant      = false
 with_mail       = false
+finnish         = false
 
 custom_prompt = nil
 parser = OptionParser.new do |opts|
@@ -113,6 +117,11 @@ parser = OptionParser.new do |opts|
           'Persist the index in a self-managed Qdrant container (requires docker) ' \
           'plus a keyword index under the pikuri cache, so a corpus indexed once ' \
           'stays indexed across runs') { use_qdrant = true }
+  opts.on('--finnish',
+          'Stem Finnish notes to dictionary forms ("kadulla" finds "katu") and split ' \
+          'compounds ("kone" finds "tietokoneella"); English keeps its stemming. Needs ' \
+          'libvoikko1 + voikko-fi. Toggling it on a --qdrant index rebuilds it, ' \
+          're-embedding every note') { finnish = true }
   opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
                                   '(extensions still append their own sections).') do |v|
     custom_prompt = File.read(v).rstrip
@@ -137,6 +146,17 @@ unless File.directory?(source)
   warn 'Point --source at the folder holding your meeting notes.'
   exit 2
 end
+
+# Before the vector server starts, so a missing dictionary costs no docker
+# container. Both errors name the apt packages to install.
+begin
+  voikko = Voikko.new(language: 'fi') if finnish
+rescue LoadError, Voikko::Error => e
+  warn "Could not open the Finnish dictionary: #{e.message}"
+  warn 'Drop --finnish to keep English-only stemming.'
+  exit 2
+end
+stemmer = voikko ? Pikuri::Rag::Stemmer::Voikko.new(voikko) : Pikuri::Rag::Stemmer::Identity
 
 # Normalize the origin once: strip a trailing +/v1+ (and slash) so a
 # server value works with or without it, then re-append +/v1+ for the
@@ -218,6 +238,7 @@ rag_ext = Pikuri::Rag::Extension.new(
   embedder: embedder,
   reranker: reranker,
   store:    store,
+  stemmer:  stemmer,
   # Constants, not flags — see the header and design/decisions.md D_briefing_wiring.
   private:  true,
   trusted:  true
@@ -324,6 +345,7 @@ begin
   end
   puts "Backend: #{use_qdrant ? 'Qdrant (persistent)' : 'InMemory (RAM-only)'}, " \
        "keyword index: #{store == Pikuri::Rag::Backend::Fts5::MEMORY_STORE ? 'in-memory' : store}"
+  puts "Stemming: #{voikko ? 'Finnish (Voikko) and English' : 'English only'} (#{stemmer.id})"
   indexed = rag_ext.backend.count
   if indexed.positive?
     puts "Index populated (#{indexed} chunk(s))."
@@ -351,11 +373,13 @@ rescue Interrupt
   # Ctrl+C — fall through to clean exit
 ensure
   # Teardown in reverse of open order: stop the indexing daemon first
-  # (halt writes), release the agent, close the keyword index, then the
-  # vector server (a docker supervisor removes its container).
+  # (halt writes), release the agent, close the keyword index and the
+  # dictionary it stems with, then the vector server (a docker supervisor
+  # removes its container).
   watcher&.close
   agent.close
   rag_ext.backend.close
+  voikko&.close
   vector_server.close
 end
 
