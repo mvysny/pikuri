@@ -106,14 +106,27 @@ in-memory, a file under `Pikuri::Paths.cache` with Qdrant or Chroma. A
 mismatch is *correct* thanks to the rule above, only slower — a full
 re-embed at every boot.
 
-## Stemming is English-only
+## Stemming: English, and Finnish on request
 
-The keyword leg uses FTS5's built-in `porter` stemmer, so "meetings"
-matches "meeting" in English and nowhere else. A current limitation
-rather than a design position: stock FTS5 has no Snowball and the
-prebuilt `sqlite3` gem cannot load a tokenizer extension, so other
-languages mean stemming in Ruby on both the index and the query side.
-See `design/decisions.md` `D_rag_gem`.
+Out of the box the keyword leg uses FTS5's built-in `porter` stemmer, so
+"meetings" matches "meeting" in English. For Finnish notes, install
+`libvoikko1` and `voikko-fi` from your distro, add the `voikko` gem
+(0.2 or later) to your Gemfile, and pass a stemmer:
+
+```ruby
+Pikuri::Rag::Extension.new(
+  backend: ..., source: '~/notes',
+  stemmer: Pikuri::Rag::Stemmer::Voikko.new(Voikko.new(language: 'fi'))
+)
+```
+
+A search for "katu" then finds the note that says "kadulla", and "kone"
+finds "tietokoneella". English words keep their stemming alongside.
+`bin/pikuri-briefing --finnish` does exactly this.
+
+Switching stemmers on a saved index empties it at the next start, and
+the next index run re-embeds every note. Other languages are not stemmed
+yet. Why it works this way: `design/decisions.md` `D_ruby_stemming`.
 
 ## Try it
 
@@ -149,3 +162,9 @@ declaration, same inbound-only posture (no tool here has an egress
 leg), same membership gate on the reader. The keyword index is a
 second copy of text the vector store already holds, in a SQLite file
 the same user owns. See `pikuri-vectordb/design/architecture.md`.
+
+One addition with the Finnish stemmer: the distro's libvoikko, C code,
+reads every word of your notes and of every search the model writes,
+inside the pikuri process. It sees one word at a time, and SQLite
+already reads the same words in the same process, so this adds little;
+`D_ruby_stemming` has the argument.

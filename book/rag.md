@@ -159,11 +159,17 @@ counts for more than the same match buried in a long one). That last
 one is why, in a two-note corpus where both mention pricing, the
 shorter note ranks first.
 
-Stemming happens before any of that. `pikuri-rag` uses SQLite's
-built-in Porter stemmer, so "meetings", "meeting" and "meet" collapse
-to one term and a search for the singular finds the plural. Porter is
-**English-only** — that's a current limitation, documented rather than
-hidden, and the gem's README says what the fix would look like.
+Stemming happens before any of that. By default `pikuri-rag` uses
+SQLite's built-in Porter stemmer, so "meetings", "meeting" and "meet"
+collapse to one term and a search for the singular finds the plural.
+Porter knows only English, and it works by chopping suffixes off. That
+fails for a language like Finnish, where *katu* (street) is *kadulla*
+"on the street" and *kadun* "of the street": the stem changes inside the
+word. So `pikuri-rag` can stem in Ruby before SQLite sees a word, and
+for Finnish it uses Voikko, a dictionary that *analyses* each word
+instead and returns its dictionary form. It also splits compounds, so a
+search for *kone* (machine) finds a note about a *tietokone* (computer).
+The gem's README shows how to switch it on.
 
 ### Reciprocal rank fusion, and why not a weighted sum
 

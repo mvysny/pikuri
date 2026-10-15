@@ -20,6 +20,55 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_ruby_stemming — Why stem in Ruby, Finnish through Voikko, with compounds split only into the index?
+
+**Context.** `D_rag_gem` shipped `porter`, English only, and named the seam for the rest: a
+`stemmer:` duck. Finnish came first, and it inflects and compounds: unstemmed, `rag_find katu`
+misses *kadulla*, and *kone* misses *tietokoneella*. Stock FTS5 has no other stemmer, and the
+prebuilt `sqlite3` gem cannot load a tokenizer extension.
+
+**Decision.** A {Pikuri::Rag::Stemmer} runs in Ruby on both sides of a plain FTS5 table, with
+`porter` kept after it, so English in a mixed corpus still stems: Voikko answers a word it does
+not know with itself. {Pikuri::Rag::Stemmer::Voikko} indexes dictionary forms through the MIT
+`voikko` gem, FFI to the distro's libvoikko and `voikko-fi`. Measured over the 28 catalogs in
+`/usr/share/locale/fi/` (16 319 tokens; libvoikko 4.3.3, voikko-fi 2.5): 30% of distinct words
+unknown, mostly English and names; 1.08 base forms per word; `porter` over base forms merges 4
+lemma groups of 2 278, one wrongly (*tulos* / *tulo*); 41 000 words/s, so no cache. Compound
+parts are indexed beside the whole lemma but never searched for: *kone* finds *tietokone*, and
+`rag_find tietokone` stays exact. An index records its stemmer's id and schema version, and on a
+mismatch empties itself for `Hybrid`'s both-stores rule to refill.
+
+**Alternatives rejected.**
+
+- **Snowball** (`libstemmer0d`) strips suffixes instead of analysing: *kadulla* and *kadun*
+  become *kadu* while *katu* stays, and it is erratic on exactly the words Voikko does not know
+  (*nokian* → *nokia*, *nokia* → *nok*), so it is no fallback either. It stays the candidate for
+  a language with no dictionary, and Hunspell, which has none for Finnish, for Slovak and Czech.
+- **`WORDBASES` for the parts** gives roots rather than parts (*yritys* → *yrittää*) and drops
+  some (*versionhallintajärjestelmää* loses *hallinta*). `Voikko::Analysis#morphemes` cuts by
+  `STRUCTURE` instead, and each part is analysed again.
+- **Splitting the query too** would make `rag_find tietokone` list every note mentioning *kone*.
+- **Raising on a mismatch.** `Rag::Extension.new` opens the store, so the host would not boot and
+  the `rag_reindex` the message named would be unreachable. The rebuild instead costs one full
+  re-embed per stemmer change.
+- **A stemming container**, Voikko, Hunspell and Snowball behind JSON on stdio, run
+  `--network=none` like `pikuri-extractors`. Convenience, not security: a stemmer is C fed
+  untrusted text, but one word at a time, a far smaller surface than whole-file parsers, and
+  SQLite already tokenizes the same corpus in-process. Build it when provisioning dictionaries
+  across machines hurts, or once a stemmer reads more than a word.
+
+**Consequences.**
+
+- No pikuri gem depends on `voikko`: the host injects an open handle, so pikuri stays MIT beside
+  GPL-2 `voikko-fi`, and CI needs no libvoikko. `bin/pikuri-briefing --finnish` is the host.
+- The keyword file roughly doubles, `stems` stored beside `text`.
+- A `voikko-fi` upgrade does not rebuild: it shifts a few words, and libvoikko exposes no
+  dictionary version to record.
+- Unmeasured on a real corpus: the bm25 cost of the indexed parts, and how often `porter`
+  merges Finnish lemmas wrongly.
+
+---
+
 ## D_thunderbird_attachment_bytes — Why read attachments from the offline mbox, found by Message-ID, rather than over IMAP or by Gloda's `messageKey`?
 
 **Context.** Gloda has every message's decoded text and its attachment *list*,
@@ -1115,8 +1164,8 @@ stemmed token match: `source`, match count, size; no cutoff), `rag_read`,
 beside the host's vector store inside `Backend::Hybrid`, which fans writes
 out to both and keeps their reads separate. So the vectordb `Indexer` and
 `Watcher` are reused byte-for-byte: one extraction per file, one hash.
-English-only stemming
-(FTS5's built-in `porter`), documented as a current limitation.
+Stemming is FTS5's built-in `porter`, English; other languages are a
+`stemmer:` duck on the extension (`D_ruby_stemming`), not a `languages:` array.
 `pikuri-vectordb` is repositioned in the same move — from "agentic RAG" to
 *topical retrieval over long documents*, the primitive the system is built
 on. The two extensions are mutually exclusive on one agent.
@@ -1178,14 +1227,6 @@ on. The two extensions are mutually exclusive on one agent.
   (identical relative paths, no confirmer needed); rejected there because it
   patches a retrieval shortcoming from outside the gem that owns retrieval,
   `file_list` composes only over a flat corpus, and it has no stemming.
-- **Multi-language stemming now.** Stock FTS5 has no Snowball and the
-  prebuilt gem cannot load a tokenizer extension, so other languages mean
-  stemming in Ruby before indexing and on the query (Snowball via
-  `ruby-stemmer`; per token, run every configured stemmer and index the
-  union of stems — Slovak and Czech are not in Snowball at all). Deferred,
-  not rejected: the seam is a `stemmer:` duck on the extension, default a
-  no-op leaving `porter` in charge. Not a `languages:` array — the
-  knob-shaped version of the same thing.
 - **`trigram` as the default tokenizer** — language-agnostic and
   inflection-tolerant as a substring match. Rejected as default: it matches
   inside longer words and needs three-character terms; it stays the named

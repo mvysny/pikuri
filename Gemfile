@@ -53,10 +53,10 @@ group :development do
   # explicitly so Bundler installs it for development.
   gem 'rake', '~> 13.0'
 
-  # Finnish morphology for pikuri-rag's planned Voikko stemmer (see
-  # design/ideas/multilingual-stemming.md). Host-only: no pikuri gem
-  # depends on it. Tracks master for Analysis#morphemes, unreleased past
-  # 0.1.0. Locally, point it at the sibling checkout with
+  # Finnish morphology for Pikuri::Rag::Stemmer::Voikko and
+  # bin/pikuri-briefing --finnish (see design/decisions.md D_ruby_stemming).
+  # Host-only: no pikuri gem depends on it. Tracks master for
+  # Analysis#morphemes and Voikko#language, unreleased past 0.1.0. Locally, point it at the sibling checkout with
   # +bundle config set --local local.voikko ../ruby-voikko+; CI, which has
   # no sibling, fetches the locked revision from GitHub.
   gem 'voikko', git: 'https://github.com/mvysny/ruby-voikko.git', branch: 'master'

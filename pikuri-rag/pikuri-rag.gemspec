@@ -32,8 +32,9 @@ Gem::Specification.new do |spec|
     +Agent.new+ block; it is mutually exclusive with
     +Pikuri::VectorDb::Extension+ on one agent.
 
-    Stemming is FTS5's built-in +porter+, so the keyword leg is
-    English-only for now. The threat model is pikuri-vectordb's,
+    Stemming is FTS5's built-in +porter+ for English, plus Finnish
+    through a +stemmer:+ over the +voikko+ gem, which the host adds
+    itself. The threat model is pikuri-vectordb's,
     unchanged — same corpus declaration, inbound-only tools, same
     membership gate on the reader.
 
