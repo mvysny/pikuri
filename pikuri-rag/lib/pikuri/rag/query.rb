@@ -66,10 +66,15 @@ module Pikuri
       # belt-and-braces — +unicode61+ folds case on its own — but it keeps the
       # expression readable in a log line.
       #
+      # NFC first, so a decomposed "ö" (+o+ and a combining diaeresis, as macOS
+      # and some PDFs write it) is one letter and stays inside its word, and a
+      # {Stemmer} sees the composed form: Voikko finds no reading of an NFD
+      # word.
+      #
       # @param text [String, nil]
       # @return [Array<String>] possibly empty.
       def self.tokenize(text)
-        text.to_s.scan(/[\p{L}\p{N}]+/).map(&:downcase)
+        text.to_s.unicode_normalize(:nfc).scan(/[\p{L}\p{N}]+/).map(&:downcase)
       end
 
       # One token as an FTS5 phrase term, internal +"+ doubled.

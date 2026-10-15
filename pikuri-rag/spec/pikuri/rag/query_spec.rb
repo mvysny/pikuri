@@ -13,6 +13,12 @@ describe Pikuri::Rag::Query do
       assert_equal %w[schrödinger ужин], Pikuri::Rag::Query.tokenize('Schrödinger, ужин')
     end
 
+    # \p{L} does not match a combining mark, so unnormalized NFD would cut
+    # "schrödinger" at the diaeresis.
+    it 'composes decomposed letters before splitting' do
+      assert_equal ['schrödinger'], Pikuri::Rag::Query.tokenize("Schrödinger")
+    end
+
     it 'returns empty for punctuation-only and nil input' do
       assert_equal [], Pikuri::Rag::Query.tokenize('--- ?! ***')
       assert_equal [], Pikuri::Rag::Query.tokenize(nil)

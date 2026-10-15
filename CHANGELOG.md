@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `rag_search` and `rag_find` cutting a query word at each decomposed accent (NFD, as macOS and some PDFs write "ö"), so `Schrödinger` searched for `schro` and `dinger` — `Pikuri::Rag::Query.tokenize` now NFC-normalises first.
 - Add `--system-prompt FILE` to every chat script in `bin/`, replacing the script's bundled system prompt while the run's facts and every extension's `system_prompt_snippets` are still appended; see `book/chat.md`.
 - Add `thunderbird_mail_attachment_read`, which reads one attachment's text from Thunderbird's offline mbox store, never over the network, parsed with the new `mail` gem dependency; see `design/decisions.md` `D_thunderbird_attachment_bytes`.
 - **Breaking:** `Pikuri::Thunderbird::Gloda::Mail#read` returns `attachments:` (`Gloda::Attachment`s, which `thunderbird_mail_read` now lists numbered) and `folder_uris:` in place of `attachment_names:`. A caller reading `attachment_names` maps `attachments` to their `name`.
