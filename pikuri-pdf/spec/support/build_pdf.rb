@@ -6,10 +6,13 @@
 # the real extraction path end-to-end without checking a binary
 # fixture into the repo.
 module BuildPdf
-  # Build a PDF that prints each of +page_texts+ on its own page.
+  # Build a PDF that prints each of +page_texts+ on its own page — a
+  # String as one line, an Array of Strings as one line each.
   # Returns the raw bytes ready to wrap in a StringIO or binwrite to
   # disk. Object byte offsets are computed as we append, so the xref
   # table is always correct.
+  #
+  #   build_pdf('Hello PDF', ['first line', 'second line'])   # two pages
   def build_pdf(*page_texts)
     out = +"%PDF-1.4\n"
     offsets = []
@@ -29,7 +32,8 @@ module BuildPdf
       content_obj_num = 3 + i * 2 + 1
       add_obj.call("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " \
                    "/Contents #{content_obj_num} 0 R /Resources << /Font << /F1 #{font_obj_num} 0 R >> >> >>")
-      stream = "BT /F1 12 Tf 100 700 Td (#{text}) Tj ET"
+      shown = text.is_a?(Array) ? "14 TL #{text.map { |line| "(#{line}) Tj T*" }.join(' ')}" : "(#{text}) Tj"
+      stream = "BT /F1 12 Tf 100 700 Td #{shown} ET"
       add_obj.call("<< /Length #{stream.bytesize} >>\nstream\n#{stream}\nendstream")
     end
 
