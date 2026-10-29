@@ -109,12 +109,43 @@ falls on (b) provenance and simplicity, and on MRR. Labels don't need the union 
 tuned-RRF list can carry "meaning #1, keyword #4" on each hit just as well — so the two halves
 can ship separately.
 
+## Exact-term questions, measured (2026-10-29)
+
+`Q_keyword_value`: 13 questions added to `../courts/eval/questions.yml` (`kind: exact`), typed
+the way a lawyer or HR person would — section references ("TSL 6:6", "työsopimuslain 7 luvun
+3 §"), an act number ("1333/2021"), terms of art ("takaisinottovelvollisuus", "työaikapankki",
+"varallaolo", "säästövapaa"). Gold § in the top 5, same index:
+
+| Merge | paraphrase (28) | exact (13) | all (41) | MRR, all |
+|---|---|---|---|---|
+| vector only | 24 | 11 | 35 | 0.78 |
+| keyword only | 13 | 7 | 20 | 0.42 |
+| RRF `k` 60, depth 50 (today) | 22 | 9 | 31 | 0.57 |
+| RRF `k` 5, depth 10 | **26** | 11 | **37** | 0.63 |
+| union 3 + 3, interleaved | 24 | 11 | 35 | **0.77** |
+
+- **The keyword leg rescued no question on its own.** bge-m3 already finds every term of art at
+  #1 ("takaisinottovelvollisuus": vector #1, keyword #11). The keyword leg's measured value is as
+  a *voter*: it lifts a vector #7 or #8 into the top 5 when it agrees near its own top (vll 2:5,
+  tal 6:24). That is what tuned RRF uses and a quota throws away — a quota hands the keyword leg
+  three slots whether or not it has anything, and the union lands exactly on vector-only (35).
+- **Bare section references fail every leg:** "työsopimuslain 7 luvun 3 §" (best rank 14) and
+  "työaikalain 5 luvun 19 §" (best 9). The tokens are "7", "luvun", "3" — digits that sit in every
+  heading and every amendment date, and "luku", in every heading. No ranking finds that; it is a
+  *lookup*, which the corpus's own table of contents answers exactly. A courts concern (the law
+  agent's prompt), not a `rag_search` one.
+- Limits: one embedder, and a strong one on Finnish; 165 chunks. With a weaker embedder (nomic:
+  9/28 on paraphrase) or a large corpus where rare ids discriminate more, the keyword leg may
+  rescue what it can't here. The voter role holds either way.
+
 ## Open questions
 
 - Answered 2026-10-29, above: `Q_tuned_rrf_baseline` — tuned RRF matches the union's recall.
-- `Q_merge` — tuned RRF (recall 26 at 5, MRR 0.61, today's code with two constants changed) or
-  the interleaved union (25 at ≤ 6, MRR 0.73, a quota that reads in one line)? Either way with
-  provenance labels.
+- Answered 2026-10-29, above: `Q_keyword_value` — on this corpus a voter, not a rescuer.
+- `Q_merge` — leaning **tuned RRF** (`RRF_K` 5, each leg cut to 10 before fusing): best recall
+  on all 41 (37 vs the union's 35) and today's code with two constants changed. The union's one
+  edge is MRR (0.77 vs 0.63) — the gold more often at #1 — which matters only if a model reads
+  from the top; provenance labels on the tuned list may close that gap.
 - `Q_per_leg_k` — 3 + 3 (≤ 6 hits, 25/28) or 5 + 5 (≤ 10, 26/28)? Context cost vs recall;
   a `FINAL_K` per leg rather than one total. Leaning **3 + 3**: 5 + 5 buys one question for up
   to twice the context, and context is what a small local model runs out of.
@@ -125,10 +156,6 @@ can ship separately.
   bonus — that bonus is exactly the flaw.
 - `Q_model_uses_labels` — does the agent actually pick better? Measures retrieval only so far;
   needs an agent-level eval (answer quality on the same questions), not just "gold present".
-- `Q_keyword_value` — the courts questions are lay paraphrases by design, which favour the
-  vector leg (vector top 10 alone also reaches 26/28). The keyword leg's job — ids, "55/2001",
-  "7 luvun 3 §", rare terms — is barely tested. Add exact-term questions before reading
-  anything into it: so far only the keyword quota's downside is measured, not its upside.
 - `Q_reranker_role` — drop the reranker from `rag_search`, or rerank only the union to order
   it? Either way it stops being a fixed stage. Leaning **drop**: 22 s for 20 documents puts 6
   at ~7 s on CPU, and it would replace the provenance order with one opaque score. Could come
@@ -136,6 +163,8 @@ can ship separately.
 
 ## Next step
 
-`Q_tuned_rrf_baseline` is answered: not a recall fix. Next, a handful of exact-term questions
-in `../courts/eval/questions.yml` (`Q_keyword_value`) — they test the keyword leg's upside, and
-decide `Q_merge` between tuned RRF and the 3 + 3 quota.
+Both measurements are in: the recall fix is tuned RRF, two constants in `Rag::Tools::Search`
+(`RRF_K` 5, legs cut to 10 before `fuse`), shippable on its own. Provenance labels are a separate,
+optional change whose value only an agent-level eval can show (`Q_model_uses_labels`). If both
+land, this idea's "don't fuse" title is wrong and it graduates as "tune the fusion, label the
+hits".
