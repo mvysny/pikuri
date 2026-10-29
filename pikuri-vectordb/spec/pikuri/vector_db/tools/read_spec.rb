@@ -21,7 +21,7 @@ describe Pikuri::VectorDb::Tools::Read do
     File.write(root + source, content)
     chunk = Pikuri::VectorDb::Chunk.new(
       id: "#{source}:0", source: source, text: content[0, 50],
-      metadata: { offset: 0, hash: 'h' }
+      metadata: { ordinal: 0, hash: 'h' }
     )
     backend.upsert(chunks: [chunk], vectors: [[1.0, 0.0, 0.0]])
   end

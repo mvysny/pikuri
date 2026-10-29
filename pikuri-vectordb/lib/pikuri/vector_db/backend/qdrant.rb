@@ -22,7 +22,7 @@ module Pikuri
       # == Point ids: chunk id → derived UUID
       #
       # Qdrant point ids must be unsigned ints or UUIDs, so the {Chunk}'s
-      # readable +"source:offset"+ id can't be the point id. Each is derived as
+      # readable +"source:ordinal"+ id can't be the point id. Each is derived as
       # the first 16 bytes of +SHA1(chunk.id)+ UUID-formatted: deterministic, so
       # re-upserting the same chunk id replaces the old point (collision
       # probability negligible at any corpus size). The real chunk id rides in
@@ -218,7 +218,7 @@ module Pikuri
         end
 
         # The boot-sweep reference: +source+ → stored content hash, one payload
-        # row per *file* (filter +offset == 0+), projected to +source+/+hash+,
+        # row per *file* (filter +ordinal == 0+), projected to +source+/+hash+,
         # vectors excluded, paged by Qdrant's own scroll cursor
         # (+next_page_offset+ — no client-side offset arithmetic, unlike
         # {Chroma}). Assumes the manifest isn't mutating mid-read; the {Watcher}
@@ -234,7 +234,7 @@ module Pikuri
           cursor = nil
           loop do
             request = {
-              filter: { must: [{ key: 'offset', match: { value: 0 } }] },
+              filter: { must: [{ key: 'ordinal', match: { value: 0 } }] },
               with_payload: %w[source hash],
               with_vector: false,
               limit: MANIFEST_PAGE_SIZE

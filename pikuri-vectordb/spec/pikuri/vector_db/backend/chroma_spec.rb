@@ -54,8 +54,8 @@ describe Pikuri::VectorDb::Backend::Chroma do
   end
 
   describe '#upsert' do
-    let(:c_a) { Pikuri::VectorDb::Chunk.new(id: 'a', source: 'docs/a.md', text: 'apple', metadata: { offset: 0 }) }
-    let(:c_b) { Pikuri::VectorDb::Chunk.new(id: 'b', source: 'docs/b.md', text: 'banana', metadata: { offset: 64 }) }
+    let(:c_a) { Pikuri::VectorDb::Chunk.new(id: 'a', source: 'docs/a.md', text: 'apple', metadata: { ordinal: 0 }) }
+    let(:c_b) { Pikuri::VectorDb::Chunk.new(id: 'b', source: 'docs/b.md', text: 'banana', metadata: { ordinal: 64 }) }
     let(:v_a) { [1.0, 0.0, 0.0] }
     let(:v_b) { [0.0, 1.0, 0.0] }
 
@@ -78,8 +78,8 @@ describe Pikuri::VectorDb::Backend::Chroma do
       assert_equal %w[apple banana], received_upsert_body['documents']
       # +source+ rides as a reserved key, alongside symbolized
       # metadata keys stringified for JSON.
-      assert_equal({ 'source' => 'docs/a.md', 'offset' => 0 }, received_upsert_body['metadatas'][0])
-      assert_equal({ 'source' => 'docs/b.md', 'offset' => 64 }, received_upsert_body['metadatas'][1])
+      assert_equal({ 'source' => 'docs/a.md', 'ordinal' => 0 }, received_upsert_body['metadatas'][0])
+      assert_equal({ 'source' => 'docs/b.md', 'ordinal' => 64 }, received_upsert_body['metadatas'][1])
     end
 
     it 'passes get_or_create + cosine in the collection-create body' do
@@ -192,8 +192,8 @@ describe Pikuri::VectorDb::Backend::Chroma do
         ids: [%w[a b]],
         documents: [%w[apple banana]],
         metadatas: [[
-          { 'source' => 'docs/a.md', 'offset' => 0 },
-          { 'source' => 'docs/b.md', 'offset' => 64 }
+          { 'source' => 'docs/a.md', 'ordinal' => 0 },
+          { 'source' => 'docs/b.md', 'ordinal' => 64 }
         ]],
         distances: [[0.1, 0.5]] # cosine distance; similarity = 1 - dist
       }
@@ -206,7 +206,7 @@ describe Pikuri::VectorDb::Backend::Chroma do
       assert_equal 'docs/a.md', results[0].chunk.source
       assert_equal 'apple', results[0].chunk.text
       # Symbol keys restored on round-trip.
-      assert_equal({ offset: 0 }, results[0].chunk.metadata)
+      assert_equal({ ordinal: 0 }, results[0].chunk.metadata)
       assert_in_delta 0.9, results[0].score, 0.0001  # 1 - 0.1
       assert_in_delta 0.5, results[1].score, 0.0001  # 1 - 0.5
     end
@@ -365,7 +365,7 @@ describe Pikuri::VectorDb::Backend::Chroma do
       assert_equal({}, build_backend(conn: conn).sources_with_hashes)
     end
 
-    it 'requests one row per file (offset 0), metadata-only, paged' do
+    it 'requests one row per file (ordinal 0), metadata-only, paged' do
       captured = nil
       conn = with_existing_collection do |stub|
         stub.post("#{collection_path}/#{collection_id}/get") do |env|
@@ -376,7 +376,7 @@ describe Pikuri::VectorDb::Backend::Chroma do
 
       build_backend(conn: conn).sources_with_hashes
 
-      assert_equal({ 'offset' => 0 }, captured['where'])
+      assert_equal({ 'ordinal' => 0 }, captured['where'])
       assert_equal ['metadatas'], captured['include']
       assert_equal Pikuri::VectorDb::Backend::Chroma::MANIFEST_PAGE_SIZE, captured['limit']
       assert_equal 0, captured['offset']
@@ -386,8 +386,8 @@ describe Pikuri::VectorDb::Backend::Chroma do
       conn = with_existing_collection do |stub|
         stub.post("#{collection_path}/#{collection_id}/get") do |_|
           payload = { metadatas: [
-            { 'source' => 'docs/a.md', 'offset' => 0, 'hash' => 'aaa' },
-            { 'source' => 'docs/b.md', 'offset' => 0, 'hash' => 'bbb' }
+            { 'source' => 'docs/a.md', 'ordinal' => 0, 'hash' => 'aaa' },
+            { 'source' => 'docs/b.md', 'ordinal' => 0, 'hash' => 'bbb' }
           ] }
           [200, JSON_HEADERS, payload.to_json]
         end
@@ -403,14 +403,14 @@ describe Pikuri::VectorDb::Backend::Chroma do
       # makes exactly two calls and stops on the short one.
       page_size = Pikuri::VectorDb::Backend::Chroma::MANIFEST_PAGE_SIZE
       full_page = (0...page_size).map do |i|
-        { 'source' => "f#{i}.md", 'offset' => 0, 'hash' => "h#{i}" }
+        { 'source' => "f#{i}.md", 'ordinal' => 0, 'hash' => "h#{i}" }
       end
       offsets = []
       conn = with_existing_collection do |stub|
         stub.post("#{collection_path}/#{collection_id}/get") do |env|
           cursor = JSON.parse(env.body)['offset']
           offsets << cursor
-          metas = cursor.zero? ? full_page : [{ 'source' => 'tail.md', 'offset' => 0, 'hash' => 'z' }]
+          metas = cursor.zero? ? full_page : [{ 'source' => 'tail.md', 'ordinal' => 0, 'hash' => 'z' }]
           [200, JSON_HEADERS, { metadatas: metas }.to_json]
         end
       end
@@ -462,7 +462,7 @@ describe Pikuri::VectorDb::Backend::Chroma do
   describe '#replace_source' do
     let(:chunk) do
       Pikuri::VectorDb::Chunk.new(id: 'docs/a.md:0', source: 'docs/a.md', text: 'apple',
-                                  metadata: { offset: 0, hash: 'aaa' })
+                                  metadata: { ordinal: 0, hash: 'aaa' })
     end
 
     it 'deletes the source then upserts the new chunks' do

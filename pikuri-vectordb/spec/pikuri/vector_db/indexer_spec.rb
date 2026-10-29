@@ -74,13 +74,23 @@ describe Pikuri::VectorDb::Indexer do
       assert_equal %w[doc.md:0 doc.md:1 doc.md:2], hits.map { |h| h.chunk.id }
     end
 
-    it 'stores the chunk offset in metadata' do
+    it 'stores the chunk ordinal in metadata' do
       write('doc.md', 'alpha beta gamma')
 
       build_indexer.index_all!
 
-      hits = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).sort_by { |h| h.chunk.metadata[:offset] }
-      assert_equal [0, 1, 2], hits.map { |h| h.chunk.metadata[:offset] }
+      hits = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).sort_by { |h| h.chunk.metadata[:ordinal] }
+      assert_equal [0, 1, 2], hits.map { |h| h.chunk.metadata[:ordinal] }
+    end
+
+    it "stores each chunk's line range in metadata" do
+      write('doc.md', "alpha\n\nbeta gamma\r\ndelta")
+
+      build_indexer.index_all!
+
+      hits = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).sort_by { |h| h.chunk.metadata[:ordinal] }
+      assert_equal [['alpha', 1, 1], ['beta', 3, 3], ['gamma', 3, 3], ['delta', 4, 4]],
+                   hits.map { |h| [h.chunk.text, h.chunk.metadata[:first_line], h.chunk.metadata[:last_line]] }
     end
 
     it 'skips dot-files and dot-directories' do

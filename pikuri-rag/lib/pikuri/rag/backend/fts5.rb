@@ -310,8 +310,8 @@ module Pikuri
           end
         end
 
-        # +metadata+ carries only +hash+, not the +offset+ the indexer also
-        # sets: nothing downstream of a keyword hit reads +offset+, so the
+        # +metadata+ carries only +hash+, not the +ordinal+ the indexer also
+        # sets: nothing downstream of a keyword hit reads +ordinal+, so the
         # column would be dead weight in every row.
         #
         # @return [Pikuri::VectorDb::Chunk]

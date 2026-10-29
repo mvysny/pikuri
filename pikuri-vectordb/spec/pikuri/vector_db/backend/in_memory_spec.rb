@@ -134,9 +134,9 @@ describe Pikuri::VectorDb::Backend::InMemory do
   end
 
   # Chunks sharing a source, for the incremental methods.
-  let(:s1_0) { Pikuri::VectorDb::Chunk.new(id: 'doc:0', source: 'doc.md', text: 'one', metadata: { offset: 0, hash: 'h1' }) }
-  let(:s1_1) { Pikuri::VectorDb::Chunk.new(id: 'doc:1', source: 'doc.md', text: 'two', metadata: { offset: 1, hash: 'h1' }) }
-  let(:s2_0) { Pikuri::VectorDb::Chunk.new(id: 'oth:0', source: 'other.md', text: 'three', metadata: { offset: 0, hash: 'h2' }) }
+  let(:s1_0) { Pikuri::VectorDb::Chunk.new(id: 'doc:0', source: 'doc.md', text: 'one', metadata: { ordinal: 0, hash: 'h1' }) }
+  let(:s1_1) { Pikuri::VectorDb::Chunk.new(id: 'doc:1', source: 'doc.md', text: 'two', metadata: { ordinal: 1, hash: 'h1' }) }
+  let(:s2_0) { Pikuri::VectorDb::Chunk.new(id: 'oth:0', source: 'other.md', text: 'three', metadata: { ordinal: 0, hash: 'h2' }) }
 
   describe '#delete_by_source' do
     it 'removes only the chunks of the given source' do
@@ -161,7 +161,7 @@ describe Pikuri::VectorDb::Backend::InMemory do
       backend.upsert(chunks: [s1_0, s1_1, s2_0], vectors: [v_a, v_b, v_c])
       assert_equal 3, backend.count
 
-      shrunk = Pikuri::VectorDb::Chunk.new(id: 'doc:0', source: 'doc.md', text: 'merged', metadata: { offset: 0, hash: 'h1b' })
+      shrunk = Pikuri::VectorDb::Chunk.new(id: 'doc:0', source: 'doc.md', text: 'merged', metadata: { ordinal: 0, hash: 'h1b' })
       backend.replace_source(source: 'doc.md', chunks: [shrunk], vectors: [v_a])
 
       assert_equal 2, backend.count # doc:1 gone, other.md untouched

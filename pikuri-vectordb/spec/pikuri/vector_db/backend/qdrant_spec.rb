@@ -70,8 +70,8 @@ describe Pikuri::VectorDb::Backend::Qdrant do
   end
 
   describe '#upsert' do
-    let(:c_a) { Pikuri::VectorDb::Chunk.new(id: 'a', source: 'docs/a.md', text: 'apple', metadata: { offset: 0 }) }
-    let(:c_b) { Pikuri::VectorDb::Chunk.new(id: 'b', source: 'docs/b.md', text: 'banana', metadata: { offset: 64 }) }
+    let(:c_a) { Pikuri::VectorDb::Chunk.new(id: 'a', source: 'docs/a.md', text: 'apple', metadata: { ordinal: 0 }) }
+    let(:c_b) { Pikuri::VectorDb::Chunk.new(id: 'b', source: 'docs/b.md', text: 'banana', metadata: { ordinal: 64 }) }
     let(:v_a) { [1.0, 0.0, 0.0] }
     let(:v_b) { [0.0, 1.0, 0.0] }
 
@@ -93,9 +93,9 @@ describe Pikuri::VectorDb::Backend::Qdrant do
       # source, text, and stringified metadata ride in the payload.
       assert_equal [UUID_A, UUID_B], points.map { |p| p['id'] }
       assert_equal [v_a, v_b], points.map { |p| p['vector'] }
-      assert_equal({ 'id' => 'a', 'source' => 'docs/a.md', 'text' => 'apple', 'offset' => 0 },
+      assert_equal({ 'id' => 'a', 'source' => 'docs/a.md', 'text' => 'apple', 'ordinal' => 0 },
                    points[0]['payload'])
-      assert_equal({ 'id' => 'b', 'source' => 'docs/b.md', 'text' => 'banana', 'offset' => 64 },
+      assert_equal({ 'id' => 'b', 'source' => 'docs/b.md', 'text' => 'banana', 'ordinal' => 64 },
                    points[1]['payload'])
     end
 
@@ -197,9 +197,9 @@ describe Pikuri::VectorDb::Backend::Qdrant do
       payload = {
         result: [
           { id: UUID_A, score: 0.97,
-            payload: { 'id' => 'a', 'source' => 'docs/a.md', 'text' => 'apple', 'offset' => 0 } },
+            payload: { 'id' => 'a', 'source' => 'docs/a.md', 'text' => 'apple', 'ordinal' => 0 } },
           { id: UUID_B, score: 0.42,
-            payload: { 'id' => 'b', 'source' => 'docs/b.md', 'text' => 'banana', 'offset' => 64 } }
+            payload: { 'id' => 'b', 'source' => 'docs/b.md', 'text' => 'banana', 'ordinal' => 64 } }
         ],
         status: 'ok'
       }
@@ -215,7 +215,7 @@ describe Pikuri::VectorDb::Backend::Qdrant do
       assert_equal 'docs/a.md', results[0].chunk.source
       assert_equal 'apple', results[0].chunk.text
       # Symbol keys restored on round-trip; reserved keys stripped.
-      assert_equal({ offset: 0 }, results[0].chunk.metadata)
+      assert_equal({ ordinal: 0 }, results[0].chunk.metadata)
       # Qdrant's score is already a cosine similarity — passthrough,
       # no 1-distance conversion.
       assert_in_delta 0.97, results[0].score, 0.0001
@@ -382,7 +382,7 @@ describe Pikuri::VectorDb::Backend::Qdrant do
       assert_equal({}, build_backend(conn: conn).sources_with_hashes)
     end
 
-    it 'requests one row per file (offset 0), payload-projected, vectors excluded' do
+    it 'requests one row per file (ordinal 0), payload-projected, vectors excluded' do
       captured = nil
       conn = with_existing_collection do |stub|
         stub.post("#{collection_path}/points/scroll") do |env|
@@ -393,7 +393,7 @@ describe Pikuri::VectorDb::Backend::Qdrant do
 
       build_backend(conn: conn).sources_with_hashes
 
-      assert_equal({ 'must' => [{ 'key' => 'offset', 'match' => { 'value' => 0 } }] },
+      assert_equal({ 'must' => [{ 'key' => 'ordinal', 'match' => { 'value' => 0 } }] },
                    captured['filter'])
       assert_equal %w[source hash], captured['with_payload']
       assert_equal false, captured['with_vector']
@@ -480,7 +480,7 @@ describe Pikuri::VectorDb::Backend::Qdrant do
   describe '#replace_source' do
     let(:chunk) do
       Pikuri::VectorDb::Chunk.new(id: 'docs/a.md:0', source: 'docs/a.md', text: 'apple',
-                                  metadata: { offset: 0, hash: 'aaa' })
+                                  metadata: { ordinal: 0, hash: 'aaa' })
     end
 
     it 'deletes the source then upserts the new chunks' do

@@ -10,16 +10,16 @@ describe Pikuri::Rag::Backend::Hybrid do
   let(:keywords) { Pikuri::Rag::Backend::Fts5.new }
   let(:hybrid) { Pikuri::Rag::Backend::Hybrid.new(vectors: vectors, keywords: keywords) }
 
-  def chunk(id, source, text, hash: 'h1', offset: 0)
+  def chunk(id, source, text, hash: 'h1', ordinal: 0)
     Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
-                                metadata: { offset: offset, hash: hash })
+                                metadata: { ordinal: ordinal, hash: hash })
   end
 
   def populate
     hybrid.upsert(
       chunks: [
         chunk('acme.md:0', 'acme.md', 'Acme agreed to hold list pricing through Q1.'),
-        chunk('acme.md:1', 'acme.md', 'Their meetings run long; invoice 4471 outstanding.', offset: 1),
+        chunk('acme.md:1', 'acme.md', 'Their meetings run long; invoice 4471 outstanding.', ordinal: 1),
         chunk('initech.md:0', 'initech.md', 'Initech pricing discussion deferred.', hash: 'h2')
       ],
       vectors: [[1.0, 0.0], [0.0, 1.0], [0.7, 0.7]]

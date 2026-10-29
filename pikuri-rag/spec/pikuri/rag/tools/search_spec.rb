@@ -19,7 +19,7 @@ describe Pikuri::Rag::Tools::Search do
 
   def chunk(id, source, text)
     Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
-                                metadata: { offset: 0, hash: 'h' })
+                                metadata: { ordinal: 0, hash: 'h' })
   end
 
   def populate

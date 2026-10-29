@@ -246,12 +246,10 @@ module Pikuri
         end
 
         # The boot-sweep reference: +source+ → stored content hash, one metadata
-        # row per *file* (not per chunk) via +where: { offset: 0 }+ (every file
-        # has one chunk at offset 0), +include: ['metadatas']+ (drops the heavy
+        # row per *file* (not per chunk) via +where: { ordinal: 0 }+ (every file
+        # has one chunk at ordinal 0), +include: ['metadatas']+ (drops the heavy
         # embeddings/documents), and {MANIFEST_PAGE_SIZE} +limit+/+offset+
         # paging so a large corpus never materializes one multi-MB response.
-        # (Two +offset+s collide in wording: the +where+ one is a *chunk*
-        # metadata field, the top-level one is the *pagination* cursor.)
         #
         # Pagination assumes the manifest isn't mutating mid-read; the {Watcher}
         # drives this from its single worker thread, so no reindex runs
@@ -267,7 +265,7 @@ module Pikuri
           cursor = 0
           loop do
             body = post_json("#{collection_path}/get", {
-                               where: { 'offset' => 0 },
+                               where: { 'ordinal' => 0 },
                                include: ['metadatas'],
                                limit: MANIFEST_PAGE_SIZE,
                                offset: cursor

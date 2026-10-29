@@ -29,17 +29,17 @@ describe Pikuri::VectorDb::Tools::Search do
       Pikuri::VectorDb::Chunk.new(
         id: 'risotto.md:0', source: 'risotto.md',
         text: 'Rice should be added gradually after toasting the butter.',
-        metadata: { offset: 0 }
+        metadata: { ordinal: 0 }
       ),
       Pikuri::VectorDb::Chunk.new(
         id: 'risotto.md:1', source: 'risotto.md',
         text: 'For risotto, the key is the gradual addition of broth.',
-        metadata: { offset: 1 }
+        metadata: { ordinal: 1 }
       ),
       Pikuri::VectorDb::Chunk.new(
         id: 'paella.md:0', source: 'paella.md',
         text: 'Paella uses short-grain rice but cooked in one shot.',
-        metadata: { offset: 0 }
+        metadata: { ordinal: 0 }
       )
     ]
     vectors = [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0], [0.0, 1.0, 0.0]]

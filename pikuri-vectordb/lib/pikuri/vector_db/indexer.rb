@@ -68,7 +68,7 @@ module Pikuri
       #
       # A *single* source, not an array: with multiple roots two files both
       # named +cooking.md+ would derive identical relative +source+ values,
-      # hence identical +"source:offset"+ ids, and {Backend#upsert}'s
+      # hence identical +"source:ordinal"+ ids, and {Backend#upsert}'s
       # replace-by-id would silently let the second overwrite the first.
       # Multi-source is deferred — see +design/ideas/vectordb-deferrals.md+.
       def initialize(backend:, source:, embedder:, chunker:)
@@ -159,15 +159,15 @@ module Pikuri
         path   = Pathname.new(path).expand_path
         source = relative_source(path)
 
-        texts = begin
-          chunk_texts_for(path)
+        pieces = begin
+          pieces_for(path)
         rescue ArgumentError, Errno::ENOENT, RuntimeError => e
           LOGGER.info("reindex #{source}: unindexable (#{e.message}); removing from index")
           @backend.delete_by_source(source)
           return 0
         end
 
-        if texts.empty?
+        if pieces.empty?
           LOGGER.info("reindex #{source}: no indexable text; removing from index")
           @backend.delete_by_source(source)
           return 0
@@ -176,7 +176,7 @@ module Pikuri
         # embed_and_build is *outside* the rescue: an embedder outage
         # raises straight out, before replace_source touches the
         # backend, so the prior chunks survive (embed-before-delete).
-        chunks, vectors = embed_and_build(source: source, path: path, chunk_texts: texts)
+        chunks, vectors = embed_and_build(source: source, path: path, pieces: pieces)
         @backend.replace_source(source: source, chunks: chunks, vectors: vectors)
         LOGGER.info("reindex #{source}: #{chunks.length} chunk(s)")
         chunks.length
@@ -275,21 +275,21 @@ module Pikuri
       # @return [Integer] chunks emitted for this file.
       def index_file(root:, path:, i:, total:)
         source = relative_source(path)
-        texts = begin
-          chunk_texts_for(path)
+        pieces = begin
+          pieces_for(path)
         rescue ArgumentError, Errno::ENOENT, RuntimeError => e
           LOGGER.warn("[#{i}/#{total}] skipping #{source}: #{e.message}")
           return 0
         end
 
-        if texts.empty?
+        if pieces.empty?
           LOGGER.warn("[#{i}/#{total}] #{source}: no extractable text, skipping")
           return 0
         end
 
         # embed_and_build is outside the rescue so an embedder failure
         # propagates and aborts the run (see "Errors mid-indexing").
-        chunks, vectors = embed_and_build(source: source, path: path, chunk_texts: texts)
+        chunks, vectors = embed_and_build(source: source, path: path, pieces: pieces)
         @backend.upsert(chunks: chunks, vectors: vectors)
         LOGGER.info("[#{i}/#{total}] #{source}: #{chunks.length} chunk(s)")
         chunks.length
@@ -311,31 +311,30 @@ module Pikuri
       # incremental removal).
       #
       # @param path [Pathname]
-      # @return [Array<String>] chunk texts; empty when there's no extractable
-      #   text.
-      def chunk_texts_for(path)
-        @chunker.chunk(Pikuri::FileType.read_as_text(path)).map(&:text)
+      # @return [Array<Chunker::Piece>] empty when there's no extractable text.
+      def pieces_for(path)
+        @chunker.chunk(Pikuri::FileType.read_as_text(path))
       end
 
-      # Embed the chunk texts and assemble {Chunk}s with stable ids
-      # (+"source:offset"+) and +offset+/+hash+ metadata. Shared by
+      # Embed the pieces' texts and assemble {Chunk}s with stable ids
+      # (+"source:ordinal"+) and the metadata {Chunk} documents. Shared by
       # {#index_file} and {#reindex_file!} so boot and incremental reindex
       # produce byte-identical chunks. Keep the embed (the one network call)
       # out of any rescue that would swallow an outage.
       #
       # @param source [String]
       # @param path [Pathname] hashed for the +hash+ metadata.
-      # @param chunk_texts [Array<String>] non-empty.
+      # @param pieces [Array<Chunker::Piece>] non-empty.
       # @return [Array(Array<Chunk>, Array<Array<Float>>)]
-      def embed_and_build(source:, path:, chunk_texts:)
+      def embed_and_build(source:, path:, pieces:)
         hash    = file_hash(path)
-        vectors = @embedder.embed(chunk_texts)
-        chunks  = chunk_texts.each_with_index.map do |chunk_text, idx|
+        vectors = @embedder.embed(pieces.map(&:text))
+        chunks  = pieces.each_with_index.map do |piece, idx|
           Chunk.new(
             id: "#{source}:#{idx}",
             source: source,
-            text: chunk_text,
-            metadata: { offset: idx, hash: hash }
+            text: piece.text,
+            metadata: { ordinal: idx, hash: hash, first_line: piece.first_line, last_line: piece.last_line }
           )
         end
         [chunks, vectors]
