@@ -8,7 +8,7 @@ module Pikuri
     module Reranker
       # Cross-encoder reranker via HTTP POST +/v1/rerank+ against a llama.cpp
       # server, in the same wire format Cohere's hosted reranker speaks — so a
-      # +Reranker::Cohere+ later is a base-URL + auth-header swap on this client:
+      # +Reranker::Cohere+ later is little more than a base-URL swap on this client:
       #
       #   POST <endpoint>/v1/rerank   { "model"?, "query", "documents": [...] }
       #   → 200 { "results": [ { "index": 0, "relevance_score": 0.92 }, ... ] }
@@ -18,7 +18,10 @@ module Pikuri
       # +endpoint:+ is the base URL (+/v1/rerank+ appended); most setups point it
       # at the same router-mode +llama-server+ as chat/embedder. +model:+ is
       # optional (llama.cpp infers the loaded model; Cohere requires it — set it
-      # forward-compatibly).
+      # forward-compatibly). +api_key:+ is sent as +Authorization: Bearer+ — the
+      # header a +llama-server --api-key+ checks, the same key RubyLLM sends for
+      # chat and embeddings — so a reranker on a keyed server isn't rejected
+      # with a 401 that {Tools::Search} would quietly degrade into "no reranker".
       #
       # Errors are loud (same posture as {Tokenizer::LlamaServer}): non-2xx,
       # missing +results+, malformed body, +Faraday::Error+ all raise. The
@@ -30,15 +33,19 @@ module Pikuri
         # @param model [String, nil] model name to send in the
         #   request body. +nil+ omits the +model+ field;
         #   llama.cpp uses whatever's loaded.
+        # @param api_key [String, nil] sent as +Authorization:
+        #   Bearer+ on every request; +nil+ sends no header (a
+        #   server without +--api-key+ needs none).
         # @param connection [Faraday::Connection, nil] optional
         #   dependency injection for tests.
         # @return [LlamaServer]
         # @raise [ArgumentError] on empty endpoint.
-        def initialize(endpoint:, model: nil, connection: nil)
+        def initialize(endpoint:, model: nil, api_key: nil, connection: nil)
           raise ArgumentError, 'endpoint must be non-empty' if endpoint.nil? || endpoint.empty?
 
           @endpoint = endpoint
           @model = model
+          @api_key = api_key
           @connection = connection || Faraday.new(url: endpoint) do |f|
             f.request :json
             f.response :json
@@ -67,6 +74,7 @@ module Pikuri
 
           response = @connection.post('/v1/rerank') do |req|
             req.headers['Content-Type'] = 'application/json'
+            req.headers['Authorization'] = "Bearer #{@api_key}" if @api_key
             req.body = body
           end
 

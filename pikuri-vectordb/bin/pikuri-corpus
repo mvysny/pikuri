@@ -146,7 +146,8 @@ system_prompt += "\nIndexed corpus root: #{source}"
 
 reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
   endpoint: reranker_server,
-  model:    reranker_model
+  model:    reranker_model,
+  api_key:  examples_config['llm_api_key']
 ) : nil
 
 # Mirror the chat-side +assume_model_exists: true+ so RubyLLM's

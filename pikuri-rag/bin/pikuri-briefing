@@ -194,7 +194,8 @@ system_prompt += "\nIndexed notes folder: #{source}"
 
 reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
   endpoint: reranker_server,
-  model:    reranker_model
+  model:    reranker_model,
+  api_key:  examples_config['llm_api_key']
 ) : nil
 
 embedder = Pikuri::VectorDb::Embedder.new(

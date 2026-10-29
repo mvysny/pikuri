@@ -95,6 +95,38 @@ describe Pikuri::VectorDb::Reranker::LlamaServer do
       assert_equal 'bge-reranker-v2-m3', received_body['model']
     end
 
+    it 'sends a configured api_key: as a Bearer Authorization header' do
+      received_headers = nil
+      conn = build_connection do |stub|
+        stub.post('/v1/rerank') do |env|
+          received_headers = env.request_headers
+          [200, JSON_HEADERS, { results: [] }.to_json]
+        end
+      end
+      r = Pikuri::VectorDb::Reranker::LlamaServer.new(
+        endpoint: 'http://stub', api_key: 'sekret', connection: conn
+      )
+
+      r.rerank(query: 'q', documents: ['d'])
+
+      assert_equal 'Bearer sekret', received_headers['Authorization']
+    end
+
+    it 'sends no Authorization header when api_key is nil' do
+      received_headers = nil
+      conn = build_connection do |stub|
+        stub.post('/v1/rerank') do |env|
+          received_headers = env.request_headers
+          [200, JSON_HEADERS, { results: [] }.to_json]
+        end
+      end
+      r = Pikuri::VectorDb::Reranker::LlamaServer.new(endpoint: 'http://stub', connection: conn)
+
+      r.rerank(query: 'q', documents: ['d'])
+
+      refute received_headers.key?('Authorization')
+    end
+
     it 'omits the model field when model is nil' do
       received_body = nil
       conn = build_connection do |stub|
