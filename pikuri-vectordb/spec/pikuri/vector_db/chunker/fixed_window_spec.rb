@@ -50,19 +50,19 @@ describe Pikuri::VectorDb::Chunker::FixedWindow do
     let(:chunker) { Pikuri::VectorDb::Chunker::FixedWindow.new(size: 3, overlap: 1, tokenizer: fake_tokenizer) }
 
     it 'returns [] for empty text' do
-      assert_equal [], chunker.chunk('')
+      assert_equal [], chunker.chunk('').map(&:text)
     end
 
     it 'returns [] for whitespace-only text' do
-      assert_equal [], chunker.chunk("   \n\t  ")
+      assert_equal [], chunker.chunk("   \n\t  ").map(&:text)
     end
 
     it 'returns a single chunk for one word' do
-      assert_equal ['hello'], chunker.chunk('hello')
+      assert_equal ['hello'], chunker.chunk('hello').map(&:text)
     end
 
     it 'returns a single chunk when the whole text fits in one window' do
-      assert_equal ['a b c'], chunker.chunk('a b c')
+      assert_equal ['a b c'], chunker.chunk('a b c').map(&:text)
     end
   end
 
@@ -75,14 +75,14 @@ describe Pikuri::VectorDb::Chunker::FixedWindow do
       # has 2 words because the source runs out.
       assert_equal(
         ['a b c', 'c d e', 'e f g', 'g h i', 'i j'],
-        chunker.chunk('a b c d e f g h i j')
+        chunker.chunk('a b c d e f g h i j').map(&:text)
       )
     end
 
     it 'normalizes runs of whitespace (split joins on single space)' do
       assert_equal(
         ['a b c', 'c d e'],
-        chunker.chunk("a   b\nc\td  e")
+        chunker.chunk("a   b\nc\td  e").map(&:text)
       )
     end
   end
@@ -93,7 +93,7 @@ describe Pikuri::VectorDb::Chunker::FixedWindow do
     it 'produces adjacent non-overlapping chunks' do
       assert_equal(
         ['a b c', 'd e f', 'g h i', 'j'],
-        chunker.chunk('a b c d e f g h i j')
+        chunker.chunk('a b c d e f g h i j').map(&:text)
       )
     end
   end
@@ -115,8 +115,32 @@ describe Pikuri::VectorDb::Chunker::FixedWindow do
       chunker = Pikuri::VectorDb::Chunker::FixedWindow.new(
         size: 3, overlap: 0, tokenizer: oversize_tokenizer
       )
-      result = chunker.chunk('huge another final')
+      result = chunker.chunk('huge another final').map(&:text)
       assert_equal %w[huge another final], result
+    end
+  end
+
+  describe '#chunk line ranges' do
+    let(:chunker) { Pikuri::VectorDb::Chunker::FixedWindow.new(size: 3, overlap: 1, tokenizer: fake_tokenizer) }
+
+    def ranges(text)
+      chunker.chunk(text).map { |p| [p.text, p.first_line, p.last_line] }
+    end
+
+    it 'reports each piece by the lines of its first and last word, overlap included' do
+      assert_equal [['a b c', 1, 2], ['c d e', 2, 4]], ranges("a b\nc d\n\ne")
+    end
+
+    it 'counts CRLF like LF' do
+      assert_equal [['a b c', 1, 3]], ranges("a\r\nb\r\nc\r\n")
+    end
+
+    it 'does not break a line on a lone CR' do
+      assert_equal [['a b c', 1, 2]], ranges("a\rb\nc")
+    end
+
+    it 'numbers lines after leading blank lines' do
+      assert_equal [['a', 3, 3]], ranges("\n  \na")
     end
   end
 
@@ -132,7 +156,7 @@ describe Pikuri::VectorDb::Chunker::FixedWindow do
       refute chunks.empty?
       assert_operator chunks.length, :>, 1
       # Every chunk should be non-empty.
-      chunks.each { |c| refute c.empty? }
+      chunks.each { |c| refute c.text.empty? }
     end
   end
 end

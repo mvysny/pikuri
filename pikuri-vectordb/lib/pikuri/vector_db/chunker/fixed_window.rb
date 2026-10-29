@@ -8,6 +8,15 @@ module Pikuri
       # +overlap+ tokens of the previous chunk's tail so an answer straddling a
       # boundary stays intact in at least one chunk (standard RAG practice).
       #
+      #   FixedWindow.new(size: 3, overlap: 1, tokenizer: one_token_per_word).chunk("a b\nc d\n\ne")
+      #   # => [Piece(text: "a b c", first_line: 1, last_line: 2),
+      #   #     Piece(text: "c d e", first_line: 2, last_line: 4)]
+      #
+      # A piece's text is its words joined by single spaces, newlines gone:
+      # a snippet that kept them could pose as search output
+      # (+"bla\n\n[2] secrets.md lines 1-5"+ reads as a second hit). The
+      # layout survives only as the line range.
+      #
       # Whitespace-split gives word boundaries for Western-European languages —
       # good enough for any text {Pikuri::FileType.read_as_text} flattens to
       # prose; CJK (no whitespace) degrades to one-huge-unit chunks, a documented
@@ -62,17 +71,18 @@ module Pikuri
         # whitespace-only input returns +[]+.
         #
         # @param text [String]
-        # @return [Array<String>] non-empty chunks, in source
+        # @return [Array<Piece>] non-empty pieces, in source
         #   order. May be empty.
         def chunk(text)
-          words = text.split
+          words, lines = words_with_lines(text)
           return [] if words.empty?
 
           chunks = []
           start = 0
           while start < words.length
             finish = find_chunk_end(words, start)
-            chunks << words[start...finish].join(' ')
+            chunks << Piece.new(text: words[start...finish].join(' '),
+                                first_line: lines[start], last_line: lines[finish - 1])
 
             break if finish >= words.length
 
@@ -83,6 +93,27 @@ module Pikuri
         end
 
         private
+
+        # Split +text+ into the same words as +String#split+, each with its
+        # 1-based line number. Only +"\n"+ advances the line — a lone CR is
+        # whitespace like any other, per {Pikuri::Extractor}'s == Lines.
+        #
+        # @param text [String]
+        # @return [Array(Array<String>, Array<Integer>)] parallel arrays.
+        def words_with_lines(text)
+          words = []
+          lines = []
+          line = 1
+          text.scan(/\n|\S+/) do |token|
+            if token == "\n"
+              line += 1
+            else
+              words << token
+              lines << line
+            end
+          end
+          [words, lines]
+        end
 
         # Walk forward from +start+ adding one word at a time
         # until +tokenizer.count+ exceeds +@size+, returning the

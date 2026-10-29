@@ -9,17 +9,15 @@ describe Pikuri::VectorDb::Indexer do
   let(:root) { Pathname.new(Dir.mktmpdir('pikuri-vectordb-indexer-')).realpath }
   let(:backend) { Pikuri::VectorDb::Backend::InMemory.new }
 
-  # Deterministic fakes. The chunker word-splits (one chunk per
-  # word); the embedder returns a 3-dim vector whose first
+  # Deterministic fakes. The chunker is a one-word FixedWindow (one
+  # chunk per word); the embedder returns a 3-dim vector whose first
   # component is the text length, second/third are constants —
   # ensures vectors are distinct per chunk while staying easy
   # to read in failure messages.
   let(:fake_chunker) do
-    obj = Object.new
-    def obj.chunk(text)
-      text.split(' ')
-    end
-    obj
+    tokenizer = Object.new
+    def tokenizer.count(text) = text.split.length
+    Pikuri::VectorDb::Chunker::FixedWindow.new(size: 1, tokenizer: tokenizer)
   end
 
   let(:fake_embedder) do

@@ -63,7 +63,7 @@ module Pikuri
       # @param source [String, Pathname] path to index (a file directly, a
       #   directory recursively). Tilde-expanded.
       # @param embedder [#embed] +embed(Array<String>) -> Array<Array<Float>>+.
-      # @param chunker [#chunk] +chunk(String) -> Array<String>+.
+      # @param chunker [#chunk] +chunk(String) -> Array<Chunker::Piece>+.
       # @return [Indexer]
       #
       # A *single* source, not an array: with multiple roots two files both
@@ -314,7 +314,7 @@ module Pikuri
       # @return [Array<String>] chunk texts; empty when there's no extractable
       #   text.
       def chunk_texts_for(path)
-        @chunker.chunk(Pikuri::FileType.read_as_text(path))
+        @chunker.chunk(Pikuri::FileType.read_as_text(path)).map(&:text)
       end
 
       # Embed the chunk texts and assemble {Chunk}s with stable ids

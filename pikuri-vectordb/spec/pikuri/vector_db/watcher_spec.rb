@@ -247,8 +247,9 @@ describe Pikuri::VectorDb::Watcher do
     let(:backend) { Pikuri::VectorDb::Backend::InMemory.new }
 
     let(:real_indexer) do
-      chunker = Object.new
-      def chunker.chunk(text) = text.split(' ')
+      tokenizer = Object.new
+      def tokenizer.count(text) = text.split.length
+      chunker = Pikuri::VectorDb::Chunker::FixedWindow.new(size: 1, tokenizer: tokenizer)
       embedder = Object.new
       def embedder.embed(texts) = texts.map { |t| [t.length.to_f, 0.5, 0.5] }
       Pikuri::VectorDb::Indexer.new(
