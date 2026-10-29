@@ -50,17 +50,92 @@ cross-encoder; the labels tell it *why* each hit is there. `fuse` and `RRF_K` go
 *Why fuse by rank* section becomes the decision record of why not. `vectordb_search` (one leg)
 is untouched.
 
+Side effects: the one-`score=`-label-over-three-scales caveat (`Rag::Tools::Search` header)
+disappears, since per-leg ranks are honest where that number isn't; and `CANDIDATE_K` = 50 per
+leg no longer serves anything, so `rag_search` gets its own per-leg constant instead of
+aliasing `vectordb_search`'s `FINAL_K` / `CANDIDATE_K`.
+
+## It is still a fusion — two changes, not one
+
+"Each leg's top 3, interleaved, deduped" is a merge with a fixed per-leg quota — effectively
+RRF with a tiny `k` and a shallow depth. The proposal bundles:
+
+- **(a) a different merge** — all of the measured recall gain is here;
+- **(b) provenance labels** — the gain is untested (`Q_model_uses_labels`).
+
+So the decision record is not "fusion can't work" but "RRF at depth 50 rewards agreement deep
+in both lists; a per-leg quota doesn't, and reads in one line". The flaw is *depth*: a chunk at
+rank 30 in both legs scores 2/90 ≈ 0.022, a single-leg rank-1 scores 1/61 ≈ 0.016. Even if a
+tuned RRF matches the union's recall (`Q_tuned_rrf_baseline`), the change still stands on (b)
+plus simplicity — "Readable in an evening" favours a quota over `fuse` + `RRF_K` + a paragraph
+on damping — but the record should say which of the two it shipped for.
+
+The extra hits are not the cost: no one asks for 5, `FINAL_K` is host policy, and ≤ 6 vs 5
+snippets is negligible context. The real cost is that the keyword leg now *always* gets its
+quota — on a lay paraphrase an OR'd bm25 top 3 can be junk that fusion used to sink. Hence
+`Q_keyword_value` is the open question that matters most.
+
+## Tuned RRF, measured (2026-10-29)
+
+`Q_tuned_rrf_baseline`, same corpus, questions and bge-m3 index as above, no reranker; RRF
+reimplemented in `../courts/bin/embedder-eval` with `k` and per-leg depth as knobs (at `k` 60,
+depth 50 it ranks every question exactly as `Search.fuse` does — checked per question).
+
+| Merge | top 5 | top 6 | top 10 | MRR |
+|---|---|---|---|---|
+| vector only | 24 | 24 | 26 | 0.75 |
+| keyword only | 13 | 15 | 15 | 0.37 |
+| RRF `k` 60, depth 50 (today) | 22 | 23 | 24 | 0.54 |
+| RRF `k` 5, depth 50 | 23 | 25 | 26 | 0.63 |
+| RRF `k` 60, depth 10 | 25 | 26 | 26 | 0.60 |
+| RRF `k` 5, depth 10 | **26** | **26** | 26 | 0.61 |
+| union 3 + 3, interleaved (≤ 6 hits) | 24 | 25 | 25 | **0.73** |
+| union 5 + 5, interleaved (≤ 10 hits) | 24 | 25 | 26 | 0.74 |
+
+- **Tuning RRF recovers all the recall, and a bit more.** `k` 5 over each leg's top 10 puts a
+  gold § in the top 5 for 26/28 — the union 3 + 3 reaches 25 even at its full ≤ 6. One question
+  of 28 is noise; "at least as good" is the honest reading.
+- **The flaw is depth, as argued above.** Depth 10 alone (`k` 60) gets 25/26; `k` 5 alone at
+  depth 50 only 23/25. Agreement *near the top* of both legs is signal — tal 6:24 sits at
+  vector #8 and keyword #5, which the 3 + 3 quota drops and depth-10 RRF lifts to #3.
+  Agreement deep in both lists is the noise.
+- **The union wins on rank, not recall:** MRR 0.73 vs 0.61 — it puts the gold at #1 more
+  often, because each leg's #1 is always at the top. That matters exactly if the model reads
+  from the top (`Q_order`).
+
+So this does **not** ship as a recall fix: a two-constant change to `fuse` (`RRF_K` 5, each
+leg cut to 10 before fusing) gets the recall with today's shape. The unfused proposal stands or
+falls on (b) provenance and simplicity, and on MRR. Labels don't need the union either — a
+tuned-RRF list can carry "meaning #1, keyword #4" on each hit just as well — so the two halves
+can ship separately.
+
 ## Open questions
 
+- Answered 2026-10-29, above: `Q_tuned_rrf_baseline` — tuned RRF matches the union's recall.
+- `Q_merge` — tuned RRF (recall 26 at 5, MRR 0.61, today's code with two constants changed) or
+  the interleaved union (25 at ≤ 6, MRR 0.73, a quota that reads in one line)? Either way with
+  provenance labels.
 - `Q_per_leg_k` — 3 + 3 (≤ 6 hits, 25/28) or 5 + 5 (≤ 10, 26/28)? Context cost vs recall;
-  a `FINAL_K` per leg rather than one total.
+  a `FINAL_K` per leg rather than one total. Leaning **3 + 3**: 5 + 5 buys one question for up
+  to twice the context, and context is what a small local model runs out of.
 - `Q_order` — two labelled groups, or interleaved (meaning #1, keyword #1, meaning #2, …)?
   A small local model may read only from the top, so the order may matter more than the labels.
+  Leaning **interleaved**: with groups, keyword noise either leads or buries the vector hits,
+  depending on which goes first. A both-legs hit sits at its better rank, with no agreement
+  bonus — that bonus is exactly the flaw.
 - `Q_model_uses_labels` — does the agent actually pick better? Measures retrieval only so far;
   needs an agent-level eval (answer quality on the same questions), not just "gold present".
 - `Q_keyword_value` — the courts questions are lay paraphrases by design, which favour the
   vector leg (vector top 10 alone also reaches 26/28). The keyword leg's job — ids, "55/2001",
   "7 luvun 3 §", rare terms — is barely tested. Add exact-term questions before reading
-  anything into it.
-- `Q_reranker_role` — drop the reranker from `rag_search`, or rerank only the union (≤ 10
-  documents, cheap) to order it? Either way it stops being a fixed stage.
+  anything into it: so far only the keyword quota's downside is measured, not its upside.
+- `Q_reranker_role` — drop the reranker from `rag_search`, or rerank only the union to order
+  it? Either way it stops being a fixed stage. Leaning **drop**: 22 s for 20 documents puts 6
+  at ~7 s on CPU, and it would replace the provenance order with one opaque score. Could come
+  back as an opt-in reorder of the union.
+
+## Next step
+
+`Q_tuned_rrf_baseline` is answered: not a recall fix. Next, a handful of exact-term questions
+in `../courts/eval/questions.yml` (`Q_keyword_value`) — they test the keyword leg's upside, and
+decide `Q_merge` between tuned RRF and the 3 + 3 quota.
