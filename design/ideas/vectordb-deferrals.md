@@ -53,8 +53,16 @@ Only the deferrals stay here.
   AST-aware code chunker, contextual chunking. All real quality
   wins, all separately scoped features. (Parent-document
   retrieval shipped instead as the `vectordb_read` tool — the
-  agent reads the whole source document on a clean hit, rather
-  than the chunker stitching parent context onto every chunk.)
+  agent reads the source document from the hit's first line,
+  rather than the chunker stitching parent context onto every
+  chunk.) A chunker reports position through `Chunker::Piece` into
+  `Chunk#metadata`, so a heading-aware one adds `heading:
+  "Chapter 7 > § 3"` the same way `first_line:` rides today.
+- **A section reader.** `rag_read(source, around_line:,
+  heading_level:)` answering the Markdown section that encloses a
+  hit's range. Until a second corpus wants it, a host writes it as
+  its own tool over the library API (`Chunk#metadata`'s line range,
+  `Rag::Backend::DocumentMatch#first_lines`).
 - **Onyx as a separate gem.** Onyx is a product (UI + connector
   framework + scheduler), not a vector DB. If pikuri wants Google
   Drive / Slack / Jira RAG, the right shape is `pikuri-onyx` —

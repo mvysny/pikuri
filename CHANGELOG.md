@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Add line ranges to search hits: `rag_search` / `vectordb_search` print `source lines a-b`, `rag_find` lists where each matching chunk starts, and `rag_read` / `vectordb_read` number their lines to match, so a hit's first line is a ready `offset`; see `design/decisions.md` `D_chunk_line_ranges`.
+- **Breaking:** the `pikuri-vectordb` chunker protocol answers `Chunker::Piece`s (text plus line range) rather than Strings, and chunk metadata `offset:` is renamed `ordinal:`. A custom chunker returns Pieces, and a persisted Qdrant or Chroma index needs one `vectordb_reindex` / `rag_reindex` to carry line ranges.
 - Add `stemmer:` to `Pikuri::Rag::Extension`, which stems in Ruby before FTS5 sees a word; the default `Stemmer::Identity` keeps today's English matching, and `Stemmer::Voikko` over the `voikko` gem stems Finnish to dictionary forms and splits compounds; see `design/decisions.md` `D_ruby_stemming`.
 - **Breaking:** the `pikuri-rag` keyword index records its schema version and stemmer, and an index built before or with another one empties itself on open, so the first boot after upgrading re-embeds the whole corpus. Nothing to do beyond letting the boot sweep or `rag_reindex` run.
 - Fix `rag_search` and `rag_find` cutting a query word at each decomposed accent (NFD, as macOS and some PDFs write "ö"), so `Schrödinger` searched for `schro` and `dinger` — `Pikuri::Rag::Query.tokenize` now NFC-normalises first.

@@ -20,6 +20,49 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_chunk_line_ranges — Why does a search hit cite a line range of the extracted text, and only as text?
+
+**Context.** A hit was `source (score=…)` plus a 500-character snippet. Over a long document — a
+1500-line manual, a statute, a contract PDF — the snippet rarely holds the whole answer, and the
+agent answered from the fragment plus training data. The workaround on the corpus side, one file
+per section so the path stands in for a position, bends every corpus to the retrieval layer.
+
+**Decision.** Every chunk carries `first_line:` / `last_line:` ({Pikuri::VectorDb::Chunk}), both
+`rag_search` legs store them, hits print `lines a-b`, `rag_find` lists first lines, and the paged
+readers number their lines the same way, so a range is a ready `offset:`. "Line" is
+{Pikuri::Extractor}'s == Lines: LF only, 1-based, over the *extracted* text, which the `Indexer`
+and the readers both see through the one registry. A program reads positions from
+`Chunk#metadata` / `Rag::Backend::DocumentMatch` through the library API, never from tool output.
+
+**Alternatives rejected.**
+
+- **Structured data in the tool result** for host programs. Tools are for the model ("One tool
+  return type"), and a host parsing `lines a-b` out of `content` would turn presentation into an
+  API. A host wanting positions writes its own tool over the backend.
+- **The start line only.** A window can begin at the tail of one section and carry the match
+  into the next, so a "section containing line N" reader would hand over the wrong one. The end
+  costs one integer.
+- **Lines of the file's bytes.** For PDF and office files those are container lines, not what
+  `rag_read` pages. Checked, not assumed: every extractor numbers `extract` and `extract_lines`
+  identically, since pikuri-pdf defines one as the other joined and HTML and the docker arm are
+  windowed from `extract`'s own string.
+- **CR as a break too**, as Python's `splitlines()` and universal newlines and Java's
+  `readLine()` do. The readers page by Ruby's `each_line`, so it would renumber every page; the
+  definition instead names the readers that disagree.
+- **Verbatim chunk text** with its newlines. It lets document text forge a hit header
+  ({Pikuri::VectorDb::Chunker::FixedWindow}).
+- **Trimming the overlap off the printed range.** It would claim the match is not in the shared
+  lines, which can be false.
+- **One `lines: [a, b]` key.** Two scalars need no backend to accept arrays in its metadata, and
+  mirror the FTS5 columns.
+
+**Consequences.** A range is stale between a file edit and the watcher's reindex, the caveat
+`vectordb_read` already carries. The `line_ranges_spec`s in pikuri-vectordb, pikuri-rag and
+pikuri-pdf are the guard, each pinning one range by hand, because chunker and reader could agree
+on the same wrong count.
+
+---
+
 ## D_inline_think_tags — Why does pikuri split inline `<think>` tags itself rather than patch ruby_llm?
 
 **Context.** Some servers leave reasoning inline in `content` as `<think>…</think>`: llama.cpp
