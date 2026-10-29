@@ -117,7 +117,13 @@ and before the first request. The probe now targets the transport the turn
 really uses, so a construct-then-switch costs one probe, for the chosen model.
 `ServerPermits` is still sized before `RequestThrottle` first asks, and a
 `ContextCap` still precedes every `Tokens`. A probe that fails is not retried
-next turn, or a server with no `/props` would draw a 404 on every turn.
+next turn, or a server with no `/props` would draw a 404 on every turn. The
+probe runs after the turn's `UserTurn` is emitted and before the extension
+dispatch. pikuri-web renders the user's message *from* `UserTurn`, and a probe
+ahead of it held the message off screen for the whole cold load. No
+`on_user_message` reads the cap, so the dispatch could go either side of the
+probe; it stays after it so that every `ContextCap` comes before any
+`SystemInjected` the dispatch emits.
 
 **Alternatives rejected.**
 

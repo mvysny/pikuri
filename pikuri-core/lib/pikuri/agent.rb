@@ -324,8 +324,10 @@ module Pikuri
     # the cancellation reset, so a Ctrl+C during a cold load is not wiped —
     # the turn's next cancellation point raises it — and after the
     # {EmptyTurnError} guard, since a turn that sends nothing has nothing to
-    # budget. See +design/decisions.md+
-    # +D_deferred_cap_probe+.
+    # budget. It runs after the {Event::UserTurn}, too: the probe waits out a
+    # cold model load, and a host that renders its transcript from +UserTurn+
+    # would show the user's message only once the model is up. See
+    # +design/decisions.md+ +D_deferred_cap_probe+.
     #
     # == Repairing an unwound tool batch
     #
@@ -376,19 +378,17 @@ module Pikuri
         raise EmptyTurnError, @chat.model.provider
       end
 
-      detect_and_emit_context_cap! if @cap_pending
-
+      # Append and emit the user turn before the extension dispatch, so any
+      # <memory-context> it injects lands *after* the turn it annotates (as a
+      # :user turn like every reference block, see {#append_reference_block}).
+      # (+ask+ bundles append+complete atomically, leaving no seam to inject
+      # between; the halves run explicitly instead.)
       unless blank
-        # Append the user turn, emit it, then run the memory dispatch — so any
-        # <memory-context> the dispatch injects lands *after* the user turn it
-        # annotates (as a :user turn like every reference block, see
-        # {#append_reference_block}). (+ask+ bundles append+complete
-        # atomically, leaving no seam to inject between; the halves run
-        # explicitly instead.)
         track_message(@chat.add_message(role: :user, content: user_message))
         @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
-        dispatch_ext_on_user_message(user_message)
       end
+      detect_and_emit_context_cap! if @cap_pending
+      dispatch_ext_on_user_message(user_message) unless blank
 
       if @streaming
         @chat.complete(&streaming_block)

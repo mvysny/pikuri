@@ -506,6 +506,45 @@ RSpec.describe Pikuri::Agent do
       refute turn.mid_loop
     end
 
+    describe 'the first-turn /props probe' do
+      # The probe answers only once a llama.cpp router has loaded the model,
+      # so a host rendering the transcript from UserTurn must not wait on it.
+      before do
+        @original_detect = Pikuri::Agent::ContextWindowDetector.method(:detect)
+        seen = @seen_at_probe = []
+        events = recorder.events
+        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
+          seen.concat(events.map(&:class))
+          Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1)
+        end
+        chat = fake_chat
+        fake_chat.define_singleton_method(:complete) do |&_|
+          fire(:after_message, chat.add_assistant('hi'))
+        end
+      end
+
+      after do
+        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect, @original_detect)
+        Pikuri::Agent::ServerPermits.reset!
+      end
+
+      it 'emits UserTurn before the probe, and the probed ContextCap before Tokens' do
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(
+                                    model: 'm', provider: :openai, api_base: 'http://llama:8080/v1'
+                                  ),
+                                  system_prompt: 's') { |c| c.add_listener recorder }
+        recorder.events.clear
+        agent.run_loop(user_message: 'hello?')
+
+        assert_includes @seen_at_probe, Pikuri::Agent::Event::UserTurn
+        kinds = recorder.events.map(&:class)
+        assert_equal [Pikuri::Agent::Event::UserTurn, Pikuri::Agent::Event::ContextCap],
+                     kinds.first(2)
+        assert kinds.index(Pikuri::Agent::Event::ContextCap) < kinds.index(Pikuri::Agent::Event::Tokens)
+        assert_equal 16_384, agent.context_window_cap
+      end
+    end
+
     it 'resets the cancellable at the turn boundary so a stale flag does not poison the next turn' do
       cancel = Pikuri::Agent::Control::Cancellable.new
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),

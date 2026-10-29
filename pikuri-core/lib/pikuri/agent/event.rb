@@ -122,14 +122,15 @@ module Pikuri
       Tokens = Data.define(:input, :output, :cached, :cache_creation, :thinking, :model_id)
 
       # Model's resolved context-window cap (+nil+ if unknown). Emitted at
-      # construction with the transport's stated cap alone, then again at the
-      # start of the first turn after construction or a model switch, once the
-      # +/props+ probe has run. A later ContextCap overwrites the prior; the
+      # construction with the transport's stated cap alone, then again on the
+      # first turn after construction or a model switch, once the +/props+
+      # probe has run — after that turn's {UserTurn}, before its first
+      # {Tokens}. A later ContextCap overwrites the prior; the
       # running context size is not re-baselined.
       ContextCap = Data.define(:cap)
 
       # Agent switched model mid-conversation. Emitted by {Agent#run_loop}
-      # just before the new model's {ContextCap}. Carries both
+      # ahead of the new model's {ContextCap}. Carries both
       # {Agent::ChatTransport}s verbatim and unformatted — each chrome
       # presents them its own way. The new cap rides on the paired
       # {ContextCap}, not here.

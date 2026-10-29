@@ -45,13 +45,14 @@ first entry in each is the ruler. Cap 12 KB — over it, research or yardoc cont
 
 **A turn** ({Pikuri::Agent#run_loop}, one thread, unbounded in tool calls):
 
-1. `run_loop` applies a pending model switch, resets `Cancellable`, and — on the first turn after
-   construction or a switch — has `ContextWindowDetector` probe the server's `/props` unless both
-   its facts are already known, memoizing through the same `ServerPermits` registry that rations
-   requests (`D_deferred_cap_probe`). It drains any queued `Interloper` message, appends the user turn
-   itself and only then calls `RubyLLM::Chat#complete` — never `#ask`, which bundles append and
-   complete atomically and leaves no seam to inject between. ruby_llm owns the iteration from
-   here (`D_no_step_limit`).
+1. `run_loop` applies a pending model switch, resets `Cancellable`, drains any queued
+   `Interloper` message and appends the user turn itself. Then, on the first turn after
+   construction or a switch, it has `ContextWindowDetector` probe the server's `/props` unless
+   both its facts are already known, memoizing through the same `ServerPermits` registry that
+   rations requests (`D_deferred_cap_probe`). It runs the extensions' `on_user_message` and only
+   then calls `RubyLLM::Chat#complete` — never `#ask`, which bundles append and complete
+   atomically and leaves no seam to inject between. ruby_llm owns the iteration from here
+   (`D_no_step_limit`).
 2. ruby_llm's three callbacks fire back into the agent — `after_message`, `before_tool_call`
    (which is where `Cancellable#check!` runs) and `after_tool_result` — and each emits an `Event`
    on the listener list. That wiring, at construction, is the whole extension surface.
