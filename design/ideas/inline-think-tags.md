@@ -14,8 +14,10 @@ ruby_llm 1.16 moved inline reasoning out of the reply on its own:
   `@pending_think_tag` state, so a tag split across chunks was still routed to
   thinking.
 
-ruby_llm 2.1 has neither. A grep for `<think`, `think_tag` or
-`inside_think` under `ruby_llm-2.1.0/lib` finds nothing. Reasoning now
+ruby_llm 2.x has neither. A grep for `<think`, `think_tag` or
+`inside_think` under the `lib/` of 2.0.0, 2.1.0 and 2.1.1 (latest as of
+2026-10-29) finds nothing. 2.0.0 dropped it, and its release notes don't say
+so. An upgrade does not fix it. Reasoning now
 reaches pikuri only through a separate field (`reasoning_content`,
 `reasoning`, `thinking`) or content blocks. Text inline in `content` passes
 through verbatim, leading and trailing whitespace included.
@@ -56,8 +58,9 @@ For those, since the upgrade:
   in practice, this may be a note rather than code.
 - `Q_think_where`: restore it in pikuri (a `ruby_llm_patches.rb` entry, or a
   splitter in the agent's message and streaming handling), or upstream in
-  ruby_llm? Removing it may have been deliberate in 2.x, so check its
-  changelog and issues for the reason before patching around it.
+  ruby_llm? Removing it may have been deliberate in 2.x. Neither the 2.0.0
+  release notes nor a GitHub issue search for "think tag" / `<think>` gives
+  a reason; asking upstream is the next step.
 - `Q_think_stream`: a streamed splitter has to hold back a partial `<thi` at a
   chunk boundary, the way 1.16's `@pending_think_tag` did. That interacts with
   `Listener::RateLimited` coalescing and with delta-preview shells, so test it
@@ -67,7 +70,10 @@ For those, since the upgrade:
 
 ## How to see it
 
-A `Pikuri::Testing.fake_transport` reply of
-`"<think>reasoning</think>\nanswer"` now reaches `Event::Assistant` and
-`last_assistant_content` unchanged. A spec asserting the split, `Thinking`
-`"reasoning"` and `Assistant` `"answer"`, would pin whatever fix is chosen.
+`pikuri-core/spec/pikuri/agent/inline_think_spec.rb` asserts the split over the
+wire through `Pikuri::Testing.fake_transport`. It covers a non-streamed reply
+(`Thinking`, `Assistant`, `last_assistant_content`) and a streamed one with the
+tags split across chunks (`ThinkingDelta`, `AssistantDelta`). Both examples are
+`pending`, so CI stays green, and RSpec fails them as soon as they pass. A fix,
+whether in pikuri or an upstream release, then forces removing the `pending`
+lines.
