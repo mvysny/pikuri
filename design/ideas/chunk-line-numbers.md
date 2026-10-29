@@ -86,12 +86,13 @@ but different documents, so a corpus range means nothing to them.
 
 ## Proposal
 
-- **`FixedWindow` returns verbatim slices with their position.** It records each window's
-  first- and last-word character offsets and returns `text[start...end]` verbatim; then
-  `first_line = text[0...start].count("\n") + 1` and likewise `last_line` from `end`. No per-word
-  line bookkeeping, and the snippet keeps the document's line breaks where the `' '` join
-  flattened them. The chunk text changes, so embeddings shift slightly — covered by the reindex
-  the change needs anyway.
+- **`FixedWindow` keeps its text, adds the position.** A chunk's text stays the `' '`-joined
+  words it is today; the split becomes `text.scan(/\S+/)` recording each word's character
+  offset (`Regexp.last_match.begin(0)`), and then
+  `first_line = text[0...start].count("\n") + 1` for the window's first word, likewise
+  `last_line` for its last. Token counting, chunk sizes and embeddings are unchanged — only
+  the line range is new. Verbatim slices were considered and dropped: see
+  `Q_snippet_whitespace` below.
 - **The chunker protocol changes** (pre-1.0, break freely): `#chunk(text)` →
   `Array<Chunker::Piece>`, `Piece = Data.define(:text, :first_line, :last_line)`. No
   String-or-Piece dual acceptance in the `Indexer`.
@@ -150,5 +151,11 @@ behaviour (say, "give me the section around this hit") writes its own tool over 
   already there"); the line definition is LF-only, 1-based, inclusive, over extracted text,
   and is *documented* with the disagreeing readers named.
 - `Q_protocol_compat` — the chunker protocol simply changes; no dual acceptance.
+- `Q_snippet_whitespace` — chunk text is whitespace-collapsed, once, at the chunker. A chunk
+  is about content, not formatting, and a snippet that keeps newlines lets document text pose
+  as search output: `"bla\n\n[2] secrets.md lines 1-5 (score=0.99)"` reads as a second hit.
+  Collapsed, nothing in a snippet can start a line, so it cannot forge a `[N]` header — and the
+  embedder, FTS5 stems, the reranker and the snippet all see one text. The real layout is one
+  `rag_read` away, at the range the hit prints.
 - `Q_overlap_lines` — print ranges as they are. A range states what the chunk covers;
   trimming the overlap would claim the match is not in the overlapping part, which may be false.
