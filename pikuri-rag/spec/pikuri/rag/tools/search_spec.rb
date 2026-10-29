@@ -90,7 +90,19 @@ describe Pikuri::Rag::Tools::Search do
     it 'replaces each score with the fused one' do
       a = result('a', 0.99)
       fused = Pikuri::Rag::Tools::Search.fuse([a], [a])
-      assert_in_delta 2.0 / 61, fused.first.score, 1e-9
+      assert_in_delta 2.0 / (Pikuri::Rag::Tools::Search::RRF_K + 1), fused.first.score, 1e-9
+    end
+
+    # The D_rrf_tuning regression: with RRF_K 60, a chunk both legs list
+    # last outscored one leg's rank-1, and a strong leg's #1 sank.
+    it 'ranks one leg\'s rank-1 above a chunk both legs list last' do
+      depth = Pikuri::Rag::Tools::Search::LEG_K
+      top = result('top', 0.99)
+      deep = result('deep', 0.1)
+      vector_leg = [top, *(2...depth).map { |i| result("v#{i}", 0.5) }, deep]
+      keyword_leg = [*(1...depth).map { |i| result("k#{i}", 0.5) }, deep]
+      ids = Pikuri::Rag::Tools::Search.fuse(vector_leg, keyword_leg).map { |r| r.chunk.id }
+      assert_operator ids.index('top'), :<, ids.index('deep')
     end
 
     it 'tolerates an empty leg' do
@@ -129,6 +141,22 @@ describe Pikuri::Rag::Tools::Search do
       populate
       out = execute(query: '???')
       assert_includes out, 'acme.md'
+    end
+
+    it 'asks each leg for LEG_K results' do
+      populate
+      asked = []
+      hybrid.define_singleton_method(:query) do |vector:, top_k:|
+        asked << [:vector, top_k]
+        super(vector: vector, top_k: top_k)
+      end
+      hybrid.define_singleton_method(:keyword_query) do |match:, top_k:|
+        asked << [:keyword, top_k]
+        super(match: match, top_k: top_k)
+      end
+      execute(query: 'invoice 4471')
+      depth = Pikuri::Rag::Tools::Search::LEG_K
+      assert_equal [[:vector, depth], [:keyword, depth]], asked
     end
 
     it 'caps the observation at FINAL_K results' do

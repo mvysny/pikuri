@@ -20,6 +20,35 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_rrf_tuning — Why does `rag_search` fuse with `k` 5 over ten results a leg, not the textbook 60 over fifty?
+
+**Context.** Measured on a Finnish statute corpus (`../courts`: 4 acts, 165 chunks, bge-m3,
+Voikko-stemmed FTS5, 41 questions — 28 lay paraphrases, 13 section references and terms of art;
+`../courts/bin/embedder-eval`), fusion at `k` 60 over 50-deep legs put a gold section in the top
+5 for 31 questions — *fewer* than the vector leg alone (35). With 60, any chunk both legs list
+anywhere in their top 50 outscores a chunk one leg ranks first (2/(60+50) > 1/61), so three
+sections the vector leg had at #1 fused to #6, #22 and #31, past the reranker's reach.
+
+**Decision.** `RRF_K` 5, and each leg contributes its top `LEG_K` = 10, reranker or not: 37/41,
+two more than the vector leg alone. The keyword leg earns its place as a voter — it lifts a
+vector #7 or #8 into the top 5 when it agrees near its own top — rather than by finding what the
+vector leg misses, which it never did on this corpus. The reranker now scores ≤ 20 documents.
+
+**Alternatives rejected.**
+
+- **Hand the model both legs unfused** (each leg's top 3, interleaved, labelled): 35/41 — a
+  quota gives the keyword leg three slots whether it has anything or not, so it lands on
+  vector-only. Its one edge, MRR 0.77 vs 0.63 (the gold more often at #1), is open in
+  `design/ideas/rag-search-unfused-legs.md` together with provenance labels, which need no union.
+- **Only one knob.** `k` 5 at depth 50: 34/41. Depth 10 at `k` 60: 36/41. Depth does most of
+  the work; agreement deep in both lists is the noise.
+- **Keep 60, because every stack does.** It comes from the original paper's pilot over TREC
+  runs, many systems' lists fused at once; two unlike legs, one much stronger, is a different
+  problem — and here it measurably lost to the vector leg alone.
+
+**Consequences.** One corpus, one embedder: a weaker embedder or a much larger corpus may move
+the optimum, and `../courts/bin/embedder-eval` reruns the comparison.
+
 ## D_chunk_line_ranges — Why does a search hit cite a line range of the extracted text, and only as text?
 
 **Context.** A hit was `source (score=…)` plus a 500-character snippet. Over a long document — a

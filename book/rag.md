@@ -188,16 +188,24 @@ temperature, and every weight you pick is a knob with no principled
 setting.
 
 **Reciprocal rank fusion** throws the magnitudes away and keeps only
-what each leg is actually good at: the *ordering*. A chunk at rank *r*
-in a list contributes `1 / (60 + r)` to its fused score, summed across
-the lists it appears in. So:
+what each leg is actually good at: the *ordering*. Each leg hands over
+its top 10, and a chunk at rank *r* in a list contributes `1 / (5 + r)`
+to its fused score, summed across the lists it appears in. So:
 
-- A chunk both legs found ranks above a chunk only one leg found, even
-  if that one was somebody's rank 1. Agreement between two different
-  retrieval methods is strong evidence.
-- The `60` flattens the top of each list, so a single confident rank-1
-  hit can't out-vote that agreement. It's the constant the original
-  TREC evaluation settled on, and it's what every hybrid stack ships.
+- Agreement between two different retrieval methods is evidence: a
+  chunk both legs rank highly beats a chunk only one of them found.
+- But only agreement *near the top*. A leg's rank-1 scores 1/6; a chunk
+  both legs rank 10th scores 2/15, less. So one leg's confident first
+  hit still beats the other leg's leftovers.
+
+Most hybrid stacks ship `60` there instead, and fuse fifty results a
+leg — the constant from the paper that introduced the method, which
+fused many search systems at once. With two legs, one much stronger
+than the other, it backfires: any chunk both legs mention *anywhere* in
+their top fifty outscores the stronger leg's rank-1. Measured on a
+corpus of Finnish statutes, that setting found the right section less
+often than vector search alone; `5` over ten found it more often than
+either leg. The numbers are in `design/decisions.md`, `D_rrf_tuning`.
 
 After fusion, the optional cross-encoder reranker from the last
 chapter runs over the fused candidates unchanged — it never knew where

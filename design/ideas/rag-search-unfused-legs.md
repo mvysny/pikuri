@@ -1,6 +1,8 @@
 # `rag_search`: show both legs, don't fuse them
 
-Status: **idea, not built.** Origin: the courts repo's embedder eval, 2026-10-29
+Status: **half shipped.** The recall fix shipped 2026-10-29 as tuned fusion, not as this
+idea's union — `design/decisions.md` `D_rrf_tuning`. What remains open is provenance labels on
+each hit, and whether the union's better MRR is worth having. Origin: the courts repo's embedder eval, 2026-10-29
 (`../courts/design/ideas/searchable-laws-in-pikuri.md`, *Embedder eval*; script
 `../courts/bin/embedder-eval`). The owner's proposal: fusion has to merge two unrelated
 algorithms mechanically and can't do it well, so hand the model both result lists and let it
@@ -163,8 +165,7 @@ the way a lawyer or HR person would — section references ("TSL 6:6", "työsopi
 
 ## Next step
 
-Both measurements are in: the recall fix is tuned RRF, two constants in `Rag::Tools::Search`
-(`RRF_K` 5, legs cut to 10 before `fuse`), shippable on its own. Provenance labels are a separate,
-optional change whose value only an agent-level eval can show (`Q_model_uses_labels`). If both
-land, this idea's "don't fuse" title is wrong and it graduates as "tune the fusion, label the
-hits".
+Tuned RRF shipped (`D_rrf_tuning`: `RRF_K` 5, `LEG_K` 10). Left: provenance labels on each
+hit, whose value only an agent-level eval can show (`Q_model_uses_labels`), and `Q_merge`'s MRR
+question. When those are settled — labels shipped or rejected — this idea graduates; its "don't
+fuse" title was the wrong half.

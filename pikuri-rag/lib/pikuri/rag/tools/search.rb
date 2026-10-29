@@ -8,13 +8,13 @@ module Pikuri
       #
       #   Found 5 matches.
       #
-      #   [1] acme-2026-08-14.md lines 1-4 (score=0.03)
+      #   [1] acme-2026-08-14.md lines 1-4 (score=0.33)
       #   Agreed to hold list pricing through Q1 and revisit at renewal...
       #
       # * *Vector leg* — embed the query, {Pikuri::VectorDb::Backend#query} for
-      #   {CANDIDATE_K} candidates. Answers "is this on the same topic?".
+      #   {LEG_K} candidates. Answers "is this on the same topic?".
       # * *Keyword leg* — {Pikuri::Rag::Query.any}, stemmed by the backend's
-      #   stemmer, then +#keyword_query+ for {CANDIDATE_K}. Answers "does this
+      #   stemmer, then +#keyword_query+ for {LEG_K}. Answers "does this
       #   contain the words?", which is what
       #   rescues +invoice #4471+ and a customer's name from an embedder that
       #   ranks rare tokens badly.
@@ -55,22 +55,21 @@ module Pikuri
         #   turn budget, and one number to measure before changing.
         FINAL_K = Pikuri::VectorDb::Tools::Search::FINAL_K
 
-        # @return [Integer] per-leg over-fetch size *and* the cap on the fused
-        #   list, aliasing {Pikuri::VectorDb::Tools::Search::CANDIDATE_K}.
-        #   Both legs fetch this many *whether or not* a reranker is wired:
-        #   fusion needs a deep list from each leg to have ranks to fuse, so
-        #   the narrow-when-unreranked shortcut +vectordb_search+ takes does
-        #   not apply. The union of two full legs is up to twice this, so the
-        #   fused list is trimmed back to it before anything expensive runs.
-        CANDIDATE_K = Pikuri::VectorDb::Tools::Search::CANDIDATE_K
+        # @return [Integer] how many results each leg contributes to fusion,
+        #   *whether or not* a reranker is wired, so the reranker sees at
+        #   most twice this. Shallow on purpose: agreement near the top of
+        #   both legs is evidence, agreement at rank 30 of both is noise that
+        #   buries a single leg's rank-1 ({RRF_K}, +D_rrf_tuning+).
+        LEG_K = 10
 
         # @return [Integer] the reciprocal-rank-fusion damping constant: a
-        #   chunk at rank +r+ in a leg contributes +1 / (RRF_K + r)+. 60 is
-        #   the value the original TREC evaluation settled on and what every
-        #   hybrid stack ships; it flattens the top of each list so a
-        #   confident rank-1 hit in one leg does not out-vote agreement
-        #   between both.
-        RRF_K = 60
+        #   chunk at rank +r+ in a leg contributes +1 / (RRF_K + r)+. Small,
+        #   not the 60 of the TREC paper most hybrid stacks copy: with 60, any
+        #   chunk both legs list outscores a chunk only one leg ranks first,
+        #   so a strong leg's #1 sinks under the other leg's noise. At 5 over
+        #   {LEG_K}-deep legs, a single-leg #1 (1/6) still beats both legs'
+        #   #10 (2/15). Measured: +D_rrf_tuning+.
+        RRF_K = 5
 
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).
@@ -132,16 +131,13 @@ module Pikuri
         def self.execute(embedder:, backend:, reranker:, query:)
           return Pikuri::Tool::Result.error('query is empty') if query.nil? || query.strip.empty?
 
-          vector_hits = backend.query(vector: embedder.embed([query]).first, top_k: CANDIDATE_K)
+          vector_hits = backend.query(vector: embedder.embed([query]).first, top_k: LEG_K)
           match = Pikuri::Rag::Query.any(query, stemmer: backend.stemmer)
-          keyword_hits = match ? backend.keyword_query(match: match, top_k: CANDIDATE_K) : []
+          keyword_hits = match ? backend.keyword_query(match: match, top_k: LEG_K) : []
 
-          # Trimmed to CANDIDATE_K because the *union* of two 50-deep legs is
-          # up to 100 documents, and the reranker is the one expensive step
-          # here — an unbounded fused list would quietly cost twice what
-          # vectordb_search pays for the same knob. The fused ranking decides
-          # which 50 survive, which is what fusion is for.
-          fused = fuse(vector_hits, keyword_hits).first(CANDIDATE_K)
+          # At most 2 × LEG_K, so the reranker — the one expensive step —
+          # scores no more than 20 documents.
+          fused = fuse(vector_hits, keyword_hits)
           if fused.empty?
             return Pikuri::Tool::Result.new(content: 'No matches found in the indexed corpus.',
                                             summary: 'Found 0 matches')
