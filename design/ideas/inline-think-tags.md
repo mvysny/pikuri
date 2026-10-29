@@ -60,7 +60,8 @@ For those, since the upgrade:
   splitter in the agent's message and streaming handling), or upstream in
   ruby_llm? Removing it may have been deliberate in 2.x. Neither the 2.0.0
   release notes nor a GitHub issue search for "think tag" / `<think>` gives
-  a reason; asking upstream is the next step.
+  a reason. Asked upstream in
+  [ruby_llm#1345](https://github.com/crmne/ruby_llm/issues/1345) (2026-10-29).
 - `Q_think_stream`: a streamed splitter has to hold back a partial `<thi` at a
   chunk boundary, the way 1.16's `@pending_think_tag` did. That interacts with
   `Listener::RateLimited` coalescing and with delta-preview shells, so test it
