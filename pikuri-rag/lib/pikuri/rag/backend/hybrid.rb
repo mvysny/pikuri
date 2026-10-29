@@ -133,8 +133,8 @@ module Pikuri
 
         # @param terms [Array<String>] one expression per word, from
         #   {Pikuri::Rag::Query.terms}.
-        # @return [Array<Array(String, Integer)>] +[source, matched_chunks]+
-        #   for every document holding all of them. See {Fts5#find}.
+        # @return [Array<DocumentMatch>] every document holding all of them.
+        #   See {Fts5#find}.
         def find(terms:) = @keywords.find(terms: terms)
 
         # The membership gate +rag_read+ consults — one store, deliberately not

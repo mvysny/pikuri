@@ -74,16 +74,19 @@ agree about pricing?"* still works through meaning, and *"invoice
 
 **`rag_find`** is the *complete* answer, and it has no vector leg at
 all. Give it a term and it returns **every** document containing it —
-the `source` path, how many of its chunks matched, and the file's
-size:
+the `source` path, how many of its chunks matched and the line each
+of them starts at, and the file's size:
 
 ```
-3 documents contain all of: "acme" "pricing". Counts are how many of the document's chunks matched, not occurrences.
+3 documents contain all of: "acme" "pricing". Counts are how many of the document's chunks matched, not occurrences; lines are where each matching chunk starts.
 
-acme-2026-08-14.md — 3 chunks, 5.2 KB
-acme-2026-07-02.md — 1 chunk, 1.8 KB
-acme-2026-03-11.md — 1 chunk, 2.4 KB
+acme-2026-08-14.md — 3 chunks (lines 1, 38, 77), 5.2 KB
+acme-2026-07-02.md — 1 chunk (line 12), 1.8 KB
+acme-2026-03-11.md — 1 chunk (line 1), 2.4 KB
 ```
+
+Each line is a ready `offset` for `rag_read`, so in a long document
+the agent reads from the match instead of from the top.
 
 No cutoff, no top-*k*, and the tool's own description says so in those
 words — because the promise is the whole point. A keyword match is

@@ -15,7 +15,7 @@ module Pikuri
       #   keywords.keyword_query(match: '"acme" OR "pricing"', top_k: 50)
       #   # => [#<Result chunk=…>, …]      bm25, best first
       #   keywords.find(terms: ['"acme"', '"pricing"'])
-      #   # => [["acme-2026-07-02.md", 1], ["acme-2026-08-14.md", 3]]
+      #   # => [#<DocumentMatch source="acme-2026-08-14.md", first_lines=[1, 38, 77]>, …]
       #
       # Usable on its own — a corpus with no embedder at all can be indexed
       # into this and searched by keyword — but the tool set is built on
@@ -65,10 +65,10 @@ module Pikuri
         # @return [Integer] the table layout's version, recorded beside the
         #   stemmer id; bump it whenever {SCHEMA} changes, so an old index
         #   rebuilds instead of failing.
-        SCHEMA_VERSION = 2
+        SCHEMA_VERSION = 3
 
         # The table. +stems+, the chunk's words run through the stemmer, is the
-        # only indexed column; the other four ride along as +UNINDEXED+
+        # only indexed column; the others ride along as +UNINDEXED+
         # payload, so a hit rebuilds its {Pikuri::VectorDb::Chunk} without a
         # second lookup and a word in a filename never scores as a word in the
         # document.
@@ -81,7 +81,8 @@ module Pikuri
         # @return [String] the +CREATE VIRTUAL TABLE+ statement.
         SCHEMA = <<~SQL
           CREATE VIRTUAL TABLE chunks USING fts5(
-            id UNINDEXED, source UNINDEXED, hash UNINDEXED, text UNINDEXED, stems,
+            id UNINDEXED, source UNINDEXED, hash UNINDEXED,
+            first_line UNINDEXED, last_line UNINDEXED, text UNINDEXED, stems,
             tokenize='porter unicode61'
           )
         SQL
@@ -108,8 +109,12 @@ module Pikuri
 
         # Insert-or-replace by +chunk.id+.
         #
-        # @param chunks [Array<Pikuri::VectorDb::Chunk>]
+        # @param chunks [Array<Pikuri::VectorDb::Chunk>] each carrying the
+        #   +first_line:+ / +last_line:+ metadata {Pikuri::VectorDb::Indexer}
+        #   always sets — the keyword leg must hand back the same range the
+        #   vector leg does.
         # @return [void]
+        # @raise [KeyError] if a chunk carries no line range.
         def upsert(chunks:)
           @lock.synchronize do
             @db.transaction do
@@ -124,8 +129,10 @@ module Pikuri
         # concurrent read sees the old set or the new one, never the gap.
         #
         # @param source [String] the {Pikuri::VectorDb::Chunk#source} replaced.
-        # @param chunks [Array<Pikuri::VectorDb::Chunk>] the new set.
+        # @param chunks [Array<Pikuri::VectorDb::Chunk>] the new set, line
+        #   ranges required as in {#upsert}.
         # @return [void]
+        # @raise [KeyError] if a chunk carries no line range.
         def replace_source(source:, chunks:)
           @lock.synchronize do
             @db.transaction do
@@ -192,21 +199,23 @@ module Pikuri
 
           rows = @lock.synchronize do
             @db.execute(<<~SQL, [match, top_k])
-              SELECT id, source, hash, text, bm25(chunks) FROM chunks
+              SELECT id, source, hash, first_line, last_line, text, bm25(chunks) FROM chunks
               WHERE chunks MATCH ? ORDER BY bm25(chunks) LIMIT ?
             SQL
           end
-          rows.map do |id, source, hash, text, bm25|
-            Pikuri::VectorDb::Backend::Result.new(chunk: to_chunk(id, source, hash, text), score: -bm25)
+          rows.map do |*columns, bm25|
+            Pikuri::VectorDb::Backend::Result.new(chunk: to_chunk(*columns), score: -bm25)
           end
         end
 
-        # Every document holding *all* of +terms+ somewhere in it, with how
-        # many of its chunks matched. No cutoff and no +top_k+ — the promise is
-        # a set, and a limit would be the sample this exists to avoid.
+        # Every document holding *all* of +terms+ somewhere in it, with where
+        # each of its matching chunks starts. No cutoff and no +top_k+ — the
+        # promise is a set, and a limit would be the sample this exists to
+        # avoid.
         #
         #   fts5.find(terms: ['"acme"', '"pricing"'])
-        #   # => [["acme-2026-07-02.md", 1], ["acme-2026-08-14.md", 3]]   # any order
+        #   # => [#<DocumentMatch source="acme-2026-07-02.md", first_lines=[1]>,
+        #   #     #<DocumentMatch source="acme-2026-08-14.md", first_lines=[1, 38, 77]>]   # any order
         #
         # One query per term, intersected, *not* the single juxtaposed
         # +MATCH '"acme" "pricing"'+ that FTS5's implicit AND invites: that AND
@@ -217,9 +226,8 @@ module Pikuri
         # @param terms [Array<String>] one FTS5 expression per word, from
         #   {Pikuri::Rag::Query.terms}: a phrase, or an OR group of the word's
         #   stems.
-        # @return [Array<Array(String, Integer)>] +[source, matched_chunks]+,
-        #   unordered. The count is the document's chunks matching *at least
-        #   one* term, each counted once, because the chunks matching every
+        # @return [Array<DocumentMatch>] unordered. A chunk is listed when it
+        #   matches *at least one* term, because the chunks matching every
         #   term are routinely none — that being the point above.
         # @raise [ArgumentError] on empty +terms+, which is the caller's cue to
         #   answer the model rather than run a query matching everything.
@@ -228,9 +236,10 @@ module Pikuri
         def find(terms:)
           raise ArgumentError, 'find called with no terms' if terms.empty?
 
-          per_term = terms.map { |term| chunk_ids_by_source(term) }
+          per_term = terms.map { |term| first_lines_by_source(term) }
           per_term.map(&:keys).reduce(:&).map do |source|
-            [source, per_term.filter_map { |by_source| by_source[source] }.reduce(:|).size]
+            first_lines = per_term.filter_map { |by_source| by_source[source] }.reduce(:merge).values.sort
+            DocumentMatch.new(source: source, first_lines: first_lines)
           end
         end
 
@@ -293,30 +302,36 @@ module Pikuri
         end
 
         # @param term [String] one word's expression from {Pikuri::Rag::Query.terms}.
-        # @return [Hash{String => Array<String>}] +source+ → matching chunk ids.
-        def chunk_ids_by_source(term)
+        # @return [Hash{String => Hash{String => Integer}}] +source+ → matching
+        #   chunk id → its first line; keyed by id so {#find}'s union counts a
+        #   chunk once.
+        def first_lines_by_source(term)
           rows = @lock.synchronize do
-            @db.execute('SELECT source, id FROM chunks WHERE chunks MATCH ?', [term])
+            @db.execute('SELECT source, id, first_line FROM chunks WHERE chunks MATCH ?', [term])
           end
-          rows.each_with_object({}) { |(source, id), h| (h[source] ||= []) << id }
+          rows.each_with_object({}) { |(source, id, line), h| (h[source] ||= {})[id] = line }
         end
 
         # @param chunks [Array<Pikuri::VectorDb::Chunk>]
         # @return [void]
+        # @raise [KeyError] if a chunk carries no line range.
         def insert(chunks)
           chunks.each do |c|
-            @db.execute('INSERT INTO chunks (id, source, hash, text, stems) VALUES (?, ?, ?, ?, ?)',
-                        [c.id, c.source, c.metadata[:hash], c.text, stems_of(c.text)])
+            @db.execute('INSERT INTO chunks (id, source, hash, first_line, last_line, text, stems) ' \
+                        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [c.id, c.source, c.metadata[:hash], c.metadata.fetch(:first_line),
+                         c.metadata.fetch(:last_line), c.text, stems_of(c.text)])
           end
         end
 
-        # +metadata+ carries only +hash+, not the +ordinal+ the indexer also
-        # sets: nothing downstream of a keyword hit reads +ordinal+, so the
-        # column would be dead weight in every row.
+        # +metadata+ carries no +ordinal+, which the indexer also sets: nothing
+        # downstream of a keyword hit reads it, so the column would be dead
+        # weight in every row.
         #
         # @return [Pikuri::VectorDb::Chunk]
-        def to_chunk(id, source, hash, text)
-          Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text, metadata: { hash: hash })
+        def to_chunk(id, source, hash, first_line, last_line, text)
+          Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
+                                      metadata: { hash: hash, first_line: first_line, last_line: last_line })
         end
       end
     end

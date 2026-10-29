@@ -8,16 +8,21 @@ require 'tmpdir'
 describe Pikuri::Rag::Backend::Fts5 do
   let(:fts) { Pikuri::Rag::Backend::Fts5.new }
 
-  def chunk(id, source, text, hash: 'h1', ordinal: 0)
+  def chunk(id, source, text, hash: 'h1', ordinal: 0, lines: [1, 1])
     Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
-                                metadata: { ordinal: ordinal, hash: hash })
+                                metadata: { ordinal: ordinal, hash: hash,
+                                            first_line: lines[0], last_line: lines[1] })
+  end
+
+  def match(source, first_lines)
+    Pikuri::Rag::Backend::DocumentMatch.new(source: source, first_lines: first_lines)
   end
 
   def populate
     fts.upsert(chunks: [
                  chunk('acme.md:0', 'acme.md', 'Acme agreed to hold list pricing through Q1.'),
                  chunk('acme.md:1', 'acme.md', 'Their meetings run long; invoice 4471 outstanding.',
-                       ordinal: 1),
+                       ordinal: 1, lines: [9, 14]),
                  chunk('initech.md:0', 'initech.md', 'Initech pricing discussion deferred.',
                        hash: 'h2')
                ])
@@ -35,7 +40,14 @@ describe Pikuri::Rag::Backend::Fts5 do
       populate
       fts.upsert(chunks: [chunk('acme.md:0', 'acme.md', 'Acme pricing frozen.')])
       assert_equal 3, fts.count
-      assert_equal [['acme.md', 1]], fts.find(terms: ['"frozen"'])
+      assert_equal [match('acme.md', [1])], fts.find(terms: ['"frozen"'])
+    end
+
+    # The keyword leg must hand back the range the vector leg does, so a
+    # chunk without one is a caller bug, not a row with a hole in it.
+    it 'refuses a chunk with no line range' do
+      bare = Pikuri::VectorDb::Chunk.new(id: 'x.md:0', source: 'x.md', text: 'x', metadata: { hash: 'h' })
+      assert_raises(KeyError) { fts.upsert(chunks: [bare]) }
     end
 
     it 'replaces every chunk of one document' do
@@ -89,7 +101,7 @@ describe Pikuri::Rag::Backend::Fts5 do
       populate
       hit = fts.keyword_query(match: '"invoice"', top_k: 1).first
       assert_equal 'acme.md:1', hit.chunk.id
-      assert_equal 'h1', hit.chunk.metadata[:hash]
+      assert_equal({ hash: 'h1', first_line: 9, last_line: 14 }, hit.chunk.metadata)
       assert_includes hit.chunk.text, '4471'
     end
 
@@ -114,10 +126,10 @@ describe Pikuri::Rag::Backend::Fts5 do
   end
 
   describe '#find' do
-    it 'lists every source holding the term, with its matching-chunk count' do
+    it "lists every source holding the term, with its matching chunks' first lines" do
       populate
-      assert_equal [['acme.md', 1]], fts.find(terms: ['"invoice"'])
-      assert_equal [['acme.md', 1], ['initech.md', 1]], fts.find(terms: ['"pricing"']).sort
+      assert_equal [match('acme.md', [9])], fts.find(terms: ['"invoice"'])
+      assert_equal [match('acme.md', [1]), match('initech.md', [1])], fts.find(terms: ['"pricing"']).sort_by(&:source)
     end
 
     # The regression: FTS5's own implicit AND is row-scoped, and a row is a
@@ -125,13 +137,20 @@ describe Pikuri::Rag::Backend::Fts5 do
     # acme.md, whose "Acme" is in chunk 0 and whose "invoice" is in chunk 1.
     it 'ANDs across the whole document, not within one chunk' do
       populate
-      assert_equal [['acme.md', 2]], fts.find(terms: ['"acme"', '"invoice"'])
+      assert_equal [match('acme.md', [1, 9])], fts.find(terms: ['"acme"', '"invoice"'])
     end
 
-    it 'counts a chunk once however many terms it holds' do
+    it 'lists a chunk once however many terms it holds' do
       populate
       # Both words are in acme.md:0 alone, so the union is that one chunk.
-      assert_equal [['acme.md', 1]], fts.find(terms: ['"agreed"', '"pricing"'])
+      assert_equal [match('acme.md', [1])], fts.find(terms: ['"agreed"', '"pricing"'])
+    end
+
+    it 'keeps two chunks starting on the same line apart, ascending' do
+      fts.upsert(chunks: [chunk('long.md:1', 'long.md', 'pricing tail', ordinal: 1, lines: [40, 41]),
+                          chunk('long.md:0', 'long.md', 'pricing head', lines: [1, 40]),
+                          chunk('long.md:2', 'long.md', 'pricing again', ordinal: 2, lines: [40, 52])])
+      assert_equal [match('long.md', [1, 40, 40])], fts.find(terms: ['"pricing"'])
     end
 
     it 'excludes a source missing any one term' do
@@ -170,8 +189,8 @@ describe Pikuri::Rag::Backend::Fts5 do
     end
 
     it 'indexes the index stems, and only them' do
-      assert_equal [['fi.md', 1]], fts.find(terms: ['"katu"'])
-      assert_equal [['fi.md', 1]], fts.find(terms: ['"kone"'])
+      assert_equal [match('fi.md', [1])], fts.find(terms: ['"katu"'])
+      assert_equal [match('fi.md', [1])], fts.find(terms: ['"kone"'])
       assert_equal [], fts.find(terms: ['"kadulla"'])
     end
 
@@ -231,7 +250,7 @@ describe Pikuri::Rag::Backend::Fts5 do
           f.upsert(chunks: [chunk('acme.md:0', 'acme.md', 'Acme pricing.')])
         end
         reopen('b') { |f| assert_equal 1, f.count }
-        assert_includes @log.string, 'stemmer a, opened with schema 2, stemmer b'
+        assert_includes @log.string, 'stemmer a, opened with schema 3, stemmer b'
       end
 
       it 'empties an index from before the schema was versioned' do
@@ -262,7 +281,7 @@ describe Pikuri::Rag::Backend::Fts5 do
 
         second = Pikuri::Rag::Backend::Fts5.new(store: path)
         assert_equal path, second.store
-        assert_equal [['acme.md', 1]], second.find(terms: ['"pricing"'])
+        assert_equal [match('acme.md', [1])], second.find(terms: ['"pricing"'])
         second.close
       end
     end

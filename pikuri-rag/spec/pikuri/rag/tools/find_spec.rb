@@ -24,16 +24,16 @@ describe Pikuri::Rag::Tools::Find do
 
   after { hybrid.close }
 
-  def chunk(id, source, text)
+  def chunk(id, source, text, line: 1)
     Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
-                                metadata: { ordinal: 0, hash: 'h' })
+                                metadata: { ordinal: 0, hash: 'h', first_line: line, last_line: line })
   end
 
   def populate
     hybrid.upsert(
       chunks: [
         chunk('acme-2026-08-14.md:0', 'acme-2026-08-14.md', 'Acme agreed to hold list pricing.'),
-        chunk('acme-2026-08-14.md:1', 'acme-2026-08-14.md', 'Renewal in Q1 for Acme pricing.'),
+        chunk('acme-2026-08-14.md:1', 'acme-2026-08-14.md', 'Renewal in Q1 for Acme pricing.', line: 2),
         chunk('acme-2026-07-02.md:0', 'acme-2026-07-02.md', 'Acme pricing meetings started.'),
         chunk('initech-2026-08-01.md:0', 'initech-2026-08-01.md', 'Initech pricing deferred.')
       ],
@@ -92,25 +92,27 @@ describe Pikuri::Rag::Tools::Find do
                    out.scan(/^(\S+\.md) —/).flatten
     end
 
-    it 'reports the match count and the byte size per row' do
+    it 'reports the match count, the first lines and the byte size per row' do
       populate
       out = execute('Acme pricing')
-      assert_match(/^acme-2026-08-14\.md — 2 chunks, \d+ B$/, out)
-      assert_match(/^acme-2026-07-02\.md — 1 chunk, \d+ B$/, out)
+      assert_match(/^acme-2026-08-14\.md — 2 chunks \(lines 1, 2\), \d+ B$/, out)
+      assert_match(/^acme-2026-07-02\.md — 1 chunk \(line 1\), \d+ B$/, out)
     end
 
-    # A line count would mean reading every matching file whole, and would be
-    # the *container's* line count for anything the Extractor converts — so it
-    # would disagree with the offsets rag_read pages by.
-    it 'reports no line count' do
-      populate
-      refute_includes execute('Acme pricing'), 'line'
+    it "lists only the first #{Pikuri::Rag::Tools::Find::LINES_SHOWN} lines, the count still whole" do
+      chunks = [3, 90, 12, 40, 41, 210, 388].each_with_index.map do |line, i|
+        chunk("long.md:#{i}", 'long.md', "Acme pricing, part #{i}.", line: line)
+      end
+      hybrid.upsert(chunks: chunks, vectors: Array.new(chunks.length) { [1.0, 0.0] })
+      @root.join('long.md').write("a\n")
+      assert_includes execute('Acme'), 'long.md — 7 chunks (lines 3, 12, 40, 41, 90, …), 2 B'
     end
 
-    it 'says what the counts are' do
+    it 'says what the counts and lines are' do
       populate
       assert_includes execute('Acme'),
-                      "Counts are how many of the document's chunks matched, not occurrences"
+                      "Counts are how many of the document's chunks matched, not occurrences; " \
+                      'lines are where each matching chunk starts.'
     end
 
     it 'ANDs the terms' do
@@ -193,7 +195,7 @@ describe Pikuri::Rag::Tools::Find do
       populate
       @root.join('acme-2026-07-02.md').delete
       out = execute('meeting')
-      assert_includes out, 'acme-2026-07-02.md — 1 chunk (cannot stat: ENOENT)'
+      assert_includes out, 'acme-2026-07-02.md — 1 chunk (line 1), cannot stat: ENOENT'
     end
   end
 end

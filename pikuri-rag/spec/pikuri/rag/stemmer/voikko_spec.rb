@@ -112,12 +112,14 @@ describe Pikuri::Rag::Stemmer::Voikko do
     it 'finds inflected and compound words through FTS5' do
       fts = Pikuri::Rag::Backend::Fts5.new(stemmer: stemmer)
       fts.upsert(chunks: [Pikuri::VectorDb::Chunk.new(
-        id: 'a.md:0', source: 'a.md', text: 'Helsingissä tietokoneella.', metadata: { hash: 'h' }
+        id: 'a.md:0', source: 'a.md', text: 'Helsingissä tietokoneella.',
+        metadata: { hash: 'h', first_line: 1, last_line: 1 }
       )])
       search = ->(text) { fts.find(terms: Pikuri::Rag::Query.terms(text, stemmer: stemmer)) }
-      assert_equal [['a.md', 1]], search.('Helsinki')
-      assert_equal [['a.md', 1]], search.('koneen')
-      assert_equal [['a.md', 1]], search.('tietokoneet')
+      found = [Pikuri::Rag::Backend::DocumentMatch.new(source: 'a.md', first_lines: [1])]
+      assert_equal found, search.('Helsinki')
+      assert_equal found, search.('koneen')
+      assert_equal found, search.('tietokoneet')
     ensure
       fts&.close
     end

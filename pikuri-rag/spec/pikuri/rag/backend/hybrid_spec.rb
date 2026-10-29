@@ -10,16 +10,22 @@ describe Pikuri::Rag::Backend::Hybrid do
   let(:keywords) { Pikuri::Rag::Backend::Fts5.new }
   let(:hybrid) { Pikuri::Rag::Backend::Hybrid.new(vectors: vectors, keywords: keywords) }
 
-  def chunk(id, source, text, hash: 'h1', ordinal: 0)
+  def chunk(id, source, text, hash: 'h1', ordinal: 0, lines: [1, 1])
     Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
-                                metadata: { ordinal: ordinal, hash: hash })
+                                metadata: { ordinal: ordinal, hash: hash,
+                                            first_line: lines[0], last_line: lines[1] })
+  end
+
+  def match(source, first_lines)
+    Pikuri::Rag::Backend::DocumentMatch.new(source: source, first_lines: first_lines)
   end
 
   def populate
     hybrid.upsert(
       chunks: [
         chunk('acme.md:0', 'acme.md', 'Acme agreed to hold list pricing through Q1.'),
-        chunk('acme.md:1', 'acme.md', 'Their meetings run long; invoice 4471 outstanding.', ordinal: 1),
+        chunk('acme.md:1', 'acme.md', 'Their meetings run long; invoice 4471 outstanding.',
+              ordinal: 1, lines: [5, 8]),
         chunk('initech.md:0', 'initech.md', 'Initech pricing discussion deferred.', hash: 'h2')
       ],
       vectors: [[1.0, 0.0], [0.0, 1.0], [0.7, 0.7]]
@@ -43,7 +49,7 @@ describe Pikuri::Rag::Backend::Hybrid do
         vectors: [[1.0, 0.0]]
       )
       assert_equal 2, vectors.count
-      assert_equal [['acme.md', 1]], keywords.find(terms: ['"renewed"'])
+      assert_equal [match('acme.md', [1])], keywords.find(terms: ['"renewed"'])
       assert_equal [], keywords.find(terms: ['"meetings"'])
     end
 
@@ -82,7 +88,7 @@ describe Pikuri::Rag::Backend::Hybrid do
     it 'takes both keyword reads from the keyword store' do
       populate
       assert_equal 'acme.md', hybrid.keyword_query(match: '"invoice"', top_k: 1).first.chunk.source
-      assert_equal [['acme.md', 2]], hybrid.find(terms: ['"acme"', '"invoice"'])
+      assert_equal [match('acme.md', [1, 5])], hybrid.find(terms: ['"acme"', '"invoice"'])
     end
 
     it 'gates membership on the vector store alone' do

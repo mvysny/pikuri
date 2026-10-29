@@ -95,7 +95,8 @@ describe Pikuri::Rag::Extension do
         File.write(File.join(dir, 'note.md'), 'Acme pricing was agreed.')
         ext = build(source: dir)
         ext.indexer.index_all!
-        assert_equal [['note.md', 1]], ext.backend.find(terms: ['"acme"'])
+        assert_equal [Pikuri::Rag::Backend::DocumentMatch.new(source: 'note.md', first_lines: [1])],
+                     ext.backend.find(terms: ['"acme"'])
         ext.backend.close
       end
     end

@@ -6,11 +6,11 @@ module Pikuri
       # The LLM-facing +rag_find+ tool — every document matching a term, as a
       # listing rather than a ranking:
       #
-      #   3 documents contain all of: "acme" "pricing". Counts are how many of the document's chunks matched, not occurrences.
+      #   3 documents contain all of: "acme" "pricing". Counts are how many of the document's chunks matched, not occurrences; lines are where each matching chunk starts.
       #
-      #   acme-2026-08-14.md — 3 chunks, 5.2 KB
-      #   acme-2026-07-02.md — 1 chunk, 1.8 KB
-      #   acme-2026-03-11.md — 1 chunk, 2.4 KB
+      #   acme-2026-08-14.md — 3 chunks (lines 1, 38, 77), 5.2 KB
+      #   acme-2026-07-02.md — 1 chunk (line 12), 1.8 KB
+      #   acme-2026-03-11.md — 1 chunk (line 1), 2.4 KB
       #
       # This is the tool for the question +rag_search+ structurally cannot
       # answer. Top-k is a sample and cosine has no calibrated zero, so no
@@ -32,7 +32,12 @@ module Pikuri
       # a date-ordered tail within each count, and the agent can read the
       # timeline off the citations without opening a file.
       #
-      # == Why a byte size and no line count
+      # The lines are the matching chunks' first lines (per
+      # {Pikuri::Extractor}'s == Lines), the first {LINES_SHOWN} of them — each
+      # a ready +offset:+ for +rag_read+, so a long document is read from the
+      # match rather than from the top.
+      #
+      # == Why the size is bytes, not a line count
       #
       # The size answers one question — *is this short enough to read in
       # full?* — and bytes answer it for one +stat+ per row. A line count
@@ -44,6 +49,10 @@ module Pikuri
       # Sharing: +P_shared_locked+ — {Pikuri::Rag::Backend::Fts5} locks, and
       # the corpus root is immutable.
       class Find < Pikuri::Tool
+        # @return [Integer] first lines listed per row; past it the row ends
+        #   in +…+, and the chunk count still says how many matched.
+        LINES_SHOWN = 5
+
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).
         DESCRIPTION = <<~DESC
@@ -53,7 +62,8 @@ module Pikuri
           - Use when the question is a set rather than a ranking: "every note about Acme", "which documents mention invoice 4471", "all my notes on the migration".
           - Pass one entity or a couple of terms, not a sentence: every term must appear somewhere in a document for it to be listed.
           - Terms are stemmed, so "meetings" also matches "meeting". Matching is by word, not substring.
-          - Returns each document's `source` path, how many of its chunks matched, and its size in bytes — then read the ones you need in full with rag_read.
+          - Returns each document's `source` path, how many of its chunks matched, the line each matching chunk starts at, and its size in bytes — then read the ones you need with rag_read.
+          - A listed line is a valid rag_read `offset`: pass it to read from that match rather than from the top.
           - Reading every listed document in full only pays off when they are short. Over long documents, use rag_search to locate the relevant passages instead.
         DESC
 
@@ -99,44 +109,52 @@ module Pikuri
           end
 
           listed = per_word.join(' ')
-          rows = backend.find(terms: per_word).sort_by { |source, count| [-count, source] }
-          if rows.empty?
+          matches = backend.find(terms: per_word).sort_by { |m| [-m.first_lines.length, m.source] }
+          if matches.empty?
             return Pikuri::Tool::Result.new(content: "No indexed document contains all of: #{listed}.",
                                             summary: 'Found 0 documents')
           end
 
-          subject = rows.length == 1 ? '1 document contains' : "#{rows.length} documents contain"
+          subject = matches.length == 1 ? '1 document contains' : "#{matches.length} documents contain"
           header = "#{subject} all of: #{listed}. " \
-                   "Counts are how many of the document's chunks matched, not occurrences.\n\n"
+                   "Counts are how many of the document's chunks matched, not occurrences; " \
+                   "lines are where each matching chunk starts.\n\n"
           Pikuri::Tool::Result.new(
-            content: header + rows.map { |source, count| row(root, source, count) }.join("\n"),
-            summary: "Found #{Pikuri::Tool.pluralize(rows.length, 'document')}"
+            content: header + matches.map { |m| row(root, m) }.join("\n"),
+            summary: "Found #{Pikuri::Tool.pluralize(matches.length, 'document')}"
           )
         end
 
-        # One listing row: citation, match count, and the file's current size.
+        # One listing row: citation, match count with first lines, and the
+        # file's current size.
+        #
+        #   handbook.md — 7 chunks (lines 12, 40, 41, 210, 388, …), 52.1 KB
         #
         # A document indexed but since deleted says so rather than being
         # dropped — the index is stale and the model should hear it, the same
         # answer +rag_read+ gives for the same file.
         #
         # @param root [Pathname]
-        # @param source [String]
-        # @param count [Integer] matching chunks.
+        # @param match [Pikuri::Rag::Backend::DocumentMatch]
         # @return [String]
-        def self.row(root, source, count)
-          chunks = "#{count} chunk#{'s' unless count == 1}"
+        def self.row(root, match)
+          source = match.source
+          lines = match.first_lines
+          shown = lines.first(LINES_SHOWN).join(', ')
+          shown += ', …' if lines.length > LINES_SHOWN
+          chunks = "#{Pikuri::Tool.pluralize(lines.length, 'chunk')} " \
+                   "(#{lines.length == 1 ? 'line' : 'lines'} #{shown})"
           path = root.join(source).expand_path
           base = root.expand_path.to_s
           unless path.to_s == base || path.to_s.start_with?(base + File::SEPARATOR)
             # Unreachable through the shipped Indexer, whose sources are all
             # relative_path_from(root); kept because this tool opens the path.
-            return "#{source} — #{chunks} (resolves outside the corpus root)"
+            return "#{source} — #{chunks}, resolves outside the corpus root"
           end
 
           "#{source} — #{chunks}, #{bytes(File.size(path))}"
         rescue SystemCallError => e
-          "#{source} — #{chunks} (cannot stat: #{e.class.name.split('::').last})"
+          "#{source} — #{chunks}, cannot stat: #{e.class.name.split('::').last}"
         end
         private_class_method :row
 
