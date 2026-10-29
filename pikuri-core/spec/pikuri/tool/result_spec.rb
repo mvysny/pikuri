@@ -61,10 +61,6 @@ RSpec.describe Pikuri::Tool::Result do
                    described_class.page(page([], start_line: 9, total_lines: 2), name: 'attachment').content
     end
 
-    it 'joins lines plainly when not numbered' do
-      assert_equal "a\nb\n\n(End of file - total 2 lines)", described_class.page(page(%w[a b]), numbered: false).content
-    end
-
     it 'reports the byte cap when the total is unknown' do
       result = described_class.page(page(%w[a b], total_lines: nil, more: true, byte_capped: true))
 

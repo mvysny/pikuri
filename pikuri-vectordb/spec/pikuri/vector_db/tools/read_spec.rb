@@ -113,10 +113,11 @@ describe Pikuri::VectorDb::Tools::Read do
       assert_includes result, '(End of document - total 3 lines)'
     end
 
-    it 'does NOT prefix lines with cat -n numbers' do
-      index_file('doc.md', 'just one line')
+    it 'prefixes lines with cat -n numbers, as search cites them' do
+      index_file('doc.md', "alpha\r\nbeta\rgamma\ndelta")
       result = read(source: 'doc.md')
-      refute_match(/^\s+1\t/, result)
+      assert_match(/^\s+2\tbeta\rgamma$/, result)
+      assert_match(/^\s+3\tdelta$/, result)
     end
 
     it 'reports an empty document distinctly' do

@@ -97,12 +97,10 @@ module Pikuri
       # @param page [Pikuri::Extractor::Page] the window to render.
       # @param name [String] what the document is called in the end-of-document
       #   trailer and the past-the-end error, e.g. +"file"+, +"attachment"+.
-      # @param numbered [Boolean] +cat -n+ prefix each line (+"%6d\t"+); pass
-      #   +false+ where nothing cites line numbers back, to save tokens.
       # @param empty_note [String] the whole observation for an empty document.
       # @return [Result] summary +"Read 214 lines"+ / +"Read 3 PDF lines"+ for a
       #   rendered window.
-      def self.page(page, name: 'file', numbered: true, empty_note: "(Empty #{name})")
+      def self.page(page, name: 'file', empty_note: "(Empty #{name})")
         pdf = page.kind == :pdf
         what = pdf ? 'PDF' : name
         if page.lines.empty?
@@ -116,11 +114,7 @@ module Pikuri
 
         lines = pdf ? 'PDF lines' : 'lines'
         last = page.start_line + page.lines.length - 1
-        body = if numbered
-                 page.lines.each_with_index.map { |line, i| format("%6d\t%s", i + page.start_line, line) }.join("\n")
-               else
-                 page.lines.join("\n")
-               end
+        body = page.lines.each_with_index.map { |line, i| format("%6d\t%s", i + page.start_line, line) }.join("\n")
         trailer =
           if page.byte_capped
             "(Output capped at #{Extractor::PAGE_MAX_BYTES / 1024} KB. Showing #{lines} " \

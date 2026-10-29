@@ -31,12 +31,12 @@ module Pikuri
       #
       # Reads are line-windowed by {Pikuri::FileType.read_as_text_paged} — the
       # same windower and caps as {Pikuri::Workspace::Read}, returning a
-      # {Pikuri::Extractor::Page} rendered by {Pikuri::Tool::Result.page}, but
-      # with no +cat -n+ prefix (nothing edits these; the citation unit is the
-      # +source+, and dropping the prefix saves tokens). Extraction routes
-      # through the same {Pikuri::Extractor} registry the {Indexer} uses, so a
-      # read matches what was indexed exactly (modulo later edits),
-      # +"--- Page N ---"+ markers included. Images / binaries /
+      # {Pikuri::Extractor::Page} rendered by {Pikuri::Tool::Result.page},
+      # +cat -n+ numbered like every paged reader. Extraction routes through
+      # the same {Pikuri::Extractor} registry the {Indexer} uses, so a read
+      # matches what was indexed exactly (modulo later edits),
+      # +"--- Page N ---"+ markers included — and the line numbers in a page
+      # are the ones a search hit's +lines a-b+ cites. Images / binaries /
       # vanished file / malformed PDF come back as +"Error: ..."+, not raises.
       #
       # Sharing: +P_shared_locked+, as {Search} — a locked {Backend} plus an
@@ -66,6 +66,7 @@ module Pikuri
             - Use after #{family}_search surfaces a clean hit you want in full, instead of re-querying for more fragments of the same document.
             - `source` must be a path a #{family}_search result returned; you cannot read arbitrary files, only indexed documents.
             - A path from any other #{family}_ result — a listing, say — works just as well: the check is whether the document is indexed, not which tool printed it.
+            - Output is line-numbered `cat -n` style, numbered as #{family}_search's line ranges are: pass a hit's first line as `offset` to start reading at it.
             - Large documents are paged: when the output ends in `Use offset=N to continue`, call again with that offset.
             - Reading a whole document spends context — read the one or two best hits in full, not every result.
           DESC
@@ -139,7 +140,7 @@ module Pikuri
           end
 
           Pikuri::Tool::Result.page(Pikuri::FileType.read_as_text_paged(resolved, offset: offset, limit: limit),
-                                    name: 'document', numbered: false, empty_note: "(#{source} is empty)")
+                                    name: 'document', empty_note: "(#{source} is empty)")
         rescue Errno::ENOENT
           Pikuri::Tool::Result.error("indexed document \"#{source}\" is no longer on disk; the index may be stale " \
                                      "(run #{family}_reindex to refresh).")
