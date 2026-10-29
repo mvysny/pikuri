@@ -29,12 +29,12 @@ describe Pikuri::VectorDb::Tools::Search do
       Pikuri::VectorDb::Chunk.new(
         id: 'risotto.md:0', source: 'risotto.md',
         text: 'Rice should be added gradually after toasting the butter.',
-        metadata: { ordinal: 0 }
+        metadata: { ordinal: 0, first_line: 1, last_line: 3 }
       ),
       Pikuri::VectorDb::Chunk.new(
         id: 'risotto.md:1', source: 'risotto.md',
         text: 'For risotto, the key is the gradual addition of broth.',
-        metadata: { ordinal: 1 }
+        metadata: { ordinal: 1, first_line: 3, last_line: 3 }
       ),
       Pikuri::VectorDb::Chunk.new(
         id: 'paella.md:0', source: 'paella.md',
@@ -80,13 +80,14 @@ describe Pikuri::VectorDb::Tools::Search do
   describe '#execute happy path (no reranker)' do
     before { populate_backend }
 
-    it 'returns a header + numbered blocks with source + score + snippet' do
+    it 'returns a header + numbered blocks with source + line range + score + snippet' do
       observation = execute
 
       assert_includes observation, 'Found 3 matches.'
-      assert_includes observation, '[1] risotto.md (score=1.00)'
+      assert_includes observation, '[1] risotto.md lines 1-3 (score=1.00)'
       assert_includes observation, 'Rice should be added gradually'
-      assert_includes observation, '[2] risotto.md (score=0.99)' # cosine of (0.9, 0.1, 0) ≈ 0.994
+      assert_includes observation, '[2] risotto.md line 3 (score=0.99)' # cosine of (0.9, 0.1, 0) ≈ 0.994
+      # paella.md:0 carries no line range — a chunk not written by the Indexer.
       assert_includes observation, '[3] paella.md (score=0.00)'
     end
 
@@ -172,7 +173,7 @@ describe Pikuri::VectorDb::Tools::Search do
       observation = execute(reranker: reversing_reranker)
 
       assert_includes observation, '[1] paella.md (score=3.00)'
-      assert_includes observation, '[3] risotto.md (score=1.00)'
+      assert_includes observation, '[3] risotto.md lines 1-3 (score=1.00)'
       # The cosine scores from vector-only mode must NOT leak through.
       refute_includes observation, 'paella.md (score=0.00)'
     end
@@ -218,7 +219,7 @@ describe Pikuri::VectorDb::Tools::Search do
         # Observation is still produced — degraded, not failed.
         assert_includes observation, 'Found '
         # And the vector order (not reranker order) appears.
-        assert_includes observation, '[1] risotto.md (score=1.00)'
+        assert_includes observation, '[1] risotto.md lines 1-3 (score=1.00)'
       ensure
         Pikuri.log_io = original_io
       end

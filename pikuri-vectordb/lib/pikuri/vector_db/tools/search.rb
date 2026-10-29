@@ -8,8 +8,17 @@ module Pikuri
       # {Reranker}: embed the query, {Backend#query} for candidates
       # ({CANDIDATE_K} with a reranker to narrow back to {FINAL_K}, else
       # {FINAL_K} directly), optionally rerank (reorder by {Reranker::Hit.index},
-      # take top {FINAL_K}), then format as a numbered +source+ + +score+ +
-      # snippet list capped at {SNIPPET_LENGTH} chars.
+      # take top {FINAL_K}), then format as a numbered list:
+      #
+      #   Found 5 matches.
+      #
+      #   [1] handbook.md lines 1210-1248 (score=0.83)
+      #   Either party may terminate the agreement with three months' notice...
+      #
+      # The line range (per {Pikuri::Extractor}'s == Lines) is a ready
+      # +offset:+ for +vectordb_read+, so the agent reads the passage in its
+      # surroundings rather than answering from the {SNIPPET_LENGTH}-char
+      # snippet alone.
       #
       # == Which score is shown
       #
@@ -71,7 +80,8 @@ module Pikuri
           Usage:
           - Use when the user asks about facts, definitions, or topics that would live in their indexed documents (notes, docs, knowledge base).
           - Phrase the query as a complete question or topic statement — the embedder reads natural language, not keyword bags.
-          - Returns up to #{FINAL_K} results with `source` paths and text snippets; cite results back using the source path.
+          - Returns up to #{FINAL_K} results with `source` paths, line ranges and text snippets; cite results back using the source path.
+          - A snippet is a fragment. To read a result in context, call `vectordb_read` with its `source` and the first line of its range as `offset`.
           - If a query returns nothing useful, either the relevant doc isn't in the corpus, or the corpus hasn't been indexed yet — say which you suspect, and offer to run `vectordb_reindex` to build the index.
         DESC
 
@@ -165,11 +175,14 @@ module Pikuri
           candidates
         end
 
-        # Format the results as a header + numbered +source (score=X.XX)+ blocks
-        # with the snippet below, truncated at {SNIPPET_LENGTH} with +...+. The
-        # +score+ is whatever the caller stored (see "Which score is shown");
-        # +%.2f+ handles every scale, including negative rerank logits and the
-        # small fused-rank values +pikuri-rag+ passes in.
+        # Format the results as a header + numbered
+        # +source lines a-b (score=X.XX)+ blocks with the snippet below,
+        # truncated at {SNIPPET_LENGTH} with +...+. The +score+ is whatever
+        # the caller stored (see "Which score is shown"); +%.2f+ handles every
+        # scale, including negative rerank logits and the small fused-rank
+        # values +pikuri-rag+ passes in. A chunk without +first_line:+ /
+        # +last_line:+ metadata — one not written by the {Indexer} — prints
+        # no range.
         #
         # Public as the other half of the reusable tail — see
         # {.reranked_or_fallback}.
@@ -184,13 +197,25 @@ module Pikuri
             snippet = result.chunk.text
             snippet = snippet[0, SNIPPET_LENGTH] + '...' if snippet.length > SNIPPET_LENGTH
             score = format('%.2f', result.score)
-            "[#{i + 1}] #{result.chunk.source} (score=#{score})\n#{snippet}"
+            "[#{i + 1}] #{result.chunk.source}#{line_range(result.chunk)} (score=#{score})\n#{snippet}"
           end.join("\n\n")
           Pikuri::Tool::Result.new(
             content: header + body,
             summary: "Found #{Pikuri::Tool.pluralize(results.length, 'match', 'matches')}"
           )
         end
+
+        # @param chunk [Chunk]
+        # @return [String] +" lines 1210-1248"+, +" line 7"+ for a one-line
+        #   chunk, or +""+ when the chunk carries no range.
+        def self.line_range(chunk)
+          first = chunk.metadata[:first_line]
+          last = chunk.metadata[:last_line]
+          return '' unless first && last
+
+          first == last ? " line #{first}" : " lines #{first}-#{last}"
+        end
+        private_class_method :line_range
       end
     end
   end

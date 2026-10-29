@@ -17,16 +17,16 @@ describe Pikuri::Rag::Tools::Search do
     fake
   end
 
-  def chunk(id, source, text)
+  def chunk(id, source, text, lines: [1, 1])
     Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
-                                metadata: { ordinal: 0, hash: 'h', first_line: 1, last_line: 1 })
+                                metadata: { ordinal: 0, hash: 'h', first_line: lines[0], last_line: lines[1] })
   end
 
   def populate
     hybrid.upsert(
       chunks: [
         chunk('acme.md:0', 'acme.md', 'Acme agreed to hold list pricing through Q1.'),
-        chunk('notes.md:0', 'notes.md', 'Invoice 4471 is still outstanding.'),
+        chunk('notes.md:0', 'notes.md', 'Invoice 4471 is still outstanding.', lines: [7, 9]),
         chunk('other.md:0', 'other.md', 'Unrelated risotto technique.')
       ],
       vectors: [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]
@@ -110,11 +110,11 @@ describe Pikuri::Rag::Tools::Search do
       assert_includes out, 'notes.md'
     end
 
-    it 'formats as vectordb_search does — numbered source + score + snippet' do
+    it 'formats as vectordb_search does — numbered source + line range + score + snippet' do
       populate
-      out = execute
+      out = execute(query: 'invoice 4471')
       assert_match(/\AFound \d+ match/, out)
-      assert_match(/\[1\] \S+ \(score=\d\.\d\d\)/, out)
+      assert_match(/^\[1\] notes\.md lines 7-9 \(score=\d\.\d\d\)$/, out)
     end
 
     it 'says so when the corpus has nothing' do

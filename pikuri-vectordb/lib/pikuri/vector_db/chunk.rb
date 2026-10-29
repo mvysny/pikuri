@@ -26,6 +26,8 @@ module Pikuri
     #   * +first_line:+ / +last_line:+ — the chunk's line range, per
     #     {Pikuri::Extractor}'s == Lines; a valid +offset:+ for the paged
     #     readers over the same file.
+    #   Only the line range reaches the LLM, as a search hit's
+    #   +lines 1210-1248+; +ordinal:+ and +hash:+ are bookkeeping.
     #
     # No +vector+ field: the vector rides alongside only in transit between
     # {Embedder} and {Backend#upsert} and is absent on the query side (callers

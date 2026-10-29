@@ -8,7 +8,7 @@ module Pikuri
       #
       #   Found 5 matches.
       #
-      #   [1] acme-2026-08-14.md (score=0.03)
+      #   [1] acme-2026-08-14.md lines 1-4 (score=0.03)
       #   Agreed to hold list pricing through Q1 and revisit at renewal...
       #
       # * *Vector leg* — embed the query, {Pikuri::VectorDb::Backend#query} for
@@ -80,7 +80,8 @@ module Pikuri
           Usage:
           - Use when the user asks about facts, definitions, or topics that would live in their indexed documents (notes, docs, knowledge base).
           - Phrase the query as a complete question or topic statement; exact names, IDs and rare words in it are matched literally as well, so include them verbatim.
-          - Returns up to #{FINAL_K} ranked results with `source` paths and text snippets; cite results back using the source path.
+          - Returns up to #{FINAL_K} ranked results with `source` paths, line ranges and text snippets; cite results back using the source path.
+          - A snippet is a fragment. To read a result in context, call rag_read with its `source` and the first line of its range as `offset`.
           - This is a ranked sample, not a complete list. When the user asks for *every* document about something, use rag_find instead.
           - If a query returns nothing useful, either the relevant doc isn't in the corpus, or the corpus hasn't been indexed yet — say which you suspect, and offer to run rag_reindex to build the index.
         DESC

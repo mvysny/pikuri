@@ -46,10 +46,12 @@ Three tools, registered by the extension:
 1. **`vectordb_search`** — embeds the query, pulls the top-k nearest
    chunks from the backend, optionally reranks them with a
    cross-encoder, and hands the agent a numbered list of
-   `source (score=…)` snippets as its next observation.
+   `source lines 1210-1248 (score=…)` snippets as its next
+   observation.
 2. **`vectordb_read`** — parent-document retrieval: when a search
-   surfaces a clean hit, the agent reads that whole document by its
-   `source` path instead of re-querying for more fragments of it.
+   surfaces a clean hit, the agent reads that document by its
+   `source` path, starting at the hit's first line, instead of
+   re-querying for more fragments of it.
 3. **`vectordb_reindex`** — rebuilds the index from the source, on
    request.
 

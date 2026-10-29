@@ -280,7 +280,7 @@ What you should see: the agent reasons about the question, fires
 off two or three `vectordb_search` calls, and answers with a
 paragraph plus a citation to `subagents.md` (and possibly
 `security.md` for the lethal-trifecta tie-in). The retrieved
-chunks — a numbered list of `source (score=…)` snippets — arrive as
+chunks — a numbered list of `source lines a-b (score=…)` snippets — arrive as
 the observations it reasons over, right in its own output stream.
 
 Try a follow-up that doesn't need the corpus:
@@ -400,9 +400,16 @@ the index in the background and keep it live as files change.
 
 The retrieved chunks enter the agent's context as the next
 observation, formatted as a numbered list of
-`source (score=2.08)\n<snippet…>`. The agent reads them the way it
-reads any other tool result, then quotes or cites what's relevant
-in its answer.
+`source lines 1210-1248 (score=2.08)\n<snippet…>`. The agent reads
+them the way it reads any other tool result, then quotes or cites
+what's relevant in its answer.
+
+The line range is where the chunk sits in the document. A snippet is
+a few hundred characters cut from a window that ignores headings, so
+it rarely holds the whole answer. The range lets the agent call
+`vectordb_read` with `offset` at the hit's first line and read the
+passage with its surroundings, instead of answering from a fragment
+plus whatever the model remembers.
 
 The `score` always tracks whatever produced the ordering: with the
 reranker on (the default), it's the cross-encoder's relevance score

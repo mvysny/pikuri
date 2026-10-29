@@ -60,10 +60,11 @@ Four tools, registered by the extension:
 1. **`rag_search`** — the hybrid ranking. Embeds the query for the
    vector leg, ORs its terms for a bm25-ranked keyword leg, fuses the
    two by reciprocal rank, optionally reranks with a cross-encoder,
-   and hands back five `source (score=…)` snippets.
+   and hands back five `source lines a-b (score=…)` snippets.
 2. **`rag_find`** — the complete listing. ANDs the (stemmed) terms
    *across the whole document* and returns *every* match: `source`,
-   matching-chunk count, byte size. No cutoff, no top-k.
+   matching-chunk count with the line each starts at, byte size. No
+   cutoff, no top-k.
 3. **`rag_read`** — one indexed document in full, by the `source` path
    either of the other two printed. `pikuri-vectordb`'s tool under
    this gem's prefix, membership gate and all.
