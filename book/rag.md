@@ -62,10 +62,10 @@ the first two.
 
 **`rag_search`** is the ranked answer, and it runs both legs:
 
-- The **vector leg** embeds your query and pulls the 50 nearest
-  chunks — the previous chapter's pipeline, unchanged.
+- The **vector leg** embeds your query and pulls the 10 nearest
+  chunks — the previous chapter's vector search.
 - The **keyword leg** takes the same query, splits it into words, and
-  asks the keyword index for the 50 best matches by
+  asks the keyword index for the 10 best matches by
   [BM25](#bm25-in-one-paragraph).
 
 Then it fuses the two lists and returns five results. So *"what did we

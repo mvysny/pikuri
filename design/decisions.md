@@ -38,8 +38,10 @@ vector leg misses, which it never did on this corpus. The reranker now scores â‰
 
 - **Hand the model both legs unfused** (each leg's top 3, interleaved, labelled): 35/41 â€” a
   quota gives the keyword leg three slots whether it has anything or not, so it lands on
-  vector-only. Its one edge, MRR 0.77 vs 0.63 (the gold more often at #1), is open in
-  `design/ideas/rag-search-unfused-legs.md` together with provenance labels, which need no union.
+  vector-only. Its one edge is MRR, 0.77 vs 0.63: each leg's #1 always leads, so the gold is
+  at #1 more often. That only matters if the model reads from the top. Per-hit labels like
+  "meaning #1, keyword #4", the other half of the proposal, can go on a fused list just as
+  well, so dropping the union doesn't rule them out.
 - **Only one knob.** `k` 5 at depth 50: 34/41. Depth 10 at `k` 60: 36/41. Depth does most of
   the work; agreement deep in both lists is the noise.
 - **Keep 60, because every stack does.** It comes from the original paper's pilot over TREC
