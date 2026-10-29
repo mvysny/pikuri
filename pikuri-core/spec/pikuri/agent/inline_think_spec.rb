@@ -5,8 +5,7 @@ require 'pikuri/testing'
 # A server that leaves reasoning inline in +content+ (llama.cpp with
 # +--reasoning-format none+, a template that does not split it out) must still
 # surface it as thinking, not as answer text. Driven over the wire through the
-# fake transport, so a ruby_llm upgrade that restores the split turns these green
-# with no pikuri change. See design/ideas/inline-think-tags.md.
+# fake transport, so the whole path from the HTTP body to the events is covered.
 RSpec.describe Pikuri::Agent, 'inline <think> tags' do
   let(:capture_class) do
     Class.new(Pikuri::Agent::Listener::Base) do
@@ -26,7 +25,6 @@ RSpec.describe Pikuri::Agent, 'inline <think> tags' do
   end
 
   it 'lifts a non-streamed <think> block out of the reply into Thinking' do
-    pending 'ruby_llm 2.x no longer splits inline <think> tags'
     listener = capture_class.new
     transport = Pikuri::Testing.fake_transport { |llm| llm.reply("<think>reasoning</think>\nanswer") }
     agent = Pikuri::Agent.new(transport:, system_prompt: 'test') { |c| c.add_listener listener }
@@ -40,8 +38,32 @@ RSpec.describe Pikuri::Agent, 'inline <think> tags' do
     agent&.close
   end
 
+  it 'replays the split turn without the tags, and exports the reasoning as thinking' do
+    requests = []
+    script = Pikuri::Testing::Script.new
+    script.reply("<think>reasoning</think>\nanswer")
+    script.reply('second')
+    recorder = Class.new(Pikuri::Testing.build_adapter(script.responses)) do
+      define_method(:call) do |env|
+        requests << JSON.parse(env.body.to_s)
+        super(env)
+      end
+    end
+    transport = Pikuri::Testing.fake_transport.with(faraday_adapter: recorder)
+    agent = Pikuri::Agent.new(transport:, system_prompt: 'test')
+
+    agent.run_loop(user_message: 'one')
+    agent.run_loop(user_message: 'two')
+
+    replayed = requests.last['messages'].find { |m| m['role'] == 'assistant' }
+    assert_equal 'answer', replayed['content']
+    exported = agent.export_history.messages.find { |m| m.role == 'assistant' }
+    assert_equal 'reasoning', exported.thinking.text
+  ensure
+    agent&.close
+  end
+
   it 'routes a streamed <think> block to ThinkingDelta, even with tags split across chunks' do
-    pending 'ruby_llm 2.x no longer splits inline <think> tags'
     listener = capture_class.new
     transport = Pikuri::Testing.fake_transport do |llm|
       llm.stream('<thi', 'nk>reas', 'oning</th', "ink>\nans", 'wer')
@@ -55,7 +77,7 @@ RSpec.describe Pikuri::Agent, 'inline <think> tags' do
     # Deltas only, joined: how a shell slices them is not the contract, but no
     # fragment of a tag may reach either stream.
     assert_equal 'reasoning', contents(listener, Pikuri::Agent::Event::ThinkingDelta).join
-    assert_equal 'answer', contents(listener, Pikuri::Agent::Event::AssistantDelta).join.strip
+    assert_equal 'answer', contents(listener, Pikuri::Agent::Event::AssistantDelta).join
     assert_equal ['reasoning'], contents(listener, Pikuri::Agent::Event::Thinking)
     assert_equal ['answer'], contents(listener, Pikuri::Agent::Event::Assistant)
   ensure

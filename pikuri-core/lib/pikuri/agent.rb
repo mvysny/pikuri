@@ -646,6 +646,10 @@ module Pikuri
       @pending_tool_call = nil
 
       @chat.after_message do |msg|
+        split_inline_thinking!(msg)
+        # One splitter per request: the stream that just ended may have left
+        # it inside a tag.
+        @think_splitter = ThinkTagSplitter.new
         # A +:tool+ message is the one the summary computed just above belongs to.
         summary = @pending_tool_call[:summary] if msg.role == :tool && @pending_tool_call
         track_message(msg, summary: summary)
@@ -1170,6 +1174,8 @@ module Pikuri
     #
     # @return [Proc] a +->(chunk) { ... }+ for +Chat#complete+
     def streaming_block
+      # Fresh per turn: a cancelled stream never reaches +after_message+'s reset.
+      @think_splitter = ThinkTagSplitter.new
       ->(chunk) {
         @cancellable&.check!
         emit_chunk(chunk)
@@ -1228,18 +1234,50 @@ module Pikuri
                       ))
     end
 
-    # Normalize a streaming +RubyLLM::Chunk+ into zero, one, or two delta
-    # events ({Event::ThinkingDelta}/{Event::AssistantDelta}). Empty
-    # fragments are filtered; tool-call deltas skipped (see {#streaming_block}).
+    # Normalize a streaming +RubyLLM::Chunk+ into delta events
+    # ({Event::ThinkingDelta}/{Event::AssistantDelta}), routing inline
+    # +<think>+ text to thinking through +@think_splitter+. Empty fragments
+    # are filtered; tool-call deltas skipped (see {#streaming_block}).
+    #
+    # A fragment the splitter holds back as a possible partial tag is never
+    # flushed as a delta: the {Event::Assistant}/{Event::Thinking} bookend
+    # carries the authoritative whole.
     #
     # @param chunk [RubyLLM::Chunk]
     # @return [void]
     def emit_chunk(chunk)
-      thinking = chunk.thinking&.text
-      @listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
+      content, inline_thinking = chunk.content.is_a?(String) ? @think_splitter.feed(chunk.content) : [nil, nil]
+      [chunk.thinking&.text, inline_thinking].each do |thinking|
+        @listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
+      end
+      @listeners.emit(Event::AssistantDelta.new(content: content)) if content && !content.empty?
+    end
 
-      content = chunk.content
-      @listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
+    # Lift +<think>…</think>+ reasoning a server left inline in an assistant
+    # message's content into its thinking, so every reader of the message —
+    # events, {#last_assistant_content}, {#export_history}, replay, and
+    # {#strip_foreign_thinking!} — sees the split. Why here and not in
+    # ruby_llm: +design/decisions.md+ +D_inline_think_tags+.
+    #
+    # Edits +msg+ in place: +RubyLLM::Message+ has no writers, and a rebuilt
+    # copy would drop the fields its constructor takes but pikuri never
+    # passes on (citations, finish reason, usage entries).
+    #
+    # @param msg [RubyLLM::Message]
+    # @return [void]
+    # @raise [RuntimeError] when ruby_llm renamed the instance variables this
+    #   writes, which would otherwise make the split a silent no-op.
+    def split_inline_thinking!(msg)
+      return unless msg.role == :assistant && msg.content&.include?(ThinkTagSplitter::OPEN)
+
+      unless %i[@content @thinking].all? { |ivar| msg.instance_variable_defined?(ivar) }
+        raise "RubyLLM::Message no longer keeps @content/@thinking: #{msg.instance_variables.inspect}"
+      end
+
+      content, inline = ThinkTagSplitter.split(msg.content)
+      text = [msg.thinking&.text, inline].compact.reject(&:empty?).join("\n")
+      msg.instance_variable_set(:@content, content)
+      msg.instance_variable_set(:@thinking, RubyLLM::Thinking.build(text: text, signature: msg.thinking&.signature))
     end
 
     # Drain the interloper queue, landing each item per its

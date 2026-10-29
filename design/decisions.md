@@ -20,6 +20,37 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_inline_think_tags — Why does pikuri split inline `<think>` tags itself rather than patch ruby_llm?
+
+**Context.** Some servers leave reasoning inline in `content` as `<think>…</think>`: llama.cpp
+with `--reasoning-format none`, a template that does not split it out, some proxies. ruby_llm
+1.16 lifted it into `thinking`. 2.0.0 dropped that without a release note, and 2.1.1 has not
+restored it ([ruby_llm#1345](https://github.com/crmne/ruby_llm/issues/1345)). Since then the
+reasoning reached every shell as answer text, `last_assistant_content` and `History` kept it as
+content, and every later turn replayed it as content.
+
+**Decision.** {Pikuri::Agent::ThinkTagSplitter} splits it in `agent.rb`, at the two places every
+reply passes. `after_message` rewrites the stored message in place, so events, export, replay
+and the model-switch strip all see the split. `emit_chunk` feeds each streamed chunk through a
+per-request splitter that holds back a tag cut across chunks. A server that already sends
+`reasoning_content` never sends a tag, so the split never triggers for it, and if upstream
+restores the split it simply finds no tags left to take out.
+
+**Alternatives rejected.**
+
+- **Prepend a fix into ruby_llm** (`Protocols::ChatCompletions::Chat`,
+  `Protocol::StreamAccumulator`), restoring 1.16's code. It would still leave the deltas dirty:
+  read in 1.16.0's `streaming.rb`, the stream loop hands the caller each *raw* chunk before the
+  accumulator cleans it, so even 1.16 previewed `<think>` in every delta. The streaming half had
+  to live in pikuri anyway. The rest would patch private methods that 2.0 rewrote, for every
+  ruby_llm user in the host process.
+- **Wait for upstream.** #1345 may well answer "intended", and the shells are broken meanwhile.
+- **Rebuild the message with `RubyLLM::Message.new`**, the way `strip_foreign_thinking!` does.
+  It drops the citations, finish reason and usage entries pikuri never passes on. Setting the two
+  instance variables keeps them, and it raises if ruby_llm ever renames them.
+
+---
+
 ## D_ruby_stemming — Why stem in Ruby, Finnish through Voikko, with compounds split only into the index?
 
 **Context.** `D_rag_gem` shipped `porter`, English only, and named the seam for the rest: a
