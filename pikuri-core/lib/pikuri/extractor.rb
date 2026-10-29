@@ -31,7 +31,8 @@ module Pikuri
   # plus one *optional* method:
   #
   # * +extract_lines(io)+ → +Enumerator<String>+ — the same content as a
-  #   lazy stream of +chomp+ed lines. {.extract_paged} prefers it and stops
+  #   lazy stream of +chomp+ed lines, numbered exactly as +extract+'s (see
+  #   == Lines). {.extract_paged} prefers it and stops
   #   the moment the window fills, so the document's tail is never parsed
   #   (pikuri-pdf parses pages on access). Must be consumed while +io+ is
   #   open; may raise {Error} mid-iteration. Extractors needing the whole
@@ -41,6 +42,29 @@ module Pikuri
   # Windowing (offset / limit / byte cap / truncation) is presentation and
   # lives once in {.extract_paged}, never per extractor — +extract_lines+ is
   # line *production*, the only format-specific half of paging.
+  #
+  # == Lines
+  #
+  # The one definition of "line N" for everything that pages, cites or
+  # indexes extracted text — a reader's +offset:+, a search hit's line range,
+  # a host program counting lines itself:
+  #
+  #   "a\r\nb\rc\n\nd\n"   # 4 lines: "a", "b\rc", "", "d"
+  #
+  # * 1-based; a range is inclusive at both ends.
+  # * LF is the only terminator: CRLF numbers like LF, a lone CR is *not* a
+  #   break, a final LF opens no extra line. Line N is the text after the
+  #   (N-1)th +"\n"+.
+  # * Lines of the *extracted* text. For {Passthrough} formats (plain text,
+  #   Markdown, source) they are the file's own lines; for PDF / office /
+  #   HTML they number the extractor's output, +"--- Page N ---"+ markers
+  #   included — reproducible only by running the same extractor.
+  #
+  # A host counting a file's lines must split on LF alone. +grep -n+, +sed+,
+  # +awk+ and Ruby's +each_line+ agree; Python's +str.splitlines()+ and
+  # text-mode +open()+ and Java's +BufferedReader.readLine()+ /
+  # +Files.readAllLines()+ also break on a lone CR (+splitlines+ on +\v+,
+  # +\f+, U+2028 and more too), and every number after one is silently off.
   #
   # == Errors
   #
@@ -87,8 +111,8 @@ module Pikuri
     #   truncated (with {PAGE_LINE_TRUNCATION_MARKER}), *not* line-numbered
     #   (numbering is the caller's presentation). Includes any +"--- Page N
     #   ---"+ marker lines, which count toward +limit+/the byte cap.
-    # * +start_line+ — 1-indexed line number of +lines.first+ (the requested
-    #   +offset+).
+    # * +start_line+ — line number of +lines.first+ (the requested +offset+),
+    #   per {Extractor}'s == Lines.
     # * +total_lines+ — +Integer+ document line count when known, else +nil+.
     #   Known at EOF, when extracted in full (HTML), or on a cheap-to-count
     #   stream (text); +nil+ when a lazy stream stopped early (byte cap, or a
