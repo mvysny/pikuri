@@ -630,10 +630,42 @@ module Pikuri
         repaired ? with(messages: out) : self
       end
 
+      # A copy in which reasoning left inline in an assistant turn's content
+      # moves to its {Thinking}, the split a live reply gets:
+      #
+      #   content: "<think>hmm</think>\nHi!"  # => content: "Hi!", thinking.text: "hmm"
+      #
+      # A server that keeps reasoning in +content+ wrote such turns while
+      # pikuri did not split them; replayed as is, the reasoning reaches the
+      # model as answer text on every turn. Like {#repair_interrupted_tool_calls}
+      # it runs at load, so the file stays as written. Keyed on the tag, not on
+      # when the file was written: the format has no version to key on, and
+      # a clean history has no tag to find. See +design/decisions.md+
+      # +D_history_load_repairs+.
+      #
+      # @return [History] +self+ when no turn holds a tag.
+      def lift_inline_thinking
+        return self unless messages.any? { |m| inline_thinking?(m) }
+
+        with(messages: messages.map { |m| inline_thinking?(m) ? lift_thinking(m) : m })
+      end
+
       # Observation synthesized for a tool call whose result never arrived.
       INTERRUPTED_RESULT = '[Tool execution was interrupted]'
 
       private
+
+      # Same test as the live {Agent#split_inline_thinking!}.
+      def inline_thinking?(msg)
+        msg.role == 'assistant' && msg.content.include?(ThinkTagSplitter::OPEN)
+      end
+
+      def lift_thinking(msg)
+        content, inline = ThinkTagSplitter.split(msg.content)
+        text = [msg.thinking&.text, inline].compact.reject(&:empty?).join("\n")
+        msg.with(content: content,
+                 thinking: text.empty? ? msg.thinking : Thinking.new(text: text, signature: msg.thinking&.signature))
+      end
 
       def message_to_h(msg, inline)
         h = {

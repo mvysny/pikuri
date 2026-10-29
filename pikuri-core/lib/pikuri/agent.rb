@@ -490,11 +490,14 @@ module Pikuri
     # to read it again before editing — which is right, since the file may
     # have changed while the conversation sat on disk.
     #
-    # Two repairs happen on the way in, both because a stored conversation can
-    # describe something a provider will not accept:
+    # Three repairs happen on the way in, each because a stored conversation
+    # can describe something a provider will not accept or a model would
+    # misread:
     #
     # - A tool call whose result never arrived gets a synthesized one
     #   ({History#repair_interrupted_tool_calls}).
+    # - Reasoning left inline as +<think>…</think>+ in a turn's content moves
+    #   to its thinking ({History#lift_inline_thinking}).
     # - A turn produced by a *different* model loses its whole thinking block
     #   — a foreign one lands in a slot the receiving model reads as its own
     #   scratchpad. Withheld from the conversation only; {#export_history}
@@ -514,7 +517,9 @@ module Pikuri
 
       clear_conversation
       current_model = @chat.model&.id
-      repaired = history.repair_interrupted_tool_calls
+      # Lift before {#keep_thinking?} sees the turn, so a foreign model's
+      # inline reasoning is withheld like any other thinking.
+      repaired = history.repair_interrupted_tool_calls.lift_inline_thinking
       repaired.messages.each do |m|
         keep = keep_thinking?(m.thinking, m.model_id, current_model)
         track_message(@chat.add_message(m.to_ruby_llm(keep_thinking: keep)),

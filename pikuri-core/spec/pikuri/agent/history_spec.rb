@@ -262,6 +262,33 @@ RSpec.describe Pikuri::Agent::History do
     end
   end
 
+  describe '#lift_inline_thinking' do
+    def reply(content, thinking: nil)
+      H::Message.new(id: 'a', role: 'assistant', content: content, model_id: 'm', thinking: thinking)
+    end
+
+    it 'is a no-op when no turn holds a tag' do
+      h = H.new(messages: [H::Message.new(id: 'u', role: 'user', content: 'what is <think>?'),
+                           reply('Hi!')])
+      assert_same h, h.lift_inline_thinking
+    end
+
+    it 'moves the reasoning out of the content into thinking' do
+      lifted = H.new(messages: [reply("<think>\nhmm\n</think>\n\nHi!")]).lift_inline_thinking.messages.first
+
+      assert_equal 'Hi!', lifted.content
+      assert_equal H::Thinking.new(text: 'hmm', signature: nil), lifted.thinking
+      assert_equal 'm', lifted.model_id
+    end
+
+    it 'appends to a thinking block the turn already had, keeping its signature' do
+      had = H::Thinking.new(text: 'first', signature: 'SIG==')
+      lifted = H.new(messages: [reply('<think>second</think>Hi!', thinking: had)]).lift_inline_thinking
+
+      assert_equal H::Thinking.new(text: "first\nsecond", signature: 'SIG=='), lifted.messages.first.thinking
+    end
+  end
+
   describe '.mint_id' do
     it 'sorts in mint order, so ordering falls out of the id itself' do
       ids = Array.new(50) { H.mint_id }

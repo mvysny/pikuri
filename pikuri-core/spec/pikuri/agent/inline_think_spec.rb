@@ -63,6 +63,36 @@ RSpec.describe Pikuri::Agent, 'inline <think> tags' do
     agent&.close
   end
 
+  it 'lifts the tags out of a loaded history, so a model switch withholds the reasoning' do
+    requests = []
+    script = Pikuri::Testing::Script.new
+    script.reply('second')
+    recorder = Class.new(Pikuri::Testing.build_adapter(script.responses)) do
+      define_method(:call) do |env|
+        requests << JSON.parse(env.body.to_s)
+        super(env)
+      end
+    end
+    transport = Pikuri::Testing.fake_transport.with(faraday_adapter: recorder)
+    agent = Pikuri::Agent.new(transport:, system_prompt: 'test')
+    history = Pikuri::Agent::History.new(messages: [
+      Pikuri::Agent::History::Message.new(id: 'u', role: 'user', content: 'one'),
+      Pikuri::Agent::History::Message.new(id: 'a', role: 'assistant', model_id: 'another-model',
+                                          content: "<think>reasoning</think>\nanswer")
+    ])
+
+    agent.load_history!(history)
+    agent.run_loop(user_message: 'two')
+
+    replayed = requests.last['messages'].find { |m| m['role'] == 'assistant' }
+    assert_equal 'answer', replayed['content']
+    refute_includes JSON.generate(requests.last), 'reasoning'
+    exported = agent.export_history.messages.find { |m| m.role == 'assistant' }
+    assert_equal 'reasoning', exported.thinking.text
+  ensure
+    agent&.close
+  end
+
   it 'routes a streamed <think> block to ThinkingDelta, even with tags split across chunks' do
     listener = capture_class.new
     transport = Pikuri::Testing.fake_transport do |llm|

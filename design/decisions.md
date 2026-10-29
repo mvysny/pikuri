@@ -2510,6 +2510,17 @@ at both points identity can change, not just at load. That rode in here as a
 corollary with a rationale that did not survive checking; it now has its own
 entry, `D_thinking_block_replay`.
 
+**Reasoning left inline as `<think>…</think>` is lifted into thinking.**
+Between the ruby_llm 2.1 upgrade and `D_inline_think_tags`, such a turn was
+saved with the tags in its content, and replaying it hands the model its old
+reasoning as answer text on every turn. `History#lift_inline_thinking` reads
+the old shape and hands the agent the current one, the same split a live reply
+gets: text moves, none is lost. It keys on the tag, not on when the file was
+written — the format has no version to key on, a clean history has nothing to
+find, and a literal `<think>` in a real answer is already split live, so load
+adds no new false positive. It runs before the model-identity check, so a
+foreign model's lifted reasoning is withheld like any other thinking.
+
 **A tool the agent no longer wires draws no warning.** A recorded call is
 never re-executed; it is a record of the harness that made it. The only live
 risk is the model retrying a tool it can see in its own context, and ruby_llm
@@ -2531,6 +2542,9 @@ recovery that fires only when needed and says more.
   a live-agent durability feature, not something a history format can
   retrofit. Revisit if pikuri ever wants crash-resume rather than clean-exit
   resume.
+- **Leaving old conversations carrying their `<think>` tags**, since the
+  window that wrote them was short. The cost recurs on every resumed turn,
+  and the fix reuses `ThinkTagSplitter` whole.
 - **Warning on tool-set drift**, which pikuri-web records its tool list for.
   That stays a *shell* concern, where a picker may still want to show "saved
   by a different harness".
