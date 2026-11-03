@@ -51,9 +51,17 @@ Differences from ours, none of which matter for pikuri:
    `D_inline_think_tags` / `lift_inline_thinking` across `design/`, `book/`, `SECURITY.md`.
    One-sentence CHANGELOG entry under `[Unreleased]`.
 
-## Open questions
+## Empty `reasoning_content` — not a problem with llama.cpp
 
-- `Q_empty_reasoning`: #1351's review flagged that an empty `reasoning_content: ""` counts as
-  present and suppresses the split. Does llama.cpp ever send `""` with `--reasoning-format none`?
-  Upstream's `parse_think_tags` checks `thinking_text.nil?`, so `""` would skip the split — test
-  against a real llama.cpp before deleting ours.
+#1351's review flagged that an empty `reasoning_content: ""` counts as present and suppresses
+the split: upstream's `parse_think_tags` checks `thinking_text.nil?`, and `ThinkTags#feed` stops
+on any non-nil explicit thinking. Measured 2026-11-03 against llama.cpp `b10438` serving
+Ornith-1.5, raw HTTP, per-request `reasoning_format`:
+
+- `none`: the message has no `reasoning_content` key at all, streamed (0 of 114 deltas carry
+  one) or not; content opens with `<think>\n`. Upstream splits it.
+- `auto` / `deepseek` / server default: `reasoning_content` is a real string, never `""`, and
+  content arrives clean (`"391"`) — nothing to split either way.
+
+A proxy that sends `""` alongside inline tags would still defeat the upstream split; none
+pikuri targets is known to.
