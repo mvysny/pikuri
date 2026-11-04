@@ -30,6 +30,11 @@ module Pikuri
     # a fixed set and the policy is sub-agent-specific (this gem's AGENTS.md,
     # *Sub-agent propagation*).
     #
+    # Attachments don't travel: the task is a String, so a child never sees
+    # an image the user showed the parent. The parent names the file in the
+    # task and a persona holding +read+ opens it itself; one without +read+
+    # can't see it at all.
+    #
     # A child's loop is *unbounded*, as the parent's is: a persona carries no
     # step budget. It stops on the shared +cancellable+ (one Ctrl+C stops the
     # whole tree) or on its own context window — which starts empty, so a

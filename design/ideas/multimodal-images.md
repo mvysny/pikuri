@@ -19,9 +19,6 @@ Shipped 2026-11-04, now documented elsewhere: `Pikuri::Attachment`, `run_loop(at
 
 ## Open questions
 
-- `Q_subagents` — the `agent` tool's task is a String; a sub-agent never sees the parent's
-  image. Fine (the parent can tell it a path and the child can `read` it), as long as the
-  child persona has `read`.
 - `Q_memory` — `Extension#on_user_message` gets text only, and an attachment-only turn skips it
   (decided, in its yardoc). Should pikuri-memory at least record "[user attached image.png]" so
   a recalled fact isn't missing its referent?
