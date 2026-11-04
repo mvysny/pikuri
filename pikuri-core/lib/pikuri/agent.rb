@@ -282,16 +282,23 @@ module Pikuri
       last&.content
     end
 
-    # Run the agent loop for one turn. With a +user_message+, emits an
-    # {Event::UserTurn} (+mid_loop: false+) and appends it; with none, runs a
-    # *bare* turn against whatever the conversation + drained injections
+    # Run the agent loop for one turn. With a +user_message+ or +attachments+,
+    # emits an {Event::UserTurn} (+mid_loop: false+) and appends it; with
+    # neither, runs a *bare* turn against whatever the conversation + drained injections
     # already hold — the case a host uses after loading a skill on its own
     # initiative, so the agent reacts to it. Resets the cancellation control,
     # drains any pending {Control::Interloper} injections, then +complete+s the
     # chat. Output is the listeners' job; subsequent calls build on the same
     # history.
     #
-    # A blank +user_message+ against a conversation holding nothing but the
+    #   agent.run_loop(user_message: "what's wrong here?",
+    #                  attachments: [Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: png)])
+    #
+    # An attachment-only turn is not blank: it goes out with no text part
+    # at all, since Anthropic refuses an empty one. {Extension#on_user_message}
+    # sees the text only, and is skipped when there is none.
+    #
+    # A blank turn against a conversation holding nothing but the
     # system prompt is provider-split: providers that can't complete it raise
     # {EmptyTurnError}, the rest run the turn against that history. A blank turn
     # *mid-conversation* always proceeds — real turns remain to answer, and a
@@ -348,8 +355,10 @@ module Pikuri
     # killed process leaves no clue and {History::INTERRUPTED_RESULT} has to be
     # generic — the cause is in hand here and picks the wording.
     #
-    # @param user_message [String, nil] the turn's request; +nil+/blank runs a
-    #   bare turn (see above)
+    # @param user_message [String, nil] the turn's request; +nil+/blank with
+    #   no +attachments+ runs a bare turn (see above)
+    # @param attachments [Array<Pikuri::Attachment>] files shown to the model
+    #   with the request, e.g. a screenshot
     # @param transport [ChatTransport, nil] when non-+nil+ and structurally
     #   different, switch to it before the turn; +nil+ keeps the model
     # @raise [Control::Cancellable::Cancelled] if cancelled mid-turn (an
@@ -357,8 +366,13 @@ module Pikuri
     # @raise [EmptyTurnError] on a blank turn against a prompt-only
     #   conversation when the provider carries +:system+ outside +messages+
     #   (see above)
+    # @raise [ArgumentError] if an attachment is not a {Pikuri::Attachment}
     # @return [nil] after a turn runs
-    def run_loop(user_message: nil, transport: nil)
+    def run_loop(user_message: nil, attachments: [], transport: nil)
+      unless attachments.all?(Pikuri::Attachment)
+        raise ArgumentError, "attachments must be Pikuri::Attachments, got #{attachments.map(&:class)}"
+      end
+
       apply_transport!(transport) if transport
       @cancellable&.reset!
 
@@ -368,7 +382,8 @@ module Pikuri
       # message appended below.
       drain_interloper if @interloper
 
-      blank = user_message.nil? || user_message.to_s.strip.empty?
+      text = user_message.to_s.strip.empty? ? nil : user_message
+      blank = text.nil? && attachments.empty?
       # These providers would send `messages: []` here (see EmptyTurnError).
       # The drain above is what usually saves this case: an injected block is a
       # :user message, so a skill-only bare load has something to complete
@@ -384,11 +399,13 @@ module Pikuri
       # (+ask+ bundles append+complete atomically, leaving no seam to inject
       # between; the halves run explicitly instead.)
       unless blank
-        track_message(@chat.add_message(role: :user, content: user_message))
-        @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
+        message = { role: :user, content: text }
+        message[:attachments] = attachments.map(&:to_ruby_llm) unless attachments.empty?
+        track_message(@chat.add_message(message))
+        @listeners.emit(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
       end
       detect_and_emit_context_cap! if @cap_pending
-      dispatch_ext_on_user_message(user_message) unless blank
+      dispatch_ext_on_user_message(text) if text
 
       if @streaming
         @chat.complete(&streaming_block)

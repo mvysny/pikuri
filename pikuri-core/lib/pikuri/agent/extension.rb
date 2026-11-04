@@ -71,7 +71,9 @@ module Pikuri
       #
       # @param ctx [ExtensionContext] the live agent whose turn this is (same
       #   instance +bind+ received)
-      # @param content [String] the user message (initial or interloper)
+      # @param content [String] the user message's text (initial or
+      #   interloper); attachments are not passed, and a turn carrying only
+      #   attachments skips this hook
       # @return [String, nil] text to inject verbatim as a system-role message
       #   after the user message, or +nil+ to inject nothing
       def on_user_message(ctx, content); end

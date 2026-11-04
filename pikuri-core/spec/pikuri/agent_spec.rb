@@ -506,6 +506,57 @@ RSpec.describe Pikuri::Agent do
       refute turn.mid_loop
     end
 
+    describe 'with attachments' do
+      let(:image) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: "\x89PNG\r\n\x1a\n".b) }
+      let(:agent) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's') { |c| c.add_listener recorder }
+      end
+
+      it 'appends them to the user message and carries the values on UserTurn' do
+        agent.run_loop(user_message: "what's wrong here?", attachments: [image])
+
+        assert_equal 1, fake_chat.added_messages.size
+        sent = fake_chat.added_messages.first
+        assert_equal "what's wrong here?", sent[:content]
+        assert_equal [image], sent[:attachments].map { |a| Pikuri::Attachment.from_ruby_llm(a) }
+        assert_includes recorder.events,
+                        Pikuri::Agent::Event::UserTurn.new(content: "what's wrong here?", attachments: [image])
+      end
+
+      it 'runs an attachment-only turn with no text part, and skips on_user_message' do
+        ext = Class.new do
+          include Pikuri::Agent::Extension
+
+          attr_reader :calls
+
+          def on_user_message(_ctx, content)
+            (@calls ||= []) << content
+            nil
+          end
+        end.new
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's') do |c|
+          c.add_listener recorder
+          c.add_extension ext
+        end
+
+        agent.run_loop(attachments: [image])
+
+        assert_equal [{ role: :user, content: nil }], fake_chat.added_messages.map { |m| m.except(:attachments) }
+        assert_equal 1, fake_chat.completes
+        assert_includes recorder.events, Pikuri::Agent::Event::UserTurn.new(content: '', attachments: [image])
+        assert_nil ext.calls
+      end
+
+      it "refuses a RubyLLM::Attachment, whose path or URL source ruby_llm would read" do
+        raw = RubyLLM::Attachment.new(StringIO.new('png'), filename: 'shot.png')
+
+        assert_raises(ArgumentError) { agent.run_loop(user_message: 'hi', attachments: [raw]) }
+        assert_equal [], fake_chat.added_messages
+      end
+    end
+
     describe 'the first-turn /props probe' do
       # The probe answers only once a llama.cpp router has loaded the model,
       # so a host rendering the transcript from UserTurn must not wait on it.

@@ -197,7 +197,10 @@ module Pikuri
           replayed = thinking if keep_thinking
           RubyLLM::Message.new(
             role: role.to_sym,
-            content: content,
+            # An attachment-only user turn went out with no text part
+            # ({Agent#run_loop}); +""+ would replay as an empty one, which
+            # Anthropic refuses.
+            content: content.empty? && !attachments.empty? ? nil : content,
             attachments: attachments.map(&:to_ruby_llm),
             tool_calls: calls.empty? ? nil : calls,
             tool_call_id: tool_call_id,

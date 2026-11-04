@@ -45,12 +45,10 @@ attachment riding a tool result. What is missing is the *user* side.
 
 ## What's missing in pikuri
 
-1. `Agent#run_loop(user_message:)` — `String` only; appends with
-   `@chat.add_message(role: :user, content: user_message)` (`agent.rb:387`). No way in.
-2. `Event::UserTurn(content:, mid_loop:)` — listeners (terminal, pikuri-tui, memory recorder)
-   can't see that a turn carried an image.
-3. `Extension#on_user_message(content)` — text only; fine for now (mem0 can't embed images
-   anyway), but should be a conscious decision.
+1. ~~`Agent#run_loop(user_message:)` — `String` only.~~ Done 2026-11-04: `attachments:`.
+2. ~~`Event::UserTurn(content:, mid_loop:)` can't show an image.~~ Done: `attachments`.
+3. `Extension#on_user_message(content)` — text only, **decided**: attachments are not passed,
+   and an attachment-only turn skips the hook (its yardoc says so). See `Q_memory`.
 4. `Control::Interloper#inject_user_message(content)` — text only.
 5. The bins: `Reline.readline` gives a line of text; no syntax to attach anything.
 6. No vision-capability check: a text-only llama-server rejects the request (an HTTP error that
@@ -58,11 +56,11 @@ attachment riding a tool result. What is missing is the *user* side.
 
 ## Sketch
 
-**Core:** `run_loop(user_message: nil, attachments: [], transport: nil)`; `attachments` is an
-`Array<Pikuri::Attachment>` (see below), handed on as
-`@chat.add_message(role: :user, content:, attachments: attachments.map(&:to_ruby_llm))`.
-`Event::UserTurn` gains `attachments` (default `[]`), carrying the **values themselves**,
-not an id. No backward compatibility needed.
+**Core** — **done 2026-11-04**: `run_loop(user_message: nil, attachments: [], transport: nil)`
+and `Event::UserTurn#attachments`; contract in `Agent#run_loop`'s yardoc. An attachment-only
+turn sends **no text part** (Anthropic refuses an empty one), and `History::Message#to_ruby_llm`
+replays `""` + attachments as `nil` content to match. Pinned on the wire in
+`history_round_trip_spec.rb`.
 
 **`Pikuri::Attachment`** — **done 2026-11-04**: promoted from `History::Attachment`, with
 `Tool::Result` and `read` moved onto it. Why one type and not a `History`-own copy:
@@ -143,15 +141,17 @@ holds the image as it was at send time, not whatever sits at that path later.
   child persona has `read`.
 - `Q_memory` — `on_user_message` gets text only; should pikuri-memory at least record
   "[user attached image.png]" so a recalled fact isn't missing its referent?
-- `Q_listener_render` — how the terminal renders a `UserTurn` with images: a dim
-  `📎 shot.png (123 KB, image/png)` line, mirroring `Tool.describe_attachments`?
+- `Q_listener_render` — `Listener::Terminal` stays silent on `UserTurn` (it never echoes
+  typed input), so it only matters to a host that renders its transcript from events —
+  pikuri-tui: a dim `📎 shot.png (123 KB, image/png)` line, mirroring
+  `Tool.describe_attachments`?
 - `Q_beyond_images` — ruby_llm's Chat Completions path also does audio (`input_audio`) and
   PDFs (`file` parts); llama.cpp does audio with an audio mmproj. Same plumbing, so the core
   API should not say "image" anywhere — only the bins and the probe would.
 
 ## First cut
 
-~~`Pikuri::Attachment`, `Tool::Result` and `read` onto it, the `members` pin~~ (done).
-Left: `attachments:` on `run_loop` + `UserTurn`, `@path` in `pikuri-chat`, a spec
-round-tripping a user image through `History`. Probe, downscaling and
-mid-loop injection wait until a real model shows they're needed.
+~~`Pikuri::Attachment`, `Tool::Result` and `read` onto it, the `members` pin~~,
+~~`attachments:` on `run_loop` + `UserTurn`, a spec round-tripping a user image through
+`History`~~ (done). Left: `@path` in `pikuri-chat`. Probe, downscaling and mid-loop
+injection wait until a real model shows they're needed.

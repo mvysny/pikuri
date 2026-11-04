@@ -19,12 +19,19 @@ module Pikuri
       # +UserTurn+ as a turn boundary tell a fresh turn from an in-loop
       # injection. Emitted by {Agent#run_loop} at turn start, and when an
       # interloper item drains in after a tool batch.
-      UserTurn = Data.define(:content, :mid_loop) do
-        # @param content [String] user-supplied text
+      #
+      # Carries the attachments themselves, not a handle to look up: a
+      # listener has no {Agent::History} to resolve one against, and the bytes are
+      # shared with the chat, not copied.
+      UserTurn = Data.define(:content, :attachments, :mid_loop) do
+        # @param content [String] user-supplied text; +""+ on an
+        #   attachment-only turn
+        # @param attachments [Array<Pikuri::Attachment>] what the user showed
+        #   the model; always empty mid-loop
         # @param mid_loop [Boolean] +true+ when drained from
         #   {Control::Interloper}; default +false+
-        def initialize(content:, mid_loop: false)
-          super
+        def initialize(content:, attachments: [], mid_loop: false)
+          super(content: content, attachments: attachments.dup.freeze, mid_loop: mid_loop)
         end
       end
 

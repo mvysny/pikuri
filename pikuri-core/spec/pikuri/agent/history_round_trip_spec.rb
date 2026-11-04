@@ -69,6 +69,58 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     agent&.close
   end
 
+  describe 'a user-attached image' do
+    let(:png) { (+"\x89PNG\r\n\x1a\n").b + ('pixels' * 8).b }
+    let(:image) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: png) }
+
+    # Each turn's request body, after an optional reload between the turns.
+    # +text+ is the first turn's text; +nil+ makes it attachment-only.
+    def bodies(text:, &reload)
+      captured = []
+      transport = recording_transport(captured) do |llm|
+        llm.reply('Red on the left, blue on the right.')
+        llm.reply('Yes.')
+      end
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+      agent.run_loop(user_message: text, attachments: [image])
+      reload&.call(agent)
+      agent.run_loop(user_message: 'Are you sure?')
+      captured
+    ensure
+      agent&.close
+    end
+
+    def user_content(body) = body['messages'].find { |m| m['role'] == 'user' }['content']
+
+    it 'reaches the wire as an image_url part beside the text' do
+      first = user_content(bodies(text: "What's in it?").first)
+
+      assert_equal({ 'type' => 'text', 'text' => "What's in it?" }, first[0])
+      assert_equal 'image_url', first[1]['type']
+      assert_equal "data:image/png;base64,#{[png].pack('m0')}", first[1]['image_url']['url']
+    end
+
+    it 'sends no text part on an attachment-only turn, before and after a reload' do
+      plain = bodies(text: nil)
+      reloaded = bodies(text: nil) { |a| a.load_history!(Pikuri::Agent::History.parse(a.export_history.to_json)) }
+
+      assert_equal ['image_url'], user_content(plain.first).map { |p| p['type'] }
+      assert_equal plain.last, reloaded.last
+    end
+
+    it 'sends byte-identical requests after a save to disk and a load back' do
+      Dir.mktmpdir do |dir|
+        plain = bodies(text: "What's in it?")
+        reloaded = bodies(text: "What's in it?") do |a|
+          a.export_history.save(dir)
+          a.load_history!(Pikuri::Agent::History.load(dir))
+        end
+
+        assert_equal plain.last, reloaded.last
+      end
+    end
+  end
+
   # A thinking block belongs to the model that produced it: replayed to another
   # one it lands in a slot the receiver reads as its own scratchpad. So it is
   # withheld from the *wire* while staying in the *record*.
