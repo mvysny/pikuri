@@ -815,7 +815,7 @@ detail:)` is the recoverable failure (content keeps every line the model
 needs, the summary takes only the first — a `ValidationError` reprints the
 schema). `Result#content` is always the `String` the model reads; an
 **attachment observation** adds the bytes as `Result#attachments`
-(`RubyLLM::Attachment`s) beside a short note. `Tool#run` enforces the
+(`Pikuri::Attachment`s) beside a short note. `Tool#run` enforces the
 type, wrapping a bare String from a third-party `Tool` through
 `Tool.describe_content` rather than refusing it. `Tool#describe_result` is
 deleted.
@@ -824,7 +824,8 @@ The distinction survives in exactly one place, the four-line wrapper in
 `to_ruby_llm_tool`: ruby_llm hands the *same* value to `after_tool_result`
 and to the `:tool` message it builds, and sends attachments only for an
 `Array` of Strings and `Attachment`s — a test a `Result` cannot pass. So an
-attachment crosses as `[content, *attachments]` and its display line is
+attachment crosses as `[content, *attachments]` (each converted to a
+`RubyLLM::Attachment` there) and its display line is
 *derived*; text keeps the `Result` and its authored summary reaches the
 listeners untouched. Listeners get the note as `Event::ToolResult#content`,
 never the bytes. No tool sees this.
@@ -2445,10 +2446,9 @@ snapshot, and a derived snapshot wants wholesale rewrite.
 
 ## D_history_attachments — Why two attachment encodings in one folder, and why are the files allowed to rot?
 
-**Context.** `Workspace::Read` hands the model images as a
-`RubyLLM::Attachment` whose source is a **workspace path**. An
-exported conversation therefore has to decide what an attachment *is* on
-disk.
+**Context.** `Workspace::Read` hands the model images as bytes read
+from a **workspace path** that may later change or vanish. An exported
+conversation therefore has to decide what an attachment *is* on disk.
 
 **Decision.** Two encodings of one in-memory value: `#to_json` inlines
 attachments as base64 for a single self-contained artifact; `#save(dir)`
@@ -2490,6 +2490,12 @@ files costs nothing per save.
 - **Sweeping unreferenced attachments**, or reporting them so a host can.
   The report was dropped because nothing consumes it, and it was the only
   reason `save` would scan the directory at all.
+- **A `History`-own attachment type** beside the `Pikuri::Attachment` the
+  rest of pikuri carries. It would be a field-for-field copy with a
+  conversion to maintain, and no safer: a field added to one and not the
+  other is dropped on save just as silently. One type, a yardoc warning that
+  `History` serializes it, and a spec pinning `Pikuri::Attachment.members`
+  instead.
 
 **Consequences.** Orphans accumulate silently and nothing will mention them
 — bounded by what one conversation produced, content-addressed so they can
@@ -4135,13 +4141,13 @@ streaming error-parse patch lived one release (ruby_llm #837, gone in 2.0).
   **deletes `Pikuri::Testing`** outright (see `D_fake_transport`), forcing a
   new fake harness across every gem's specs. Vendor backing pays for a
   moving API surface; ours is frozen.
-- **Wrapping the leaked `RubyLLM` value types** to make a future swap cheap.
-  They are public API three ways — `Workspace::Read` *returns*
-  `RubyLLM::Attachment`s, `Pikuri::Tool` *subclasses* `RubyLLM::Tool`, and MCP
-  tools *are* `RubyLLM::Tool`s — so a swap is a major-version break either
-  way. An anti-corruption layer bought for a swap we've decided against is
-  the just-in-case abstraction AGENTS.md rejects; the **Value-type
-  passthrough** seam sanctions the leak deliberately.
+- **Wrapping the leaked `RubyLLM` types** to make a future swap cheap.
+  They are public API two ways — `Pikuri::Tool` *subclasses* `RubyLLM::Tool`,
+  and MCP tools *are* `RubyLLM::Tool`s — so a swap is a major-version break
+  either way. An anti-corruption layer bought for a swap we've decided
+  against is the just-in-case abstraction AGENTS.md rejects. The one type
+  pikuri does wrap, `Pikuri::Attachment`, is wrapped for safety, not for a
+  swap: ruby_llm's reads a path or fetches a URL at construction.
 
 **Consequences.**
 

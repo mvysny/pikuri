@@ -23,9 +23,9 @@ module Pikuri
     # only when the observation **is** the attached bytes — the image
     # {Pikuri::Workspace::Read} answers for a PNG, with +content+ a short note:
     #
-    #   note = "Read image: #{path} (#{size} bytes, #{mime})"
-    #   Tool::Result.new(content: note, attachments: [RubyLLM::Attachment.new(resolved.to_s)],
-    #                    summary: Pikuri::Tool.one_line(note))
+    #   image = Pikuri::Attachment.new(mime: mime, filename: resolved.basename.to_s, bytes: bytes)
+    #   note = "Read image: #{path} (#{bytes.bytesize} bytes, #{mime})"
+    #   Tool::Result.new(content: note, attachments: [image], summary: Pikuri::Tool.one_line(note))
     #
     # The test is not "does this tool touch a file" but "is there anything to
     # read here besides the attached bytes"; a PDF is text (extracted, paged,
@@ -133,16 +133,16 @@ module Pikuri
       # @param content [String] the text the model reads; for an attachment
       #   observation, the note beside the bytes.
       # @param summary [String] the display line; see the two rules above.
-      # @param attachments [Array<RubyLLM::Attachment>] the bytes the
+      # @param attachments [Array<Pikuri::Attachment>] the bytes the
       #   observation *is*; see +== Text or an attachment+ above.
       # @raise [ArgumentError] if +content+ is not a String, an attachment is
-      #   not a +RubyLLM::Attachment+, or +summary+ is not a single-line
+      #   not a {Pikuri::Attachment}, or +summary+ is not a single-line
       #   String — all programmer errors in tool code, so they raise rather
       #   than degrade.
       def initialize(content:, summary:, attachments: [])
         raise ArgumentError, "content must be a String, got #{content.class}" unless content.is_a?(String)
-        unless attachments.all?(RubyLLM::Attachment)
-          raise ArgumentError, "attachments must be RubyLLM::Attachments, got #{attachments.map(&:class)}"
+        unless attachments.all?(Pikuri::Attachment)
+          raise ArgumentError, "attachments must be Pikuri::Attachments, got #{attachments.map(&:class)}"
         end
         raise ArgumentError, "summary must be a String, got #{summary.class}" unless summary.is_a?(String)
         raise ArgumentError, "summary must be one line, got #{summary.inspect}" if summary.include?("\n")

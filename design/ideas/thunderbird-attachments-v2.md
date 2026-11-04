@@ -6,9 +6,9 @@ with a message saying so; build one only when it is asked for.
 
 ## Images (`Q_images`)
 
-`read` attaches PNG/JPEG/GIF/WebP as a `RubyLLM::Attachment`, which needs a
-file path, so the decoded bytes would be staged under `Paths.new_temp` (`0700`,
-reaped at exit) — a new at-rest copy, but at the snapshot's trust level. 54 of
+`read` attaches PNG/JPEG/GIF/WebP as a `Pikuri::Attachment`, which holds the
+bytes themselves, so the decoded part attaches directly — no file staged on
+disk. 54 of
 the IMAP account's attachments were images, mostly inline logos. Reuse
 `Workspace::Read`'s size cap and its "Read image: …" note shape.
 

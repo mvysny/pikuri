@@ -8,10 +8,13 @@ let a tool do it. Images first; audio / PDF-as-pixels / video later, if ever.
 pikuri is already multi-modal on **one** path: a tool observation.
 
 - `Workspace::Read` (`pikuri-workspace/lib/pikuri/workspace/read.rb`, `format_image`) sniffs
-  PNG/JPEG/GIF/WebP via `Pikuri::FileType`, refuses > 5 MiB, and answers
-  `Tool::Result.new(content: note, attachments: [RubyLLM::Attachment.new(path)])`.
-- `Tool#to_ruby_llm_tool` hands ruby_llm `[content, *attachments]` — the only shape ruby_llm
-  treats as a multimodal tool result (`D_tool_always_returns_result`).
+  PNG/JPEG/GIF/WebP via `Pikuri::FileType`, refuses > 5 MiB, reads the bytes once and answers
+  `Tool::Result.new(content: note, attachments: [Pikuri::Attachment.new(mime:, filename:, bytes:)])`.
+- `Pikuri::Attachment` (mime, filename, bytes) is the one attachment type pikuri carries;
+  `#to_ruby_llm` is the only place a `RubyLLM::Attachment` is built (AGENTS.md "Attachments
+  are bytes").
+- `Tool#to_ruby_llm_tool` hands ruby_llm `[content, *attachments.map(&:to_ruby_llm)]` — the
+  only shape ruby_llm treats as a multimodal tool result (`D_tool_always_returns_result`).
 - `Agent::History` round-trips attachments on **any** message, user ones included: base64 inline
   in `to_h`, content-addressed files under `attachments/` in `#save` (`D_history_attachments`).
 - `design/architecture.md` already says "vision/audio … are ruby_llm's" — no provider
@@ -56,35 +59,15 @@ attachment riding a tool result. What is missing is the *user* side.
 ## Sketch
 
 **Core:** `run_loop(user_message: nil, attachments: [], transport: nil)`; `attachments` is an
-`Array<Pikuri::Attachment>` (see below). `Agent` converts to `RubyLLM::Attachment` at
-`@chat.add_message(role: :user, content:, attachments:)` — the one place ruby_llm's type is
-built. `Event::UserTurn` gains `attachments` (default `[]`), carrying the **values themselves**,
+`Array<Pikuri::Attachment>` (see below), handed on as
+`@chat.add_message(role: :user, content:, attachments: attachments.map(&:to_ruby_llm))`.
+`Event::UserTurn` gains `attachments` (default `[]`), carrying the **values themselves**,
 not an id. No backward compatibility needed.
 
-**`Pikuri::Attachment`** — today's `History::Attachment` (`Data.define(:mime, :filename,
-:bytes)`) promoted to pikuri-core's top level and used everywhere pikuri hands an attachment
-around: `run_loop`, `UserTurn`, `History::Message`, **and `Tool::Result#attachments`**.
-
-- *Bytes by construction.* It cannot hold a path or URL, so ruby_llm's fetch-on-construct is
-  unreachable from pikuri — the construction-safety rule below becomes the type, not a bin
-  convention. The caller sniffs `mime` (`Pikuri::FileType`, as `read` already does).
-- *Compares by content*, so `assert_equal` works on a `UserTurn`.
-- *Fixes `read`.* `read.rb:260` builds `RubyLLM::Attachment.new(resolved.to_s)` from a path:
-  MIME is sniffed at construction but the bytes may be read later, so an edit in between
-  reaches the model unchecked — the exact "bytes changed since" failure `History`'s eager bytes
-  exist to stop. Moving `Tool::Result` over is small: `result.rb`'s type check,
-  `Tool.describe_attachments`, the conversion in `to_ruby_llm_tool`.
-- *Narrows Value-type passthrough* to `RubyLLM::Message`, or drops it if nothing in `lib/`
-  still references that. `History.from_ruby_llm` keeps converting back (`a.content`) — the one
-  remaining place ruby_llm's type flows in.
-- *It is serialized.* `History` writes it (`attachment_to_h` / `attachment_from_h`), so a new
-  field must revisit that code. The yardoc says so, and the history spec pins
-  `Pikuri::Attachment.members == %i[mime filename bytes]` so the reminder fails loudly. A field
-  without a default already breaks every constructor call; the pin catches the one with a
-  default, which would otherwise be silently dropped on save. A separate
-  `History::Attachment` with identical fields was rejected: it is a passthrough copy with the
-  same drift risk (a field added to one and not the other is just as silent) plus a conversion
-  to maintain.
+**`Pikuri::Attachment`** — **done 2026-11-04**: promoted from `History::Attachment`, with
+`Tool::Result` and `read` moved onto it. Why one type and not a `History`-own copy:
+`D_history_attachments`; the serialization warning is its yardoc plus the `members` pin in
+`history_spec.rb`.
 
 **Bins:** the smallest thing that works in a terminal — a token in the line, e.g.
 `@~/shot.png what's wrong here?`, or a `/image <path>` line that stages an attachment for the
@@ -168,7 +151,7 @@ holds the image as it was at send time, not whatever sits at that path later.
 
 ## First cut
 
-`Pikuri::Attachment` (promoted from `History::Attachment`, `Tool::Result` and `read` moved
-onto it), `attachments:` on `run_loop` + `UserTurn`, `@path` in `pikuri-chat`, a spec
-round-tripping a user image through `History`, and the `members` pin. Probe, downscaling and
+~~`Pikuri::Attachment`, `Tool::Result` and `read` onto it, the `members` pin~~ (done).
+Left: `attachments:` on `run_loop` + `UserTurn`, `@path` in `pikuri-chat`, a spec
+round-tripping a user image through `History`. Probe, downscaling and
 mid-loop injection wait until a real model shows they're needed.

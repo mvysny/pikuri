@@ -235,9 +235,9 @@ module Pikuri
       # Build a multimodal observation: a metadata note ("Read image: …") plus
       # the file attached, both arriving in the same +tool_result+ turn. Over
       # {MAX_IMAGE_BYTES} we refuse (an +"Error: ..."+ the model reacts to)
-      # rather than encoding a payload the provider rejects; +Pathname#size+
-      # avoids loading bytes just to over-cap them, and +RubyLLM::Attachment+
-      # base64-encodes lazily at format time.
+      # rather than encoding a payload the provider rejects. The bytes are read
+      # here, once, at most one past the cap — what the model sees is what was
+      # checked, and an oversized file is never loaded whole.
       #
       # The one place a {Tool::Result} carries +attachments+: the attached
       # bytes *are* the observation, so the display
@@ -250,15 +250,15 @@ module Pikuri
       # @return [Tool::Result] attachment-carrying on success;
       #   {Pikuri::Tool::Result.error} on size refusal
       def self.format_image(path:, resolved:, mime:)
-        size = resolved.size
-        if size > MAX_IMAGE_BYTES
+        bytes = File.binread(resolved, MAX_IMAGE_BYTES + 1)
+        if bytes.bytesize > MAX_IMAGE_BYTES
           return Tool::Result.error("image too large to inline: #{path} is " \
-                                    "#{size} bytes; max #{MAX_IMAGE_BYTES_LABEL}.")
+                                    "#{resolved.size} bytes; max #{MAX_IMAGE_BYTES_LABEL}.")
         end
 
-        note = "Read image: #{path} (#{size} bytes, #{mime})"
-        Tool::Result.new(content: note, attachments: [RubyLLM::Attachment.new(resolved.to_s)],
-                         summary: Pikuri::Tool.one_line(note))
+        image = Pikuri::Attachment.new(mime: mime, filename: resolved.basename.to_s, bytes: bytes)
+        note = "Read image: #{path} (#{bytes.bytesize} bytes, #{mime})"
+        Tool::Result.new(content: note, attachments: [image], summary: Pikuri::Tool.one_line(note))
       end
       private_class_method :format_image
     end

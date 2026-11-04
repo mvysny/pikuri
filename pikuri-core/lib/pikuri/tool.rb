@@ -401,7 +401,8 @@ module Pikuri
     # ruby_llm hands the *same* value to +after_tool_result+ and to the +:tool+
     # message it builds, and sends attachments only for a value that *is* an
     # Array of Strings and +RubyLLM::Attachment+s — a test a {Result} cannot
-    # pass. So an attachment Result crosses as +[content, *attachments]+ and
+    # pass. So an attachment Result crosses as +[content, *attachments]+, each
+    # {Pikuri::Attachment} converted by {Pikuri::Attachment#to_ruby_llm}, and
     # its display line is derived ({.describe_content}: mime plus size, which
     # is all the structure there is); text keeps the +Result+, which ruby_llm
     # stores as {Result#to_s}, so {Result#summary} reaches the listeners
@@ -424,7 +425,7 @@ module Pikuri
         define_singleton_method(:name) { tool_name }
         define_method(:execute) do |**args|
           result = pikuri_tool.run(args, context)
-          result.attachment? ? [result.content, *result.attachments] : result
+          result.attachment? ? [result.content, *result.attachments.map(&:to_ruby_llm)] : result
         end
         define_method(:pikuri_tool) { pikuri_tool }
       end

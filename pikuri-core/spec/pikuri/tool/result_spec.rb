@@ -93,7 +93,7 @@ RSpec.describe Pikuri::Tool::Result do
   end
 
   describe 'an attachment observation' do
-    let(:image) { RubyLLM::Attachment.new(StringIO.new('png'), filename: 'shot.png') }
+    let(:image) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
 
     it 'reports itself as one, and answers the note for to_s' do
       result = described_class.new(content: 'Read image: shot.png', attachments: [image], summary: 'Read image')
@@ -109,7 +109,17 @@ RSpec.describe Pikuri::Tool::Result do
       wrapper = tool(->(text:) { described_class.new(content: 'note', attachments: [image], summary: text) })
                 .to_ruby_llm_tool.new
 
-      assert_equal ['note', image], wrapper.execute(text: 'ignored')
+      note, wire = wrapper.execute(text: 'ignored')
+
+      assert_equal 'note', note
+      assert_kind_of RubyLLM::Attachment, wire
+      assert_equal ['png', 'shot.png'], [wire.content, wire.filename]
+    end
+
+    it 'refuses a RubyLLM::Attachment, which may still be backed by a path or a URL' do
+      raw = RubyLLM::Attachment.new(StringIO.new('png'), filename: 'shot.png')
+
+      assert_raises(ArgumentError) { described_class.new(content: 'x', attachments: [raw], summary: 'x') }
     end
 
     it 'keeps the Result for text, so the authored summary reaches the listeners' do

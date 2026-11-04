@@ -114,48 +114,12 @@ module Pikuri
       # wire needs it.
       Tokens = Data.define(:input, :output, :cached, :cache_creation, :thinking)
 
-      # A file the model was shown — an image from +read+, a pasted document.
-      # Holds the actual bytes; {#stored_name} is what {History#save} calls it
-      # on disk.
-      Attachment = Data.define(:mime, :filename, :bytes) do
-        # @param mime [String] e.g. +"image/png"+
-        # @param filename [String] the name the model was shown
-        # @param bytes [String] the file's contents; re-tagged binary, since
-        #   the same image arrives as UTF-8 from a source file and as
-        #   ASCII-8BIT from base64, and two differently-tagged copies of one
-        #   PNG are not +==+ — which would quietly break the round-trip
-        #   property this whole type exists to hold.
-        def initialize(mime:, filename:, bytes:)
-          super(mime: mime, filename: filename, bytes: bytes.b)
-        end
-
-        # Content-addressed filename: the digest prefix makes it unique and
-        # self-verifying, so the same image read twice is stored once and a
-        # tampered file is caught at load.
-        #
-        #   Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: png).stored_name
-        #   # => "3f9a1c8e2b-shot.png"
-        #
-        # @return [String] a bare basename, never a path.
-        def stored_name
-          ext = File.extname(filename.to_s)
-          stem = File.basename(filename.to_s, ext).gsub(/[^A-Za-z0-9._-]+/, '-')
-          stem = 'attachment' if stem.empty?
-          "#{digest[0, 10]}-#{stem}#{ext}"
-        end
-
-        # @return [String] SHA-256 of {#bytes}, hex.
-        def digest
-          Digest::SHA256.hexdigest(bytes)
-        end
-      end
-
       # One message. +id+ and +kind+ are pikuri's own and never reach a
       # provider; everything else is what the model saw.
       #
       # +content+ is always a String (empty on a pure tool-call turn, which is
       # what ruby_llm stores); anything the model was *shown* beyond text is an
-      # {Attachment} in +attachments+.
+      # {Pikuri::Attachment} in +attachments+.
       Message = Data.define(
         :id, :role, :kind, :content, :attachments,
         :tool_calls, :tool_call_id, :model_id, :thinking, :tokens, :summary
@@ -164,7 +128,7 @@ module Pikuri
         # @param role [String] one of {ROLES}
         # @param kind [String] one of {KINDS}; defaults to +"user"+
         # @param content [String] the text the model saw; +""+ is legal
-        # @param attachments [Array<Attachment>]
+        # @param attachments [Array<Pikuri::Attachment>]
         # @param tool_calls [Array<ToolCall>] empty unless the assistant asked
         #   for tools
         # @param tool_call_id [String, nil] set exactly on a +tool+ message
@@ -197,9 +161,7 @@ module Pikuri
         #   each call went out; an id it has nothing for stores +nil+s.
         # @return [Message]
         def self.from_ruby_llm(msg, id:, kind: 'user', summary: nil, tool_call_lines: {})
-          attachments = msg.attachments.map do |a|
-            Attachment.new(mime: a.mime_type, filename: a.filename.to_s, bytes: a.content)
-          end
+          attachments = msg.attachments.map { |a| Pikuri::Attachment.from_ruby_llm(a) }
           t = msg.tokens
           new(
             id: id, role: msg.role.to_s, kind: kind, content: msg.content.to_s, attachments: attachments,
@@ -236,7 +198,7 @@ module Pikuri
           RubyLLM::Message.new(
             role: role.to_sym,
             content: content,
-            attachments: attachments.map { |a| RubyLLM::Attachment.new(StringIO.new(a.bytes), filename: a.filename) },
+            attachments: attachments.map(&:to_ruby_llm),
             tool_calls: calls.empty? ? nil : calls,
             tool_call_id: tool_call_id,
             model: model_id,
@@ -440,7 +402,7 @@ module Pikuri
                               "got #{raw['kind'].inspect}"
             end
 
-          Attachment.new(mime: raw['mime'], filename: filename, bytes: bytes)
+          Pikuri::Attachment.new(mime: raw['mime'], filename: filename, bytes: bytes)
         end
 
         def decode_inline(data, index, id)
@@ -539,7 +501,7 @@ module Pikuri
       # The self-contained Hash: attachments inline, as base64.
       #
       # @param inline_attachments [Boolean] +false+ renders each attachment as
-      #   a reference to its {Attachment#stored_name}, which only {#save}
+      #   a reference to its {Pikuri::Attachment#stored_name}, which only {#save}
       #   wants — the bytes then live in the folder, not the Hash.
       # @return [Hash{String => Object}] JSON-safe, String keys.
       def to_h(inline_attachments: true)
@@ -694,6 +656,8 @@ module Pikuri
         h
       end
 
+      # Every {Pikuri::Attachment} field, mirrored by +attachment_from_h+; a
+      # new field belongs in both.
       def attachment_to_h(att, inline)
         base = { 'mime' => att.mime, 'filename' => att.filename }
         if inline

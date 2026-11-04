@@ -21,7 +21,7 @@ RSpec.describe Pikuri::Agent::History do
                                                  cache_creation: nil, thinking: nil)),
             H::Message.new(id: 'm3', role: 'tool', tool_call_id: 'call_1',
                            content: 'Read image: a.png',
-                           attachments: [H::Attachment.new(mime: 'image/png', filename: 'a.png', bytes: png)]),
+                           attachments: [Pikuri::Attachment.new(mime: 'image/png', filename: 'a.png', bytes: png)]),
             H::Message.new(id: 'm4', role: 'user', kind: 'reference',
                            content: '<system-reminder>recalled</system-reminder>')
           ])
@@ -54,9 +54,15 @@ RSpec.describe Pikuri::Agent::History do
       assert_equal history, H.new(messages: back)
     end
 
+    it 'serializes every Pikuri::Attachment field' do
+      # A field added to Pikuri::Attachment needs attachment_to_h/from_h too;
+      # one with a default would otherwise be dropped on save without a sound.
+      assert_equal %i[mime filename bytes], Pikuri::Attachment.members
+    end
+
     it 'normalizes attachment bytes to binary, so identical content compares equal' do
-      utf8 = H::Attachment.new(mime: 'image/png', filename: 'a.png', bytes: png.dup.force_encoding('UTF-8'))
-      assert_equal H::Attachment.new(mime: 'image/png', filename: 'a.png', bytes: png), utf8
+      utf8 = Pikuri::Attachment.new(mime: 'image/png', filename: 'a.png', bytes: png.dup.force_encoding('UTF-8'))
+      assert_equal Pikuri::Attachment.new(mime: 'image/png', filename: 'a.png', bytes: png), utf8
     end
   end
 

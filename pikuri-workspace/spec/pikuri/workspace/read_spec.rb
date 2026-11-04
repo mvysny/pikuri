@@ -248,11 +248,20 @@ RSpec.describe Pikuri::Workspace::Read do
 
       assert result.attachment?, "expected an attachment Result, got #{result.inspect}"
       assert_equal 1, result.attachments.length
-      attachment = result.attachments.first
-      assert_equal path.to_s, attachment.source.to_s
-      assert_equal 'image/png', attachment.mime_type
+      assert_equal Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: path.binread),
+                   result.attachments.first
       assert_includes result.content, 'Read image: shot.png'
       assert_includes result.content, "(#{path.size} bytes, image/png)"
+    end
+
+    it 'holds the bytes as read, so a later edit to the file does not reach the model' do
+      path = write_image('shot.png', PNG_MAGIC)
+      original = path.binread
+
+      result = described_class.read(workspace: workspace, path: 'shot.png', offset: 1, limit: 2000)
+      File.binwrite(path, PNG_MAGIC + ('changed' * 8).b)
+
+      assert_equal original, result.attachments.first.bytes
     end
 
     it 'refuses images larger than MAX_IMAGE_BYTES with an Error string the model can react to' do

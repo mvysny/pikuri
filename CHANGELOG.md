@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::Tool::Result#attachments` holds `Pikuri::Attachment`s (mime, filename and the bytes, promoted from `Pikuri::Agent::History::Attachment`) instead of `RubyLLM::Attachment`s, and `read` now reads an image's bytes once rather than letting ruby_llm re-read the path later. A tool returning an attachment builds `Pikuri::Attachment.new(mime:, filename:, bytes:)`.
 - Fix `rag_search` burying a leg's rank-1 hit under chunks both legs listed deep down — `Pikuri::Rag::Tools::Search` now fuses each leg's top `LEG_K` (10) with `RRF_K` 5 instead of 50 with 60, and the reranker scores at most 20 candidates; see `design/decisions.md` `D_rrf_tuning`.
 - **Breaking:** `Pikuri::Rag::Tools::Search::CANDIDATE_K` is gone, replaced by `LEG_K`. Code that read it for the per-leg depth reads `LEG_K`, or `Pikuri::VectorDb::Tools::Search::CANDIDATE_K` for vectordb's.
 - Add line ranges to search hits: `rag_search` / `vectordb_search` print `source lines a-b`, `rag_find` lists where each matching chunk starts, and `rag_read` / `vectordb_read` number their lines to match, so a hit's first line is a ready `offset`; see `design/decisions.md` `D_chunk_line_ranges`.
