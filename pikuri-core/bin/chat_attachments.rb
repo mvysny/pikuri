@@ -11,6 +11,10 @@ require 'rainbow'
 # A path with spaces is quoted, `@'/tmp/my shot.png'` (what a terminal pastes for a
 # dragged file), or backslash-escaped. A `@word` that names no file and doesn't look
 # like a path (no `/`, no image extension) stays text, so `@alice` is still a mention.
+#
+# Images only, on purpose: few local models take audio (nor do big hosted ones like
+# Claude Opus), so audio is a transcriber's job such as whisper's, and a PDF is text for
+# the `read` tool, wherever a host registers a PDF extractor (`pikuri-os` does).
 module ChatAttachments
   # Raised for an `@path` that can't be attached; the line is then not sent.
   class Error < StandardError; end

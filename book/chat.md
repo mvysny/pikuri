@@ -261,7 +261,10 @@ line:
 Dragging a file onto most terminals pastes its path, so type `@` and
 drop the file. A path with spaces gets quotes, `@'/tmp/my shot.png'`,
 which is what the drop pastes anyway. PNG, JPEG, GIF and WebP up to
-5 MB work. The model has to be able to see: a `-hf` model on
+5 MB work. A PDF doesn't: it is text, which `pikuri-os` reads itself
+when you name the path.
+
+The model has to be able to see: a `-hf` model on
 `llama-server` downloads its vision projector by itself, but one
 started with `--no-mmproj-auto` can't, and pikuri asks the server
 first, so you get `Not sent: … takes no vision input` instead of a

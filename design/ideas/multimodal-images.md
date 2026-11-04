@@ -1,7 +1,7 @@
 # Multi-modal input — images first
 
 Goal: let the **user** hand the model an image ("what's wrong in this screenshot?"), not just
-let a tool do it. Images first; audio / PDF-as-pixels / video later, if ever.
+let a tool do it. Images only (audio and PDF rejected; why-not in `bin/chat_attachments.rb`).
 
 Shipped 2026-11-04, now documented elsewhere: `Pikuri::Attachment`, `run_loop(attachments:)` +
 `Event::UserTurn#attachments`, the same on `Interloper#inject_user_message`, `@path` in
@@ -33,7 +33,3 @@ Shipped 2026-11-04, now documented elsewhere: `Pikuri::Attachment`, `run_loop(at
   typed input), so it only matters to a host that renders its transcript from events —
   pikuri-tui: a dim `📎 shot.png (123 KB, image/png)` line, mirroring
   `Tool.describe_attachments`?
-- `Q_beyond_images` — ruby_llm's Chat Completions path also does audio (`input_audio`) and
-  PDFs (`file` parts); llama.cpp does audio with an audio mmproj. The core already says no
-  "image" (the modality check goes by MIME family), so this is bins only: which file types
-  `@path` accepts.
