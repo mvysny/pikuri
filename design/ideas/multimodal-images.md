@@ -56,26 +56,55 @@ attachment riding a tool result. What is missing is the *user* side.
 ## Sketch
 
 **Core:** `run_loop(user_message: nil, attachments: [], transport: nil)`; `attachments` is an
-`Array<RubyLLM::Attachment>` (the **Value-type passthrough** seam already sanctions that type in
-`lib/` — `Tool::Result#attachments` uses it). Passed straight to
-`@chat.add_message(role: :user, content:, attachments:)`. `UserTurn` gains `attachments`
-(default `[]`). No backward compatibility needed.
+`Array<Pikuri::Attachment>` (see below). `Agent` converts to `RubyLLM::Attachment` at
+`@chat.add_message(role: :user, content:, attachments:)` — the one place ruby_llm's type is
+built. `Event::UserTurn` gains `attachments` (default `[]`), carrying the **values themselves**,
+not an id. No backward compatibility needed.
+
+**`Pikuri::Attachment`** — today's `History::Attachment` (`Data.define(:mime, :filename,
+:bytes)`) promoted to pikuri-core's top level and used everywhere pikuri hands an attachment
+around: `run_loop`, `UserTurn`, `History::Message`, **and `Tool::Result#attachments`**.
+
+- *Bytes by construction.* It cannot hold a path or URL, so ruby_llm's fetch-on-construct is
+  unreachable from pikuri — the construction-safety rule below becomes the type, not a bin
+  convention. The caller sniffs `mime` (`Pikuri::FileType`, as `read` already does).
+- *Compares by content*, so `assert_equal` works on a `UserTurn`.
+- *Fixes `read`.* `read.rb:260` builds `RubyLLM::Attachment.new(resolved.to_s)` from a path:
+  MIME is sniffed at construction but the bytes may be read later, so an edit in between
+  reaches the model unchecked — the exact "bytes changed since" failure `History`'s eager bytes
+  exist to stop. Moving `Tool::Result` over is small: `result.rb`'s type check,
+  `Tool.describe_attachments`, the conversion in `to_ruby_llm_tool`.
+- *Narrows Value-type passthrough* to `RubyLLM::Message`, or drops it if nothing in `lib/`
+  still references that. `History.from_ruby_llm` keeps converting back (`a.content`) — the one
+  remaining place ruby_llm's type flows in.
+- *It is serialized.* `History` writes it (`attachment_to_h` / `attachment_from_h`), so a new
+  field must revisit that code. The yardoc says so, and the history spec pins
+  `Pikuri::Attachment.members == %i[mime filename bytes]` so the reminder fails loudly. A field
+  without a default already breaks every constructor call; the pin catches the one with a
+  default, which would otherwise be silently dropped on save. A separate
+  `History::Attachment` with identical fields was rejected: it is a passthrough copy with the
+  same drift risk (a field added to one and not the other is just as silent) plus a conversion
+  to maintain.
 
 **Bins:** the smallest thing that works in a terminal — a token in the line, e.g.
 `@~/shot.png what's wrong here?`, or a `/image <path>` line that stages an attachment for the
 next turn. Terminals paste a dragged file as its path, so `@path` gets drag-and-drop for free.
 Clipboard images (`wl-paste --type image/png`) are a later nicety.
 
-**Construction safety:** the bin builds the attachment from **bytes**
-(`Attachment.new(StringIO.new(File.binread(path)), filename:)`), never from a raw String — so
-nothing ever triggers ruby_llm's URL fetch (Privacy first), and the transcript holds the image
-as it was at send time, not whatever sits at that path later.
+**Construction safety:** the bin reads the file once
+(`Pikuri::Attachment.new(mime:, filename:, bytes: File.binread(path))`); the type admits no
+path or URL, so nothing ever triggers ruby_llm's URL fetch (Privacy first), and the transcript
+holds the image as it was at send time, not whatever sits at that path later.
 
 ## Open questions
 
-- `Q_api_shape` — `attachments:` kwarg on `run_loop`, or a `UserMessage` value
-  (`Data.define(:text, :attachments)`) threaded through `run_loop`, `UserTurn`, Interloper and
-  `on_user_message` at once? Kwarg is smaller; the value stops four signatures drifting apart.
+- ~~`Q_api_shape`~~ **Decided 2026-11-04:** an `attachments:` kwarg on `run_loop`, no
+  `UserMessage` value; `Event::UserTurn` carries the `Pikuri::Attachment`s themselves (see
+  Sketch). Not an id resolved against `History`: `History` is a snapshot built by
+  `export_history`, not a live store, so resolving an id means an agent handle (the History
+  seam forbids reading the chat) plus a full export per event. Carrying the value costs
+  nothing (a reference to bytes the chat already holds), and `#save` already dedups on disk by
+  content hash. Every other event is a self-contained value too.
 - `Q_vision_probe` — extend `ContextWindowDetector` (it already probes `/props`, router hop
   included) to also read `modalities`, and refuse an image turn up front with a clear message
   rather than a provider error mid-turn? Could also hide `read`'s image branch on a blind
@@ -139,6 +168,7 @@ as it was at send time, not whatever sits at that path later.
 
 ## First cut
 
-`attachments:` on `run_loop` + `UserTurn`, `@path` in `pikuri-chat`, bytes-based
-construction, a spec round-tripping a user image through `History`. Probe, downscaling and
+`Pikuri::Attachment` (promoted from `History::Attachment`, `Tool::Result` and `read` moved
+onto it), `attachments:` on `run_loop` + `UserTurn`, `@path` in `pikuri-chat`, a spec
+round-tripping a user image through `History`, and the `members` pin. Probe, downscaling and
 mid-loop injection wait until a real model shows they're needed.
