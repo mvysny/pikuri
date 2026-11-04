@@ -336,7 +336,7 @@ module Pikuri
     #
     # An attachment-only turn is not blank: it goes out with no text part
     # at all, since Anthropic refuses an empty one. {Extension#on_user_message}
-    # sees the text only, and is skipped when there is none.
+    # still fires, with +""+ and the attachments.
     #
     # A blank turn against a conversation holding nothing but the
     # system prompt is provider-split: providers that can't complete it raise
@@ -458,7 +458,7 @@ module Pikuri
         @listeners.emit(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
       end
       detect_and_emit_context_cap! if @cap_pending
-      dispatch_ext_on_user_message(text) if text
+      dispatch_ext_on_user_message(text.to_s, attachments) unless blank
 
       if @streaming
         @chat.complete(&streaming_block)
@@ -982,11 +982,13 @@ module Pikuri
     # (injects nothing), so opting out means leaving the default, not omitting
     # the method.
     #
-    # @param content [String] the incoming user message
+    # @param content [String] the incoming user message's text; +""+ when it
+    #   carries only attachments
+    # @param attachments [Array<Pikuri::Attachment>] what went out with it
     # @return [void]
-    def dispatch_ext_on_user_message(content)
+    def dispatch_ext_on_user_message(content, attachments)
       @extensions.each do |ext|
-        message = ext.on_user_message(@extension_context, content)
+        message = ext.on_user_message(@extension_context, content, attachments)
         next unless message.is_a?(String) && !message.strip.empty?
 
         append_reference_block(message.strip)
@@ -1389,8 +1391,8 @@ module Pikuri
     #   refuses is withheld with a {Pikuri::Attachment#withheld_note} in the
     #   text, never raised: this runs inside the turn, which a raise would end.
     #   The +UserTurn+ carries what was sent, notes included; the extension
-    #   dispatch gets the user's own text only, and none on an attachment-only
-    #   item.
+    #   dispatch gets the user's own text (+""+ on an attachment-only item)
+    #   and the attachments that went out.
     # - +:system+ — {#append_reference_block}: reference text, so no
     #   +on_user_message+ dispatch and no +UserTurn+.
     #
@@ -1428,7 +1430,7 @@ module Pikuri
       message[:attachments] = sent.map(&:to_ruby_llm) unless sent.empty?
       track_message(@chat.add_message(message))
       @listeners.emit(Event::UserTurn.new(content: text, attachments: sent, mid_loop: true))
-      dispatch_ext_on_user_message(item.content) unless item.content.to_s.strip.empty?
+      dispatch_ext_on_user_message(item.content.to_s.strip.empty? ? '' : item.content, sent)
     end
   end
 end

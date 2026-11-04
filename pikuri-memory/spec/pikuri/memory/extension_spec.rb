@@ -14,6 +14,7 @@ describe Pikuri::Memory::Extension do
   let(:fake_client_class) do
     Class.new do
       attr_accessor :search_rows, :all_rows, :search_error, :all_error
+      attr_reader :queries
 
       def initialize
         @search_rows = []
@@ -24,6 +25,7 @@ describe Pikuri::Memory::Extension do
       end
 
       def search(query:, user_id:, top_k:, threshold:)
+        (@queries ||= []) << query
         raise @search_error if @search_error
 
         @search_rows
@@ -187,7 +189,7 @@ describe Pikuri::Memory::Extension do
       client.search_rows = [record('lives in Brno', created_at: '2026-05-01T17:04:11.884889+00:00', score: 0.8)]
       ext = described_class.new(client: client, user_id: 'u', resident_persona: false)
 
-      block = ext.on_user_message(nil, 'where do I live?')
+      block = ext.on_user_message(nil, 'where do I live?', [])
 
       assert_match(/<memory-context>/, block)
       assert_match(/NOT new user input/, block)
@@ -198,7 +200,7 @@ describe Pikuri::Memory::Extension do
 
     it 'returns nil when search finds nothing' do
       ext = described_class.new(client: fake_client_class.new, user_id: 'u', resident_persona: false)
-      assert_nil ext.on_user_message(nil, 'anything')
+      assert_nil ext.on_user_message(nil, 'anything', [])
     end
 
     it 'gates by threshold client-side, dropping low-similarity rows' do
@@ -209,7 +211,7 @@ describe Pikuri::Memory::Extension do
       ]
       ext = described_class.new(client: client, user_id: 'u', threshold: 0.5, resident_persona: false)
 
-      block = ext.on_user_message(nil, 'q')
+      block = ext.on_user_message(nil, 'q', [])
 
       assert_match(/relevant/, block)
       refute_match(/noise/, block)
@@ -220,12 +222,12 @@ describe Pikuri::Memory::Extension do
       client.search_error = RuntimeError.new('mem0 down')
       ext = described_class.new(client: client, user_id: 'u', resident_persona: false)
 
-      assert_nil ext.on_user_message(nil, 'q')
+      assert_nil ext.on_user_message(nil, 'q', [])
     end
 
     it 'returns nil for blank content' do
       ext = described_class.new(client: fake_client_class.new, user_id: 'u', resident_persona: false)
-      assert_nil ext.on_user_message(nil, '   ')
+      assert_nil ext.on_user_message(nil, '   ', [])
     end
   end
 
@@ -237,12 +239,43 @@ describe Pikuri::Memory::Extension do
       ctx = fake_ctx_class.new
 
       ext.bind(ctx)
-      ext.on_user_message(nil, 'I am vegetarian')
+      ext.on_user_message(nil, 'I am vegetarian', [])
 
       assert_equal 'I am vegetarian', client.await_add
       refute_empty ctx.close_blocks
     ensure
       ext.recorder.close
+    end
+
+    describe 'with attachments' do
+      let(:png) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
+
+      it 'captures a note naming each one after the text, but searches with the text alone' do
+        require 'timeout'
+        client = fake_client_class.new
+        ext = described_class.new(client: client, user_id: 'martin', resident_persona: false)
+        ext.bind(fake_ctx_class.new)
+
+        ext.on_user_message(nil, "what's wrong here?", [png])
+
+        assert_equal "what's wrong here?\n[user attached image: shot.png (image/png)]", client.await_add
+        assert_equal ["what's wrong here?"], client.queries
+      ensure
+        ext.recorder.close
+      end
+
+      it 'captures an attachment-only turn, and recalls nothing for it' do
+        require 'timeout'
+        client = fake_client_class.new
+        ext = described_class.new(client: client, user_id: 'martin', resident_persona: false)
+        ext.bind(fake_ctx_class.new)
+
+        assert_nil ext.on_user_message(nil, '', [png])
+        assert_equal '[user attached image: shot.png (image/png)]', client.await_add
+        assert_nil client.queries
+      ensure
+        ext.recorder.close
+      end
     end
 
     it 'the on_close block closes the recorder' do
@@ -267,7 +300,7 @@ describe Pikuri::Memory::Extension do
       ext = described_class.new(client: client, user_id: 'martin', resident_persona: false)
       ext.bind(fake_ctx_class.new)
 
-      block = ext.on_user_message(nil, 'what car do I drive?')
+      block = ext.on_user_message(nil, 'what car do I drive?', [])
 
       assert_includes block, 'Volvo V70' # the prefetch did fire
       assert_equal 'what car do I drive?', client.await_add

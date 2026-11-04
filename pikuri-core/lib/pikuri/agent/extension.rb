@@ -72,11 +72,14 @@ module Pikuri
       # @param ctx [ExtensionContext] the live agent whose turn this is (same
       #   instance +bind+ received)
       # @param content [String] the user message's text (initial or
-      #   interloper); attachments are not passed, and a turn carrying only
-      #   attachments skips this hook
+      #   interloper); +""+ when the turn carries only attachments
+      # @param attachments [Array<Pikuri::Attachment>] what the model was
+      #   shown with it. Passed as data, so each extension words it as it
+      #   needs — pikuri-memory records a note naming each file, while a
+      #   reminder that only reacts to the turn ignores them.
       # @return [String, nil] text to inject verbatim as a system-role message
       #   after the user message, or +nil+ to inject nothing
-      def on_user_message(ctx, content); end
+      def on_user_message(ctx, content, attachments); end
 
       # Optional hook fired by {Agent#clear_conversation} (a "/clear").
       # Override to drop *conversation-scoped* state; default no-op, so an

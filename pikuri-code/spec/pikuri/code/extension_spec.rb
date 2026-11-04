@@ -85,10 +85,10 @@ RSpec.describe Pikuri::Code::Extension do
       ext = described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only)
       ext.configure(build_configurator)
 
-      assert_nil ext.on_user_message(nil, 'hello')
+      assert_nil ext.on_user_message(nil, 'hello', [])
 
       read_only.activate!
-      reminder = ext.on_user_message(nil, 'hello')
+      reminder = ext.on_user_message(nil, 'hello', [])
       assert_match(/plan mode/i, reminder)
     end
 
@@ -96,7 +96,7 @@ RSpec.describe Pikuri::Code::Extension do
       ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
       ext.configure(build_configurator)
 
-      assert_nil ext.on_user_message(nil, 'hello')
+      assert_nil ext.on_user_message(nil, 'hello', [])
     end
   end
 

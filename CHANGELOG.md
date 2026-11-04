@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::Agent::Extension#on_user_message` takes a third argument, the turn's `Pikuri::Attachment`s, and now fires on an attachment-only turn too (with `""`), so `pikuri-memory` records a note naming each attached file. Add the parameter to your override.
 - Add `attachments:` to `Pikuri::Agent::Control::Interloper#inject_user_message`, so a host can show the model an image mid-loop; one the model can't see is withheld with a note in the text rather than ending the running turn.
 - Fix a mid-loop user message drained from the `Interloper` getting a fresh `Agent::History` id on every `export_history`.
 - Add `Pikuri::Agent#modalities`, read from llama.cpp's `/props` (or stated as `ChatTransport#modalities`): `run_loop` raises `Pikuri::Agent::UnsupportedAttachmentError` for an image a text-only model can't see, and a tool's such image becomes a note, instead of an HTTP 500 that poisons the history; see `D_probe_when_unknown`.

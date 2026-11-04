@@ -153,8 +153,9 @@ module Pikuri
       #
       # @param _ctx [Pikuri::Agent::ExtensionContext]
       # @param _content [String]
+      # @param _attachments [Array<Pikuri::Attachment>]
       # @return [String, nil]
-      def on_user_message(_ctx, _content)
+      def on_user_message(_ctx, _content, _attachments)
         return nil unless @read_only&.active?
 
         PLAN_MODE_REMINDER

@@ -234,7 +234,7 @@ RSpec.describe Pikuri::Agent::Extension do
     duck = Class.new do
       def configure(c); end
       def bind(ctx); end
-      def on_user_message(ctx, content); end
+      def on_user_message(ctx, content, attachments); end
       def on_conversation_reset(ctx); end
       def system_prompt_snippets = []
     end.new

@@ -158,13 +158,30 @@ module Pikuri
       # inject nothing this turn). Capture happens regardless of whether
       # prefetch finds anything.
       #
+      # Each attachment is captured as a note naming it, after the text:
+      #
+      #   on_user_message(ctx, "what's wrong here?", [png])
+      #   # captures: "what's wrong here?\n[user attached image: shot.png (image/png)]"
+      #
+      # so a fact extracted from the turn keeps its referent, and an
+      # attachment-only turn is captured at all. Still the user's own input
+      # (the file is theirs), so the feedback-loop defense holds. The name,
+      # not the contents: extraction is text-only, and describing the image
+      # would cost a vision call per turn. Prefetch searches with the text
+      # alone — a filename is a poor query — so an attachment-only turn
+      # recalls nothing.
+      #
       # @param ctx [Pikuri::Agent::ExtensionContext] unused (the
       #   namespace is fixed at construction); part of the protocol
       #   signature.
-      # @param content [String] the incoming user message.
+      # @param content [String] the incoming user message; +""+ when it
+      #   carries only attachments.
+      # @param attachments [Array<Pikuri::Attachment>] what the user showed
+      #   the model with it.
       # @return [String, nil] a +<memory-context>+ block, or +nil+.
-      def on_user_message(_ctx, content)
-        @recorder.enqueue(content)
+      def on_user_message(_ctx, content, attachments)
+        notes = attachments.map { |a| "[user attached #{a.mime.split('/').first}: #{a.filename} (#{a.mime})]" }
+        @recorder.enqueue([content, *notes].reject { |t| t.to_s.strip.empty? }.join("\n"))
         prefetch(content)
       end
 

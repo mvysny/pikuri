@@ -524,14 +524,14 @@ RSpec.describe Pikuri::Agent do
                         Pikuri::Agent::Event::UserTurn.new(content: "what's wrong here?", attachments: [image])
       end
 
-      it 'runs an attachment-only turn with no text part, and skips on_user_message' do
+      it 'runs an attachment-only turn with no text part, handing on_user_message "" and the attachments' do
         ext = Class.new do
           include Pikuri::Agent::Extension
 
           attr_reader :calls
 
-          def on_user_message(_ctx, content)
-            (@calls ||= []) << content
+          def on_user_message(_ctx, content, attachments)
+            (@calls ||= []) << [content, attachments]
             nil
           end
         end.new
@@ -546,7 +546,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal [{ role: :user, content: nil }], fake_chat.added_messages.map { |m| m.except(:attachments) }
         assert_equal 1, fake_chat.completes
         assert_includes recorder.events, Pikuri::Agent::Event::UserTurn.new(content: '', attachments: [image])
-        assert_nil ext.calls
+        assert_equal [['', [image]]], ext.calls
       end
 
       describe 'against a model whose modalities refuse them' do
@@ -1067,6 +1067,21 @@ RSpec.describe Pikuri::Agent do
 
         assert_nil fake_chat.added_messages.first[:content]
       end
+
+      it 'hands on_user_message the user text and only what went out' do
+        calls = []
+        ext = Class.new do
+          include Pikuri::Agent::Extension
+
+          define_method(:on_user_message) { |_ctx, content, attachments| calls << [content, attachments] && nil }
+        end.new
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: { vision: false }),
+                          system_prompt: 's', interloper: interloper) { |c| c.add_extension ext }
+        interloper.inject_user_message(attachments: [png])
+        fake_chat.fire(:after_message, tool_result_message)
+
+        assert_equal [['', []]], calls
+      end
     end
 
     # Untracked, a drained message got a fresh id minted on every export.
@@ -1131,10 +1146,13 @@ RSpec.describe Pikuri::Agent do
           @calls = []
         end
 
-        def on_user_message(ctx, content)
+        def on_user_message(ctx, content, attachments = [])
           @calls << [ctx, content]
+          @attachments = attachments
           @block
         end
+
+        attr_reader :attachments
       end
     end
 

@@ -19,9 +19,6 @@ Shipped 2026-11-04, now documented elsewhere: `Pikuri::Attachment`, `run_loop(at
 
 ## Open questions
 
-- `Q_memory` — `Extension#on_user_message` gets text only, and an attachment-only turn skips it
-  (decided, in its yardoc). Should pikuri-memory at least record "[user attached image.png]" so
-  a recalled fact isn't missing its referent?
 - `Q_listener_render` — `Listener::Terminal` stays silent on `UserTurn` (it never echoes
   typed input), so it only matters to a host that renders its transcript from events —
   pikuri-tui: a dim `📎 shot.png (123 KB, image/png)` line, mirroring
