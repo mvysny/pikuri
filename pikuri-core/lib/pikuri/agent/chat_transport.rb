@@ -76,6 +76,15 @@ module Pikuri
     #     a spawned agent gets +parent.transport.with(context_window:
     #     parent.context_window_cap)+, so the resolved cap rides along and the
     #     child probes nothing.
+    # @!attribute [r] modalities
+    #   @return [Hash{Symbol => Boolean}, nil] which input kinds this
+    #     model-on-server accepts, in llama.cpp's +/props+ vocabulary
+    #     (+{vision: false, audio: false}+), or +nil+ to defer to
+    #     {ContextWindowDetector}. Only a +false+ entry refuses anything
+    #     ({Agent#modalities}); a missing key is unknown, so +{}+ states "known
+    #     to report nothing" and stops the probe without refusing. Pure pikuri
+    #     metadata like +context_window+, and inherited the same way: a spawned
+    #     agent gets the parent's resolved {Agent#modalities}.
     # @!attribute [r] faraday_adapter
     #   @return [Class, Symbol, nil] a custom Faraday adapter to install on this
     #     agent's per-chat +RubyLLM::Context+ (via +config.faraday_adapter=+),
@@ -91,7 +100,7 @@ module Pikuri
     #     value the caller still holds stays mutable).
     #     See +== Extra request parameters+.
     class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key,
-                                      :context_window, :faraday_adapter, :params)
+                                      :context_window, :modalities, :faraday_adapter, :params)
       # Build an +:openai+-provider transport for an OpenAI-compatible server
       # (local llama.cpp, cloud endpoint, ...), carrying its connection so the
       # agent rides a per-chat +RubyLLM::Context+ instead of the global config.
@@ -134,6 +143,7 @@ module Pikuri
       # @param api_base [String, nil]
       # @param api_key [String, nil]
       # @param context_window [Integer, nil]
+      # @param modalities [Hash{Symbol => Boolean}, nil]
       # @param faraday_adapter [Class, Symbol, nil]
       # @param params [Hash{String, Symbol => Object}]
       # @raise [ArgumentError] if +api_base+ or +api_key+ is set without
@@ -141,7 +151,8 @@ module Pikuri
       #   connection overrides map onto), or if +params+ is not a Hash, or
       #   names one key in both the +String+ and +Symbol+ spelling
       def initialize(model:, provider: nil, assume_model_exists: false, api_base: nil,
-                     api_key: nil, context_window: nil, faraday_adapter: nil, params: {})
+                     api_key: nil, context_window: nil, modalities: nil, faraday_adapter: nil,
+                     params: {})
         if (api_base || api_key) && provider.nil?
           raise ArgumentError, "api_base/api_key require a provider, got #{provider.inspect}"
         end
@@ -149,6 +160,7 @@ module Pikuri
 
         super(model: model, provider: provider, assume_model_exists: assume_model_exists,
               api_base: api_base, api_key: api_key, context_window: context_window,
+              modalities: modalities&.transform_keys(&:to_sym)&.freeze,
               faraday_adapter: faraday_adapter, params: deep_symbolize(params))
       end
 
@@ -182,7 +194,7 @@ module Pikuri
         "#<#{self.class} model=#{model.inspect} provider=#{provider.inspect} " \
           "assume_model_exists=#{assume_model_exists} api_base=#{api_base.inspect} " \
           "api_key=#{api_key.nil? ? 'nil' : '[REDACTED]'} context_window=#{context_window.inspect} " \
-          "faraday_adapter=#{faraday_adapter.inspect} params=#{params.inspect}>"
+          "modalities=#{modalities.inspect} faraday_adapter=#{faraday_adapter.inspect} params=#{params.inspect}>"
       end
       alias to_s inspect
 

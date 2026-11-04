@@ -8,17 +8,19 @@ require 'cgi'
 module Pikuri
   class Agent
     # Asks the server that serves the model what it is capable of, and answers
-    # a {Props} carrying the two facts pikuri can use:
+    # a {Props} carrying the three facts pikuri can use:
     #
     #   props = ContextWindowDetector.detect(transport)
     #   props.n_ctx        # => 16384 — the window to budget against
     #   props.total_slots  # => 4 — how many requests it serves at once
+    #   props.modalities   # => {vision: true, video: true, audio: false}
     #
     # The only authoritative runtime source is llama.cpp's non-standard +/props+
     # endpoint, reporting the server's *launched* +n_ctx+ (the real window —
     # possibly smaller than the model's max, e.g. +llama-server -c 8192+ on a
-    # 128k model) beside the slot count {ServerPermits} sizes itself from. Both
-    # fields are +nil+ — an honest "we don't know" — for anything else.
+    # 128k model) beside the slot count {ServerPermits} sizes itself from and
+    # the input kinds the model's projector accepts. Every field is +nil+ — an
+    # honest "we don't know" — for anything else.
     #
     # Every call is a live request: nothing here is memoized, and the caller
     # decides when it has nothing left to learn (+design/decisions.md+
@@ -72,7 +74,19 @@ module Pikuri
       # @!attribute [r] total_slots
       #   @return [Integer, nil] how many requests it serves concurrently —
       #     {ServerPermits}'s default size for this server.
-      class Props < Data.define(:n_ctx, :total_slots)
+      # @!attribute [r] modalities
+      #   @return [Hash{Symbol => Boolean}, nil] llama.cpp's +modalities+
+      #     object as reported, e.g. +{vision: false, video: false, audio:
+      #     false}+ for a model launched without a projector; the source of
+      #     {Agent#modalities}.
+      class Props < Data.define(:n_ctx, :total_slots, :modalities)
+        # @param n_ctx [Integer, nil]
+        # @param total_slots [Integer, nil]
+        # @param modalities [Hash{Symbol => Boolean}, nil]
+        def initialize(n_ctx:, total_slots:, modalities: nil)
+          super
+        end
+
         # Nothing learned: not an +:openai+ transport, no base URL, or a failed
         # probe.
         #
@@ -231,10 +245,21 @@ module Pikuri
       # @param data [Hash] a parsed +/props+ body
       # @return [Props] the launched +n_ctx+ (nested under
       #   +default_generation_settings+) and +total_slots+ (top level), each
-      #   +nil+ unless present and positive
+      #   +nil+ unless present and positive, and +modalities+ (top level)
       def props_from(data)
         Props.new(n_ctx: positive_int(data.dig('default_generation_settings', 'n_ctx')),
-                  total_slots: positive_int(data['total_slots']))
+                  total_slots: positive_int(data['total_slots']),
+                  modalities: modalities_from(data['modalities']))
+      end
+
+      # @param value [Object] the +modalities+ value off a +/props+ body
+      # @return [Hash{Symbol => Boolean}, nil] its Boolean entries, symbol-keyed;
+      #   +nil+ when it is absent or not an object (an older llama.cpp, or a
+      #   router's bare +/props+)
+      def modalities_from(value)
+        return nil unless value.is_a?(Hash)
+
+        value.select { |_, v| [true, false].include?(v) }.transform_keys(&:to_sym)
       end
 
       # @param value [Object] a value off a +/props+ body

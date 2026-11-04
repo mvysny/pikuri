@@ -53,8 +53,8 @@ attachment riding a tool result. What is missing is the *user* side.
 5. ~~The bins: no syntax to attach anything.~~ Done in `pikuri-chat` only: `@path`. The
    other chat bins (`pikuri-code`, `pikuri-assistant`, …) still can't; lift
    `pikuri-core/bin/chat_attachments.rb` into `lib/` when a second one wants it.
-6. No vision-capability check: a text-only llama-server rejects the request (an HTTP error that
-   fails the turn). `read`'s description just warns "requires a vision-capable model".
+6. ~~No vision-capability check.~~ Done 2026-11-04: `Agent#modalities` (see `Q_vision_probe`),
+   verified live — `bge-m3` refused before sending with the history empty, Ornith-1.5 answered.
 
 ## Sketch
 
@@ -88,10 +88,26 @@ holds the image as it was at send time, not whatever sits at that path later.
   seam forbids reading the chat) plus a full export per event. Carrying the value costs
   nothing (a reference to bytes the chat already holds), and `#save` already dedups on disk by
   content hash. Every other event is a self-contained value too.
-- `Q_vision_probe` — extend `ContextWindowDetector` (it already probes `/props`, router hop
-  included) to also read `modalities`, and refuse an image turn up front with a clear message
-  rather than a provider error mid-turn? Could also hide `read`'s image branch on a blind
-  model. Or YAGNI: let the server's error speak. **Measured 2026-11-04** against the
+- ~~`Q_vision_probe`~~ **Decided 2026-11-04: probe ourselves.** The deciding fact is not the
+  retries but **history poisoning**: `run_loop` appends the user message before `complete`
+  and nothing removes it when `complete` raises, so on a blind model every *later* turn
+  resends the image and 500s again until `/clear`. A blind model that `read`s a PNG poisons
+  the history the same way, via the tool result. Turning off ruby_llm's retries fixes
+  neither (and retrying a 500 is right for a transient server fault). Shape:
+  - `ContextWindowDetector` reads `modalities` from the `/props` response it already fetches
+    (router hop included), so the probe adds no request. Each modality is tri-state:
+    `true` / `false` / `nil` = unknown (hosted provider, non-llama server); only a measured
+    `false` refuses, so an unknown server falls through to the provider's own error
+    (`D_probe_when_unknown`).
+  - Carry the modalities, not a vision flag, and match by MIME (`image/*` → `vision`,
+    `audio/*` → `audio`), so the core never says "image" (`Q_beyond_images`).
+  - `run_loop` refuses **before** `add_message`, naming the attachment and the model — the
+    probe moves ahead of the append — so the history stays clean.
+  - `Tool#to_ruby_llm_tool` drops an attachment the model can't take and appends a text note
+    to the result instead; covers every attachment-returning tool, and `read` stays ignorant
+    of the model.
+
+  **Measured 2026-11-04** against the
   `~/.pikuri-examples-config.yaml` server (llama.cpp `b10438-Debian`, **router mode**, model
   `Ornith-1.5` = `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`):
   - Bare `GET /props` on the router: `role: "router"`, **no `modalities` key**.
@@ -156,4 +172,5 @@ holds the image as it was at send time, not whatever sits at that path later.
 **Done 2026-11-04**: `Pikuri::Attachment` (with `Tool::Result` and `read` on it, the
 `members` pin), `attachments:` on `run_loop` + `UserTurn`, the wire-level `History` round
 trip, and `@path` in `pikuri-chat` (`book/chat.md`; verified end to end against Ornith-1.5).
-Probe, downscaling and mid-loop injection wait until a real model shows they're needed.
+The probe followed the same day (`Q_vision_probe`). Downscaling and mid-loop injection wait
+until a real model shows they're needed.

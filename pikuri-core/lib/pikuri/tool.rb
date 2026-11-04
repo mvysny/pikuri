@@ -409,10 +409,27 @@ module Pikuri
     # verbatim. That one line below is the whole boundary — {#run} answers a
     # +Result+ either way, and no tool sees this.
     #
+    # == An attachment the model can't take
+    #
+    # Before that, +refusal+ may withhold an attachment — an image a text-only
+    # model would answer with HTTP 500, on this request and every later one
+    # that replays it. A withheld one becomes a line of +content+ instead, so
+    # the model learns why it sees nothing:
+    #
+    #   Read image: shot.png (27731 bytes, image/png)
+    #
+    #   [shot.png not shown: model Qwen3.8-Dense-text takes no vision input]
+    #
+    # The tool never knows: the model's capabilities are the agent's
+    # ({Agent#modalities}), and a tool returning an image need not ask.
+    #
     # @param context [ExecuteContext] passed to {#run} on every call; see the
     #   +== Cancellation+ section.
+    # @param refusal [#call] given each {Pikuri::Attachment}, answers why it
+    #   must be withheld, or +nil+ to send it. Called per tool call, so it may
+    #   follow a model switch.
     # @return [Class] anonymous +RubyLLM::Tool+ subclass
-    def to_ruby_llm_tool(context: ExecuteContext.default)
+    def to_ruby_llm_tool(context: ExecuteContext.default, refusal: ->(_) {})
       pikuri_tool = self
       schema      = @parameters.to_openai
       tool_name   = @name
@@ -424,11 +441,28 @@ module Pikuri
 
         define_singleton_method(:name) { tool_name }
         define_method(:execute) do |**args|
-          result = pikuri_tool.run(args, context)
+          result = Tool.withhold_refused(pikuri_tool.run(args, context), refusal)
           result.attachment? ? [result.content, *result.attachments.map(&:to_ruby_llm)] : result
         end
         define_method(:pikuri_tool) { pikuri_tool }
       end
+    end
+
+    # +result+ without the attachments +refusal+ withholds, each replaced by a
+    # note in its content; see {#to_ruby_llm_tool}.
+    #
+    # @param result [Result]
+    # @param refusal [#call] see {#to_ruby_llm_tool}
+    # @return [Result] +result+ itself when nothing is withheld
+    def self.withhold_refused(result, refusal)
+      notes = result.attachments.filter_map do |a|
+        reason = refusal.call(a)
+        [a, "[#{a.filename} not shown: #{reason}]"] if reason
+      end
+      return result if notes.empty?
+
+      result.with(content: [result.content, *notes.map(&:last)].join("\n\n"),
+                  attachments: result.attachments - notes.map(&:first))
     end
   end
 end

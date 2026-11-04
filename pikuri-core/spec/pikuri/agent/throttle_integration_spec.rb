@@ -250,13 +250,27 @@ RSpec.describe 'Agent request throttling' do
       built&.each(&:close)
     end
 
-    # The shape SubAgentTool spawns with: the parent's resolved cap rides the
-    # transport, and the parent's probe already sized the server.
+    # Modalities are a per-model reading like n_ctx: a stated cap on a sized
+    # server is not enough to skip the probe while they are unknown.
+    it 'probes a capped agent on a sized server when its modalities are unknown' do
+      stub_props
+      permits.limit(server, 2)
+      built = served(transport(context_window: 8192, modalities: nil))
+
+      assert_equal 1, probe_count
+      assert_equal({}, built.modalities)
+    ensure
+      built&.close
+    end
+
+    # The shape SubAgentTool spawns with: the parent's resolved cap and
+    # modalities ride the transport, and the parent's probe already sized the
+    # server.
     it 'costs a sub-agent spawn no probe of its own' do
       stub_props
-      parent = served(transport(context_window: nil))
+      parent = served(transport(context_window: nil, modalities: nil))
       # A fresh script on the same server: the parent's own one is spent.
-      child = served(transport(context_window: parent.context_window_cap))
+      child = served(transport(context_window: parent.context_window_cap, modalities: parent.modalities))
 
       assert_equal 16_384, child.context_window_cap
       assert_equal 4, permits.for(server).permits

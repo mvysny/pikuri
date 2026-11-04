@@ -126,6 +126,30 @@ module Pikuri
       end
     end
 
+    # A turn carried an attachment the model is known not to accept — an image
+    # to a llama.cpp model launched without a vision projector:
+    #
+    #   agent.run_loop(user_message: "what's wrong here?", attachments: [png])
+    #   # => UnsupportedAttachmentError: shot.png (image/png): model
+    #   #    Qwen3.8-Dense-text takes no vision input
+    #
+    # Raised before the turn is appended, so the conversation is untouched and
+    # the host can simply let the user retry. Sending it instead would cost far
+    # more than one failed turn: the server answers HTTP 500, ruby_llm retries
+    # that three times, and the image then stays in the history, failing every
+    # later turn the same way. See {#modalities}.
+    class UnsupportedAttachmentError < StandardError
+      # @return [Pikuri::Attachment] the refused attachment
+      attr_reader :attachment
+
+      # @param attachment [Pikuri::Attachment]
+      # @param reason [String] why, e.g. "model X takes no vision input"
+      def initialize(attachment, reason)
+        @attachment = attachment
+        super("#{attachment.filename} (#{attachment.mime}): #{reason}")
+      end
+    end
+
     # What {#run_loop} answers a tool call with when its batch unwound — see
     # +== Repairing an unwound tool batch+. Public so a renderer can tell one
     # from a real observation, as {History::INTERRUPTED_RESULT} is for the
@@ -272,6 +296,22 @@ module Pikuri
     #   waits for the turn (see {#run_loop}'s "Resolving the cap").
     attr_reader :context_window_cap
 
+    # Which input kinds the model accepts, resolved like {#context_window_cap}:
+    # the {ChatTransport#modalities} if given, else the {ContextWindowDetector}
+    # probe, else +{}+.
+    #
+    #   agent.modalities   # => {vision: false, video: false, audio: false}
+    #
+    # An attachment is refused only on a +false+ for its kind (+image/*+ →
+    # +:vision+, +audio/*+ → +:audio+, +video/*+ → +:video+); a missing key is
+    # unknown and goes out, leaving any error to the provider. {#run_loop}
+    # raises {UnsupportedAttachmentError} for a refused user attachment, and a
+    # tool's refused attachment is replaced by a note in its result.
+    #
+    # @return [Hash{Symbol => Boolean}, nil] +nil+ until the first {#run_loop}
+    #   unless the transport states them
+    attr_reader :modalities
+
     # Final assistant message content for the most recent {#run_loop} — the
     # last +:assistant+ message in the underlying chat's history. +nil+ until
     # one has been produced.
@@ -334,7 +374,10 @@ module Pikuri
     # budget. It runs after the {Event::UserTurn}, too: the probe waits out a
     # cold model load, and a host that renders its transcript from +UserTurn+
     # would show the user's message only once the model is up. See
-    # +design/decisions.md+ +D_deferred_cap_probe+.
+    # +design/decisions.md+ +D_deferred_cap_probe+. A turn with attachments is
+    # the exception: the probe runs before the +UserTurn+, because it also
+    # resolves {#modalities}, which must refuse an attachment before it enters
+    # the history.
     #
     # == Repairing an unwound tool batch
     #
@@ -367,6 +410,8 @@ module Pikuri
     #   conversation when the provider carries +:system+ outside +messages+
     #   (see above)
     # @raise [ArgumentError] if an attachment is not a {Pikuri::Attachment}
+    # @raise [UnsupportedAttachmentError] if {#modalities} refuses an
+    #   attachment; nothing is appended
     # @return [nil] after a turn runs
     def run_loop(user_message: nil, attachments: [], transport: nil)
       unless attachments.all?(Pikuri::Attachment)
@@ -391,6 +436,14 @@ module Pikuri
       if blank && @chat.messages.all? { |m| m.role == :system } &&
          SEPARATE_SYSTEM_FIELD_PROVIDERS.include?(@chat.model.provider.to_s)
         raise EmptyTurnError, @chat.model.provider
+      end
+
+      unless attachments.empty?
+        detect_and_emit_context_cap! if @cap_pending
+        attachments.each do |a|
+          reason = attachment_refusal(a)
+          raise UnsupportedAttachmentError.new(a, reason) if reason
+        end
       end
 
       # Append and emit the user turn before the extension dispatch, so any
@@ -643,7 +696,8 @@ module Pikuri
       # One context per agent, so an opting-in +execute+ never has to nil-check
       # what it was handed.
       context = Tool::ExecuteContext.new(cancellable: @cancellable || Control::Cancellable::NEVER)
-      @tools.each { |t| @chat.with_tools(t.to_ruby_llm_tool(context: context)) }
+      refusal = ->(attachment) { attachment_refusal(attachment) }
+      @tools.each { |t| @chat.with_tools(t.to_ruby_llm_tool(context: context, refusal: refusal)) }
 
       # Wire @chat for the event stream and controls via ruby_llm's three
       # registered callbacks. (The per-chunk streaming callback is separate
@@ -704,6 +758,7 @@ module Pikuri
       # the first turn; the probe waits for that turn (see {#run_loop}'s
       # "Resolving the cap").
       @context_window_cap = @transport.context_window
+      @modalities = @transport.modalities
       @cap_pending = true
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
 
@@ -748,14 +803,15 @@ module Pikuri
     # Resolve the context-window cap and announce it as an
     # {Event::ContextCap}, seeding {ServerPermits} with the slot count the same
     # probe reports. The transport's explicit +context_window+ wins over the
-    # probed +n_ctx+; the *slot count* has no such override, so the probe is
-    # skipped only when *both* of its answers are already in hand — a stated cap
-    # and a {ServerPermits.sized?} server (+design/decisions.md+
-    # +D_probe_when_unknown+). The cap rides {ChatTransport}, so a switch
-    # resolves the *new* transport's cap. Called from {#run_loop} once per
-    # construction or switch, whatever the probe answered: a failed probe is
-    # not retried every turn, which would charge a server without +/props+ a
-    # 404 per turn.
+    # probed +n_ctx+, and its +modalities+ over the probed ones, into
+    # {#modalities}; the *slot count* has no such override, so the probe is
+    # skipped only when *all three* answers are already in hand — a stated cap,
+    # stated modalities and a {ServerPermits.sized?} server
+    # (+design/decisions.md+ +D_probe_when_unknown+). The cap rides
+    # {ChatTransport}, so a switch resolves the *new* transport's cap. Called
+    # from {#run_loop} once per construction or switch, whatever the probe
+    # answered: a failed probe is not retried every turn, which would charge a
+    # server without +/props+ a 404 per turn.
     #
     # @return [void]
     def detect_and_emit_context_cap!
@@ -764,12 +820,15 @@ module Pikuri
       # the chat points at +@transport.api_base+, but the global config still
       # names the old server — so derive the base from the transport.
       base = @transport.api_base || RubyLLM.config.openai_api_base
-      props = if @transport.context_window && ServerPermits.sized?(base)
+      props = if @transport.context_window && @transport.modalities && ServerPermits.sized?(base)
                 ContextWindowDetector::Props::NONE
               else
                 ContextWindowDetector.detect(@transport, openai_base: base)
               end
       @context_window_cap = @transport.context_window || props.n_ctx
+      # +{}+ rather than +nil+ once resolved, whatever the probe said: a
+      # sub-agent inherits it as stated, so it does not probe again.
+      @modalities = @transport.modalities || props.modalities || {}
       # A +total_slots: nil+ is seeded too, deliberately: "answered, no slots"
       # is knowledge, where a failure is not — so a server that was merely
       # booting is asked again. The probe must stay outside the throttle it
@@ -778,6 +837,23 @@ module Pikuri
       answered = props != ContextWindowDetector::Props::NONE
       ServerPermits.default(base, props.total_slots) if answered
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+    end
+
+    # The {#modalities} key an attachment's MIME family needs, in llama.cpp's
+    # vocabulary. A family not listed here (a PDF) is never refused.
+    MODALITY_BY_MEDIA_TYPE = { 'image' => :vision, 'audio' => :audio, 'video' => :video }.freeze
+    private_constant :MODALITY_BY_MEDIA_TYPE
+
+    # Why the model can't take +attachment+, per {#modalities}.
+    #
+    # @param attachment [Pikuri::Attachment]
+    # @return [String, nil] the reason, e.g. "model X takes no vision input";
+    #   +nil+ when it may go out, including whenever acceptance is unknown
+    def attachment_refusal(attachment)
+      modality = MODALITY_BY_MEDIA_TYPE[attachment.mime.to_s.split('/').first]
+      return nil unless modality && @modalities&.[](modality) == false
+
+      "model #{@transport.model} takes no #{modality} input"
     end
 
     # Switch the chat to +transport+ when it differs from the current one.

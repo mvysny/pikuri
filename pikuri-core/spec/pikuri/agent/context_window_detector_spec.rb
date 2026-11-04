@@ -125,6 +125,35 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     end
   end
 
+  # The object a text-only model reports, measured on llama.cpp b10438 with
+  # --no-mmproj-auto (design/ideas/multimodal-images.md, Q_vision_probe).
+  describe 'modalities' do
+    it 'reads the top-level modalities object, symbol-keyed' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('modalities' => { 'vision' => false, 'video' => false, 'audio' => false },
+                                'default_generation_settings' => { 'n_ctx' => 8192 })]
+      end
+      props = described_class.detect(transport, openai_base: base)
+
+      assert_equal({ vision: false, video: false, audio: false }, props.modalities)
+    end
+
+    it 'leaves modalities nil on a server that reports none' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 8192 })]
+      end
+      assert_nil described_class.detect(transport, openai_base: base).modalities
+    end
+
+    it 'drops a non-Boolean entry rather than guessing what it means' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('modalities' => { 'vision' => 'no', 'audio' => false },
+                                'default_generation_settings' => { 'n_ctx' => 8192 })]
+      end
+      assert_equal({ audio: false }, described_class.detect(transport, openai_base: base).modalities)
+    end
+  end
+
   describe 'probe failure modes' do
     def detect
       described_class.detect(transport, openai_base: base)
@@ -181,10 +210,10 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     # The router answers a bare /props with role=router and n_ctx 0; the
     # real per-model cap lives at /props?model=<id>. One stub block serves
     # both, branching on the presence of the +model+ query param.
-    def router_stub(model_n_ctx:, model_slots: nil)
+    def router_stub(model_n_ctx:, model_slots: nil, model_modalities: nil)
       stubs.get(url) do |env|
         if env.params['model']
-          [200, {}, JSON.generate({ 'total_slots' => model_slots }.compact.merge(
+          [200, {}, JSON.generate({ 'total_slots' => model_slots, 'modalities' => model_modalities }.compact.merge(
                                     'default_generation_settings' => { 'n_ctx' => model_n_ctx }
                                   ))]
         else
@@ -208,6 +237,13 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       props = described_class.detect(transport(model: 'org/Model:Q4_K_M'), openai_base: base)
 
       assert_equal 4, props.total_slots
+    end
+
+    it 'takes the modalities from the router hop, which the bare /props lacks' do
+      router_stub(model_n_ctx: 262_144, model_modalities: { 'vision' => true, 'audio' => false })
+      props = described_class.detect(transport(model: 'org/Model:Q4_K_M'), openai_base: base)
+
+      assert_equal({ vision: true, audio: false }, props.modalities)
     end
 
     it 'url-encodes the model id when following the router' do

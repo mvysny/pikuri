@@ -67,6 +67,10 @@ module Pikuri
     #   {Agent::ServerPermits} already sizes +api_base+, and it dials
     #   for real, since the scripted adapter serves only the chat. Against the
     #   default +.invalid+ host it fails fast and degrades to +nil+.
+    # @param modalities [Hash{Symbol => Boolean}, nil] baked onto the transport
+    #   as stated, like +context_window+; the default +{}+ refuses nothing and,
+    #   with a sized server, lets the probe be skipped. +nil+ leaves it to the
+    #   probe.
     # @param api_base [String] the transport's base URL. Never dialed (the
     #   adapter answers), but a host may key display/config off it — pass the
     #   base of the connection this fake impersonates so a UI resolves its name.
@@ -80,7 +84,7 @@ module Pikuri
     # @yieldparam script [Script] the conversation builder
     # @return [Agent::ChatTransport] carrying the scripted adapter; pass it as
     #   +Agent.new(transport:)+
-    def self.fake_transport(model: 'fake-model', context_window: 8192,
+    def self.fake_transport(model: 'fake-model', context_window: 8192, modalities: {},
                             api_base: 'http://fake.invalid/v1', gate: nil, params: {})
       script = Script.new
       yield script if block_given?
@@ -93,6 +97,7 @@ module Pikuri
         api_base: api_base,
         api_key: 'not-needed',
         context_window: context_window,
+        modalities: modalities,
         faraday_adapter: build_adapter(script.responses, gate),
         params: params
       )

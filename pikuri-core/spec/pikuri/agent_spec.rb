@@ -549,6 +549,35 @@ RSpec.describe Pikuri::Agent do
         assert_nil ext.calls
       end
 
+      describe 'against a model whose modalities refuse them' do
+        def agent_with(modalities)
+          Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: modalities),
+                            system_prompt: 's') { |c| c.add_listener recorder }
+        end
+
+        it 'raises before appending anything, so the next turn is unpoisoned' do
+          agent = agent_with(vision: false, audio: true)
+
+          error = assert_raises(Pikuri::Agent::UnsupportedAttachmentError) do
+            agent.run_loop(user_message: "what's wrong here?", attachments: [image])
+          end
+          assert_equal 'shot.png (image/png): model blind takes no vision input', error.message
+          assert_equal image, error.attachment
+          assert_equal [], fake_chat.added_messages
+          assert_nil fake_chat.completes
+          refute(recorder.events.any?(Pikuri::Agent::Event::UserTurn))
+        end
+
+        it 'sends what is not known to be refused: a missing key, or a kind with no modality' do
+          pdf = Pikuri::Attachment.new(mime: 'application/pdf', filename: 'a.pdf', bytes: '%PDF')
+          agent = agent_with(audio: false)
+
+          agent.run_loop(user_message: 'look', attachments: [image, pdf])
+
+          assert_equal 1, fake_chat.added_messages.size
+        end
+      end
+
       it "refuses a RubyLLM::Attachment, whose path or URL source ruby_llm would read" do
         raw = RubyLLM::Attachment.new(StringIO.new('png'), filename: 'shot.png')
 
@@ -593,6 +622,43 @@ RSpec.describe Pikuri::Agent do
                      kinds.first(2)
         assert kinds.index(Pikuri::Agent::Event::ContextCap) < kinds.index(Pikuri::Agent::Event::Tokens)
         assert_equal 16_384, agent.context_window_cap
+        assert_equal({}, agent.modalities)
+      end
+
+      it 'probes before UserTurn when the turn carries attachments, to refuse them in time' do
+        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
+          Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1,
+                                                          modalities: { vision: false })
+        end
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(
+                                    model: 'm', provider: :openai, api_base: 'http://llama:8080/v1'
+                                  ),
+                                  system_prompt: 's') { |c| c.add_listener recorder }
+        image = Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png')
+
+        assert_raises(Pikuri::Agent::UnsupportedAttachmentError) { agent.run_loop(attachments: [image]) }
+        assert_equal({ vision: false }, agent.modalities)
+        assert_equal [], fake_chat.added_messages
+      end
+
+      it 'skips the probe only when cap, modalities and slot count are all known' do
+        probes = []
+        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
+          probes << :probe
+          Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1)
+        end
+        base = 'http://llama:8080/v1'
+        Pikuri::Agent::ServerPermits.default(base, 1)
+        stated = Pikuri::Agent::ChatTransport.new(model: 'm', provider: :openai, api_base: base,
+                                                  context_window: 8192)
+
+        Pikuri::Agent.new(transport: stated, system_prompt: 's').run_loop(user_message: 'a')
+        assert_equal 1, probes.size
+
+        child = Pikuri::Agent.new(transport: stated.with(modalities: {}), system_prompt: 's')
+        child.run_loop(user_message: 'b')
+        assert_equal 1, probes.size
+        assert_equal({}, child.modalities)
       end
     end
 

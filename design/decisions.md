@@ -440,6 +440,18 @@ a host had opted out of. `detect` tolerates the 404 and answers `Props::NONE`,
 so it is latency on the first turn, not breakage — and the `provider == :openai` gate
 means an Anthropic-family transport still never probes at all.
 
+**A third fact (2026-11-04).** `/props` also carries `modalities`
+(`{vision: false, …}` for a model launched without a projector), resolved
+into `Agent#modalities` so a blind model's image is refused before it enters
+the history; the case is in `design/ideas/multimodal-images.md`
+`Q_vision_probe`. It is a model-on-server reading like `n_ctx`, so the same
+rule extends: the skip needs a stated cap, stated `ChatTransport#modalities`
+*and* a sized server. In the table, the explicit-cap rows go from "1 per
+process" (or 0) to 1 per top-level agent unless the host states modalities
+too; the sub-agent row stays 0, because `SubAgentTool` now builds the child's
+transport at spawn and bakes in the parent's resolved modalities beside its
+cap (a failed probe resolves to `{}`, so a child never re-asks).
+
 Folded in, since it is the same conflation one layer down: a `/props` body
 carrying `total_slots` but no usable `n_ctx` used to be discarded wholesale
 (`warn_and_none`); it now warns about the cap and keeps the slots.

@@ -158,5 +158,33 @@ RSpec.describe Pikuri::Tool do
       misspelled = typed.new.call('counts' => 1)
       assert_includes misspelled.content, 'Did you mean `count`?'
     end
+
+    describe 'with a refusal' do
+      let(:png) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
+      let(:wav) { Pikuri::Attachment.new(mime: 'audio/wav', filename: 'a.wav', bytes: 'wav') }
+      let(:looker) do
+        attachments = [png, wav]
+        described_class.new(
+          name: 'look', description: 'Looks.', parameters: Pikuri::Tool::Parameters.build { |_| },
+          execute: -> { Pikuri::Tool::Result.new(content: 'Read 2 files', summary: 'x', attachments: attachments) }
+        )
+      end
+
+      it 'replaces a refused attachment with a note and sends the rest' do
+        refusal = ->(a) { 'model m takes no vision input' if a.mime.start_with?('image/') }
+        content, *sent = looker.to_ruby_llm_tool(refusal: refusal).new.execute
+
+        assert_equal "Read 2 files\n\n[shot.png not shown: model m takes no vision input]", content
+        assert_equal [wav], sent.map { |a| Pikuri::Attachment.from_ruby_llm(a) }
+      end
+
+      it 'falls back to a text Result when every attachment is refused' do
+        result = looker.to_ruby_llm_tool(refusal: ->(_) { 'no' }).new.execute
+
+        assert_kind_of Pikuri::Tool::Result, result
+        refute result.attachment?
+        assert_equal "Read 2 files\n\n[shot.png not shown: no]\n\n[a.wav not shown: no]", result.content
+      end
+    end
   end
 end

@@ -20,8 +20,8 @@ module Pikuri
     # == What's inherited vs. owned
     #
     # The sub-agent shares the parent's +transport+ (one LLM connection),
-    # +cancellable+ (one Ctrl+C stops the tree), +context_window_cap+
-    # (don't re-probe), +streaming+ flag, and listener list (via
+    # +cancellable+ (one Ctrl+C stops the tree), +context_window_cap+ and
+    # +modalities+ (don't re-probe), +streaming+ flag, and listener list (via
     # {Pikuri::Agent::ListenerList#for_sub_agent} so renderers adjust
     # per-child). Everything else the persona owns: system prompt, tool
     # subset (filtered out of +parent.tools + parent.sub_agent_tools+ by
@@ -101,9 +101,6 @@ module Pikuri
         raise ArgumentError, 'personas must not be empty: the agent tool ' \
                              'is useless with nothing to delegate to' if personas.empty?
         parent            = ctx.agent
-        # Bake the parent's resolved cap onto the sub-agent's transport so
-        # it inherits the window without re-running the +/props+ probe.
-        transport         = parent.transport.with(context_window: parent.context_window_cap)
         parent_tools      = parent.tools + parent.sub_agent_tools
         parent_cancel     = parent.cancellable
         streaming         = parent.streaming
@@ -190,6 +187,12 @@ module Pikuri
             # state the child must not see hands over a narrower copy here.
             sub_tools = sub_tools.map { |t| t.respond_to?(:for_sub_agent) ? t.for_sub_agent : t }
 
+            # Bake the parent's resolved cap and modalities onto the child's
+            # transport so it skips the +/props+ probe. At spawn, not at
+            # construction: only now has the parent probed, and it may have
+            # switched models since.
+            transport = parent.transport.with(context_window: parent.context_window_cap,
+                                              modalities: parent.modalities)
             sub = Pikuri::Agent.new(
               transport: transport,
               system_prompt: persona.system_prompt,
