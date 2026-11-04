@@ -310,6 +310,7 @@ module Pikuri
     #
     # @return [Hash{Symbol => Boolean}, nil] +nil+ until the first {#run_loop}
     #   unless the transport states them
+    #   ({ChatTransport#with_detected_modalities} does, without a turn)
     attr_reader :modalities
 
     # Final assistant message content for the most recent {#run_loop} — the
@@ -892,6 +893,9 @@ module Pikuri
       @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
       @chat.with_provider_options(filled.params)
       @transport = filled
+      # The old model's reading must not outlive it: a ModelSwitched listener
+      # reads the new transport's, or nil until this turn's probe.
+      @modalities = filled.modalities
       strip_foreign_thinking!
       @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
       @cap_pending = true

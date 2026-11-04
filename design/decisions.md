@@ -36,7 +36,10 @@ result.
 holds it, and only a reported `false` refuses. A user attachment raises
 `UnsupportedAttachmentError` before anything is appended; a tool's is swapped for a note in its
 result, at the one wrapper every tool crosses, so no tool asks. The check matches a MIME family
-to a modality, so nothing in core says "image".
+to a modality, so nothing in core says "image". A host that needs the answer before the first
+turn — to refuse an `@path` as it is typed — calls `ChatTransport#with_detected_modalities`,
+which reads the router's `GET /v1/models` (`input_modalities`, `["text","image"]`) and, on a
+single-model `llama-server` that lists none, a bare `/props`.
 
 **Alternatives rejected.**
 
@@ -46,9 +49,10 @@ to a modality, so nothing in core says "image".
   500 is right for the transient faults it was built for.
 - **Take the message back out after a failed `complete`.** A 500 doesn't say which part caused
   it, so pikuri would be guessing, and the retries have run by then anyway.
-- **The router's `GET /v1/models`**, whose `architecture.input_modalities` (`["text","image"]`)
-  answers without loading the model — measured, and it is tempting. But it is a router extension
-  a single-model `llama-server` likely lacks, while the `/props` hop is paid already.
+- **The router's `GET /v1/models` as the turn's own source.** It answers without loading the
+  model (measured: 1–22 ms, an unloaded model stays unloaded), which is why the up-front lookup
+  uses it. But a single-model `llama-server` lists no `architecture` (measured on build 8681),
+  and the turn pays the `/props` hop for the cap anyway, so the turn keeps `/props`.
 - **`RubyLLM::Model#supports?(:vision)`**, ruby_llm's registry — empty for a local model, as
   for the context window (`D_context_window_sources`).
 

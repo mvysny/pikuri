@@ -353,6 +353,23 @@ RSpec.describe Pikuri::Agent do
         assert_equal 'm', agent.model
       end
 
+      it "drops the old model's modalities at the switch, before this turn's probe" do
+        seen = []
+        agent = nil
+        spy = Class.new(Pikuri::Agent::Listener::Base) do
+          define_method(:on_event) do |event|
+            seen << agent.modalities if event.is_a?(Pikuri::Agent::Event::ModelSwitched)
+          end
+        end.new
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', modalities: { vision: false }),
+                                  system_prompt: 's') { |c| c.add_listener spy }
+
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(model: 'seer', modalities: { vision: true }))
+
+        assert_equal [{ vision: true }], seen
+      end
+
       it 'switches when only the context_window differs, re-emitting the cap' do
         agent = build_agent
         recorder.events.clear

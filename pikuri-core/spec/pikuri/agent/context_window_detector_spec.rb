@@ -154,6 +154,77 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     end
   end
 
+  # The /v1/models shape measured on a llama.cpp b10438 router (2026-11-04):
+  # every entry carries architecture.input_modalities, loaded or not.
+  describe '.detect_modalities' do
+    let(:models_url) { 'http://example.com/v1/models' }
+
+    def listing(*entries)
+      stubs.get(models_url) { [200, {}, JSON.generate('object' => 'list', 'data' => entries)] }
+    end
+
+    def entry(id, kinds, aliases: [])
+      { 'id' => id, 'aliases' => aliases, 'architecture' => { 'input_modalities' => kinds } }
+    end
+
+    def detect_modalities(model: 'm')
+      described_class.detect_modalities(transport(model: model), openai_base: base)
+    end
+
+    it "maps a router's input_modalities onto the /props vocabulary" do
+      listing(entry('seer', %w[text image]), entry('blind', %w[text]))
+
+      assert_equal({ vision: true, audio: false }, detect_modalities(model: 'seer'))
+      assert_equal({ vision: false, audio: false }, detect_modalities(model: 'blind'))
+    end
+
+    it 'finds the model by an alias too' do
+      listing(entry('org/Seer-GGUF:Q4_K_M', %w[text image], aliases: ['seer']))
+
+      assert_equal({ vision: true, audio: false }, detect_modalities(model: 'seer'))
+    end
+
+    it 'falls back to a bare /props, never the ?model= hop that loads a router model' do
+      listing({ 'id' => 'bge-m3.gguf' })
+      seen = []
+      stubs.get(url) do |env|
+        seen << env.params['model']
+        [200, {}, JSON.generate('modalities' => { 'vision' => false, 'audio' => false })]
+      end
+
+      assert_equal({ vision: false, audio: false }, detect_modalities)
+      assert_equal [nil], seen
+    end
+
+    it 'answers nil when neither document knows, leaving the first-turn probe to ask' do
+      listing(entry('other', %w[text]))
+      stubs.get(url) { [200, {}, JSON.generate('role' => 'router')] }
+
+      assert_nil detect_modalities
+    end
+
+    it 'answers nil when the server is unreachable' do
+      stubs.get(models_url) { raise Faraday::ConnectionFailed, 'refused' }
+      stubs.get(url) { raise Faraday::ConnectionFailed, 'refused' }
+
+      assert_nil detect_modalities
+      assert_includes buf.string, 'ConnectionFailed'
+    end
+
+    it "targets the transport's own server by default" do
+      stubs.get('http://llama:9081/v1/models') do
+        [200, {}, JSON.generate('data' => [entry('m', %w[text image])])]
+      end
+      t = Pikuri::Agent::ChatTransport.from_openai_server(server: 'http://llama:9081', model: 'm')
+
+      assert_equal({ vision: true, audio: false }, described_class.detect_modalities(t))
+    end
+
+    it 'asks nothing of a non-openai transport' do
+      assert_nil described_class.detect_modalities(transport(provider: :anthropic), openai_base: base)
+    end
+  end
+
   describe 'probe failure modes' do
     def detect
       described_class.detect(transport, openai_base: base)

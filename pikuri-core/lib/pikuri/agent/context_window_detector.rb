@@ -26,6 +26,10 @@ module Pikuri
     # decides when it has nothing left to learn (+design/decisions.md+
     # +D_probe_when_unknown+).
     #
+    # On a router, {.detect} loads the model to answer. {.detect_modalities}
+    # is the cheap lookup that never does, for a host that wants
+    # {Agent#modalities} before the first turn.
+    #
     # This probe and an explicit {ChatTransport#context_window} are the *only*
     # cap sources: +RubyLLM::Model#context_window+ is deliberately never
     # consulted (why: +design/decisions.md+ +D_context_window_sources+).
@@ -113,6 +117,11 @@ module Pikuri
       #
       # @return [Integer]
       READ_TIMEOUT = 30
+      # Read timeout (s) for {.detect_modalities}: neither document it reads
+      # waits on a model load.
+      #
+      # @return [Integer]
+      LOOKUP_TIMEOUT = 5
 
       # Probe the server +transport+ targets.
       #
@@ -137,6 +146,36 @@ module Pikuri
 
         new(probe_url: url, model_id: transport.model,
             api_key: transport.api_key || openai_key).probe
+      end
+
+      # Which input kinds +transport+'s model accepts, looked up without
+      # loading it — the source of {ChatTransport#with_detected_modalities}.
+      #
+      #   ContextWindowDetector.detect_modalities(transport)
+      #   # => {vision: true, audio: false}
+      #
+      # A llama.cpp router lists every model's +input_modalities+ in
+      # +/v1/models+, loaded or not (+["text"]+ → +vision: false+). A
+      # single-model +llama-server+ lists none, but its bare +/props+ is cheap:
+      # its one model loaded at startup. The router's +/props?model=<id>+ hop,
+      # which would load the model, is never taken.
+      #
+      # @param transport [Agent::ChatTransport] +provider+ gates the lookup,
+      #   +model+ (an id or an alias) picks the +/v1/models+ entry
+      # @param openai_base [String, nil] the server's base URL; defaults to the
+      #   transport's own, else the live +RubyLLM.config.openai_api_base+
+      # @param openai_key [String, nil] fallback credential, as for {.detect}
+      # @return [Hash{Symbol => Boolean}, nil] +nil+ when neither document
+      #   answered, so the first turn's {.detect} still asks
+      def self.detect_modalities(transport, openai_base: transport.api_base || RubyLLM.config.openai_api_base,
+                                 openai_key: RubyLLM.config.openai_api_key)
+        return nil unless transport.provider == :openai
+
+        url = props_url(openai_base)
+        return nil if url.nil?
+
+        new(probe_url: url, model_id: transport.model,
+            api_key: transport.api_key || openai_key).lookup_modalities
       end
 
       # Derive the +/props+ URL from the OpenAI-compatible base (+/props+ is at
@@ -169,10 +208,41 @@ module Pikuri
         probe_llama_cpp
       end
 
+      # @return [Hash{Symbol => Boolean}, nil] see {.detect_modalities}
+      def lookup_modalities
+        listed_modalities || bare_props_modalities
+      end
+
       private
 
+      # @return [Hash{Symbol => Boolean}, nil] the model's +/v1/models+
+      #   +input_modalities+ in +/props+ vocabulary; +nil+ when the model or
+      #   the field is not listed
+      def listed_modalities
+        return nil unless model_id_present?
+
+        data = fetch_json("#{@probe_url.delete_suffix('/props')}/v1/models", timeout: LOOKUP_TIMEOUT)
+        models = data['data'] if data.is_a?(Hash)
+        return nil unless models.is_a?(Array)
+
+        entry = models.find do |m|
+          m.is_a?(Hash) && (m['id'] == @model_id || Array(m['aliases']).include?(@model_id))
+        end
+        kinds = entry&.dig('architecture', 'input_modalities')
+        return nil unless kinds.is_a?(Array)
+
+        { vision: kinds.include?('image'), audio: kinds.include?('audio') }
+      end
+
+      # @return [Hash{Symbol => Boolean}, nil] a bare +/props+'s +modalities+;
+      #   +nil+ from a router, whose bare +/props+ carries none
+      def bare_props_modalities
+        data = fetch_json(@probe_url, timeout: LOOKUP_TIMEOUT)
+        modalities_from(data['modalities']) if data.is_a?(Hash)
+      end
+
       def probe_llama_cpp
-        data = fetch_props(@probe_url)
+        data = fetch_json(@probe_url)
         return Props::NONE if data.nil?
 
         props = props_from(data)
@@ -191,7 +261,7 @@ module Pikuri
 
       def probe_router_model
         url = "#{@probe_url}?model=#{CGI.escape(@model_id)}"
-        data = fetch_props(url)
+        data = fetch_json(url)
         return Props::NONE if data.nil?
 
         props = props_from(data)
@@ -204,12 +274,13 @@ module Pikuri
 
       # GETs +url+ and parses its JSON body.
       #
-      # @param url [String] a llama.cpp +/props+ URL
-      # @return [Hash, nil] the parsed body, or +nil+ (after one +warn+
+      # @param url [String] a llama.cpp +/props+ or +/v1/models+ URL
+      # @param timeout [Integer] read timeout (s)
+      # @return [Object, nil] the parsed body, or +nil+ (after one +warn+
       #   line) on non-200, timeout, transport error, or non-JSON body
-      def fetch_props(url)
+      def fetch_json(url, timeout: READ_TIMEOUT)
         response = Faraday.new(
-          request: { open_timeout: OPEN_TIMEOUT, timeout: READ_TIMEOUT }
+          request: { open_timeout: OPEN_TIMEOUT, timeout: timeout }
         ).get(url) do |req|
           req.headers['Accept'] = 'application/json'
           req.headers['Authorization'] = "Bearer #{@api_key}" if key?
@@ -275,7 +346,7 @@ module Pikuri
       # @param reason [String]
       # @return [nil]
       def warn_and_nil(reason)
-        LOGGER.warn("llama.cpp /props probe failed: #{reason}")
+        LOGGER.warn("llama.cpp probe failed: #{reason}")
         nil
       end
 

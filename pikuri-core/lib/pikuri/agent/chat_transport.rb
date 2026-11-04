@@ -20,8 +20,8 @@ module Pikuri
     # +#{provider}_api_key+) via a per-chat +RubyLLM::Context+; both +nil+ for a
     # transport riding the global config.
     #
-    # Pure data carrier — no +RubyLLM+ references here, so the seam stays in
-    # {Agent}, +bin/pikuri-chat+, and {Tool}.
+    # No +RubyLLM+ references here, so the seam stays in {Agent},
+    # +bin/pikuri-chat+, and {Tool}.
     #
     # == Extra request parameters
     #
@@ -80,7 +80,8 @@ module Pikuri
     #   @return [Hash{Symbol => Boolean}, nil] which input kinds this
     #     model-on-server accepts, in llama.cpp's +/props+ vocabulary
     #     (+{vision: false, audio: false}+), or +nil+ to defer to
-    #     {ContextWindowDetector}. Only a +false+ entry refuses anything
+    #     {ContextWindowDetector}'s first-turn probe; {#with_detected_modalities}
+    #     fills it in up front. Only a +false+ entry refuses anything
     #     ({Agent#modalities}); a missing key is unknown, so +{}+ states "known
     #     to report nothing" and stops the probe without refusing. Pure pikuri
     #     metadata like +context_window+, and inherited the same way: a spawned
@@ -162,6 +163,30 @@ module Pikuri
               api_base: api_base, api_key: api_key, context_window: context_window,
               modalities: modalities&.transform_keys(&:to_sym)&.freeze,
               faraday_adapter: faraday_adapter, params: deep_symbolize(params))
+      end
+
+      # A copy whose +modalities+ the server reported, looked up without
+      # loading the model, so {Agent#modalities} is known before the first
+      # turn:
+      #
+      #   transport = ChatTransport.from_openai_server(server: url, model: 'Qwen3.8-Dense')
+      #                            .with_detected_modalities
+      #   Agent.new(transport: transport, system_prompt: prompt).modalities
+      #   # => {vision: true, audio: false}
+      #
+      # Blocks on up to two HTTP requests
+      # ({ContextWindowDetector.detect_modalities}), so a UI host calls it off
+      # the UI thread — at startup, and when the user picks a model. Detect
+      # every transport you hand {Agent}: one differing only in +modalities+
+      # still counts as a model switch.
+      #
+      # @return [ChatTransport] +self+ when +modalities+ is already stated or
+      #   the server reported nothing
+      def with_detected_modalities
+        return self if modalities
+
+        detected = ContextWindowDetector.detect_modalities(self)
+        detected ? with(modalities: detected) : self
       end
 
       # Model-resolution kwargs to spread into +RubyLLM.chat+ /

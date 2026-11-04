@@ -177,6 +177,45 @@ RSpec.describe Pikuri::Agent::ChatTransport do
     end
   end
 
+  describe '#with_detected_modalities' do
+    before do
+      @original = Pikuri::Agent::ContextWindowDetector.method(:detect_modalities)
+      @answer = { vision: false, audio: false }
+      @asked = 0
+      answer = lambda do
+        @asked += 1
+        @answer
+      end
+      Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect_modalities) { |*, **| answer.call }
+    end
+
+    after do
+      Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect_modalities, @original)
+    end
+
+    let(:transport) { described_class.from_openai_server(server: 'http://localhost:8080', model: 'm') }
+
+    it 'fills in what the server reported, leaving the rest as it was' do
+      detected = transport.with_detected_modalities
+
+      assert_equal({ vision: false, audio: false }, detected.modalities)
+      assert_equal transport, detected.with(modalities: nil)
+    end
+
+    it 'keeps stated modalities without asking' do
+      stated = transport.with(modalities: { vision: true })
+
+      assert_same stated, stated.with_detected_modalities
+      assert_equal 0, @asked
+    end
+
+    it 'answers itself when the server reported nothing' do
+      @answer = nil
+
+      assert_same transport, transport.with_detected_modalities
+    end
+  end
+
   describe 'validation' do
     it 'requires a provider when api_base is set' do
       assert_raises(ArgumentError) { described_class.new(model: 'm', api_base: 'http://x/v1') }

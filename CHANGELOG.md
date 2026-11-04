@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `Pikuri::Agent::ChatTransport#with_detected_modalities`, which reads a llama.cpp router's `/v1/models` (or a single server's `/props`) without loading the model, so `Agent#modalities` is known before the first turn; `Agent#modalities` now also follows a model switch at once. See `D_refuse_unsupported_attachments`.
 - **Breaking:** `Pikuri::Agent::Extension#on_user_message` takes a third argument, the turn's `Pikuri::Attachment`s, and now fires on an attachment-only turn too (with `""`), so `pikuri-memory` records a note naming each attached file. Add the parameter to your override.
 - Add `attachments:` to `Pikuri::Agent::Control::Interloper#inject_user_message`, so a host can show the model an image mid-loop; one the model can't see is withheld with a note in the text rather than ending the running turn.
 - Fix a mid-loop user message drained from the `Interloper` getting a fresh `Agent::History` id on every `export_history`.
