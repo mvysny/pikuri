@@ -97,8 +97,22 @@ as it was at send time, not whatever sits at that path later.
   - End to end: a 64×64 red|blue PNG as an `image_url` data-URI part on `/v1/chat/completions`
     → "red occupying the left half and blue filling the right half." Works today with exactly
     the part shape ruby_llm emits.
-  - **Not measured:** what a text-only llama-server answers an image with. The router's
-    chat models all have an mmproj; testing that needs a `--no-mmproj` preset.
+  - **Text-only model**, measured with a `Qwen3.8-Dense-text` preset (`no-mmproj = true`;
+    `no-mmproj = 1`, `mmproj-auto = false` and `LLAMA_ARG_MMPROJ_AUTO = false` all become
+    `--no-mmproj-auto`):
+    - `/v1/models` says `input_modalities: ["text"]` while the model is still **unloaded**.
+      The router knows the answer without loading anything.
+    - `/props?model=Qwen3.8-Dense-text` → `modalities: {vision: false, video: false,
+      audio: false}`.
+    - The image request → **HTTP 500**, `{"error":{"code":500,"message":"image input is not
+      supported - hint: if this is unexpected, you may need to provide the mmproj",
+      "type":"server_error"}}`.
+  - **ruby_llm retries that 500.** `RubyLLM::ServerError` is in `Transport::Connection`'s
+    `retry_exceptions` and `max_retries` defaults to 3, and pikuri overrides neither. So a
+    blind model gets the same image request 4 times with backoff, and the turn then dies with
+    `RubyLLM::ServerError`. The message is helpful but generic, and nothing tells the user
+    *which* message carried the image. This is the strongest argument for the probe:
+    refuse an image turn before sending it, with a pikuri message.
 - `Q_image_budget` — an image costs tokens. **Measured** (Ornith-1.5, solid-colour square
   PNGs, `prompt_tokens` minus ~26 for the text): 64 px ≈ 9, 256 px ≈ 64, 1024 px ≈ 1024,
   2048 px ≈ 4096, **4096 px ≈ 4096**: one token per 32×32 px, **capped at ~4096 by llama.cpp's
