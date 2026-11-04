@@ -19,10 +19,6 @@ Shipped 2026-11-04, now documented elsewhere: `Pikuri::Attachment`, `run_loop(at
 
 ## Open questions
 
-- `Q_trifecta` — a user-attached image is user input, not a tool observation, so no tool leg
-  applies. But a screenshot of a web page or e-mail carries *someone else's* text. Treat it
-  like typed/pasted text (the user vouches for it) — most likely — or does it deserve a note
-  in `SECURITY.md`?
 - `Q_subagents` — the `agent` tool's task is a String; a sub-agent never sees the parent's
   image. Fine (the parent can tell it a path and the child can `read` it), as long as the
   child persona has `read`.

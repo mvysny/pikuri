@@ -221,6 +221,12 @@ agent), not content inspection.
 Several framings worth stating directly so the model isn't misread
 as a guarantee:
 
+- **What you type, paste or attach.** Pikuri treats it as yours. A
+  pasted e-mail or a screenshot of a web page carries someone else's
+  words with your authority, and an image can carry text you never
+  saw (white on white, tiny print), which the model reads and may
+  obey. An image a *tool* returns is that tool's output, judged by
+  the tool's legs like its text.
 - **A compromised LLM provider.** A model trained to exfiltrate is
   downstream of every defense in this document. Restated from the
   code-trust section because it's the load-bearing trust choice.
