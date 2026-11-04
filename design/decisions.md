@@ -20,6 +20,43 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_refuse_unsupported_attachments — Why does pikuri refuse an image a text-only model can't see, rather than let the server's error speak?
+
+**Context.** Measured against llama.cpp `b10438` in router mode (2026-11-04): a model launched
+without a projector answers an `image_url` part with **HTTP 500**, `image input is not supported -
+hint: if this is unexpected, you may need to provide the mmproj`. ruby_llm retries a 500 three
+times (`RubyLLM::ServerError` is in its `retry_exceptions`), so the request goes out four times. And
+the turn's damage outlives it: `run_loop` appends the user message before `complete`, nothing takes
+it out when `complete` raises, so every *later* turn resends the image and fails the same way until
+`/clear`. A blind model that `read`s a PNG breaks the conversation the same way, through the tool
+result.
+
+**Decision.** Ask the server first. `/props?model=<id>` — the request the cap probe already makes
+(`D_probe_when_unknown`) — carries `modalities: {vision:, video:, audio:}`; `Agent#modalities`
+holds it, and only a reported `false` refuses. A user attachment raises
+`UnsupportedAttachmentError` before anything is appended; a tool's is swapped for a note in its
+result, at the one wrapper every tool crosses, so no tool asks. The check matches a MIME family
+to a modality, so nothing in core says "image".
+
+**Alternatives rejected.**
+
+- **Let the server's error speak.** Tried, above: four requests, a generic message naming no
+  file, and a history that fails every later turn.
+- **Turn ruby_llm's retries off.** Saves three requests and fixes nothing else — and retrying a
+  500 is right for the transient faults it was built for.
+- **Take the message back out after a failed `complete`.** A 500 doesn't say which part caused
+  it, so pikuri would be guessing, and the retries have run by then anyway.
+- **The router's `GET /v1/models`**, whose `architecture.input_modalities` (`["text","image"]`)
+  answers without loading the model — measured, and it is tempting. But it is a router extension
+  a single-model `llama-server` likely lacks, while the `/props` hop is paid already.
+- **`RubyLLM::Model#supports?(:vision)`**, ruby_llm's registry — empty for a local model, as
+  for the context window (`D_context_window_sources`).
+
+**Consequences.** A server that reports nothing refuses nothing: a hosted provider's own error
+still speaks, retries included. With `--hf-repo`, llama.cpp fetches the projector on its own, so
+vision is a model's default; `no-mmproj = true` in a router preset becomes `--no-mmproj-auto`
+and is how to get a blind model to test against.
+
 ## D_rrf_tuning — Why does `rag_search` fuse with `k` 5 over ten results a leg, not the textbook 60 over fifty?
 
 **Context.** Measured on a Finnish statute corpus (`../courts`: 4 acts, 165 chunks, bge-m3,
@@ -406,7 +443,7 @@ the probe that seeds the *server* table.
 
 Deleting the conditional outright is two lines and the right semantics, and
 it is worse than the bug: `SubAgentTool` spawns with
-`parent.transport.with(context_window: parent.context_window_cap)`, so every
+`parent.transport.with(context_window: parent.context_window_cap, …)`, so every
 child carries an explicit cap *by construction*. Unconditional probing turns
 each spawn into an HTTP round trip on the tool thread behind
 `OPEN_TIMEOUT`/`READ_TIMEOUT`, and pikuri-code spawns several personas per
@@ -414,43 +451,36 @@ session. It also left a sibling bug standing: N agents against one server
 probed it N times, nothing memoizing the answer.
 
 **Decision.** Key the skip on what is still *unknown*, not on the cap. The
-probe is skipped only when both facts are already in hand — the transport
-states a cap *and* `ServerPermits.sized?(base)`, the registry's new predicate,
-says this server's concurrency is on record. And the seeding widens: a probe
+probe is skipped only when every fact is already in hand — the transport
+states a cap *and* `modalities` (the third fact, a model-on-server reading
+like `n_ctx`; why pikuri reads it at all: `D_refuse_unsupported_attachments`),
+*and* `ServerPermits.sized?(base)`, the registry's new predicate, says this
+server's concurrency is on record. And the seeding widens: a probe
 that *answered* is recorded even when it reported no `total_slots`
 (`ServerPermits.default(base, nil)` — a recorded "unlimited"), while a probe
 that *failed* records nothing. `ServerPermits` is thereby the probe's memo, at
 the process-wide scope `D_rate_limiter_scope` already gives the fact being
 cached; `ContextWindowDetector` stays stateless and every call to it stays a
-live request.
+live request. A child gets the parent's resolved cap and modalities baked onto
+its transport at spawn (a failed probe resolves modalities to `{}`), so it has
+nothing left to ask.
 
 What that buys, in the cases that matter:
 
 | wiring | probes before | probes after |
 |---|---|---|
 | local llama.cpp, no explicit cap | 1 per agent | 1 per agent |
-| local llama.cpp, explicit cap, no `.limit` | **0, unthrottled** | 1 per process, auto-sized |
-| sub-agent spawn (inherited cap) | 0 | 0 — the parent left the server sized |
-| cloud openai-compatible base, explicit cap | 0 | 1 per process (a 404) |
-| explicit cap **+ a host's `.limit`** | 0 | 0 — the host stated both facts |
+| local llama.cpp, explicit cap, no `.limit` | **0, unthrottled** | 1 per agent, auto-sized |
+| sub-agent spawn (inherited cap) | 0 | 0 — inherited cap and modalities, server sized |
+| cloud openai-compatible base, explicit cap | 0 | 1 per agent (a 404) |
+| explicit cap, modalities **+ a host's `.limit`** | 0 | 0 — the host stated every fact |
 
-The last row is the shape downstream config lands in, and the fourth is the
-whole honest cost: one pointless request per process against a remote paid API
-a host had opted out of. `detect` tolerates the 404 and answers `Props::NONE`,
-so it is latency on the first turn, not breakage — and the `provider == :openai` gate
-means an Anthropic-family transport still never probes at all.
-
-**A third fact (2026-11-04).** `/props` also carries `modalities`
-(`{vision: false, …}` for a model launched without a projector), resolved
-into `Agent#modalities` so a blind model's image is refused before it enters
-the history; the case is in `design/ideas/multimodal-images.md`
-`Q_vision_probe`. It is a model-on-server reading like `n_ctx`, so the same
-rule extends: the skip needs a stated cap, stated `ChatTransport#modalities`
-*and* a sized server. In the table, the explicit-cap rows go from "1 per
-process" (or 0) to 1 per top-level agent unless the host states modalities
-too; the sub-agent row stays 0, because `SubAgentTool` now builds the child's
-transport at spawn and bakes in the parent's resolved modalities beside its
-cap (a failed probe resolves to `{}`, so a child never re-asks).
+The last row is the shape a host that knows its models lands in, and the
+fourth is the whole honest cost: one pointless request per top-level agent
+against a remote paid API a host had opted out of. `detect` tolerates the 404
+and answers `Props::NONE`, so it is latency on the first turn, not breakage —
+and the `provider == :openai` gate means an Anthropic-family transport still
+never probes at all.
 
 Folded in, since it is the same conflation one layer down: a `/props` body
 carrying `total_slots` but no usable `n_ctx` used to be discarded wholesale

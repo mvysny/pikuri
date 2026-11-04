@@ -409,6 +409,11 @@ module Pikuri
     # verbatim. That one line below is the whole boundary — {#run} answers a
     # +Result+ either way, and no tool sees this.
     #
+    # On the wire, a Chat Completions +:tool+ message is text only, so ruby_llm
+    # sends the attachments as a +:user+ message ("Attachments from tool call
+    # <id>:") right after the batch's results — never +:system+, so nothing
+    # needs fixing here.
+    #
     # == An attachment the model can't take
     #
     # Before that, +refusal+ may withhold an attachment — an image a text-only
