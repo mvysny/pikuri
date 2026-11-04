@@ -18,13 +18,6 @@ a model can't see (`Agent#modalities`, `D_refuse_unsupported_attachments`). What
 
 ## Open questions
 
-- `Q_image_budget` — an image costs tokens. **Measured** (Ornith-1.5, solid-colour square
-  PNGs, `prompt_tokens` minus ~26 for the text): 64 px ≈ 9, 256 px ≈ 64, 1024 px ≈ 1024,
-  2048 px ≈ 4096, **4096 px ≈ 4096**: one token per 32×32 px, **capped at ~4096 by llama.cpp's
-  mtmd**. So downscaling isn't needed for correctness, and no image library is needed. A
-  full-resolution screenshot costs ~4 K of a 64 K window (6 %), so it matters only when images
-  pile up. Does `context-budget.md` need to know an image's cost? (The cap is per
-  model/projector; another family, e.g. Gemma 3's flat ~256, will differ.)
 - `Q_trifecta` — a user-attached image is user input, not a tool observation, so no tool leg
   applies. But a screenshot of a web page or e-mail carries *someone else's* text. Treat it
   like typed/pasted text (the user vouches for it) — most likely — or does it deserve a note

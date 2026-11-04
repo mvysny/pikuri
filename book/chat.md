@@ -263,7 +263,16 @@ drop the file. A path with spaces gets quotes, `@'/tmp/my shot.png'`,
 which is what the drop pastes anyway. PNG, JPEG, GIF and WebP up to
 5 MB work. The model has to be able to see: a `-hf` model on
 `llama-server` downloads its vision projector by itself, but one
-started with `--no-mmproj` answers the image with an HTTP 500.
+started with `--no-mmproj-auto` can't, and pikuri asks the server
+first, so you get `Not sent: … takes no vision input` instead of a
+failed turn.
+
+A picture is not free. It goes into the context window like text
+does: on Ornith-1.5 about one token per 32×32 pixels, capped at
+roughly 4,000 tokens however big the image is, so a full-screen
+screenshot costs about as much as a dozen pages of text. Other model
+families count differently. The usual `ctx=` readout already includes
+it.
 
 ## How the agentic loop works (and why it's private)
 

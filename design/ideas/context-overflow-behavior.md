@@ -219,6 +219,21 @@ These are not mutually exclusive, and the right answer may differ for a
 demo script, a TUI, and a sub-agent. Given (0), 2 and 7 look stronger
 than 3.
 
+**Images are the lopsided case for 5.** Measured 2026-11-04 (Ornith-1.5
+on llama.cpp `b10438`, solid-colour square PNGs, `prompt_tokens` minus
+~26 for the text): 64 px ≈ 9 tokens, 256 px ≈ 64, 1024 px ≈ 1024,
+2048 px ≈ 4096, 4096 px ≈ 4096 — one token per 32×32 px, **capped at
+~4096 by llama.cpp's mtmd**. An old screenshot (a user's `@path` or a
+`read` result) therefore costs ~4 K, while the note that stands in for it
+once its bytes are dropped (`Read image: shot.png (…)`) costs ~20 — the
+best tokens-freed-per-meaning-lost trade in the conversation, and a
+History rewrite that keeps the call/result pairing intact (only
+`attachments` empties). The cost is already in the server-reported
+`prompt_tokens`, so no estimator is needed to see it. Per projector,
+though: another family (Gemma 3 is said to charge a flat ~256,
+unmeasured) will differ, so a policy keys on the reported counts, not on
+this table.
+
 
 ## The deleted summarizer
 
