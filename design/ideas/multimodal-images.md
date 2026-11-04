@@ -1,0 +1,130 @@
+# Multi-modal input — images first
+
+Goal: let the **user** hand the model an image ("what's wrong in this screenshot?"), not just
+let a tool do it. Images first; audio / PDF-as-pixels / video later, if ever.
+
+## What already works (2026-11-04)
+
+pikuri is already multi-modal on **one** path: a tool observation.
+
+- `Workspace::Read` (`pikuri-workspace/lib/pikuri/workspace/read.rb`, `format_image`) sniffs
+  PNG/JPEG/GIF/WebP via `Pikuri::FileType`, refuses > 5 MiB, and answers
+  `Tool::Result.new(content: note, attachments: [RubyLLM::Attachment.new(path)])`.
+- `Tool#to_ruby_llm_tool` hands ruby_llm `[content, *attachments]` — the only shape ruby_llm
+  treats as a multimodal tool result (`D_tool_always_returns_result`).
+- `Agent::History` round-trips attachments on **any** message, user ones included: base64 inline
+  in `to_h`, content-addressed files under `attachments/` in `#save` (`D_history_attachments`).
+- `design/architecture.md` already says "vision/audio … are ruby_llm's" — no provider
+  abstraction of our own.
+
+So there is **no special image tool** and no special tool-call shape: an image is just an
+attachment riding a tool result. What is missing is the *user* side.
+
+## What ruby_llm 2.1 does
+
+- **User message:** `chat.ask(text, with: "a.png")` / `ask_later` →
+  `add_message(role: :user, content:, attachments: with)`. `with:` takes paths, URLs, IOs,
+  `Attachment`s, or a Hash of groups (`Attachment.wrap`).
+- **`Attachment.new(source, filename:, resolution:)`** — a **String source is read from disk or
+  fetched over HTTP at construction** (MIME detection). Its own doc: "an unchecked String can
+  access local files or internal network endpoints." `resolution:` (`:low`…`:original`) maps
+  to the OpenAI `detail` field; llama.cpp presumably ignores it.
+- **Wire, Chat Completions** (`protocols/chat_completions/media.rb`): an image becomes a
+  `{type: 'image_url', image_url: {url: <data: URI or URL>}}` content part — exactly what
+  llama-server's OpenAI endpoint accepts with an `--mmproj` loaded.
+- **Tool-result images on Chat Completions** (`chat_completions/chat.rb:314-336`): tool
+  messages are text-only on the wire, so ruby_llm splices a **synthetic user message**
+  "Attachments from tool call <id>:" + the image parts right after the tool-result group. So
+  `read`'s image already reaches the model as a `:user` message — consistent with our
+  "nothing mid-conversation is `:system`" invariant, nothing to fix.
+- Capability metadata: `model.supports?(:vision)` from `models.json` — useless for a local
+  llama.cpp model (`assume_model_exists`).
+
+## What's missing in pikuri
+
+1. `Agent#run_loop(user_message:)` — `String` only; appends with
+   `@chat.add_message(role: :user, content: user_message)` (`agent.rb:387`). No way in.
+2. `Event::UserTurn(content:, mid_loop:)` — listeners (terminal, pikuri-tui, memory recorder)
+   can't see that a turn carried an image.
+3. `Extension#on_user_message(content)` — text only; fine for now (mem0 can't embed images
+   anyway), but should be a conscious decision.
+4. `Control::Interloper#inject_user_message(content)` — text only.
+5. The bins: `Reline.readline` gives a line of text; no syntax to attach anything.
+6. No vision-capability check: a text-only llama-server rejects the request (an HTTP error that
+   fails the turn). `read`'s description just warns "requires a vision-capable model".
+
+## Sketch
+
+**Core:** `run_loop(user_message: nil, attachments: [], transport: nil)`; `attachments` is an
+`Array<RubyLLM::Attachment>` (the **Value-type passthrough** seam already sanctions that type in
+`lib/` — `Tool::Result#attachments` uses it). Passed straight to
+`@chat.add_message(role: :user, content:, attachments:)`. `UserTurn` gains `attachments`
+(default `[]`). No backward compatibility needed.
+
+**Bins:** the smallest thing that works in a terminal — a token in the line, e.g.
+`@~/shot.png what's wrong here?`, or a `/image <path>` line that stages an attachment for the
+next turn. Terminals paste a dragged file as its path, so `@path` gets drag-and-drop for free.
+Clipboard images (`wl-paste --type image/png`) are a later nicety.
+
+**Construction safety:** the bin builds the attachment from **bytes**
+(`Attachment.new(StringIO.new(File.binread(path)), filename:)`), never from a raw String — so
+nothing ever triggers ruby_llm's URL fetch (Privacy first), and the transcript holds the image
+as it was at send time, not whatever sits at that path later.
+
+## Open questions
+
+- `Q_api_shape` — `attachments:` kwarg on `run_loop`, or a `UserMessage` value
+  (`Data.define(:text, :attachments)`) threaded through `run_loop`, `UserTurn`, Interloper and
+  `on_user_message` at once? Kwarg is smaller; the value stops four signatures drifting apart.
+- `Q_vision_probe` — extend `ContextWindowDetector` (it already probes `/props`, router hop
+  included) to also read `modalities`, and refuse an image turn up front with a clear message
+  rather than a provider error mid-turn? Could also hide `read`'s image branch on a blind
+  model. Or YAGNI: let the server's error speak. **Measured 2026-11-04** against the
+  `~/.pikuri-examples-config.yaml` server (llama.cpp `b10438-Debian`, **router mode**, model
+  `Ornith-1.5` = `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`):
+  - Bare `GET /props` on the router: `role: "router"`, **no `modalities` key**.
+  - `GET /props?model=Ornith-1.5` (the hop the detector already makes for `n_ctx`):
+    `modalities: {"vision"=>true, "video"=>true, "audio"=>false}`, beside `media_marker` and
+    `chat_template_caps`. So the field name is `modalities.vision`. That hop **autoloads the
+    model** (`models_autoload: true`; the first call outlived a 10 s timeout), the same cost the
+    `n_ctx` probe already pays.
+  - `GET /v1/models` on the router answers **without loading anything**: each entry carries
+    `architecture: {input_modalities: ["text","image"], output_modalities: ["text"]}` (the
+    embedders/reranker report `["text"]`). This is a router extension; a single-model
+    llama-server probably doesn't have it (unverified).
+  - The preset has no `--mmproj`; `--hf-repo` pulled the projector automatically, so with a
+    `-hf` model "vision-capable" is the default, not an opt-in.
+  - End to end: a 64×64 red|blue PNG as an `image_url` data-URI part on `/v1/chat/completions`
+    → "red occupying the left half and blue filling the right half." Works today with exactly
+    the part shape ruby_llm emits.
+  - **Not measured:** what a text-only llama-server answers an image with. The router's
+    chat models all have an mmproj; testing that needs a `--no-mmproj` preset.
+- `Q_image_budget` — an image costs tokens. **Measured** (Ornith-1.5, solid-colour square
+  PNGs, `prompt_tokens` minus ~26 for the text): 64 px ≈ 9, 256 px ≈ 64, 1024 px ≈ 1024,
+  2048 px ≈ 4096, **4096 px ≈ 4096**: one token per 32×32 px, **capped at ~4096 by llama.cpp's
+  mtmd**. So downscaling isn't needed for correctness, and no image library is needed. A
+  full-resolution screenshot costs ~4 K of a 64 K window (6 %), so it matters only when images
+  pile up. Does `context-budget.md` need to know an image's cost? (The cap is per
+  model/projector; another family, e.g. Gemma 3's flat ~256, will differ.)
+- `Q_trifecta` — a user-attached image is user input, not a tool observation, so no tool leg
+  applies. But a screenshot of a web page or e-mail carries *someone else's* text. Treat it
+  like typed/pasted text (the user vouches for it) — most likely — or does it deserve a note
+  in `SECURITY.md`?
+- `Q_mid_loop` — should `Interloper#inject_user_message` carry attachments too (pikuri-tui:
+  drop an image while the agent works)? Probably not in the first cut.
+- `Q_subagents` — the `agent` tool's task is a String; a sub-agent never sees the parent's
+  image. Fine (the parent can tell it a path and the child can `read` it), as long as the
+  child persona has `read`.
+- `Q_memory` — `on_user_message` gets text only; should pikuri-memory at least record
+  "[user attached image.png]" so a recalled fact isn't missing its referent?
+- `Q_listener_render` — how the terminal renders a `UserTurn` with images: a dim
+  `📎 shot.png (123 KB, image/png)` line, mirroring `Tool.describe_attachments`?
+- `Q_beyond_images` — ruby_llm's Chat Completions path also does audio (`input_audio`) and
+  PDFs (`file` parts); llama.cpp does audio with an audio mmproj. Same plumbing, so the core
+  API should not say "image" anywhere — only the bins and the probe would.
+
+## First cut
+
+`attachments:` on `run_loop` + `UserTurn`, `@path` in `pikuri-chat`, bytes-based
+construction, a spec round-tripping a user image through `History`. Probe, downscaling and
+mid-loop injection wait until a real model shows they're needed.
