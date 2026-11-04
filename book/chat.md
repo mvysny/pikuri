@@ -250,6 +250,21 @@ tool for the multiplication, call `web_search` (and likely
 `web_scrape`) for the Ruby version, then reply in plain text. Use
 Ctrl+D or Ctrl+C to exit.
 
+To show it a picture, put `@` before the image's path anywhere in the
+line:
+
+```
+> @~/Pictures/error-dialog.png what does this dialog want from me?
+📎 error-dialog.png (image/png, 48.3 kB)
+```
+
+Dragging a file onto most terminals pastes its path, so type `@` and
+drop the file. A path with spaces gets quotes, `@'/tmp/my shot.png'`,
+which is what the drop pastes anyway. PNG, JPEG, GIF and WebP up to
+5 MB work. The model has to be able to see: a `-hf` model on
+`llama-server` downloads its vision projector by itself, but one
+started with `--no-mmproj` answers the image with an HTTP 500.
+
 ## How the agentic loop works (and why it's private)
 
 Pikuri runs the standard *Thought → Tool-call → Observation* loop:

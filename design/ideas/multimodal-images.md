@@ -50,7 +50,9 @@ attachment riding a tool result. What is missing is the *user* side.
 3. `Extension#on_user_message(content)` — text only, **decided**: attachments are not passed,
    and an attachment-only turn skips the hook (its yardoc says so). See `Q_memory`.
 4. `Control::Interloper#inject_user_message(content)` — text only.
-5. The bins: `Reline.readline` gives a line of text; no syntax to attach anything.
+5. ~~The bins: no syntax to attach anything.~~ Done in `pikuri-chat` only: `@path`. The
+   other chat bins (`pikuri-code`, `pikuri-assistant`, …) still can't; lift
+   `pikuri-core/bin/chat_attachments.rb` into `lib/` when a second one wants it.
 6. No vision-capability check: a text-only llama-server rejects the request (an HTTP error that
    fails the turn). `read`'s description just warns "requires a vision-capable model".
 
@@ -151,7 +153,7 @@ holds the image as it was at send time, not whatever sits at that path later.
 
 ## First cut
 
-~~`Pikuri::Attachment`, `Tool::Result` and `read` onto it, the `members` pin~~,
-~~`attachments:` on `run_loop` + `UserTurn`, a spec round-tripping a user image through
-`History`~~ (done). Left: `@path` in `pikuri-chat`. Probe, downscaling and mid-loop
-injection wait until a real model shows they're needed.
+**Done 2026-11-04**: `Pikuri::Attachment` (with `Tool::Result` and `read` on it, the
+`members` pin), `attachments:` on `run_loop` + `UserTurn`, the wire-level `History` round
+trip, and `@path` in `pikuri-chat` (`book/chat.md`; verified end to end against Ornith-1.5).
+Probe, downscaling and mid-loop injection wait until a real model shows they're needed.

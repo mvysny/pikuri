@@ -20,6 +20,7 @@ require 'yaml'
 require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-core'
+require_relative 'chat_attachments'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
@@ -69,14 +70,19 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 system_prompt = custom_prompt || Pikuri.prompts(:'pikuri-chat', :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
-# Run one agent turn, trapping SIGINT only for the duration of the turn.
+# Run one agent turn for a typed line (`@path` tokens attach images, see
+# chat_attachments.rb), trapping SIGINT only for the duration of the turn.
 # Ctrl+C during a turn flips the agent's Cancellable flag — the next
 # tool-call boundary raises Cancelled, which we rescue below to return to
 # the prompt. Outside a turn (at the `> ` input) the default handler is
 # restored so Ctrl+C still exits the REPL the way it did before.
-def run_turn(agent, message)
+def run_turn(agent, line)
+  message, attachments = ChatAttachments.split(line)
+  ChatAttachments.announce(attachments)
   prev_trap = trap('INT') { agent.cancellable&.cancel! }
-  agent.run_loop(user_message: message)
+  agent.run_loop(user_message: message, attachments: attachments)
+rescue ChatAttachments::Error => e
+  warn "Not sent: #{e.message}"
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   # Notice already rendered by the Terminal listener; nothing else to do.
 rescue RubyLLM::ContextLengthExceededError => e

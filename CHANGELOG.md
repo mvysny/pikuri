@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `@path` to `pikuri-chat`: a `@~/shot.png` token in a typed line attaches that image (PNG, JPEG, GIF or WebP, up to 5 MB) to the turn; see `book/chat.md`.
 - Add `attachments:` to `Pikuri::Agent#run_loop`, so a host can show the model an image with the user's message (or alone), and `Pikuri::Agent::Event::UserTurn#attachments`, which carries them to listeners.
 - **Breaking:** `Pikuri::Tool::Result#attachments` holds `Pikuri::Attachment`s (mime, filename and the bytes, promoted from `Pikuri::Agent::History::Attachment`) instead of `RubyLLM::Attachment`s, and `read` now reads an image's bytes once rather than letting ruby_llm re-read the path later. A tool returning an attachment builds `Pikuri::Attachment.new(mime:, filename:, bytes:)`.
 - Fix `rag_search` burying a leg's rank-1 hit under chunks both legs listed deep down — `Pikuri::Rag::Tools::Search` now fuses each leg's top `LEG_K` (10) with `RRF_K` 5 instead of 50 with 60, and the reranker scores at most 20 candidates; see `design/decisions.md` `D_rrf_tuning`.
