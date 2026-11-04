@@ -15,10 +15,10 @@ module Pikuri
       # Each item carries a {Item#kind}, driving how {Agent#drain_interloper}
       # lands it:
       #
-      # - +:user+ ({#inject_user_message}) — a mid-loop user turn: appended
-      #   verbatim, emits +Event::UserTurn(mid_loop: true)+, and runs the
-      #   {Extension#on_user_message} dispatch (prefetch/record like an initial
-      #   turn).
+      # - +:user+ ({#inject_user_message}) — a mid-loop user turn, attachments
+      #   and all: appended verbatim, emits +Event::UserTurn(mid_loop: true)+,
+      #   and runs the {Extension#on_user_message} dispatch (prefetch/record
+      #   like an initial turn).
       # - +:system+ ({#inject_system_message}) — host-supplied reference text
       #   (a loaded skill, retrieved context): appended wrapped in
       #   +<system-reminder>+, emits +Event::SystemInjected+, and runs *no*
@@ -73,9 +73,18 @@ module Pikuri
       # can't deadlock.
       class Interloper
         # A queued injection: +kind+ (+:user+ or +:system+) selects the drain
-        # path; +content+ is the message text. Producers are the two
-        # +inject_*+ methods; the consumer is {Agent#drain_interloper}.
-        Item = Data.define(:kind, :content)
+        # path; +content+ is the message text (+""+ for an attachment-only
+        # user message), +attachments+ the files shown with it, always empty
+        # for +:system+. Producers are the two +inject_*+ methods; the
+        # consumer is {Agent#drain_interloper}.
+        Item = Data.define(:kind, :content, :attachments) do
+          # @param kind [Symbol]
+          # @param content [String]
+          # @param attachments [Array<Pikuri::Attachment>]
+          def initialize(kind:, content:, attachments: [])
+            super(kind: kind, content: content, attachments: attachments.dup.freeze)
+          end
+        end
 
         def initialize
           @mutex = Mutex.new
@@ -92,15 +101,35 @@ module Pikuri
         # @return [Proc, nil]
         attr_accessor :on_change
 
-        # Enqueue a +:user+ mid-loop turn (any thread; +Mutex+-guarded). Fires
-        # {#on_change} with the new count, outside the lock.
+        # Enqueue a +:user+ mid-loop turn (any thread; +Mutex+-guarded), the
+        # same message {Agent#run_loop} takes, e.g. an image dropped while the
+        # agent works:
         #
-        # @param content [String] non-blank user-supplied text
-        # @raise [ArgumentError] if +content+ is +nil+/blank — a blank
-        #   injection would poison the chat history like a blank turn
+        #   interloper.inject_user_message('and this one?', attachments: [png])
+        #
+        # Fires {#on_change} with the new count, outside the lock.
+        #
+        # Unlike {Agent#run_loop}, nothing here can refuse an attachment the
+        # model can't see: this runs on the host's thread with no agent, and
+        # raising at the drain would end the running turn over a picture. The
+        # drain withholds it instead, with a note in the text the model reads
+        # ({Agent#modalities}). A host wanting an error up front checks
+        # +agent.modalities+ before injecting.
+        #
+        # @param content [String, nil] the user's text; may be blank only when
+        #   +attachments+ are given
+        # @param attachments [Array<Pikuri::Attachment>] files shown with it
+        # @raise [ArgumentError] if there is neither text nor an attachment — a
+        #   blank injection would poison the chat history like a blank turn —
+        #   or an attachment is not a {Pikuri::Attachment}
         # @return [void]
-        def inject_user_message(content)
-          enqueue(:user, content)
+        def inject_user_message(content = nil, attachments: [])
+          unless attachments.all?(Pikuri::Attachment)
+            raise ArgumentError, "attachments must be Pikuri::Attachments, got #{attachments.map(&:class)}"
+          end
+          return enqueue(:user, content) if attachments.empty?
+
+          enqueue(:user, content.to_s.strip.empty? ? '' : content, attachments: attachments)
         end
 
         # Enqueue a +:system+ reference block — host-loaded skill text or
@@ -170,13 +199,16 @@ module Pikuri
         #
         # @param kind [Symbol] +:user+ or +:system+
         # @param content [String]
-        # @raise [ArgumentError] if +content+ is +nil+/blank
+        # @param attachments [Array<Pikuri::Attachment>] non-empty excuses a
+        #   blank +content+
+        # @raise [ArgumentError] if +content+ is +nil+/blank with no attachments
         # @return [void]
-        def enqueue(kind, content)
+        def enqueue(kind, content, attachments: [])
           raise ArgumentError, "content must not be blank, got #{content.inspect}" \
-            if content.nil? || content.to_s.strip.empty?
+            if attachments.empty? && (content.nil? || content.to_s.strip.empty?)
 
-          count = @mutex.synchronize { @items << Item.new(kind: kind, content: content); @items.size }
+          item = Item.new(kind: kind, content: content, attachments: attachments)
+          count = @mutex.synchronize { @items << item; @items.size }
           @on_change&.call(count)
           nil
         end

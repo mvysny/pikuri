@@ -1033,6 +1033,52 @@ RSpec.describe Pikuri::Agent do
       assert_equal 'second', injections[1].content
     end
 
+    describe 'a user item with attachments' do
+      let(:png) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
+
+      def drain_one(modalities, text, attachments)
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: modalities),
+                          system_prompt: 's', interloper: interloper) { |c| c.add_listener recorder }
+        interloper.inject_user_message(text, attachments: attachments)
+        fake_chat.fire(:after_message, tool_result_message)
+        recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::UserTurn) && e.mid_loop }
+      end
+
+      it 'sends them with the text, and UserTurn carries them' do
+        turn = drain_one({}, 'and this?', [png])
+
+        sent = fake_chat.added_messages.first
+        assert_equal 'and this?', sent[:content]
+        assert_equal [png], sent[:attachments].map { |a| Pikuri::Attachment.from_ruby_llm(a) }
+        assert_equal Pikuri::Agent::Event::UserTurn.new(content: 'and this?', attachments: [png], mid_loop: true),
+                     turn
+      end
+
+      it 'withholds one the model refuses, with a note, rather than ending the turn' do
+        turn = drain_one({ vision: false }, 'and this?', [png])
+
+        note = 'and this?' + "\n\n" + '[shot.png not shown: model blind takes no vision input]'
+        assert_equal [{ role: :user, content: note }], fake_chat.added_messages
+        assert_equal Pikuri::Agent::Event::UserTurn.new(content: note, attachments: [], mid_loop: true), turn
+      end
+
+      it 'sends an attachment-only item with no text part' do
+        drain_one({}, nil, [png])
+
+        assert_nil fake_chat.added_messages.first[:content]
+      end
+    end
+
+    # Untracked, a drained message got a fresh id minted on every export.
+    it 'gives a drained message a stable History id' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', interloper: interloper)
+      interloper.inject_user_message('mid-loop')
+      fake_chat.fire(:after_message, tool_result_message)
+
+      assert_equal agent.export_history.messages.map(&:id), agent.export_history.messages.map(&:id)
+    end
+
     it 'is a no-op when interloper: is nil (default)' do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 's') { |c| c.add_listener recorder }

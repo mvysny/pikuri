@@ -1385,7 +1385,12 @@ module Pikuri
     #   (+mid_loop: true+), then run the {Extension#on_user_message} dispatch
     #   (so mid-loop injections are prefetched + recorded like initial turns).
     #   The dispatch runs *after* the append so an injected +<memory-context>+
-    #   lands right behind the turn it annotates.
+    #   lands right behind the turn it annotates. An attachment {#modalities}
+    #   refuses is withheld with a {Pikuri::Attachment#withheld_note} in the
+    #   text, never raised: this runs inside the turn, which a raise would end.
+    #   The +UserTurn+ carries what was sent, notes included; the extension
+    #   dispatch gets the user's own text only, and none on an attachment-only
+    #   item.
     # - +:system+ — {#append_reference_block}: reference text, so no
     #   +on_user_message+ dispatch and no +UserTurn+.
     #
@@ -1401,15 +1406,29 @@ module Pikuri
       @interloper.drain!.each do |item|
         case item.kind
         when :user
-          @chat.add_message(role: :user, content: item.content)
-          @listeners.emit(Event::UserTurn.new(content: item.content, mid_loop: true))
-          dispatch_ext_on_user_message(item.content)
+          drain_user_item(item)
         when :system
           append_reference_block(item.content)
         else
           raise "unknown interloper item kind: #{item.kind.inspect}"
         end
       end
+    end
+
+    # Land one +:user+ {Control::Interloper::Item}; see {#drain_interloper}.
+    #
+    # @param item [Control::Interloper::Item]
+    # @return [void]
+    def drain_user_item(item)
+      refused, sent = item.attachments.map { |a| [a, attachment_refusal(a)] }.partition(&:last)
+      sent = sent.map(&:first)
+      text = [item.content, *refused.map { |a, reason| a.withheld_note(reason) }]
+             .reject { |t| t.to_s.strip.empty? }.join("\n\n")
+      message = { role: :user, content: text.empty? ? nil : text }
+      message[:attachments] = sent.map(&:to_ruby_llm) unless sent.empty?
+      track_message(@chat.add_message(message))
+      @listeners.emit(Event::UserTurn.new(content: text, attachments: sent, mid_loop: true))
+      dispatch_ext_on_user_message(item.content) unless item.content.to_s.strip.empty?
     end
   end
 end

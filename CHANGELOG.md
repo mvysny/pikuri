@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Add `attachments:` to `Pikuri::Agent::Control::Interloper#inject_user_message`, so a host can show the model an image mid-loop; one the model can't see is withheld with a note in the text rather than ending the running turn.
+- Fix a mid-loop user message drained from the `Interloper` getting a fresh `Agent::History` id on every `export_history`.
 - Add `Pikuri::Agent#modalities`, read from llama.cpp's `/props` (or stated as `ChatTransport#modalities`): `run_loop` raises `Pikuri::Agent::UnsupportedAttachmentError` for an image a text-only model can't see, and a tool's such image becomes a note, instead of an HTTP 500 that poisons the history; see `D_probe_when_unknown`.
 - Fix `SubAgentTool` building its child's transport once at bind time, which inherited only a host-stated cap and ignored a later model switch; it now bakes in the parent's resolved cap and modalities at each spawn.
 - Add `@path` to `pikuri-chat`: a `@~/shot.png` token in a typed line attaches that image (PNG, JPEG, GIF or WebP, up to 5 MB) to the turn; see `book/chat.md`.

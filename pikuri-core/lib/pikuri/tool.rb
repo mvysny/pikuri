@@ -462,7 +462,7 @@ module Pikuri
     def self.withhold_refused(result, refusal)
       notes = result.attachments.filter_map do |a|
         reason = refusal.call(a)
-        [a, "[#{a.filename} not shown: #{reason}]"] if reason
+        [a, a.withheld_note(reason)] if reason
       end
       return result if notes.empty?
 

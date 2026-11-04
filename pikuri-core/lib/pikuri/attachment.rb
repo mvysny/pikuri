@@ -52,6 +52,18 @@ module Pikuri
       RubyLLM::Attachment.new(StringIO.new(bytes), filename: filename)
     end
 
+    # The line that stands in for this attachment when the model can't take
+    # it ({Agent#modalities}), so the model learns why it sees nothing:
+    #
+    #   png.withheld_note('model m takes no vision input')
+    #   # => "[shot.png not shown: model m takes no vision input]"
+    #
+    # @param reason [String]
+    # @return [String]
+    def withheld_note(reason)
+      "[#{filename} not shown: #{reason}]"
+    end
+
     # Content-addressed filename: the digest prefix makes it unique and
     # self-verifying, so the same image read twice is stored once and a
     # tampered file is caught at load.

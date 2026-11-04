@@ -45,6 +45,32 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
     it 'returns nil' do
       assert_nil described_class.new.inject_user_message('x')
     end
+
+    describe 'with attachments' do
+      let(:png) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
+
+      it 'carries them on the item, beside the text' do
+        interloper = described_class.new
+        interloper.inject_user_message('and this?', attachments: [png])
+
+        assert_equal [described_class::Item.new(kind: :user, content: 'and this?', attachments: [png])],
+                     interloper.peek
+      end
+
+      it 'accepts an attachment-only message, its text normalized to ""' do
+        interloper = described_class.new
+        interloper.inject_user_message(attachments: [png])
+        interloper.inject_user_message("  \n", attachments: [png])
+
+        assert_equal ['', ''], interloper.peek.map(&:content)
+      end
+
+      it 'refuses a RubyLLM::Attachment, whose path or URL source ruby_llm would read' do
+        raw = RubyLLM::Attachment.new(StringIO.new('png'), filename: 'shot.png')
+
+        assert_raises(ArgumentError) { described_class.new.inject_user_message('hi', attachments: [raw]) }
+      end
+    end
   end
 
   describe '#inject_system_message' do

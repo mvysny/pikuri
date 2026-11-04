@@ -4,8 +4,9 @@ Goal: let the **user** hand the model an image ("what's wrong in this screenshot
 let a tool do it. Images first; audio / PDF-as-pixels / video later, if ever.
 
 Shipped 2026-11-04, now documented elsewhere: `Pikuri::Attachment`, `run_loop(attachments:)` +
-`Event::UserTurn#attachments`, `@path` in `pikuri-chat` (`book/chat.md`), and the refusal of what
-a model can't see (`Agent#modalities`, `D_refuse_unsupported_attachments`). What is left:
+`Event::UserTurn#attachments`, the same on `Interloper#inject_user_message`, `@path` in
+`pikuri-chat` (`book/chat.md`), and the refusal of what a model can't see (`Agent#modalities`,
+`D_refuse_unsupported_attachments`). What is left:
 
 ## Not done
 
@@ -22,9 +23,6 @@ a model can't see (`Agent#modalities`, `D_refuse_unsupported_attachments`). What
   applies. But a screenshot of a web page or e-mail carries *someone else's* text. Treat it
   like typed/pasted text (the user vouches for it) — most likely — or does it deserve a note
   in `SECURITY.md`?
-- `Q_mid_loop` — `Control::Interloper#inject_user_message(content)` is text only; should it
-  carry attachments too (pikuri-tui: drop an image while the agent works)? Probably not until a
-  host asks.
 - `Q_subagents` — the `agent` tool's task is a String; a sub-agent never sees the parent's
   image. Fine (the parent can tell it a path and the child can `read` it), as long as the
   child persona has `read`.

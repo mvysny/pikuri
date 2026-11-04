@@ -26,8 +26,9 @@ module Pikuri
       UserTurn = Data.define(:content, :attachments, :mid_loop) do
         # @param content [String] user-supplied text; +""+ on an
         #   attachment-only turn
-        # @param attachments [Array<Pikuri::Attachment>] what the user showed
-        #   the model; always empty mid-loop
+        # @param attachments [Array<Pikuri::Attachment>] what the model was
+        #   shown; mid-loop, without any it can't take, whose notes are then in
+        #   +content+
         # @param mid_loop [Boolean] +true+ when drained from
         #   {Control::Interloper}; default +false+
         def initialize(content:, attachments: [], mid_loop: false)
