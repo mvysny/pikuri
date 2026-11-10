@@ -22,6 +22,14 @@ module Pikuri
       # highlights: true }+ so each result carries a neural-ranked snippet
       # populating {Result#body} — the analog to Brave's +description+.
       #
+      # == Cache-only, never a live fetch
+      #
+      # {.request_body} pins +maxAgeHours: -1+. Omitted, Exa's crawler fetches
+      # an uncached result page live during the search, and since the query
+      # picks which pages match, an attacker owning indexed pages reads bits of
+      # the query from their server logs. That would break the +:tool_vouched+
+      # egress grade {WebSearch} declares. A snippet needs no fresh page.
+      #
       # == Privacy posture
       #
       # Exa's Privacy Policy uses Query Data to train/fine-tune its models, and
@@ -79,12 +87,7 @@ module Pikuri
               req.headers['x-api-key'] = @api_key
               req.headers['Content-Type'] = 'application/json'
               req.headers['Accept'] = 'application/json'
-              req.body = JSON.dump(
-                query: query,
-                type: 'auto',
-                numResults: max_results,
-                contents: { highlights: true }
-              )
+              req.body = JSON.dump(self.class.request_body(query, max_results: max_results))
             end
             unless response.success?
               if response.status == 429 || response.status >= 500
@@ -96,6 +99,24 @@ module Pikuri
 
             self.class.parse(response.body, max_results: max_results)
           end
+        end
+
+        # The JSON body for a {ENDPOINT} request; cache-only, see the class doc.
+        #
+        #   Exa.request_body('ruby', max_results: 5)
+        #   # => { query: 'ruby', type: 'auto', numResults: 5,
+        #   #      contents: { highlights: true, maxAgeHours: -1 } }
+        #
+        # @param query [String] search query (already normalized)
+        # @param max_results [Integer] max entries; Exa's +numResults+
+        # @return [Hash{Symbol => Object}]
+        def self.request_body(query, max_results: DEFAULT_MAX_RESULTS)
+          {
+            query: query,
+            type: 'auto',
+            numResults: max_results,
+            contents: { highlights: true, maxAgeHours: -1 }
+          }
         end
 
         # Parse an Exa JSON response into {Result} rows, +body+ the first

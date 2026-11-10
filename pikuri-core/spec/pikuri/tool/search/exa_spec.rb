@@ -62,6 +62,14 @@ RSpec.describe Pikuri::Tool::Search::Exa do
     end
   end
 
+  describe '.request_body' do
+    it 'asks for cached contents only, so Exa never fetches a page live' do
+      body = described_class.request_body('ruby', max_results: 5)
+      assert_equal({ highlights: true, maxAgeHours: -1 }, body[:contents])
+      assert_equal 5, body[:numResults]
+    end
+  end
+
   describe '.new' do
     it 'rejects a blank api key' do
       err = assert_raises(ArgumentError) { described_class.new(api_key: '') }
