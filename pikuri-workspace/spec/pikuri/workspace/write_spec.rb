@@ -29,7 +29,7 @@ RSpec.describe Pikuri::Workspace::Write do
       if queue.shift
         Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
       else
-        Pikuri::Workspace::Confirmer::Rejected.new(reason: nil)
+        Pikuri::Workspace::Confirmer::Rejected.new
       end
     end
     confirmer.define_singleton_method(:requests) { requests }
@@ -135,7 +135,7 @@ RSpec.describe Pikuri::Workspace::Write do
       result = described_class.write(workspace: workspace, confirmer: cf,
                                      path: 'target.txt', content: "replacement\n").to_s
 
-      assert_equal 'Error: user declined the write to target.txt.', result
+      assert result.start_with?('Error: user declined the write to target.txt.')
       assert_equal "original\n", (root + 'target.txt').read
     end
 
@@ -346,7 +346,7 @@ RSpec.describe Pikuri::Workspace::Write do
         if decision == :approve
           Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
         else
-          Pikuri::Workspace::Confirmer::Rejected.new(reason: decision)
+          Pikuri::Workspace::Confirmer::Redirected.new(message: decision)
         end
       end
       c.define_singleton_method(:requests) { requests }
@@ -375,7 +375,7 @@ RSpec.describe Pikuri::Workspace::Write do
       assert_equal "new\n", change.new
     end
 
-    it 'declines with a reason and leaves the file unchanged' do
+    it 'redirects with the typed words and leaves the file unchanged' do
       write_file('a.txt', "old\n")
       cf = deciding('use the other config')
       result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,

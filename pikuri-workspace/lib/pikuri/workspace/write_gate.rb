@@ -13,8 +13,8 @@ module Pikuri
     #    in-process as the real user (only *bash* is sandboxed), so
     #    +File.writable?+ is real. Subsumes +/etc+ / +/boot+ — no path list.
     # 2. **Confirms with a diff.** Else ask the human via a {Confirmer::Change}
-    #    payload (the chrome renders the diff), surfacing the decline reason on
-    #    no.
+    #    payload (the chrome renders the diff); a decline answers with the
+    #    decision's own observation.
     #
     # Stateless module (composition, not a base class); both tools call {.check}
     # and return on a non-nil result. {Write} always routes an overwrite through
@@ -35,14 +35,14 @@ module Pikuri
       # @param resolved [Pathname] resolved write target.
       # @param question [String] one-line confirm headline.
       # @param change [Confirmer::Change] the diff payload (old/new bytes).
-      # @return [String, nil] an +"Error: ..."+ observation to return
-      #   immediately (unwritable, or declined), or +nil+ to proceed.
+      # @return [Pikuri::Tool::Result, nil] the observation to return at once
+      #   (unwritable, rejected or redirected), or +nil+ to proceed.
       def check(confirmer:, path:, resolved:, question:, change:)
         return permission_denied(path) unless writable_target?(resolved)
 
-        case confirmer.ask(request: Confirmer::Request.new(question: question, change: change))
-        in Confirmer::Rejected(reason:) then declined(path, reason)
-        else nil
+        case decision = confirmer.ask(request: Confirmer::Request.new(question: question, change: change))
+        in Confirmer::Approved then nil
+        in Confirmer::Rejected | Confirmer::Redirected then decision.observation("the write to #{path}")
         end
       end
 
@@ -60,18 +60,10 @@ module Pikuri
       end
 
       # @param path [String]
-      # @return [String]
+      # @return [Pikuri::Tool::Result]
       def permission_denied(path)
-        "Error: permission denied — cannot write #{path} as this user; " \
-          'ask the user to make the change themselves (e.g. with sudo).'
-      end
-
-      # @param path [String]
-      # @param reason [String, nil] the human's optional decline steering.
-      # @return [String]
-      def declined(path, reason)
-        reason ? "Error: user declined the write to #{path}: #{reason}" \
-               : "Error: user declined the write to #{path}."
+        Pikuri::Tool::Result.error("permission denied — cannot write #{path} as this user; " \
+                                   'ask the user to make the change themselves (e.g. with sudo).')
       end
     end
   end

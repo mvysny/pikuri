@@ -36,17 +36,18 @@ module Pikuri
       #
       # == The two flows
       #
-      # A *non-editable* request (bash, write) gets +(y/n)?+: +y+ → {Approved},
-      # +n+ → {Rejected} (after an optional reason), EOF → {Rejected}, else
-      # re-prompt.
+      # A *non-editable* request (bash, write) gets
+      # +[y] approve  [n] reject  [r] redirect+: +y+ → {Approved}, +n+ or EOF →
+      # {Rejected}, +r+ → a line of text → {Redirected} (a blank line backs off
+      # to {Rejected}), else re-prompt.
       #
       # An *editable* request (the +agent+ task) also offers +e+ to edit, and
       # the warning set gates the pre-fill: the payload sent onward is RAW bytes
       # but the terminal must *display* sanitized bytes, so pre-filling an
       # editable buffer with raw bytes would reintroduce the control-byte attack.
-      # So a *clean* task offers +[y] approve  [e] edit  [n] reject+ (+e+ opens
-      # the raw task editable), a *flagged* task drops bare-approve and forces a
-      # retype: +[e] edit  [n] reject+. Honest limit: a terminal can't
+      # So a *clean* task offers +[y] approve  [e] edit  [n] reject  [r] redirect+
+      # (+e+ opens the raw task editable), a *flagged* task drops bare-approve and
+      # forces a retype: +[e] edit  [n] reject  [r] redirect+. Honest limit: a terminal can't
       # *structurally* forbid a rubber-stamp +y+ on a clean task — the pure
       # no-rubber-stamp author seat is a richer-UI invariant; the warning-gated
       # retype is the terminal's partial answer.
@@ -77,7 +78,7 @@ module Pikuri
         HUNK_COLOR = Pikuri::Agent::Listener::Terminal::TOOL_COLOR
 
         # @param request [Request]
-        # @return [Approved, Rejected]
+        # @return [Approved, Rejected, Redirected]
         def ask(request:)
           warnings = render(request)
           if request.editable && !request.detail.nil?
@@ -164,39 +165,41 @@ module Pikuri
           end
         end
 
-        # The +(y/n)?+ flow, returning {Approved}/{Rejected} and prompting for a
-        # decline reason on +n+.
+        # The approve / reject / redirect flow.
         #
         # @param request [Request]
-        # @return [Approved, Rejected]
+        # @return [Approved, Rejected, Redirected]
         def ask_plain(request)
-          puts '(y/n)?'
+          puts '[y] approve  [n] reject  [r] redirect'
           $stdout.flush
           loop do
             line = $stdin.gets
-            return Rejected.new(reason: nil) if line.nil?
+            return Rejected.new if line.nil?
 
             answer = line.strip.downcase
             return Approved.new(new_request_detail: request.detail) if answer == 'y' || answer == 'yes'
-            return Rejected.new(reason: read_reason) if answer == 'n' || answer == 'no'
+            return Rejected.new if answer == 'n' || answer == 'no'
+            return read_redirect if answer == 'r' || answer == 'redirect'
 
-            print 'Please answer y or n: '
+            print 'Please answer y, n, or r: '
             $stdout.flush
           end
         end
 
-        # The editable flow: approve-as-is (clean only), edit, or reject.
+        # The editable flow: approve-as-is (clean only), edit, reject, or
+        # redirect.
         #
         # @param request [Request]
         # @param clean [Boolean] whether the payload passed the sanitizer
         #   (gates the pre-fill and the bare-approve path)
-        # @return [Approved, Rejected]
+        # @return [Approved, Rejected, Redirected]
         def ask_editable(request, clean:)
-          puts(clean ? '[y] approve  [e] edit  [n] reject' : '⚠ retype required — [e] edit  [n] reject')
+          puts(clean ? '[y] approve  [e] edit  [n] reject  [r] redirect' \
+                     : '⚠ retype required — [e] edit  [n] reject  [r] redirect')
           $stdout.flush
           loop do
             line = $stdin.gets
-            return Rejected.new(reason: nil) if line.nil?
+            return Rejected.new if line.nil?
 
             answer = line.strip.downcase
             if clean && (answer == 'y' || answer == 'yes')
@@ -205,9 +208,10 @@ module Pikuri
             if answer == 'e' || answer == 'edit'
               return Approved.new(new_request_detail: read_edited(initial: request.detail, prefill: clean))
             end
-            return Rejected.new(reason: read_reason) if answer == 'n' || answer == 'no'
+            return Rejected.new if answer == 'n' || answer == 'no'
+            return read_redirect if answer == 'r' || answer == 'redirect'
 
-            print(clean ? 'Please answer y, e, or n: ' : 'Please answer e or n: ')
+            print(clean ? 'Please answer y, e, n, or r: ' : 'Please answer e, n, or r: ')
             $stdout.flush
           end
         end
@@ -231,18 +235,14 @@ module Pikuri
           Reline.pre_input_hook = nil
         end
 
-        # Prompt for an optional decline reason (steering handed back to the
-        # model).
+        # Read the words a redirect hands the model.
         #
-        # @return [String, nil] the trimmed reason, or +nil+ for blank / EOF
-        def read_reason
-          print 'Reason (optional, Enter to skip): '
+        # @return [Redirected, Rejected] {Rejected} for a blank line or EOF
+        def read_redirect
+          print 'Tell the agent (blank just rejects): '
           $stdout.flush
-          line = $stdin.gets
-          return nil if line.nil?
-
-          reason = line.strip
-          reason.empty? ? nil : reason
+          message = $stdin.gets&.strip
+          message.nil? || message.empty? ? Rejected.new : Redirected.new(message: message)
         end
       end
     end

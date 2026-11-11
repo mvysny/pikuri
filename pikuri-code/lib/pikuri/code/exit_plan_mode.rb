@@ -82,17 +82,25 @@ module Pikuri
           detail: plan
         )
 
-        if confirmer.confirm?(request: request)
+        case confirmer.ask(request: request)
+        in Pikuri::Workspace::Confirmer::Approved
           read_only.deactivate!
           Pikuri::Tool::Result.new(
             content: 'Plan approved — you are no longer in plan mode. Implement the plan now.',
             summary: 'Plan mode off'
           )
-        else
+        in Pikuri::Workspace::Confirmer::Rejected
           Pikuri::Tool::Result.new(
             content: 'The user did not approve the plan; you are still in plan mode (read-only). ' \
                      'Ask what they would like changed, revise the plan, and call exit_plan_mode ' \
                      'again when ready. Do not edit any files.',
+            summary: 'Plan not approved'
+          )
+        in Pikuri::Workspace::Confirmer::Redirected(message:)
+          Pikuri::Tool::Result.new(
+            content: "The user did not approve the plan and said: #{message}\n" \
+                     'You are still in plan mode (read-only). Revise the plan accordingly and ' \
+                     'call exit_plan_mode again. Do not edit any files.',
             summary: 'Plan not approved'
           )
         end

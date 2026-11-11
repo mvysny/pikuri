@@ -526,7 +526,7 @@ RSpec.describe Pikuri::Workspace::Edit do
         if decision == :approve
           Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
         else
-          Pikuri::Workspace::Confirmer::Rejected.new(reason: decision)
+          Pikuri::Workspace::Confirmer::Redirected.new(message: decision)
         end
       end
       c.define_singleton_method(:requests) { requests }
@@ -546,7 +546,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       assert_equal "one\nTWO\n", change.new
     end
 
-    it 'declines with a reason and leaves the file unchanged' do
+    it 'redirects with the typed words and leaves the file unchanged' do
       write_file('a.txt', "one\ntwo\n")
       cf = deciding('leave it as is')
       result = described_class.edit(workspace: workspace, confirmer: cf,

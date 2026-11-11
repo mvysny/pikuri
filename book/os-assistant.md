@@ -508,7 +508,7 @@ the networked side — stops for you:
 Delegate this task to the 'researcher' sub-agent? It reaches the
 network — you approve what leaves this machine.
   the current stable kernel version for Ubuntu 26.04
-[y] approve  [e] edit  [n] reject
+[y] approve  [e] edit  [n] reject  [r] redirect
 ```
 
 This is the same `Confirmer` from Part 1, reused unchanged. The point is
@@ -550,7 +550,7 @@ approving a payload and authoring one. And if the task tripped a
 `Sanitizer` warning, the prompt changes shape entirely:
 
 ```
-⚠ retype required — [e] edit  [n] reject
+⚠ retype required — [e] edit  [n] reject  [r] redirect
 ```
 
 Bare approval is gone, and the editor opens *empty*: a flagged task can
@@ -560,9 +560,10 @@ the end of this chapter for why "as close as a terminal gets" is not the
 same as "closed", and why the `y` on a *clean* task is where the residual
 risk lives.
 
-(Rejecting with `n` also prompts for an optional reason, which comes back
-to the agent as the observation — a decline that steers instead of just
-failing. Richer confirmer shapes still on the list are in
+(`n` is a plain no: the agent is told to stop, not to find another way.
+`r` lets you type what you want instead — "use the local docs, not the
+web" — and that comes back to the agent as the observation, a decline
+that steers instead of just ending. Richer confirmer shapes still on the list are in
 [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md).)
 
 ## Two network boundaries, not one

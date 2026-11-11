@@ -9,13 +9,13 @@ the `agent` tool, gated on the task prompt before dispatch —
 [the OS-assistant chapter](../../book/os-assistant.md) §"Part 2 — The third
 leg returns"). That gate is
 now the **full author seat**: `Confirmer#ask` returns
-`Approved(new_request_detail)` / `Rejected(reason)`, the task is offered
-`editable: true` so the human *rewrites* rather than rubber-stamps, and a
-decline carries an optional **reject-reason** back to the model as
-steering (a channel wired into `Bash` too). The worked-out design has
+`Approved(new_request_detail)` / `Rejected` / `Redirected(message)`, the
+task is offered `editable: true` so the human *rewrites* rather than
+rubber-stamps, and a redirect carries the human's typed words back to the
+model as steering (wired into `Bash` too). The worked-out design has
 moved to its permanent homes: {Pikuri::Workspace::Confirmer} and
 {Pikuri::Workspace::Confirmer::Terminal} own the per-symbol rationale
-(the `#ask` return type, the edit/reason axes, the still-rejected
+(the `#ask` return type, the edit axis, the still-rejected
 `:once/:always` fatigue knob, and the sanitizer-gated editable pre-fill),
 and `pikuri-workspace/AGENTS.md`'s **Confirmer seam** owns the invariant. **Still open**
 (this file): whether a *parent-level* `fetch` should ever be gated by an
@@ -52,7 +52,7 @@ Related, already worked out:
 `RESEARCHER` sub-agent (web tools, no filesystem) and gated by a
 confirmation of the *task prompt* before dispatch. That gate is the
 **egress-axis input confirmation** — it already ships as a full author
-seat with a reject-reason channel (design now in
+seat with a redirect channel (design now in
 {Pikuri::Workspace::Confirmer} + `pikuri-workspace/AGENTS.md`'s Confirmer seam).
 What remains are the *harder* confirmer shapes this file collects:
 
@@ -65,7 +65,8 @@ What remains are the *harder* confirmer shapes this file collects:
    gate what gets *in*? (Ingest axis.)
 
 (The original list opened with a third item — "make the task-prompt gate
-a true author seat plus a reject-reason channel." That one shipped; its
+a true author seat plus a reject-reason channel." That one shipped (the
+reason channel is now `Redirected`); its
 worked-out design graduated to {Pikuri::Workspace::Confirmer} +
 {Pikuri::Workspace::Confirmer::Terminal} and `pikuri-workspace/AGENTS.md`'s Confirmer seam,
 so it is no longer detailed here.)

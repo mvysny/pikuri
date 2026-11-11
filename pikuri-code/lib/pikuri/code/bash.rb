@@ -237,11 +237,9 @@ module Pikuri
         # without a prompt; everything else is confirmed by the human.
         unless passive_detector&.passive?(command)
           request = compose_request(command: command, description: description, timeout: timeout)
-          case confirmer.ask(request: request)
-          in Pikuri::Workspace::Confirmer::Rejected(reason:)
-            msg = +'user declined the bash command.'
-            msg << " Reason: #{reason}" if reason && !reason.empty?
-            return Pikuri::Tool::Result.error(msg)
+          case decision = confirmer.ask(request: request)
+          in Pikuri::Workspace::Confirmer::Rejected | Pikuri::Workspace::Confirmer::Redirected
+            return decision.observation('the bash command')
           in Pikuri::Workspace::Confirmer::Approved
             # fall through to execution (the command is non-editable, so the
             # approved detail is the same command we already hold)

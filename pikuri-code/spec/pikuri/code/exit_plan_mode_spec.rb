@@ -4,17 +4,22 @@ RSpec.describe Pikuri::Code::ExitPlanMode do
   let(:read_only) { Pikuri::Workspace::ReadOnly.new }
 
   # Inline confirmer double: records every request it sees and returns
-  # successive elements of +answers+. Calling +confirm?+ with no answer
-  # queued raises — surfaces "test silently consumed a confirmation".
+  # successive elements of +answers+ — +true+ → Approved, +false+ → Rejected,
+  # else the decision itself. Calling +ask+ with no answer queued raises —
+  # surfaces "test silently consumed a confirmation".
   def build_confirmer(*answers)
     queue    = answers.dup
     requests = []
     confirmer = Object.new
-    confirmer.define_singleton_method(:confirm?) do |request:|
+    confirmer.define_singleton_method(:ask) do |request:|
       requests << request
-      raise "unexpected #confirm? call (request: #{request.inspect})" if queue.empty?
+      raise "unexpected #ask call (request: #{request.inspect})" if queue.empty?
 
-      queue.shift
+      case (answer = queue.shift)
+      when true  then Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      when false then Pikuri::Workspace::Confirmer::Rejected.new
+      else answer
+      end
     end
     confirmer.define_singleton_method(:requests) { requests }
     confirmer
@@ -54,6 +59,16 @@ RSpec.describe Pikuri::Code::ExitPlanMode do
       result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X').to_s
 
       assert read_only.active?
+      assert_match(/still in plan mode/i, result)
+    end
+
+    it 'stays in plan mode and quotes the user when redirected' do
+      confirmer = build_confirmer(Pikuri::Workspace::Confirmer::Redirected.new(message: 'drop step 3'))
+
+      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X').to_s
+
+      assert read_only.active?
+      assert_includes result, 'did not approve the plan and said: drop step 3'
       assert_match(/still in plan mode/i, result)
     end
   end

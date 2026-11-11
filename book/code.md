@@ -70,8 +70,9 @@ the first-conversation chapter, and the `agent` tool (with `FILE_MINER`, `RESEAR
 What you should see:
 
 1. The agent calls `write` to create `hello.rb`. Because `write`
-   is a user-state mutation, the terminal prompts you `(y/n)?` —
-   read the proposed content, type `y` to approve.
+   is a user-state mutation, the terminal prompts you
+   `[y] approve  [n] reject  [r] redirect` — read the proposed
+   content, type `y` to approve.
 2. The agent calls `bash` with `ruby hello.rb`. The `bash` tool
    also prompts for approval — again, `y`.
 3. The script runs *inside the bubblewrap sandbox* (you can tell
@@ -157,19 +158,24 @@ colors in a terminal, buttons in a web UI — and, security-relevant,
 escapes hostile bytes for its medium (a terminal neutralizes
 `\r`/ESC so a command can't visually overwrite itself after you've
 read it; a web client HTML-escapes instead). `#ask` returns one of
-two values: an **approval** carrying the payload to act on (which
-the human may have *edited* first) or a **decline** carrying an
-optional steering *reason* — a rejected `bash` can tell the model
-*why*, becoming its next observation. (`#confirm?` is the boolean
-shortcut over `#ask` for gates like `write` that need neither.)
+three values: an **approval** carrying the payload to act on (which
+the human may have *edited* first), a plain **rejection** — final,
+the model is told to stop rather than find another way — or a
+**redirect** carrying the words you typed ("use the other library"),
+which become the model's next observation and may lead it to propose
+something new, which asks you again. A rejection carries no text on
+purpose: to a model, any words after "declined" read as a hint to
+work around. (`#confirm?` is the boolean shortcut over `#ask` for a
+question whose answer the model never sees.)
 Two bundled implementations:
 
 - **`Pikuri::Workspace::Confirmer::Terminal`** — prompts on
   stdin/stdout, parsing `y` / `yes` (case-insensitive), `n` / `no`
-  or Ctrl+D as a decline, and `e` to *edit* when the request is
-  editable, re-asking on anything else. The default for
-  `pikuri-code` (construct one with `Terminal.new`) and what you
-  saw at the `(y/n)?` prompt.
+  or Ctrl+D as a rejection, `r` to type a redirect, and `e` to
+  *edit* when the request is editable, re-asking on anything else.
+  The default for `pikuri-code` (construct one with `Terminal.new`)
+  and what you saw at the `[y] approve  [n] reject  [r] redirect`
+  prompt.
 - **`Pikuri::Workspace::Confirmer::AUTO_APPROVE`** —
   yes-to-everything. Used by `--no-confirm` and `--yolo`, and by
   specs.

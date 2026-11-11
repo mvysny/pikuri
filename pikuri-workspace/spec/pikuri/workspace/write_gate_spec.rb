@@ -15,11 +15,9 @@ RSpec.describe Pikuri::Workspace::WriteGate do
     c
   end
 
-  def rejecting(reason)
+  def deciding(decision)
     c = Object.new
-    c.define_singleton_method(:ask) do |request:|
-      Pikuri::Workspace::Confirmer::Rejected.new(reason: reason)
-    end
+    c.define_singleton_method(:ask) { |request:| decision }
     c
   end
 
@@ -66,16 +64,19 @@ RSpec.describe Pikuri::Workspace::WriteGate do
                                        resolved: existing_target, question: 'OK?', change: change)
     end
 
-    it 'returns a declined observation carrying the reason' do
-      result = described_class.check(confirmer: rejecting('use vim'), path: 'a.txt',
-                                     resolved: existing_target, question: 'OK?', change: change)
-      assert_includes result, 'user declined the write to a.txt: use vim'
+    it 'answers a Rejected with a stop observation' do
+      result = described_class.check(confirmer: deciding(Pikuri::Workspace::Confirmer::Rejected.new),
+                                     path: 'a.txt', resolved: existing_target, question: 'OK?', change: change)
+      assert result.error?
+      assert_includes result.content, 'user declined the write to a.txt. Don\'t retry it'
     end
 
-    it 'declines without a reason cleanly' do
-      result = described_class.check(confirmer: rejecting(nil), path: 'a.txt',
+    it 'answers a Redirected by quoting the user, not as an error' do
+      decision = Pikuri::Workspace::Confirmer::Redirected.new(message: 'use vim')
+      result = described_class.check(confirmer: deciding(decision), path: 'a.txt',
                                      resolved: existing_target, question: 'OK?', change: change)
-      assert_equal 'Error: user declined the write to a.txt.', result
+      refute result.error?
+      assert_equal 'The user declined the write to a.txt and said: use vim', result.content
     end
 
     it 'short-circuits to permission-denied without consulting the confirmer' do
@@ -86,7 +87,7 @@ RSpec.describe Pikuri::Workspace::WriteGate do
       File.chmod(0o555, locked)
       result = described_class.check(confirmer: never_called, path: 'locked/x.txt',
                                      resolved: locked + 'x.txt', question: 'OK?', change: change)
-      assert_includes result, 'permission denied'
+      assert_includes result.content, 'permission denied'
     ensure
       File.chmod(0o755, locked) if locked&.exist?
     end

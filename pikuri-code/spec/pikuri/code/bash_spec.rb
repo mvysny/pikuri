@@ -18,8 +18,8 @@ RSpec.describe Pikuri::Code::Bash do
 
   # Inline confirmer double: records every request it sees, returns
   # successive elements of +answers+. Each answer is +true+ (→ Approved
-  # carrying the command unchanged), +false+ (→ Rejected with no reason),
-  # or an explicit Approved/Rejected value. Calling +ask+ when no
+  # carrying the command unchanged), +false+ (→ Rejected), or an explicit
+  # Approved/Rejected/Redirected value. Calling +ask+ when no
   # answer is queued raises — surfaces "test silently consumed a
   # confirmation" bugs rather than letting nil flow through as a decline.
   def build_confirmer(*answers)
@@ -32,7 +32,7 @@ RSpec.describe Pikuri::Code::Bash do
 
       case (answer = queue.shift)
       when true  then Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
-      when false then Pikuri::Workspace::Confirmer::Rejected.new(reason: nil)
+      when false then Pikuri::Workspace::Confirmer::Rejected.new
       else answer
       end
     end
@@ -130,17 +130,18 @@ RSpec.describe Pikuri::Code::Bash do
       result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command: 'rm -rf /', description: nil, timeout: 120).to_s
 
-      assert_equal 'Error: user declined the bash command.', result
+      assert_equal "Error: user declined the bash command. Don't retry it or reach the same end another way; tell the user you stopped.", result
       assert_equal 1, cf.requests.size
     end
 
-    it 'folds the human decline reason into the observation for steering' do
-      cf = build_confirmer(Pikuri::Workspace::Confirmer::Rejected.new(reason: 'too risky right now'))
+    it 'quotes a redirect back to the model, not as an error' do
+      cf = build_confirmer(Pikuri::Workspace::Confirmer::Redirected.new(message: 'too risky right now'))
 
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: 'rm -rf /', description: nil, timeout: 120).to_s
+                                   command: 'rm -rf /', description: nil, timeout: 120)
 
-      assert_equal 'Error: user declined the bash command. Reason: too risky right now', result
+      refute result.error?
+      assert_equal 'The user declined the bash command and said: too risky right now', result.content
     end
   end
 
@@ -167,7 +168,7 @@ RSpec.describe Pikuri::Code::Bash do
                                    passive_detector: approver_for('echo hi'),
                                    command: 'rm -rf /', description: nil, timeout: 120).to_s
 
-      assert_equal 'Error: user declined the bash command.', result
+      assert_equal "Error: user declined the bash command. Don't retry it or reach the same end another way; tell the user you stopped.", result
       assert_equal 1, cf.requests.size
     end
   end

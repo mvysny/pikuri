@@ -558,7 +558,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       Class.new do
         attr_reader :requests
 
-        # @param decision [#call] request -> Approved / Rejected
+        # @param decision [#call] request -> Approved / Rejected / Redirected
         def initialize(decision:)
           @decision = decision
           @requests = []
@@ -571,7 +571,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       end
     end
 
-    # Convenience builders for the two decision arms.
+    # Convenience builders for the decision arms.
     def approve_as_is
       ->(r) { Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: r.detail) }
     end
@@ -580,8 +580,12 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       ->(_r) { Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: text) }
     end
 
-    def reject_with(reason)
-      ->(_r) { Pikuri::Workspace::Confirmer::Rejected.new(reason: reason) }
+    def reject
+      ->(_r) { Pikuri::Workspace::Confirmer::Rejected.new }
+    end
+
+    def redirect_with(message)
+      ->(_r) { Pikuri::Workspace::Confirmer::Redirected.new(message: message) }
     end
 
     it 'confirms the task before dispatch, marking it editable and showing it as the detail' do
@@ -617,27 +621,28 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     end
 
     it 'returns a decline observation and spawns no sub-agent when rejected' do
-      confirmer = confirmer_class.new(decision: reject_with(nil))
+      confirmer = confirmer_class.new(decision: reject)
       tool = described_class.new(
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
 
       result = tool.run('name' => 'researcher', 'task' => 'look up X').to_s
 
-      assert_equal 'Error: user declined delegation to researcher.', result
+      assert_equal "Error: user declined delegation to researcher. Don't retry it or reach the " \
+                   'same end another way; tell the user you stopped.', result
       # Only the parent's chat exists; no sub-agent was spawned.
       assert_equal 1, @fake_chats.size
     end
 
-    it 'folds the human decline reason into the observation for steering' do
-      confirmer = confirmer_class.new(decision: reject_with('use the local docs, not the web'))
+    it 'quotes a redirect back to the parent and spawns no sub-agent' do
+      confirmer = confirmer_class.new(decision: redirect_with('use the local docs, not the web'))
       tool = described_class.new(
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
 
       result = tool.run('name' => 'researcher', 'task' => 'look up X').to_s
 
-      assert_equal 'Error: user declined delegation to researcher. Reason: use the local docs, not the web', result
+      assert_equal 'The user declined delegation to researcher and said: use the local docs, not the web', result
       assert_equal 1, @fake_chats.size
     end
 

@@ -104,7 +104,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
     it 'reprompts on unrecognized input and honors the next answer' do
       stdin_with("maybe\nblank\nyes\n")
       assert_equal true, described_class.new.confirm?(request: req)
-      assert_includes $stdout.string, 'Please answer y or n: '
+      assert_includes $stdout.string, 'Please answer y, n, or r: '
     end
 
     it 'reprompts on blank line, eventually returns false on EOF' do
@@ -115,19 +115,19 @@ RSpec.describe Pikuri::Workspace::Confirmer do
     it 'renders question, then cue, when there is no detail' do
       stdin_with("y\n")
       described_class.new.confirm?(request: req('OK to overwrite a.txt: 4 → 6 bytes?'))
-      assert_includes $stdout.string, "\nOK to overwrite a.txt: 4 → 6 bytes?\n(y/n)?\n"
+      assert_includes $stdout.string, "\nOK to overwrite a.txt: 4 → 6 bytes?\n[y] approve  [n] reject  [r] redirect\n"
     end
 
     it 'renders the detail on its own line between question and cue' do
       stdin_with("y\n")
       described_class.new.confirm?(request: req('OK to run bash', detail: '$ ls -la'))
-      assert_includes $stdout.string, "\nOK to run bash\n$ ls -la\n(y/n)?\n"
+      assert_includes $stdout.string, "\nOK to run bash\n$ ls -la\n[y] approve  [n] reject  [r] redirect\n"
     end
 
     it 'preserves newlines in a multi-line detail' do
       stdin_with("y\n")
       described_class.new.confirm?(request: req('OK to run bash', detail: "$ for x in 1 2; do\n  echo $x\ndone"))
-      assert_includes $stdout.string, "$ for x in 1 2; do\n  echo $x\ndone\n(y/n)?\n"
+      assert_includes $stdout.string, "$ for x in 1 2; do\n  echo $x\ndone\n[y] approve  [n] reject  [r] redirect\n"
     end
 
     it 'escapes control bytes in the detail so a \r cannot overwrite the echoed command' do
@@ -185,22 +185,28 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       end
     end
 
-    describe 'decline reason (steering)' do
-      it 'prompts for and returns a typed decline reason' do
-        stdin_with("n\nuse the local docs\n")
+    describe 'redirect (typed words)' do
+      it 'rejects at once on n, asking for no reason' do
+        stdin_with("n\nnot read\n")
+        assert_equal Pikuri::Workspace::Confirmer::Rejected.new, described_class.new.ask(request: req)
+        assert_equal "not read\n", $stdin.gets
+      end
+
+      it 'returns Redirected carrying the typed words on r' do
+        stdin_with("r\nuse the local docs\n")
         decision = described_class.new.ask(request: req)
-        assert_equal 'use the local docs', decision.reason
-        assert_includes $stdout.string, 'Reason (optional'
+        assert_equal Pikuri::Workspace::Confirmer::Redirected.new(message: 'use the local docs'), decision
+        assert_includes $stdout.string, 'Tell the agent'
       end
 
-      it 'returns a nil reason when left blank' do
-        stdin_with("n\n\n")
-        assert_nil described_class.new.ask(request: req).reason
+      it 'backs off to Rejected when the words are left blank' do
+        stdin_with("r\n  \n")
+        assert_equal Pikuri::Workspace::Confirmer::Rejected.new, described_class.new.ask(request: req)
       end
 
-      it 'returns a nil reason on EOF after the decline' do
-        stdin_with("n\n")
-        assert_nil described_class.new.ask(request: req).reason
+      it 'backs off to Rejected on EOF after r' do
+        stdin_with("r\n")
+        assert_equal Pikuri::Workspace::Confirmer::Rejected.new, described_class.new.ask(request: req)
       end
     end
 
@@ -208,7 +214,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       it 'offers the edit cue for an editable request' do
         stdin_with("y\n")
         described_class.new.ask(request: editable_req('research foo'))
-        assert_includes $stdout.string, '[y] approve  [e] edit  [n] reject'
+        assert_includes $stdout.string, '[y] approve  [e] edit  [n] reject  [r] redirect'
       end
 
       it 'approves as-is via [y], returning the original detail' do
@@ -242,16 +248,21 @@ RSpec.describe Pikuri::Workspace::Confirmer do
         end
         decision = term.ask(request: editable_req("bad\rtask"))
         assert_includes $stdout.string, 'retype required'
-        assert_includes $stdout.string, 'Please answer e or n: '
+        assert_includes $stdout.string, 'Please answer e, n, or r: '
         assert_equal 'retyped from scratch', decision.new_request_detail
         assert_equal false, captured_prefill, 'a flagged task refuses pre-fill'
       end
 
-      it 'rejects an editable task via [n], capturing the reason' do
-        stdin_with("n\nnot now\n")
+      it 'rejects an editable task via [n]' do
+        stdin_with("n\n")
         decision = described_class.new.ask(request: editable_req('research foo'))
-        assert_instance_of Pikuri::Workspace::Confirmer::Rejected, decision
-        assert_equal 'not now', decision.reason
+        assert_equal Pikuri::Workspace::Confirmer::Rejected.new, decision
+      end
+
+      it 'redirects an editable task via [r], even a flagged one' do
+        stdin_with("r\nnot now\n")
+        decision = described_class.new.ask(request: editable_req("bad\rtask"))
+        assert_equal Pikuri::Workspace::Confirmer::Redirected.new(message: 'not now'), decision
       end
     end
 

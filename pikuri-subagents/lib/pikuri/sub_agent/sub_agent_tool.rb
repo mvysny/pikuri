@@ -150,13 +150,11 @@ module Pikuri
                 detail: task,
                 editable: true
               )
-              case confirmer.ask(request: request)
+              case decision = confirmer.ask(request: request)
               in Pikuri::Workspace::Confirmer::Approved(new_request_detail:)
                 task = new_request_detail
-              in Pikuri::Workspace::Confirmer::Rejected(reason:)
-                msg = +"user declined delegation to #{name}."
-                msg << " Reason: #{reason}" if reason && !reason.empty?
-                return Pikuri::Tool::Result.error(msg)
+              in Pikuri::Workspace::Confirmer::Rejected | Pikuri::Workspace::Confirmer::Redirected
+                return decision.observation("delegation to #{name}")
               end
             end
 

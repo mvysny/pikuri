@@ -69,12 +69,13 @@ module Pikuri
 
       # @return [String] system-prompt guidance wired alongside the mutating
       #   tools: the confirmer may pause a write/edit (and a co-wired Bash)
-      #   for the user's OK, and a decline is final. Contributed as a snippet
+      #   for the user's OK; a plain decline is final, a decline with words is
+      #   guidance to follow. Contributed as a snippet
       #   so it tracks the wiring rather than each host prompt (the Os/Code
       #   precedent), and emitted unconditionally — an auto-approve ("yolo")
       #   confirmer is the rare exception, and the guidance is harmless there.
       PROMPT_SNIPPET = <<~SNIPPET.chomp
-        A tool may ask you to confirm before it makes a change. If the user declines, stop rather than trying another route to the same end — a decline means they want to re-steer you, so hand back and wait for their guidance.
+        A tool may ask the user to confirm before it makes a change. If they decline, stop: never reach the same end another way (a refused file write redone through a shell command, say) — tell them you stopped and wait for their guidance. If they decline and say something, follow what they said; a new proposal along those lines is fine, and they will be asked again.
       SNIPPET
 
       # @return [Integer] +depth+ the boot snapshot renders at. Deliberately

@@ -37,8 +37,7 @@ that approved task plus the public pages it read. This is a *separate*
 network boundary from the bash sandbox, which **stays kernel-severed
 regardless**. Off by default; the agent stays networkless until you pass
 the flag. See [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md)
-for the harder pieces still deferred (editable task prompts, a
-reject-reason channel).
+for the harder pieces still deferred.
 
 **Target platform:** Ubuntu 26.04 LTS or newer, GNOME desktop.
 

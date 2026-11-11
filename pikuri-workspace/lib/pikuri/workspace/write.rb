@@ -152,7 +152,7 @@ module Pikuri
             question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?",
             change: Confirmer::Change.new(path: path, old: existing, new: content.b)
           )
-          return Tool::Result.error(gate) if gate
+          return gate if gate
 
           write_bytes(resolved, content)
           workspace.mark_read(resolved)
@@ -168,7 +168,7 @@ module Pikuri
               question: "OK to create #{path} (#{content.bytesize} bytes)?",
               change: Confirmer::Change.new(path: path, old: nil, new: content.b)
             )
-            return Tool::Result.error(gate) if gate
+            return gate if gate
           end
 
           write_bytes(resolved, content)

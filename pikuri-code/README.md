@@ -56,7 +56,8 @@ can also pass an initial message on the command line:
 ```
 
 The first time the agent wants to write a file or run a shell
-command, it prompts you on the terminal (`(y/n)?`). Read what
+command, it prompts you on the terminal
+(`[y] approve  [n] reject  [r] redirect`). Read what
 it's about to do before you say yes. Two instruction files are
 prepended to the system prompt as context when present: your
 user-wide `~/.claude/AGENTS.md` first, then a project `AGENTS.md`

@@ -8,8 +8,8 @@ module Pikuri
     #
     # == The one job: resolve a {Request} to a decision
     #
-    # A Confirmer takes a semantic {Request} and returns {Approved} or
-    # {Rejected}. That is *all*: it carries **no tool policy** and never
+    # A Confirmer takes a semantic {Request} and returns {Approved},
+    # {Rejected} or {Redirected}. That is *all*: it carries **no tool policy** and never
     # classifies the request's *content* (no filesystem reads, no command
     # parsing, no notion of "passive"). Two shipped implementations:
     #
@@ -34,27 +34,41 @@ module Pikuri
     # falling through to this confirmer only for commands it can't pre-approve).
     # Keeping them apart lets one stateless chrome serve every tool.
     #
-    # == The return type: {Approved} / {Rejected}
+    # == The return type: {Approved} / {Rejected} / {Redirected}
     #
-    # {#ask} returns {Approved} (the possibly-edited {Request#detail} to act on)
-    # or {Rejected} (an optional decline reason); callers pattern-match:
+    # The human's gesture picks one of three; callers pattern-match, and a
+    # decline answers the model through the decision's own {Rejected#observation}
+    # / {Redirected#observation}:
     #
-    #   case confirmer.ask(request: request)
+    #   case decision = confirmer.ask(request: request)
     #   in Confirmer::Approved(new_request_detail:) then ...act on it...
-    #   in Confirmer::Rejected(reason:)             then ...steer with it...
+    #   in Confirmer::Rejected | Confirmer::Redirected
+    #     return decision.observation('the bash command')
     #   end
     #
-    # {#confirm?} is the derived boolean convenience for gates ({Write},
-    # {Pikuri::Code::ExitPlanMode}) needing neither the payload nor the reason.
-    # Two orthogonal axes ride the richer return:
+    # * {Approved} — approve, carrying the possibly-edited {Request#detail}.
+    # * {Rejected} — a plain "no": final for this action, the model stops.
+    # * {Redirected} — the human typed words ("make it Wednesday", "too
+    #   risky"): the model follows them, and may propose again — which asks again.
     #
-    # 1. *Editing* (opt-in via {Request#editable}) — when +detail+ is the
-    #    verbatim actionable payload (the +agent+ task, where +detail == task+),
-    #    a confirmer may let the human *rewrite* it — "human as author, not
-    #    approver". Bash's +"$ <command>"+ is a decorated display string, so it
-    #    stays non-editable.
-    # 2. *Reason* (universal) — any decline can carry typed steering ("use the
-    #    other library") back to the model as the next observation.
+    # Editing is opt-in via {Request#editable}: when +detail+ is the verbatim
+    # actionable payload (the +agent+ task), a confirmer may let the human
+    # *rewrite* it — "human as author, not approver". Bash's +"$ <command>"+ is
+    # a decorated display string, so it stays non-editable.
+    #
+    # {#confirm?} is the boolean convenience for a gate that has nothing to tell
+    # the model — it reads a {Redirected} as a plain no and drops the words.
+    #
+    # == Cancelling a parked ask
+    #
+    # A host whose cancel key (Escape, Ctrl+C) can fire while {#ask} waits
+    # should call +cancel!+ on the turn's {Pikuri::Agent::Control::Cancellable}
+    # and make the parked {#ask} raise
+    # {Pikuri::Agent::Control::Cancellable::Cancelled}: the tool lets it
+    # through, the agent ends the turn, and the stranded call is answered
+    # +[Cancelled by the user]+ — the same path a cancelled
+    # {Pikuri::Agent::Control::Cancellable#sleep} takes. Answering {Rejected}
+    # instead is not a cancel: the turn runs on for one more model reply.
     #
     # A +:once+/+:always+ scope knob was *rejected*: it manages decision
     # *fatigue*, a distinct axis, and the long-term answer to fatigue is making
@@ -111,21 +125,56 @@ module Pikuri
       # edited) {Request#detail} when editable, else +detail+ verbatim.
       Approved = Data.define(:new_request_detail)
 
-      # A decline carrying the human's optional steering reason (+nil+ if none),
-      # which the tool folds into the observation handed back to the model.
-      Rejected = Data.define(:reason)
+      # A plain "no", final for this action. It carries no text on purpose:
+      # the model sees only the observation, and any words after "declined"
+      # read as a hint to work around — every typed word is a {Redirected}.
+      # See +D_bare_rejected+.
+      Rejected = Data.define do
+        # The tool's answer to the model, telling it to stop:
+        #
+        #   Rejected.new.observation('the write to a.txt').content
+        #   # => "Error: user declined the write to a.txt. Don't retry it or reach the
+        #   #    same end another way; tell the user you stopped."
+        #
+        # @param action [String] what was declined, as a noun phrase
+        # @return [Pikuri::Tool::Result] an error result
+        def observation(action)
+          Pikuri::Tool::Result.error("user declined #{action}. Don't retry it or reach " \
+                                     'the same end another way; tell the user you stopped.')
+        end
+      end
+
+      # A decline carrying the words the human typed — a different way, or why
+      # not. The model follows them, and may propose again.
+      Redirected = Data.define(:message) do
+        # The tool's answer to the model, quoting the human — deliberately not
+        # an error, which would read as a failure to recover from:
+        #
+        #   Redirected.new(message: 'use vim').observation('the write to a.txt').content
+        #   # => "The user declined the write to a.txt and said: use vim"
+        #
+        # @param action [String] what was declined, as a noun phrase
+        # @return [Pikuri::Tool::Result]
+        def observation(action)
+          Pikuri::Tool::Result.new(content: "The user declined #{action} and said: #{message}",
+                                   summary: 'Redirected by the user')
+        end
+      end
 
       # @param request [Request] semantic content composed by the calling
       #   tool. The confirmer renders it (escaping for its medium), poses
       #   the question, and parses the answer.
-      # @return [Approved, Rejected]
+      # @return [Approved, Rejected, Redirected]
       # @raise [NotImplementedError] in the abstract base
+      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] when the host
+      #   cancels the turn while the question waits — see "Cancelling a parked
+      #   ask" above
       def ask(request:)
         raise NotImplementedError, "#{self.class}#ask must be implemented"
       end
 
-      # Boolean convenience over {#ask} for gates needing neither the edited
-      # payload nor the reason.
+      # Boolean convenience over {#ask}, for a question whose answer goes
+      # nowhere near the model (a {Redirected}'s words are dropped).
       #
       # @param request [Request]
       # @return [Boolean] +true+ iff approved

@@ -20,6 +20,36 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_bare_rejected — Why does a declined confirmation carry no reason, with every typed word a separate `Redirected`?
+
+**Context.** `Confirmer::Rejected(reason:)` meant both "no, stop" and "do it differently", and the
+prompt snippet called every decline final, so "no, make it Wednesday" got a stop instead of a new
+proposal (issue #12). A GUI knows which one the user meant from the gesture — a Cancel button versus
+text typed into the entry.
+
+**Decision.** Three outcomes: `Approved`, a textless `Rejected` ("stop; don't reach the same end
+another way") and `Redirected(message:)` ("the user declined and said: …", not an error, a new
+proposal welcome). The type carries one bit — is a retry welcome — and each decision words its own
+observation, so the tools agree. Cancelling a parked `#ask` is the host raising
+`Cancellable::Cancelled` from it, which already ends the turn and repairs the stranded call.
+
+**Alternatives rejected.**
+
+- **Keep an optional reason on `Rejected`.** The model never sees the type, only the observation,
+  and words after "declined" read as a hint to work around — "too risky" earns a less risky retry,
+  the very conflation being removed; a small local model follows a bare stop best. The *why* loses
+  nothing: the user's next message carries it with the next step attached. A reason scoping the no
+  ("don't touch generated files") is steering, so a `Redirected`. In a sub-agent tree a child's
+  reason reaches the parent only as reply text, inviting it to re-delegate around the decline.
+- **Hand `#ask` the turn's `Cancellable`.** Every confirming tool would go `wants_context: true`, to
+  serve a cancel source that isn't the confirmer's owner — a SIGINT trap, i.e. `Terminal`, whose
+  `gets` no flag interrupts (`D_tool_cancellation`).
+
+**Consequences.** `Confirmer::Terminal` asks `[y] approve  [n] reject  [r] redirect`; `n` no longer
+prompts for a reason. `ExitPlanMode` moved off `#confirm?`, which had dropped a typed reason.
+
+---
+
 ## D_refuse_unsupported_attachments — Why does pikuri refuse an image a text-only model can't see, rather than let the server's error speak?
 
 **Context.** Measured against llama.cpp `b10438` in router mode (2026-11-04): a model launched
@@ -910,10 +940,10 @@ never the bytes. No tool sees this.
   an unwrapped attachment `Array`.
 - ~120 `"Error: ..."` returns became `Result.error(...)`, and the `Error: `
   prefix now lives in one place. Refusal *composers* that build message text
-  for a caller to return (`WriteGate.check`, `Search::Utils
-  .oversized_root_refusal`, `Read.directory_refusal`, `GitClone#parse_url`)
-  stay as they are — the entry point wraps them, and `Result.error` does not
-  double an existing prefix.
+  for a caller to return (`Search::Utils.oversized_root_refusal`,
+  `Read.directory_refusal`, `GitClone#parse_url`) stay as they are — the
+  entry point wraps them, and `Result.error` does not double an existing
+  prefix.
 - A tool returning something that is neither a String nor a `Result` now
   raises from `Result#initialize` instead of being silently `to_s`'d by
   ruby_llm. That is the loud-errors rule, and it can only fire on
