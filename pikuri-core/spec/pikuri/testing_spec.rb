@@ -104,27 +104,31 @@ RSpec.describe Pikuri::Testing do
     agent&.close
   end
 
-  it 'streams a tool batch, its arguments in fragments, to a streaming agent' do
-    listener = capture_class.new
-    transport = Pikuri::Testing.fake_transport do |llm|
-      llm.stream_tool_batch(['calculator', { expression: '2 + 2' }], ['calculator', { expression: '3 * 3' }])
-      llm.stream('4 and 9.')
-    end
-    agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', streaming: true) do |c|
-      c.add_listener listener
-      c.add_tool Pikuri::Tool::CALCULATOR
-    end
+  [false, true].each do |streaming|
+    it "drives a tool batch with one script, whether the agent streams or not (streaming: #{streaming})" do
+      listener = capture_class.new
+      transport = Pikuri::Testing.fake_transport do |llm|
+        llm.tool_batch(['calculator', { expression: '2 + 2' }], ['calculator', { expression: '3 * 3' }])
+        llm.reply('4 and 9.')
+      end
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', streaming: streaming) do |c|
+        c.add_listener listener
+        c.add_tool Pikuri::Tool::CALCULATOR
+      end
 
-    agent.run_loop(user_message: 'What are 2 + 2 and 3 * 3?')
+      agent.run_loop(user_message: 'What are 2 + 2 and 3 * 3?')
 
-    calls = listener.events.grep(Pikuri::Agent::Event::ToolCall)
-    results = listener.events.grep(Pikuri::Agent::Event::ToolResult)
-    assert_equal [{ 'expression' => '2 + 2' }, { 'expression' => '3 * 3' }], calls.map(&:arguments)
-    assert_equal %w[call_1 call_2], calls.map(&:tool_call_id)
-    assert_equal %w[4 9], results.map { |r| r.content.to_s }
-    assert_equal '4 and 9.', listener.events.grep(Pikuri::Agent::Event::Assistant).last.content
-  ensure
-    agent&.close
+      calls = listener.events.grep(Pikuri::Agent::Event::ToolCall)
+      results = listener.events.grep(Pikuri::Agent::Event::ToolResult)
+      assert_equal [{ 'expression' => '2 + 2' }, { 'expression' => '3 * 3' }], calls.map(&:arguments)
+      assert_equal %w[call_1 call_2], calls.map(&:tool_call_id)
+      assert_equal %w[4 9], results.map { |r| r.content.to_s }
+      assert_equal '4 and 9.', listener.events.grep(Pikuri::Agent::Event::Assistant).last.content
+      assert_equal(streaming ? ['4 and 9.'] : [],
+                   listener.events.grep(Pikuri::Agent::Event::AssistantDelta).map(&:content))
+    ensure
+      agent&.close
+    end
   end
 
   it 'keeps the adapter per-context: the global RubyLLM config is untouched' do

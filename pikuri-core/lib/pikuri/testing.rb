@@ -44,11 +44,17 @@ module Pikuri
   # they *share* that one list — fine for a single linear script, not for
   # targeting a specific sub-agent's replies. Per-sub-agent scripting is a
   # future upgrade (dispatch by model id / distinct fake +api_base+).
-  # A +streaming: true+ agent asks every completion as SSE, so its script uses
-  # the streamed verbs only: {Script#stream} for text and
-  # {Script#stream_tool_call} for a tool call. Only the LLM is faked: MCP servers are
-  # not, so a fake-backed spec leaves the MCP registry empty, or an agent
-  # wiring +Pikuri::Mcp+ spawns the real servers it configures.
+  # Only the LLM is faked: MCP servers are not, so a fake-backed spec leaves
+  # the MCP registry empty, or an agent wiring +Pikuri::Mcp+ spawns the real
+  # servers it configures.
+  #
+  # == Streaming
+  #
+  # One script drives a plain agent and a +streaming: true+ one alike: each
+  # verb queues a {Completion}, rendered only when served — a JSON body to a
+  # plain request, SSE chunks to a streamed one (a tool call's arguments in
+  # fragments, as a server sends them). {Script#stream} only adds the choice of
+  # where the text splits.
   module Testing
     # Build a fake transport from a scripted conversation. Pass a block that
     # calls {Script} verbs in the order the model should "reply"; each verb
@@ -109,8 +115,7 @@ module Pikuri
     # across the several requests of one conversation regardless of how Faraday
     # reuses adapter instances.
     #
-    # @param responses [Array<Hash>] entries shaped +{json: Hash}+ (non-stream)
-    #   or +{sse: Array<String>}+ (stream), as {Script} produces
+    # @param responses [Array<Completion>] as {Script} queues them
     # @param gate [Gate, nil] awaited before each response when non-nil
     # @return [Class] a +Faraday::Adapter+ subclass
     def self.build_adapter(responses, gate = nil)
@@ -122,7 +127,7 @@ module Pikuri
         define_method(:call) do |env|
           super(env) # base builds env.response; skipping it → "finish for nil"
           gate&.await # park here while the test holds the turn open
-          entry = queue.shift or raise "Pikuri::Testing: no scripted response left for #{env.url}"
+          completion = queue.shift or raise "Pikuri::Testing: no scripted response left for #{env.url}"
 
           if env.request.stream_response? # ruby_llm set req.options.on_data
             # v2 on_data routes to the chunk handler only at status 200; set it
@@ -131,13 +136,13 @@ module Pikuri
             env.status = 200
             on_data = env.request.on_data
             size = 0
-            entry.fetch(:sse).each do |chunk|
+            completion.to_sse.each do |chunk|
               size += chunk.bytesize
               on_data.call(chunk, size, env)
             end
             save_response(env, 200, '', { 'Content-Type' => 'text/event-stream' }, nil)
           else
-            save_response(env, 200, JSON.generate(entry.fetch(:json)),
+            save_response(env, 200, JSON.generate(completion.to_json_body),
                           { 'Content-Type' => 'application/json' }, nil)
           end
           @app.call(env)
@@ -145,17 +150,17 @@ module Pikuri
       end
     end
 
-    # Collects the scripted conversation: each verb appends one OpenAI-wire
-    # response body to {#responses}, in call order. You don't build these
-    # directly — {Testing.fake_transport} yields one to your block.
+    # Collects the scripted conversation: each verb queues one {Completion} on
+    # {#responses}, in call order. You don't build these directly —
+    # {Testing.fake_transport} yields one to your block.
     #
     #   fake_transport do |llm|
     #     llm.reply('hi')                                  # plain answer
     #     llm.tool_call('calculator', expression: '2+2')   # a tool turn
-    #     llm.stream('The ', 'answer ', 'is ', '4.')       # a streamed answer
+    #     llm.stream('The ', 'answer ', 'is ', '4.')       # an answer in chosen deltas
     #   end
     class Script
-      # @return [Array<Hash>] queued response entries in call order
+      # @return [Array<Completion>] queued completions in call order
       attr_reader :responses
 
       def initialize
@@ -164,13 +169,12 @@ module Pikuri
       end
 
       # Queue a plain assistant-text turn (the model's final answer for that
-      # step).
+      # step). A streaming agent gets it as a single delta.
       #
       # @param text [String] the assistant message content
       # @return [self]
       def reply(text)
-        @responses << { json: assistant_body(content: text) }
-        self
+        stream(text)
       end
 
       # Queue an assistant turn that calls one tool. The real ruby_llm loop
@@ -202,20 +206,18 @@ module Pikuri
       #   the order the model asked for them
       # @return [self]
       def tool_batch(*calls)
-        wire = calls.map do |name, arguments|
+        tool_calls = calls.map do |name, arguments|
           @tool_call_seq += 1
-          { 'id' => "call_#{@tool_call_seq}", 'type' => 'function',
-            'function' => { 'name' => name, 'arguments' => JSON.generate(arguments || {}) } }
+          Completion::ToolCall.new(id: "call_#{@tool_call_seq}", name: name,
+                                   arguments: JSON.generate(arguments || {}))
         end
-        @responses << { json: assistant_body(content: nil, tool_calls: wire) }
+        @responses << Completion.new(deltas: [], tool_calls: tool_calls)
         self
       end
 
-      # Queue a *streamed* assistant-text turn: each +delta+ becomes one SSE
-      # chunk, so a +streaming: true+ agent emits a matching sequence of
-      # {Agent::Event::AssistantDelta}s and a final assembled
-      # {Agent::Event::Assistant}. Text only; {#stream_tool_call} streams a
-      # tool call.
+      # {#reply} with the text split where you choose: a +streaming: true+
+      # agent emits one {Agent::Event::AssistantDelta} per +delta+, then the
+      # assembled {Agent::Event::Assistant}. A plain agent gets them joined.
       #
       # @example
       #   llm.stream('The ', 'answer ', 'is ', '4.')
@@ -223,49 +225,57 @@ module Pikuri
       # @param deltas [Array<String>] content fragments, streamed in order
       # @return [self]
       def stream(*deltas)
-        chunks = deltas.map { |d| sse_data('choices' => [{ 'delta' => { 'content' => d } }]) }
-        chunks << sse_data('choices' => [{ 'delta' => {} }], 'usage' => usage)
-        chunks << "data: [DONE]\n\n"
-        @responses << { sse: chunks }
+        @responses << Completion.new(deltas: deltas, tool_calls: [])
         self
       end
+    end
 
-      # {#tool_call} for a +streaming: true+ agent, which asks every
-      # completion as SSE:
-      #
-      #   llm.stream_tool_call('calculator', expression: '2 + 2')
-      #   llm.stream('The answer is 4.')
-      #
-      # @param name [String] registered tool name
-      # @param arguments [Hash{Symbol => Object}] tool arguments
-      # @return [self]
-      def stream_tool_call(name, **arguments)
-        stream_tool_batch([name, arguments])
-      end
+    # One scripted assistant turn, rendered to the wire as whichever shape the
+    # request asked for.
+    #
+    #   c = Completion.new(deltas: ['The ', 'answer.'], tool_calls: [])
+    #   c.to_json_body   # => {"choices" => [{"message" => {"content" => "The answer.", ...}}], ...}
+    #   c.to_sse         # => ["data: {...\"content\":\"The \"...}\n\n", ..., "data: [DONE]\n\n"]
+    #
+    # Immutable.
+    Completion = Data.define(:deltas, :tool_calls) do
+      # @!attribute [r] deltas
+      #   @return [Array<String>] the text, in the fragments it streams as;
+      #     empty for a tool-only turn
+      # @!attribute [r] tool_calls
+      #   @return [Array<Completion::ToolCall>] in the order the model asked
 
-      # {#tool_batch} for a +streaming: true+ agent, shaped as a server sends
-      # it: each call's +id+ and +name+ in its first fragment, its JSON
-      # arguments in two more keyed only by +index+, which ruby_llm's own
-      # accumulator joins back together.
-      #
-      # @param calls [Array<Array(String, Hash)>] +[name, arguments]+ pairs, in
-      #   the order the model asked for them
-      # @return [self]
-      def stream_tool_batch(*calls)
-        fragments = calls.each_with_index.flat_map do |(name, arguments), index|
-          @tool_call_seq += 1
-          json = JSON.generate(arguments || {})
-          half = json.length / 2
-          [{ 'index' => index, 'id' => "call_#{@tool_call_seq}", 'type' => 'function',
-             'function' => { 'name' => name, 'arguments' => '' } },
-           { 'index' => index, 'function' => { 'arguments' => json[0...half] } },
-           { 'index' => index, 'function' => { 'arguments' => json[half..] } }]
+      # @return [Hash{String => Object}] the OpenAI chat-completion body
+      def to_json_body
+        message = { 'role' => 'assistant', 'content' => deltas.empty? ? nil : deltas.join }
+        unless tool_calls.empty?
+          message['tool_calls'] = tool_calls.map do |call|
+            { 'id' => call.id, 'type' => 'function',
+              'function' => { 'name' => call.name, 'arguments' => call.arguments } }
+          end
         end
-        chunks = fragments.map { |call| sse_data('choices' => [{ 'delta' => { 'tool_calls' => [call] } }]) }
-        chunks << sse_data('choices' => [{ 'delta' => {}, 'finish_reason' => 'tool_calls' }], 'usage' => usage)
-        chunks << "data: [DONE]\n\n"
-        @responses << { sse: chunks }
-        self
+        { 'model' => 'fake', 'choices' => [{ 'message' => message }], 'usage' => usage }
+      end
+
+      # The SSE events a server streams. Each tool call goes out the way a
+      # server sends it: +id+ and +name+ first, then its JSON arguments in two
+      # fragments keyed only by +index+, which ruby_llm's own accumulator
+      # joins back together.
+      #
+      # @return [Array<String>] one +data:+ event per element, +[DONE]+ last
+      def to_sse
+        text = deltas.map { |d| { 'content' => d } }
+        calls = tool_calls.each_with_index.flat_map do |call, index|
+          half = call.arguments.length / 2
+          [{ 'index' => index, 'id' => call.id, 'type' => 'function',
+             'function' => { 'name' => call.name, 'arguments' => '' } },
+           { 'index' => index, 'function' => { 'arguments' => call.arguments[0...half] } },
+           { 'index' => index, 'function' => { 'arguments' => call.arguments[half..] } }]
+        end.map { |fragment| { 'tool_calls' => [fragment] } }
+        last = { 'delta' => {} }
+        last['finish_reason'] = 'tool_calls' unless tool_calls.empty?
+        (text + calls).map { |delta| sse_data('choices' => [{ 'delta' => delta }]) } +
+          [sse_data('choices' => [last], 'usage' => usage), "data: [DONE]\n\n"]
       end
 
       private
@@ -276,18 +286,6 @@ module Pikuri
         "data: #{JSON.generate({ 'model' => 'fake' }.merge(body))}\n\n"
       end
 
-      # One OpenAI chat-completion body: an assistant message, optionally with
-      # +tool_calls+.
-      #
-      # @param content [String, nil]
-      # @param tool_calls [Array<Hash>, nil]
-      # @return [Hash]
-      def assistant_body(content:, tool_calls: nil)
-        message = { 'role' => 'assistant', 'content' => content }
-        message['tool_calls'] = tool_calls if tool_calls
-        { 'model' => 'fake', 'choices' => [{ 'message' => message }], 'usage' => usage }
-      end
-
       # Nominal token counts so a {Agent::Event::Tokens} still fires.
       #
       # @return [Hash{String => Integer}]
@@ -295,6 +293,16 @@ module Pikuri
         { 'prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15 }
       end
     end
+
+    # One tool call of a {Completion}.
+    #
+    # @!attribute [r] id
+    #   @return [String] e.g. +"call_1"+, numbered across the whole script
+    # @!attribute [r] name
+    #   @return [String] the registered tool name
+    # @!attribute [r] arguments
+    #   @return [String] the arguments, already JSON-encoded
+    Completion::ToolCall = Data.define(:id, :name, :arguments)
 
     # A latch that holds a fake turn open mid-flight. Pass one to
     # {Testing.fake_transport}; the adapter parks (inside the HTTP call, on the
