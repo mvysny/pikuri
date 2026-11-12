@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Add `Pikuri::Testing::Script#stream_tool_call` and `#stream_tool_batch`, the tool-call verbs for a `streaming: true` agent: each call streamed in fragments, as a server sends it, so a spec can drive a real tool through a streaming agent.
+
 - Add `Pikuri::Tool::WEB_READ_CACHED` and `WebSearch.build(page_text: true)`: Brave (via LLM Context) and Exa bring back each result's page text from their own index in the same request, `web_search` prints a handle beside each readable row, and `web_read_cached` returns that text by handle without any network request — a search-only agent whose one egress leg stays the vouched search.
 - **Breaking:** `web_search`'s query caches now hold result rows as JSON, not rendered Markdown, and its summary counts rows. Clear `~/.cache/pikuri/url_cache/web_search/` once, or wait 2 h for old entries to expire.
 - **Breaking:** `Pikuri::UrlCache` is now a namespace holding `UrlCache::OnDisk` (the old class, plus `read` / `write`) and the new `UrlCache::InMemory`, and `web_search` keeps Brave and Exa results in memory only — their API terms forbid storing them — via each provider's `disk_cacheable?`. Replace `UrlCache.new` with `UrlCache::OnDisk.new`, and `Engines.new(cache:)` with `disk_cache:` / `memory_cache:`.

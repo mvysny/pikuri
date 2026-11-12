@@ -44,8 +44,9 @@ module Pikuri
   # they *share* that one list — fine for a single linear script, not for
   # targeting a specific sub-agent's replies. Per-sub-agent scripting is a
   # future upgrade (dispatch by model id / distinct fake +api_base+).
-  # Tool-call *streaming* (fragmented +tool_calls+ deltas) is not modelled;
-  # {Script#stream} streams text only. Only the LLM is faked: MCP servers are
+  # A +streaming: true+ agent asks every completion as SSE, so its script uses
+  # the streamed verbs only: {Script#stream} for text and
+  # {Script#stream_tool_call} for a tool call. Only the LLM is faked: MCP servers are
   # not, so a fake-backed spec leaves the MCP registry empty, or an agent
   # wiring +Pikuri::Mcp+ spawns the real servers it configures.
   module Testing
@@ -213,8 +214,8 @@ module Pikuri
       # Queue a *streamed* assistant-text turn: each +delta+ becomes one SSE
       # chunk, so a +streaming: true+ agent emits a matching sequence of
       # {Agent::Event::AssistantDelta}s and a final assembled
-      # {Agent::Event::Assistant}. Text only — tool-call streaming is not
-      # modelled.
+      # {Agent::Event::Assistant}. Text only; {#stream_tool_call} streams a
+      # tool call.
       #
       # @example
       #   llm.stream('The ', 'answer ', 'is ', '4.')
@@ -222,17 +223,58 @@ module Pikuri
       # @param deltas [Array<String>] content fragments, streamed in order
       # @return [self]
       def stream(*deltas)
-        chunks = deltas.map do |d|
-          "data: #{JSON.generate('model' => 'fake', 'choices' => [{ 'delta' => { 'content' => d } }])}\n\n"
+        chunks = deltas.map { |d| sse_data('choices' => [{ 'delta' => { 'content' => d } }]) }
+        chunks << sse_data('choices' => [{ 'delta' => {} }], 'usage' => usage)
+        chunks << "data: [DONE]\n\n"
+        @responses << { sse: chunks }
+        self
+      end
+
+      # {#tool_call} for a +streaming: true+ agent, which asks every
+      # completion as SSE:
+      #
+      #   llm.stream_tool_call('calculator', expression: '2 + 2')
+      #   llm.stream('The answer is 4.')
+      #
+      # @param name [String] registered tool name
+      # @param arguments [Hash{Symbol => Object}] tool arguments
+      # @return [self]
+      def stream_tool_call(name, **arguments)
+        stream_tool_batch([name, arguments])
+      end
+
+      # {#tool_batch} for a +streaming: true+ agent, shaped as a server sends
+      # it: each call's +id+ and +name+ in its first fragment, its JSON
+      # arguments in two more keyed only by +index+, which ruby_llm's own
+      # accumulator joins back together.
+      #
+      # @param calls [Array<Array(String, Hash)>] +[name, arguments]+ pairs, in
+      #   the order the model asked for them
+      # @return [self]
+      def stream_tool_batch(*calls)
+        fragments = calls.each_with_index.flat_map do |(name, arguments), index|
+          @tool_call_seq += 1
+          json = JSON.generate(arguments || {})
+          half = json.length / 2
+          [{ 'index' => index, 'id' => "call_#{@tool_call_seq}", 'type' => 'function',
+             'function' => { 'name' => name, 'arguments' => '' } },
+           { 'index' => index, 'function' => { 'arguments' => json[0...half] } },
+           { 'index' => index, 'function' => { 'arguments' => json[half..] } }]
         end
-        chunks << "data: #{JSON.generate('model' => 'fake', 'choices' => [{ 'delta' => {} }],
-                                          'usage' => usage)}\n\n"
+        chunks = fragments.map { |call| sse_data('choices' => [{ 'delta' => { 'tool_calls' => [call] } }]) }
+        chunks << sse_data('choices' => [{ 'delta' => {}, 'finish_reason' => 'tool_calls' }], 'usage' => usage)
         chunks << "data: [DONE]\n\n"
         @responses << { sse: chunks }
         self
       end
 
       private
+
+      # @param body [Hash{String => Object}] one streamed chunk, less its +model+
+      # @return [String] its SSE event
+      def sse_data(body)
+        "data: #{JSON.generate({ 'model' => 'fake' }.merge(body))}\n\n"
+      end
 
       # One OpenAI chat-completion body: an assistant message, optionally with
       # +tool_calls+.
