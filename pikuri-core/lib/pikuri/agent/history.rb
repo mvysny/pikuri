@@ -166,12 +166,15 @@ module Pikuri
           new(
             id: id, role: msg.role.to_s, kind: kind, content: msg.content.to_s, attachments: attachments,
             summary: summary,
+            # The server's call ids, not the ones ruby_llm mints per chat: a
+            # restored call replays its +id+ on the wire, and anything else
+            # would change the request bytes. See +D_history_wire_call_ids+.
             tool_calls: (msg.tool_calls || {}).values.map do |c|
-              lines = tool_call_lines[c.id] || {}
-              ToolCall.new(id: c.id, name: c.name, arguments: c.arguments || {},
+              lines = tool_call_lines[c.provider_call_id] || {}
+              ToolCall.new(id: c.provider_call_id, name: c.name, arguments: c.arguments || {},
                            display_name: lines[:display_name], argument: lines[:argument])
             end,
-            tool_call_id: msg.tool_call_id,
+            tool_call_id: msg.provider_call_id,
             model_id: msg.model,
             thinking: msg.thinking && Thinking.new(text: msg.thinking.text, signature: msg.thinking.signature),
             # ruby_llm gives every message a Tokens, all-nil where nothing was

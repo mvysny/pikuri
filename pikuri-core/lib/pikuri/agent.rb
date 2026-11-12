@@ -729,10 +729,13 @@ module Pikuri
         tool = pikuri_tool_for(tc.name)
         display_name = tool ? tool.display_name : Tool.display_name_for(tc.name)
         argument = tool ? tool.describe_call(tc.arguments) : Tool.describe_arguments(tc.arguments)
-        @pending_tool_call = { tool_call_id: tc.id, name: tc.name, summary: nil }
-        record_tool_call_lines(tc.id, display_name: display_name, argument: argument)
+        # Everything that leaves the agent names a call by the server's id,
+        # the one {History} stores (+D_history_wire_call_ids+).
+        call_id = tc.provider_call_id
+        @pending_tool_call = { tool_call_id: call_id, name: tc.name, summary: nil }
+        record_tool_call_lines(call_id, display_name: display_name, argument: argument)
         @listeners.emit(Event::ToolCall.new(
-                          tool_call_id: tc.id, name: tc.name, arguments: tc.arguments,
+                          tool_call_id: call_id, name: tc.name, arguments: tc.arguments,
                           display_name: display_name, argument: argument
                         ))
         @cancellable&.check!
@@ -1107,7 +1110,9 @@ module Pikuri
     # @param argument [String] see {Pikuri::Tool#describe_call}.
     # @return [void]
     def record_tool_call_lines(call_id, display_name:, argument:)
-      opener = @chat.messages.reverse.find { |m| m.role == :assistant && m.tool_calls&.key?(call_id) }
+      opener = @chat.messages.reverse.find do |m|
+        m.role == :assistant && m.tool_calls&.each_value&.any? { |c| c.provider_call_id == call_id }
+      end
       meta = opener && @message_meta[opener]
       return unless meta
 
@@ -1227,15 +1232,17 @@ module Pikuri
 
       if cause.nil?
         raise 'unanswered tool calls on a turn that did not unwind: ' \
-              "#{dangling.map { |c| "#{c.name}(#{c.id})" }.join(', ')}"
+              "#{dangling.map { |c| "#{c.name}(#{c.provider_call_id})" }.join(', ')}"
       end
 
       culprit, skipped = unanswered_results(cause)
       dangling.each_with_index do |call, i|
         content = i.zero? ? culprit : skipped
+        # +call.id+ is ruby_llm's own; it maps the answer back to the server's
+        # id on the wire. The event names the server's, like every other one.
         track_message(@chat.add_message(role: :tool, content: content, tool_call_id: call.id),
                       summary: INTERRUPTED_SUMMARY)
-        @listeners.emit(Event::ToolResult.new(tool_call_id: call.id, name: call.name,
+        @listeners.emit(Event::ToolResult.new(tool_call_id: call.provider_call_id, name: call.name,
                                              content: content, summary: INTERRUPTED_SUMMARY))
       end
       LOGGER.warn { "answered #{dangling.size} dangling tool call(s) after #{cause.class}" }

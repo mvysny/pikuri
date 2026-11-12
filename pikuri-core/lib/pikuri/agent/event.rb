@@ -101,7 +101,8 @@ module Pikuri
       # bytes go to the model only.
       #
       # +tool_call_id+ pairs this with its {ToolCall} by key, so a renderer
-      # needs no assumption about call→result ordering.
+      # needs no assumption about call→result ordering. Both carry the
+      # server's id, the one {History} stores.
       #
       # Emitted by +after_tool_result+, and by {Agent#run_loop}'s
       # dangling-call repair (summary +"Interrupted"+).

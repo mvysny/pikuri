@@ -2812,6 +2812,29 @@ it — but pikuri pins `:openai` to Chat Completions (`Agent#build_context`).
 Unpin it and ids stop being purely local; this decision then needs
 revisiting.
 
+## D_history_wire_call_ids — Why does History store the server's tool-call id, not ruby_llm's?
+
+**Context.** ruby_llm 2.2 gives every tool call two ids: `ToolCall#id`, a UUID it mints per chat,
+and `provider_call_id`, the one the server sent (`call_1`). The wire always carries the server's.
+A call restored as `ToolCall.new(id:)` has no separate provider id, so it replays its `id`.
+
+**Decision.** Everything that leaves the agent names a call by the server's id: `History`'s
+`ToolCall#id` and `tool_call_id`, `Event::ToolCall` / `Event::ToolResult`, and the per-call
+display strings in `@message_meta`. A reloaded conversation then sends byte-identical requests,
+which keeps llama.cpp's prompt-cache prefix, and a host's event log and its saved history agree on
+every id. Inside the chat, pikuri compares `tool_call_id` with `ToolCall#id` as ruby_llm does,
+and an answer pikuri appends carries ruby_llm's id, which ruby_llm maps back to the server's.
+
+**Alternatives rejected.**
+
+- **Storing ruby_llm's UUID.** A reload replays the UUID where the live chat sent `call_1`, so
+  every resumed turn misses the prompt cache, and the event log names ids the history never saw.
+- **Storing both ids.** A second field in the format, and nothing outside the chat that minted
+  the UUID ever reads it.
+
+**Consequences.** A server that reuses a call id across turns (`call_0` every time) produces a
+history `History.from_h` refuses as answering one call twice, the same as before 2.2.
+
 ## D_history_load_repairs — Why repair a loaded conversation on the way in rather than on the way out?
 
 **Context.** A stored conversation can describe something a provider will
