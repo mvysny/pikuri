@@ -98,6 +98,8 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
 - **Handles only, never a URL.** `web_read_cached` answers from the page store, so a URL would
   mean a fetch — the `D_no_result_scraper` channel, or with a URL argument the whole secret.
   Same for following a link inside a cached page.
+- **Under revision — `in-memory-url-cache.md`** moves the page store and every Brave/Exa result
+  into process memory; the disk, secret-file, resume and reaper bullets below change with it.
 - **The page store is on disk, keyed by handle — no in-memory registry.** One JSON file per
   page, `<handle>.json` holding url, title, the full text and the engine's index timestamp when
   it gives one, in its own dir under `UrlCache::ROOT_DIR`. A search writes every row that came
