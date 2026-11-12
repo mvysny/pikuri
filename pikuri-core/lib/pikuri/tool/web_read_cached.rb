@@ -17,6 +17,10 @@ module Pikuri
     # writes. For the same reason links inside a page can't be followed. The
     # text is the engine's snapshot — Brave's in excerpts, possibly older than
     # the live page — so the read says when the engine fetched it, when known.
+    #
+    # Named +web_+ for the family, +read+ for pikuri's verb for "give me the
+    # content", +cached+ because it is no live fetch (+web_cache+ reads as an
+    # order to cache something).
     module WebReadCached
       # Read the page behind +handle+, cut to +max_chars+ with {WebScrape}'s
       # marker.

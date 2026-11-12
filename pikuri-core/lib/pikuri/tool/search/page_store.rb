@@ -38,7 +38,9 @@ module Pikuri
       # process read.
       #
       # Sharing: +P_shared_locked+ — one {.default} for every agent in the
-      # process, so a researcher sub-agent's handle reads in its parent too; a
+      # process, so a researcher sub-agent's handle reads in its parent too —
+      # no way around the delegation gate, since a handle only ever reads text
+      # the engine returned, never text a model wrote; a
       # +Mutex+ makes the collision check and the write in {#store} one step.
       class PageStore
         # @return [Integer] pages kept, ~100 searches' worth

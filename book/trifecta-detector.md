@@ -786,13 +786,30 @@ goes quiet:
 
 - **A soft verdict no shipped wiring reaches.** The destination
   axis exists and `web_search` declares it, so you can *see* the
-  distinction on any map. But no wiring in this repo is
-  search-only: every persona holding `web_search` also holds
-  `fetch`, so `max` hardens the node and the soft-by-vouched-
-  destination cell never fires here. It is tested from hand-built
-  nodes and waits for the first host that wants a search-only
-  agent. Naming an axis you can see is worth it; inventing a
-  persona so a verdict could fire was not.
+  distinction on any map. But every persona holding `web_search`
+  also holds `fetch`, so `max` hardens the node and the
+  soft-by-vouched-destination cell never fires here. They hold it
+  for a reason you can watch: give a model snippets alone and it
+  loops, narrowing its query again and again to learn one fact.
+  The fix is a reader that makes no request — `web_search` built
+  with `page_text: true` brings each result's text back from the
+  engine's index, and `web_read_cached` returns it by handle. Put
+  that pair on an agent that also holds `read`, and the map drops
+  from loud to soft:
+
+  ```
+  demo [:private, :untrusted_hard, :egress_vouched]
+    read [:private]
+    web_search [:untrusted_hard, :egress_vouched]
+    web_read_cached [:untrusted_hard]
+  ```
+
+  Swap `web_read_cached` for `web_scrape` and the same node is
+  loud. No bundled binary wires it yet, and no persona ships for
+  it: behind a sub-agent boundary the parent is soft either way,
+  because delegation already weakens the untrusted leg. Naming an
+  axis you can see is worth it; inventing a persona so a verdict
+  could fire was not.
 - **No custody axis on writes.** Whether a workspace pointed at a
   synced folder turns a write into egress is answered on paper and
   deliberately unbuilt. The test is custody, not readability: *does

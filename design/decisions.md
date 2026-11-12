@@ -20,6 +20,74 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_page_text_by_handle — Why does a result's page text come back in the search itself, read by handle?
+
+**Context.** Snippets rarely answer a question — on snippets alone a model loops, narrowing its
+query to learn one fact (observed) — so every persona holding `web_search` also held `web_scrape`
+or `fetch`, and `max` made the node's egress `:attacker_reachable`. A scraper confined to the last
+search's rows still leaks through the row selection (`D_no_result_scraper`).
+
+**Decision.** `WebSearch.build(page_text: true)` asks the engine for every row's page text in the
+search request itself, from the engine's own index, and `web_read_cached` returns it by handle
+with no request at all — no egress leg, so `web_search`'s `:tool_vouched` grade survives beside
+it. Probed 2026-11-12: Exa's `/search` with `contents.text` under `maxAgeHours: -1` returned text
+for 10 of 10 rows at the highlights-only price; Brave's LLM Context, at the Web Search price,
+returned chunks whose clock pages matched `fetched_content_timestamp` to the second — the index,
+not a live fetch. DuckDuckGo has no text, so its rows get no handle.
+
+**Alternatives rejected.**
+
+- **Read lazily, per handle.** A read-time request and a miss path, and LLM Context takes no URL:
+  reading one row means re-running its query pinned by a Goggle and hoping it ranks again.
+  Prefetch costs the same one request.
+- **A URL argument, or following a link in a page.** A URL is a fetch — the selection channel, or
+  with a URL the model types, the whole secret.
+- **Ask the page's origin for its `Cache-Control`** to time the store. The query picks which pages
+  rank, so a per-row origin request is the same channel, and the leg turns `:attacker_reachable`.
+  The store keeps no TTL instead — the text is the engine's snapshot, no staler on a later read —
+  and the read prints the engine's fetch time when it has one.
+- **Brave's query-biased `/web/search` excerpt as the snippet.** The best for picking a row, but a
+  second request; in text mode the snippet only steers which row to read, so it is the page's
+  meta description, else the start of its first chunk.
+
+**Consequences.** On the map, `read` + a page-text search + `web_read_cached` is soft where `read`
++ search + `web_scrape` is loud. The pairing alone is silent, and behind a sub-agent boundary both
+shapes are soft at the parent, so no persona ships for the map's sake. Brave's text mode ranks
+differently — 5–6 of 10 URLs shared with `/web/search`. Unknown: whether a query ever schedules an
+engine-side re-crawl, a freshness question about the search's own vouched request.
+
+---
+
+## D_read_handle_hmac — Why is a page-text handle an 8-digit keyed hash of the URL?
+
+**Context.** A handle names a page `web_read_cached` may return. The store is one per process,
+shared by every conversation the process hosts, and holds Brave and Exa text in memory only
+(`D_engine_results_in_memory`).
+
+**Decision.** The first 8 hex digits of `HMAC-SHA256(secret, url)`, the secret random per process;
+a URL whose 8 digits another URL holds takes 12. A row gets a handle only when *this* search
+returned its text.
+
+**Alternatives rejected.**
+
+- **`<search>.<row>` from a per-process counter** (`3.2`). It restarts at 1 with the process, so a
+  resumed transcript's old `3.2` quietly reads another page; any scheme reusing freed IDs aliases
+  the same way.
+- **An unkeyed hash.** A crafted URL lands on a popular page's handle in minutes of CPU, last write
+  wins, and the model reads the attacker's text under the handle it picked to avoid it.
+- **Short or sequential handles**, say 4 hex digits growing on collision. Unpredictable is not
+  unguessable: ~10k pages in 65,536 slots is a ~14% hit per blind guess, the shortest handles are
+  always the most guessable, and a model in one conversation could walk another's research —
+  private data at a node already holding untrusted text and a query leg. The length follows the
+  guess rate (space ≳ 10⁵ × store); 8 digits is margin at 1,000 pages, and a few tokens to copy.
+- **A handle for every stored URL**, even from another search. Its presence would tell one
+  conversation what another read.
+
+**Consequences.** A restart's new secret changes every handle; old ones answer "search again" and
+cannot alias. The same page keeps its handle across searches.
+
+---
+
 ## D_engine_results_in_memory — Why do Brave and Exa results never reach disk, when DuckDuckGo's do?
 
 **Context.** `web_search` cached every winner's rendered rows on disk for 2 h, and the cache never
@@ -5167,8 +5235,9 @@ shipped wiring's verdict changed.
   joins. The advisory for that cell says so, so a soft verdict does not read
   as settled.
 - **A soft cell no shipped wiring reaches.** Every persona holding
-  `web_search` also holds `fetch`. It is tested from hand-built nodes and
-  waits for the first host that wants a search-only agent; the unplaced-level
+  `web_search` also holds `fetch`. A host reaches it by giving an agent that
+  holds private data a page-text search and `web_read_cached` instead
+  (`D_page_text_by_handle`); hand-built nodes test it, and the unplaced-level
   tripwire in `Report#verdict` was re-pointed at a hypothetical fourth level
   so it survives its own graduation.
 - **The delegation cap applies to one axis.** A gate bounds what leaves and

