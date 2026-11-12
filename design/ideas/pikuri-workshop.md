@@ -313,7 +313,15 @@ with a forward link.
 ## How the two repos relate (decided)
 
 **pikuri is "just" a dependency of pikuri-workshop.** Nothing more: no shared
-version number, no shared release.
+version number, no shared release, no shared tooling. The workshop is its own
+project and develops independently, like any other app built on pikuri.
+
+- **Tooling is copied, not shared.** The workshop copies
+  `tasks/tripwires.rake` (the five seam checks: workshop code honours the
+  subprocess, loop and other seams too), `design/verify_design_tripwires.sh`
+  and the `Rakefile`'s `check` / `release` tasks. From then on each copy
+  evolves on its own. Vanilla ships no tooling for the workshop to load, and
+  the closed-set-of-five rule (`D_tripwire_bar`) binds each repo separately.
 
 - **Names:** the repo is pikuri-workshop and book 2 is "the workshop": power
   tools you use with care, where book 1 is what you can safely leave lying
@@ -338,10 +346,6 @@ version number, no shared release.
 
 ## Open questions
 
-- `Q_tripwires`: the five seam checks (`tasks/tripwires.rake`) guard
-  invariants that workshop code also has to honour (subprocess, loop seam…).
-  Does the workshop copy the rake file, or does vanilla ship it so the workshop can load it?
-  The closed-set-of-five rule (`D_tripwire_bar`) still applies.
 - `Q_book2_shape`: book 2 ends on **a simple coding agent**
   (`pikuri-code`), the way book 1 ends on the CLI Puri. The two climaxes
   pair up: book 1's is broken by construction; book 2's is the agent people
