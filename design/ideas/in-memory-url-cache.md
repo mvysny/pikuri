@@ -6,9 +6,9 @@ Brave's API ToS §3(b)(i) allows only "transient storage required for operation"
 §4.2(a) allows no copy at all beyond a browser's display cache (quotes and reading in
 `cached-result-contents.md`, *stored transiently, by design*). Today `Search::Engines::CACHE`
 writes every winning provider's results to disk for 2 h, and `UrlCache` never deletes a stale
-file — so a Brave or Exa result can sit on disk indefinitely. The reaper settled in
-`cached-result-contents` narrows that to "the last 2 h, until pikuri runs again"; still a
-stored copy. Safe side: a Brave or Exa result lives in process memory only, gone at exit.
+file — so a Brave or Exa result can sit on disk indefinitely. Even a reaper deleting expired
+files leaves the last 2 h on disk until pikuri runs again — still a stored copy. Safe side: a
+Brave or Exa result lives in process memory only, gone at exit.
 
 ## Proposal
 
