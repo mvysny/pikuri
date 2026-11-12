@@ -20,6 +20,38 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_engine_results_in_memory — Why do Brave and Exa results never reach disk, when DuckDuckGo's do?
+
+**Context.** `web_search` cached every winner's rendered rows on disk for 2 h, and the cache never
+deleted a stale file. Read 2026-11-12, both paid engines' API terms forbid keeping their output:
+Brave allows only "transient storage required for operation", Exa no copy beyond a browser's
+display cache — each provider's `disk_cacheable?` quotes its clause.
+
+**Decision.** A Brave or Exa result lives only in a `UrlCache::InMemory`: LRU-bounded, held in a
+constant, gone when the Ruby VM exits, never torn down earlier. Each provider answers
+`disk_cacheable?`, and `Engines` writes a winner's rows to the store that answer allows.
+DuckDuckGo rows (a keyless HTML scrape, under no API agreement), `web_scrape` / `fetch` pages and
+MCP descriptions stay on disk. Not legal advice; a host that needs more buys storage rights.
+
+**Alternatives rejected.**
+
+- **Expire on disk** — a reaper deleting files past their TTL. The last 2 h still sit on disk until
+  pikuri next runs: a stored copy, the thing the terms forbid.
+- **One cache API with a `transient_only:` flag.** Every caller still has to pass the flag right —
+  the choice moves behind a boolean, it doesn't go — and the API needs a TTL, size and dir per
+  namespace, re-inventing per-use instances. A store that holds only engine text is an `InMemory`
+  by construction, with no path to disk; `Engines` keeps the one runtime choice, a spec guards it.
+- **An `AbstractUrlCache` base.** Its content would be a three-line `fetch`, `NULL` and docs —
+  inheritance to share code, and duck typing needs no abstract methods. `UrlCache` is a namespace
+  module holding `NULL` and the shared constants instead.
+- **`can_cache?`** — Brave and Exa results *are* cached, in memory; `disk_cacheable?` names what
+  the terms restrict.
+
+**Consequences.** A search Brave or Exa won is paid for again after a restart, and anything built
+on engine text inherits the process lifetime.
+
+---
+
 ## D_no_result_scraper — Why is there no scraper confined to the last search's results?
 
 **Context.** `web_search` is the one `:tool_vouched` egress leg: a query reaches an engine this repo

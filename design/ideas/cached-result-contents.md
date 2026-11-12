@@ -12,7 +12,7 @@ the row *selection* is the channel (`D_no_result_scraper`).
 
 When a host wants page text, `web_search` asks its engine for **the page text of every row in the
 same search request**, served from the engine's own index — never from the origin — and stores it
-in an on-disk page store. A new tool, `web_read_cached`, returns a stored row's text by handle. It makes **no
+in an in-memory page store. A new tool, `web_read_cached`, returns a stored row's text by handle. It makes **no
 request at all**, so it holds no egress leg:
 
 ```ruby
@@ -98,75 +98,54 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
 - **Handles only, never a URL.** `web_read_cached` answers from the page store, so a URL would
   mean a fetch — the `D_no_result_scraper` channel, or with a URL argument the whole secret.
   Same for following a link inside a cached page.
-- **Under revision — `in-memory-url-cache.md`** moves the page store and every Brave/Exa result
-  into process memory; the disk, secret-file, TTL and resume bullets below change with it.
-- **The page store is on disk, keyed by handle — no in-memory registry.** One JSON file per
-  page, `<handle>.json` holding url, title, the full text and the engine's index timestamp when
-  it gives one, in its own dir under `UrlCache::ROOT_DIR`. A search writes every row that came
-  back with text (overwriting a stale or same-URL entry); `web_read_cached` reads. Disk, not
-  memory, so handles survive `Agent::History` load, are shared tree-wide and across processes,
-  and need no counter, `Mutex`, eviction cap or wiring object.
+- **The page store is a `UrlCache::InMemory`, keyed by handle** — engine text never reaches
+  disk (`D_engine_results_in_memory`). 1,000 entries (one page each, ~100 searches), LRU, no TTL,
+  living as long as the Ruby VM in its own constant. An entry is JSON: url, title, the full text
+  and the engine's index timestamp when it gives one. A search writes every row that came back
+  with text (replacing a same-URL entry); `web_read_cached` reads. So handles survive
+  `Agent::History` load within the process and are shared tree-wide, with no counter, wiring
+  object or lock beyond the cache's own; a restart empties the store and old handles answer
+  "search again". Worst case resident ~100 MB (1,000 pages × ~100 KB) — accepted, no byte cap
+  until measured hurting.
 - **Handle = `HMAC-SHA256(secret, url)`, first 8 hex digits**, rendered in the list
-  (`[a3f9c21e] Title — url`) so the model copies it. The secret is random, made once, kept
-  beside the files (mode `0600`). A keyed hash because each property the alternatives broke
+  (`[a3f9c21e] Title — url`) so the model copies it. The secret is random per process, made at
+  boot, never written anywhere. A keyed hash because each property the alternatives broke
   matters:
-  - *Collision-free by construction*: when `<h8>.json` is fresh and holds a different URL, the
-    new URL takes 12 digits instead. Random collisions are rare (~10k fresh entries in 2³²);
-    engineered ones need the secret — an unkeyed hash lets a crafted URL take over a popular
-    page's handle in minutes of CPU, defeating the model's choice of row.
+  - *Collision-free by construction*: when entry `h8` holds a different URL, the new URL takes
+    12 digits instead. Random collisions are rare (≤1,000 entries in 2³²); engineered ones need
+    the secret — an unkeyed hash lets a crafted URL take over a popular page's handle in minutes
+    of CPU, defeating the model's choice of row.
   - *Never aliased*: a handle is a function of its URL, so a stale one can't come back meaning
     another page — the bug in a per-process `<search>.<row>` counter, which restarts at 1 after
-    a resume, and in any scheme that reuses freed IDs.
-  - *Not enumerable*: the store is machine-wide, so small or sequential IDs would let a model in
-    one conversation walk through another's research — private data reaching a node that holds
-    untrusted text and a query leg, all three legs. At 2³² a blind guess hits once in ~400k
-    calls, and then a random page. Without the URL there is no way to compute a handle; with
-    it, the only way to get one is a search that writes fresh text anyway.
+    a resume, and in any scheme that reuses freed IDs. A restart's new secret can't alias either:
+    an old string matching a new handle is a 32-bit collision across secrets.
+  - *Not enumerable*: one process can host several conversations, so small or sequential IDs
+    would let a model in one walk through another's research — private data reaching a node
+    that holds untrusted text and a query leg, all three legs. At 2³² a blind guess hits once in
+    millions of calls, and then a random page. Without the URL there is no way to compute a
+    handle; with it, the only way to get one is a search that writes fresh text anyway.
   - *Same page, same handle* across repeated queries and searches.
-  Deleting the secret changes every handle — old ones answer "search again", a safe failure.
   **Why not shorter** (say 4 hex, growing on collision): a keyed hash is unpredictable, not
   unguessable — what counts is the store's fill. ~10k entries in 4 hex (65,536) is a ~14% hit
   per blind guess, 5 hex ~1%; the shortest handles are always the most guessable, so the length
-  is set by the guess rate (space ≳ 10⁵ × store), not by collisions. (Worked for a 7-day
-  store; at 2 h the store is ~100× smaller and 8 hex is margin, kept so a busy multi-process
-  machine never revisits this.) 8 hex is a few tokens, the size of the tool-call ids models
-  already copy.
+  is set by the guess rate (space ≳ 10⁵ × store), not by collisions. At ≤1,000 entries 8 hex is
+  margin. 8 hex is a few tokens, the size of the tool-call ids models already copy.
 - **The handle is the "readable" marker.** A row gets one iff its text came back with *this*
   search — never a DuckDuckGo row, never an Exa/Brave row without text, even when the store
   holds that URL from another search (else a handle's presence would tell one session what
   another read). No extra symbol. An unknown or expired handle answers `Tool::Result.error`
   telling the model to search again.
-- **2 h TTL on the page store**, the query cache's — how long a handle stays readable, not
-  freshness: the text is the engine's snapshot (Brave's were 1.3–2934 h old when searched), no
-  staler on a later read. 2 h, not the 7 days first agreed, because both engines' terms forbid
-  storing results beyond the transient (*stored transiently, by design*, below); resuming the next day, or a
-  conversation past 2 h, gets "search again" — and the re-search writes the page back under the
-  same handle. Freshness is shown instead:
+- **No TTL on the page store**: a handle is readable until LRU-evicted or the process ends. A
+  TTL would buy no freshness — the text is the engine's snapshot (Brave's were 1.3–2934 h old
+  when searched), no staler on a later read — and the cap already bounds the store; an evicted
+  handle's re-search writes the page back under the same handle. Freshness is shown instead:
   the read prints the engine's index timestamp when there is one (Brave
   `fetched_content_timestamp`; Exa's to check). Asking the origin for its `Cache-Control` is
   out: the query picks which pages rank, so a per-row origin request is the
   `D_no_result_scraper` channel again, and the leg turns `:attacker_reachable`.
-- **Plain files, no SQLite.** The handle is the URL index (looking one up is computing it), so
-  SQLite would buy only atomic writes and real expiry — not worth a native extension in
-  `pikuri-core`.
-- **Engine results are stored transiently, by design.** Both engines' terms forbid keeping
-  them (read 2026-11-12):
-  - Brave's API ToS §3(b)(i): the customer may not "store, cache, or create a database of
-    Search Results, in whole or in part, other than transient storage required for operation of
-    Customer Applications"; §1.10's Search Results is any API output, LLM Context text too. The
-    pricing FAQ sells storage rights on a custom plan.
-  - Exa's Terms of Service cover "(iii) our application programming interface"; §4.2(a)
-    forbids to "download, modify, copy … duplicate … any information … obtained from or
-    through, the Services, except for temporary files that are automatically cached by your web
-    browser for display purposes". Its Master Subscription Agreement says "Customer owns all
-    Customer Data" (output included), but binds Order Form customers — a pay-as-you-go key is
-    under the ToS.
-  Read literally, Exa's clause forbids even the existing 2 h on-disk `web_search` cache — so
-  Brave and Exa results live in process memory only (`in-memory-url-cache.md`). Not legal
-  advice; a host needing more buys storage rights.
 - **Wiring**: `WebSearch.build(..., page_text: false)` turns text mode on; given `true` with no
   cache-capable engine it raises `ArgumentError`. `web_read_cached` is a stateless constant like
-  `FETCH`, `P_shared_benign` like `UrlCache` (racing writers write the same bytes). Lost: a
+  `FETCH`, reading the page store's constant — `P_shared_locked` by the store's `Mutex`. Lost: a
   reader wired without a text-mode search can't be caught — every read answers "search again".
 - **One store tree-wide, no `for_sub_agent`.** A researcher child can reply "see `a3f9c21e`" for
   a parent holding `web_read_cached`. Not a side channel around the delegation gate: rows are
@@ -181,12 +160,12 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   has_text}]`; rendering and handle lookup run after the cache lookup. `count_rendered` goes: the
   summary counts rows, which a hostile snippet can't inflate. No migration of old Markdown
   entries (nothing in production).
-  - **Text mode gets its own query cache**, a second `UrlCache` under `web_search_text/` beside
-    `web_search/`: the two modes return different rows (Brave's endpoint and ranking), so a
-    snippet-only hit never hides handles and a `/llm/context` ranking never reaches a
-    snippet-mode wiring. Text lives only in the page store, under the same 2 h TTL; the pages
-    are written just before the query entry, so for a few seconds at expiry a hit can find a
-    row's page gone — that row shows no handle.
+  - **Text mode gets its own pair of query caches** — an `OnDisk` under `web_search_text/` and
+    an `InMemory` (100 entries, 2 h), picked by the winner's `disk_cacheable?` like
+    `Engines`' snippet pair: the two modes return different rows (Brave's endpoint and ranking),
+    so a snippet-only hit never hides handles and a `/llm/context` ranking never reaches a
+    snippet-mode wiring. Text lives only in the page store; a query-cache hit whose row's page
+    was evicted shows that row without a handle.
   - A hit makes no request, so no leg.
 - **Take all the text the engine gives; trim at read time.** The search asks for each engine's
   maximum (Exa: no `maxCharacters`, or its ceiling; Brave: the per-URL and total token ceilings —
