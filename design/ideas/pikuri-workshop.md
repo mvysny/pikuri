@@ -191,9 +191,6 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
   `Q_prompt_home`. Puri may keep its own prompts (`D_own_prompts` there) and
   reuse the fragments.
 
-### Open questions
-
-
 ## The cut
 
 | Vanilla (book 1) | pikuri-workshop (book 2) |
@@ -201,13 +198,13 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
 | `pikuri-core` | `pikuri-code`: the coding agent with `Bash`, the sandbox (`NONE`, `Bubblewrap`, `FullFsNoNet`), `PassiveCommandDetector`, the tokenizer, git hardening, plan mode, `git_clone`, `GIT_REPO_RESEARCHER`, `ToolchainPaths`, the coding prompt, `bin/pikuri-code` |
 | `pikuri-subagents` | `pikuri-lsp` |
 | `pikuri-web` | `pikuri-os`, plus the `pikuri-computer` demo |
-| `pikuri-tasks` | `pikuri-extractors` (Docker office conversion) |
-| `pikuri-workspace` (gains the generic memory file) | `pikuri-skills` (skills and slash commands) |
-| `pikuri-vectordb`, `pikuri-rag` | `pikuri-memory` (mem0) |
-| `pikuri-pdf` | `pikuri-mcp`, plus `bin/pikuri-openlibrary` |
-| **`pikuri-thunderbird`** (the climax needs it) | |
+| `pikuri-workspace` (gains the generic memory file) | `pikuri-extractors` (Docker office conversion) |
+| `pikuri-vectordb`, `pikuri-rag` | `pikuri-skills` (skills and slash commands) |
+| `pikuri-pdf` | `pikuri-memory` (mem0) |
+| **`pikuri-thunderbird`** (the climax needs it) | `pikuri-mcp`, plus `bin/pikuri-openlibrary` |
+| | `pikuri-tasks` |
 
-Vanilla goes from 16 gems to 9; the workshop has 7. No `pikuri-bash` split: bash
+Vanilla goes from 16 gems to 8; the workshop has 8. No `pikuri-bash` split: bash
 stays inside `pikuri-code` and goes to the workshop with it.
 
 The `pikuri` metagem is already gone (step 0, `D_no_metagem`), and the workshop gets
@@ -251,10 +248,14 @@ Notes on the individual placements:
   `security.md` names MCP as the instant trifecta and links forward. Nothing
   in vanilla's `lib/` requires `pikuri-mcp`. Docker still earns its keep in
   book 1, at the vectordb chapter (Qdrant).
-- **tasks stays.** It's small (~630 lines), nothing depends on it, and
-  every serious agent keeps a task list. Its chapter is a pure tool-design
-  lesson (status in the verb's name, id-addressed changes, two of three
-  choices reversed by watching transcripts), which is what book 1 is for.
+- **tasks goes; its tool-design lesson stays, rebuilt on the calculator.**
+  Only `bin/pikuri-code` wires `pikuri-tasks`, and a task list earns its keep
+  on long multi-step work, mostly coding; the secretary answering "what's on
+  Thursday?" doesn't need one. That's the skills argument again, and the
+  "stay small" principle settles it. Book 1 keeps a tool-design chapter built
+  on `calculator` instead (see Book 1's shape). What moves with `tasks.md`
+  is the stateful-tool half: id-addressed changes, status in the verb's
+  name, per-agent state.
 - **memory goes; the concept stays.** mem0 is an integration: a sidecar, a
   Qdrant collection, a non-reasoning extraction model. Its future is
   features. Book 1 teaches durable memory through the climax's memory file,
@@ -272,12 +273,40 @@ Notes on the individual placements:
   `pikuri-code`'s sandbox. Its generic memory file moves to vanilla first
   (see above).
 
+Gems to watch in book 1, by the first test: `pikuri-web` (search engines
+tend to pile up) and `pikuri-workspace` (`ProjectRoot` and the
+`.gitignore`-aware listing lean towards coding; if they grow, they move into
+`pikuri-code`).
+
 ## Book 1's shape
 
 The assistant/code split in `book/README.md` collapses into one track that
-ends on the climax: setup, base vocabulary (chat, sub-agents), retrieval
-(vectordb, rag), security, measuring the trifecta, tasks, hosting, **the
-climax chapter**, then the coda ("go run Puri").
+ends on the climax. Tentative order: setup, chat, **designing a tool**
+(new), **touching files** (new), sub-agents, vectordb, rag, security,
+measuring the trifecta, hosting, **the climax chapter**, then the coda ("go
+run Puri").
+
+Two new chapters:
+
+- **Designing a tool, on `calculator`** (replaces `tasks.md` in book 1). Demo:
+  `pikuri-chat`, which already wires it; `chat.md` already introduces it.
+  The lessons are in its decision entries: the tool speaks a grammar the
+  model already knows ("be a superset of Python, never a subset",
+  `D_calculator_functions`), watching transcripts settles a design (the
+  model wrote `math.cos` unprompted, reversing operators-only), why have the
+  tool at all when "the model can't add" and "bash exists" are properties of
+  someone else's harness (`D_keep_calculator`), descriptions and errors
+  written for the model, and declaring trifecta legs on a tool that holds
+  none.
+- **Touching files: the workspace and the confirmer.** `os-assistant.md` and
+  `code.md` used to introduce `Workspace`, the file tools and `Confirmer`,
+  and both leave. Book 1 still leans on them: sub-agents confirm their task
+  prompts, the secretary confirms every write and search, and the security
+  chapter's "does the human see the bytes" test is about confirmers. It goes
+  before sub-agents, since their task prompt and `FILE_MINER` use it.
+  `Q_files_demo`: which demo? An agent rooted in a folder with read, write
+  and edit, every write confirmed; possibly a flag on `pikuri-chat` rather
+  than a new binary.
 
 **`wire.md` moves to book 2.** With memory and skills both in the workshop,
 nothing in vanilla injects a mid-conversation message any more, so both of
@@ -300,12 +329,10 @@ the chapter it pays off.
 
 ### Chapters that lose their host
 
-`pikuri-code` was the workhorse binary for four chapters. Two of them
-(`skills.md`, `mcp-revisited.md`) now move to book 2 with their gems and keep
-their host. Two stay:
+`pikuri-code` was the workhorse binary for four chapters. Three of them
+(`skills.md`, `mcp-revisited.md`, `tasks.md`) now move to book 2 with their
+gems and keep their host. One stays:
 
-- `tasks.md` (default wiring): rehost on the climax binary or on a smaller
-  existing demo.
 - `trifecta-detector.md` (13 mentions of `pikuri-code`'s boot verdicts):
   rebuild the worked examples on the climax, which fits the chapter better
   (three legs present, each graded weak), plus `pikuri-briefing`'s
@@ -352,8 +379,18 @@ project and develops independently, like any other app built on pikuri.
   catches up, and one change becomes two commits. That's the price.
 - **Release:** independent cycles. A workshop release needs the pikuri version
   it was built against to be on rubygems first; its gemspecs pin that with
-  `~>`. `D_release_one_otp` keeps lockstep *inside* each repo: 9 pushes for
-  pikuri, 7 for the workshop.
+  `~>`. `D_release_one_otp` keeps lockstep *inside* each repo: 8 pushes for
+  pikuri, 8 for the workshop.
+- **Promises:** the trifecta promise ("at most two legs at any node") is book
+  1's. Book 2's climax breaks it by design: the coding agent holds all three
+  at full strength. The workshop's own AGENTS.md needs its own promise,
+  along the lines of "contained, not constructed: every agent here runs
+  inside a cage, and the book says what each cage buys and where it stops."
+- **Downstream:** apps ride both repos, and that cost is accepted. Puri
+  wants `pikuri-extractors` for DOC, DOCX and the other office formats in
+  `~/Documents` (the secretary makes do with `pikuri-pdf`); pikuri-tui wires
+  `pikuri-code` and `pikuri-os` (`pikuri-tui-code`, `pikuri-tui-computer`).
+  Each rides two git dependencies.
 
 ## Open questions
 
@@ -379,7 +416,7 @@ project and develops independently, like any other app built on pikuri.
 
 - per-gem `AGENTS.md` and `design/architecture.md` for `pikuri-code`,
   `pikuri-lsp`, `pikuri-os`, `pikuri-extractors`, `pikuri-memory`,
-  `pikuri-skills` and `pikuri-mcp`;
+  `pikuri-skills`, `pikuri-mcp` and `pikuri-tasks`;
 - `D_` entries from `design/decisions.md`, at least: the `D_lsp_*` family
   (7), `D_headless_os_agent`, every MCP entry, and the non-Thunderbird
   half of `D_gloda_locks_mcp_does_not` (needs a split). `D_thunderbird_*`
@@ -392,13 +429,15 @@ project and develops independently, like any other app built on pikuri.
   `grok-build-cheap-borrows.md`. `thunderbird*.md` (3) stay with the gem;
 - book chapters: `code.md`, `lsp.md`, `os-assistant.md`,
   `security-revisited.md`, `memories.md`, `skills.md`, `mcp.md`,
-  `mcp-revisited.md`, `wire.md`.
+  `mcp-revisited.md`, `wire.md`, `tasks.md`.
 
 **Docs that stay but need edits:**
 
 - Book chapters to repoint: `security.md`, `trifecta-detector.md`,
-  `tasks.md`, `chat.md`, `subagents.md`, `prerequisites.md`, `rag.md`;
-  `vectordb.md` drops or forward-links `pikuri-extractors`.
+  `chat.md`, `subagents.md`, `prerequisites.md`, `rag.md`; `vectordb.md`
+  drops or forward-links `pikuri-extractors`.
+- New book chapters: designing a tool (calculator), touching files
+  (workspace and confirmer), the secretary.
 - `book/README.md`: one track, the climax, the coda.
 - `apps.md` (the coda): Puri first, as "this, with all the bells and
   whistles", then pikuri-tui and pikuri-web; plus a pointer at book 2.
@@ -406,8 +445,9 @@ project and develops independently, like any other app built on pikuri.
   become" line (add: "a gem whose future is more features goes to
   pikuri-workshop, and so does one that isn't safe on the host as-is"), the
   promises (book 1's theme is *Privacy first* plus the trifecta promise;
-  *Readable in an evening* stays as the learning principle's promise), the pitch (skills, MCP and "a
-  full in-repo coding agent" go), and Promises → *Readable in an evening*.
+  *Readable in an evening* stays as the learning principle's promise), and
+  the pitch (skills, task tracking, MCP and "a full in-repo coding agent"
+  go).
 - `SECURITY.md`: drop the sections about workshop gems, or link to them.
 - `CHANGELOG.md`: one line per move.
 
@@ -418,9 +458,10 @@ project and develops independently, like any other app built on pikuri.
    search description, the generic memory file (with `pikuri-os` rebuilt on
    it). Puri rides each as it lands.
 2. Build the climax binary and its prompt.
-3. Write the climax chapter; rebuild `trifecta-detector.md`'s examples on it;
-   rehost `tasks.md`; rewrite `security.md`.
-4. Create the pikuri-workshop repo and move the seven gems (`git filter-repo` per
+3. Write the climax chapter and the two new ones (designing a tool, touching
+   files); rebuild `trifecta-detector.md`'s examples on the climax; rewrite
+   `security.md`.
+4. Create the pikuri-workshop repo and move the eight gems (`git filter-repo` per
    path, or just a plain copy, since git is for syncing code, not curating
    history). Move their docs, `D_` entries, ideas and chapters with them.
 5. Rewrite `book/README.md`, AGENTS.md, SECURITY.md and the coda.
