@@ -125,24 +125,52 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   **Why not shorter** (say 4 hex, growing on collision): a keyed hash is unpredictable, not
   unguessable — what counts is the store's fill. ~10k entries in 4 hex (65,536) is a ~14% hit
   per blind guess, 5 hex ~1%; the shortest handles are always the most guessable, so the length
-  is set by the guess rate (space ≳ 10⁵ × store), not by collisions. 8 hex is a few tokens, the
-  size of the tool-call ids models already copy.
+  is set by the guess rate (space ≳ 10⁵ × store), not by collisions. (Worked for a 7-day
+  store; at 2 h the store is ~100× smaller and 8 hex is margin, kept so a busy multi-process
+  machine never revisits this.) 8 hex is a few tokens, the size of the tool-call ids models
+  already copy.
 - **The handle is the "readable" marker.** A row gets one iff its text came back with *this*
   search — never a DuckDuckGo row, never an Exa/Brave row without text, even when the store
   holds that URL from another search (else a handle's presence would tell one session what
   another read). No extra symbol. An unknown or expired handle answers `Tool::Result.error`
   telling the model to search again.
-- **7-day TTL on the page store** — how long a handle stays readable, not freshness: the text
-  is the engine's snapshot (Brave's were 1.3–2934 h old when searched), no staler on a later
-  read. Covers resuming the next working day or after a weekend. Freshness is shown instead:
+- **2 h TTL on the page store**, the query cache's — how long a handle stays readable, not
+  freshness: the text is the engine's snapshot (Brave's were 1.3–2934 h old when searched), no
+  staler on a later read. 2 h, not the 7 days first agreed, because both engines' terms forbid
+  storing results beyond the transient (*stored transiently, by design*, below); resuming the next day, or a
+  conversation past 2 h, gets "search again" — and the re-search writes the page back under the
+  same handle. Freshness is shown instead:
   the read prints the engine's index timestamp when there is one (Brave
   `fetched_content_timestamp`; Exa's to check). Asking the origin for its `Cache-Control` is
   out: the query picks which pages rank, so a per-row origin request is the
   `D_no_result_scraper` channel again, and the leg turns `:attacker_reachable`.
 - **Plain files, no SQLite.** The handle is the URL index (looking one up is computing it), so
   SQLite would buy only atomic writes and real expiry — not worth a native extension in
-  `pikuri-core`. `UrlCache` never deletes stale files; full texts over 7 days grow the dir.
-  Accepted; a reaper when it measurably hurts.
+  `pikuri-core`; real expiry comes from the reaper below.
+- **Engine results are stored transiently, by design.** Both engines' terms forbid keeping
+  them (read 2026-11-12):
+  - Brave's API ToS §3(b)(i): the customer may not "store, cache, or create a database of
+    Search Results, in whole or in part, other than transient storage required for operation of
+    Customer Applications"; §1.10's Search Results is any API output, LLM Context text too. The
+    pricing FAQ sells storage rights on a custom plan.
+  - Exa's Terms of Service cover "(iii) our application programming interface"; §4.2(a)
+    forbids to "download, modify, copy … duplicate … any information … obtained from or
+    through, the Services, except for temporary files that are automatically cached by your web
+    browser for display purposes". Its Master Subscription Agreement says "Customer owns all
+    Customer Data" (output included), but binds Order Form customers — a pay-as-you-go key is
+    under the ToS.
+  Read literally, Exa's clause forbids even the existing 2 h `web_search` cache; 2 h is the line
+  we call transient — every engine-result cache (both query caches, the page store) keeps it.
+  Not legal advice; a host needing more buys storage rights.
+- **`UrlCache` reaps.** A file we stop reading after the TTL is still stored, so every
+  `UrlCache` (also `web_scrape`'s) deletes files older than its TTL: on its first use in a
+  process, then at most every ~10 min on a write; `Errno::ENOENT` from a racing sweeper or reader
+  is a miss. Claim: while pikuri runs nothing outlives its TTL by more than the sweep interval;
+  leftovers of a stopped pikuri go on its next start. The gap — the last 2 h sit on disk until
+  pikuri runs again — is documented, not closed (a `systemd` timer is the host's business, an
+  `at_exit` sweep misses a crash). Kept in mind, not done: `$XDG_RUNTIME_DIR` (tmpfs, wiped at
+  logout) as the engine caches' home would keep them off disk entirely, at the cost of a new
+  `Paths` entry and a fallback.
 - **Wiring**: `WebSearch.build(..., page_text: false)` turns text mode on; given `true` with no
   cache-capable engine it raises `ArgumentError`. `web_read_cached` is a stateless constant like
   `FETCH`, `P_shared_benign` like `UrlCache` (racing writers write the same bytes). Lost: a
@@ -163,8 +191,9 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   - **Text mode gets its own query cache**, a second `UrlCache` under `web_search_text/` beside
     `web_search/`: the two modes return different rows (Brave's endpoint and ranking), so a
     snippet-only hit never hides handles and a `/llm/context` ranking never reaches a
-    snippet-mode wiring. Text lives only in the page store; its 7-day TTL outlives the query
-    cache's 2 h, so a hit's rows are still readable.
+    snippet-mode wiring. Text lives only in the page store, under the same 2 h TTL; the pages
+    are written just before the query entry, so for a few seconds at expiry a hit can find a
+    row's page gone — that row shows no handle.
   - A hit makes no request, so no leg.
 - **Take all the text the engine gives; trim at read time.** The search asks for each engine's
   maximum (Exa: no `maxCharacters`, or its ceiling; Brave: the per-URL and total token ceilings —
@@ -179,5 +208,9 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
 
 - `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*). Prefetch sends
   nothing extra — the query was going anyway — so `web_read_cached`'s doc says it sends nothing
-  and links each engine's posture. Unchecked: whether Brave's API privacy notice (90-day logs,
-  no training) covers `/llm/context` as well as `/web/search`.
+  and links each engine's posture. **Read 2026-11-12** (search.brave.com/help/privacy-policy,
+  the API ToS dated 1 Sep 2026, the LLM Context docs, brave.com/search/api/): nothing specific to
+  LLM Context; and **no 90-day retention figure and no Brave no-training promise for API data
+  found** — only the pricing page's "Queries never shared or trained on" and an "architectural
+  ZDR" with no plan named ("full-funnel ZDR" is Enterprise). `Search::Brave`'s *Privacy posture*
+  claims both; its source is unknown — find it, or correct the yardoc.
