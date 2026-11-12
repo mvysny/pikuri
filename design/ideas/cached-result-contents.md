@@ -78,22 +78,33 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   indexed would miss, and if that miss ever triggered a crawl, the *selection* channel of
   `D_no_result_scraper` is back. Rows Exa's own search returned come from its index. A row from
   another engine renders without a handle.
-- **Handle = `<search>.<row>`, both 1-based, per agent**: `web_search` numbers its calls, so the
-  second row of the agent's third search is `3.2`, rendered in the list (`[3.2] Title — url`) so
-  the model copies it, never computes it. Unique for the conversation, so search → read → search
-  → read keeps working and older rows stay readable. An unknown handle answers
+- **Handle = `<search>.<row>`, both 1-based, per registry**: the registry numbers searches, so
+  the second row of the third search is `3.2`, rendered in the list (`[3.2] Title — url`) so the
+  model copies it, never computes it. Unique for the conversation, so search → read → search →
+  read keeps working and older rows stay readable. An unknown handle answers
   `Tool::Result.error` naming the valid ones.
-- **Parallel calls**: a batch runs one call at a time (`tool_concurrency` off, see
-  {Pikuri::Tool}), so a plain counter is deterministic. If that ever flips, a `Mutex` around
-  the increment (Ruby has no stdlib `AtomicInteger`) — not before.
-- **Shape**: a per-agent registry (handle → url, title, engine) that `web_search` writes and
-  `web_read_cached` reads; both built together per wiring, `P_one_agent`, rebuilt fresh for a
-  sub-agent via `for_sub_agent` (a child's `1.1` is its own). `web_search` renders handles only
-  when a reader is attached.
-- **No prefetch.** `web_read_cached` reads lazily: it looks the handle up and asks the row's *engine*
-  for the page (`entry.engine.cached_page(entry.url)` or so), so it never names Exa; a future
-  cache-capable engine implements that one method. Wiring `web_read_cached` with no cache-capable
-  engine in the cascade raises `ArgumentError`.
+- **Wiring**: the host makes the registry — `Search::ResultHandleRegistry`, a mouthful but
+  clear — and hands it to both —
+  `WebSearch.build(..., registry: nil)` (optional: no registry, no handles — cases (a) and (c)
+  need nothing) and `WebReadCached.build(registry:)` (required). The registry holds
+  handle → url, title, engine; `web_search` writes it, `web_read_cached` reads it.
+  - `WebSearch.build` given a registry but no cache-capable engine raises `ArgumentError`.
+  - `WebSearch.build` attaches itself to the registry; `web_read_cached` executed against a
+    registry no search ever attached **raises** (a host wiring bug, not something the model can
+    react to). Not checkable at build time — the two builds come in either order.
+- **One registry for the whole agent tree, no `for_sub_agent`.** `SubAgentTool` rebuilds each
+  tool through its own no-arg `for_sub_agent`, so two tools each minting a fresh registry would
+  split the pair in the child. Sharing is better anyway: handles are unique tree-wide, and a
+  researcher child can reply "see `7.2`" for a parent holding `web_read_cached`. Not a side
+  channel around the delegation gate: rows are what the engine returned, never model-written
+  text.
+- **`P_shared_locked`**: shared across agents (and possibly threads, if a host runs agents
+  side by side), so a `Mutex` around the counter and the row map — in Ruby, the stand-in for
+  `AtomicInteger`. A tool batch itself runs one call at a time (`tool_concurrency` off), so
+  numbering within one agent is deterministic.
+- **No prefetch.** `web_read_cached` reads lazily: it looks the handle up and asks the row's
+  *engine* for the page (`entry.engine.cached_page(entry.url)` or so), so it never names Exa; a
+  future cache-capable engine implements that one method.
 - **The handle is the "readable" marker** — only a row whose page the engine can serve from
   cache gets one; no extra symbol. In case (c) no reader is wired, so no handles at all.
 - **Three wirings, the orchestrator picks** by the engines it passes `web_search` and the tools
@@ -109,8 +120,6 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   `/search` response? With `maxAgeHours: -1`, a highlight can only come from the cache, so a
   row carrying highlights should be readable; all 5 rows of one probe search did. A row
   evicted between search and read answers `CONTENT_NOT_CACHED` → `Tool::Result.error`.
-- `Q_wiring` — how a host builds the pair: one builder returning both tools around a fresh
-  registry, or `WebCache.build(search:)`.
 - `Q_exa_miss` — does `/contents` with `maxAgeHours: -1` answer a miss with an error and never a
   crawl? **Probed 2026-11-12** (`/contents`, `text: {maxCharacters: 300}`):
   - an Exa search row (`rrees.prose.sh/ruby-data`) → `success`, `source: "cached"`, $0.001;
