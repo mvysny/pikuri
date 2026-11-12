@@ -17,7 +17,7 @@ a `Hash`:
 
 ```ruby
 cache = Pikuri::UrlFileCache.new(ttl: 2 * 60 * 60, dir: "#{Pikuri::UrlFileCache::ROOT_DIR}/web_scrape")
-cache = Pikuri::UrlInMemoryCache.new(ttl: 2 * 60 * 60)
+cache = Pikuri::UrlInMemoryCache.new(ttl: 2 * 60 * 60, max_entries: 100)
 
 cache.fetch(key) { compute }    # today's contract: yield on miss, store, return; a raise stores nothing
 cache.read(key)                 # => String, or nil on a miss / stale entry
@@ -29,9 +29,7 @@ live only after computing it (the search cascade, below).
 
 - **`UrlInMemoryCache`**: `key → [value, stored_at]` behind a `Mutex` — `P_shared_locked`,
   held in class-level constants like today's caches, so every agent in the process shares it.
-  Same TTL semantics as the file cache; a `write` drops expired entries (one pass over a
-  small hash), so memory holds at most a TTL's worth of results. Gone at process exit — the
-  property the ToS asks for.
+  Gone at process exit — the property the ToS asks for.
 - **`UrlFileCache`**: today's `UrlCache`, renamed, plus `read` / `write`. No other change.
   Nothing in production, so no compat alias (`UrlCache` simply goes).
 
@@ -69,14 +67,42 @@ Its page store moves from disk to memory, which revises several settled bullets 
 - **HMAC secret per process**, random at boot — no `0600` file. A restart changes every handle;
   old ones answer "search again" and can never alias (a new handle matching an old string means
   a 32-bit collision across secrets).
-- **Handles live for the process**, capped by the 2 h TTL — no resume across a restart.
-  Resume *within* a process (`Agent::History` load in a long-running host) still works.
+- **Handles live for the process**, until LRU-evicted (1,000 pages, no TTL) — no resume across
+  a restart; the 2 h page-store TTL there goes. Resume
+  *within* a process (`Agent::History` load in a long-running host) still works.
 - **Cross-process enumeration is gone** — another pikuri process has a different store and
   secret. Within one process the 8-hex argument stands unchanged.
 - **The reaper loses its reason**: engine results no longer reach disk, so its ToS argument is
   void (see `Q_reaper`).
 - The text-mode query cache follows `can_cache?` like the snippet one — in memory whenever
   Brave or Exa won.
+
+## Settled in discussion (2026-11-12)
+
+- **Lives as long as the Ruby VM.** Held in a class-level constant — no teardown on `Agent`
+  close, context clear or `Agent::History` load, and no `Finalizers` entry: exit frees it.
+  VM-lifetime memory is "transient storage required for operation" for Brave and never leaves
+  the process for Exa. It also keeps `pikuri-core`'s cache ignorant of `Agent`.
+- **Bounded by entry count, LRU.** `UrlInMemoryCache.new(ttl:, max_entries:)`; past
+  `max_entries` a `write` evicts the least recently used. Ruby's `Hash` keeps insertion order,
+  so LRU is a delete-and-reinsert on every hit (a `read` mutates, hence the `Mutex` on reads
+  too) and eviction is `@entries.shift`. LRU over FIFO because a page the model is reading is
+  the one to keep.
+- **The TTL stays, as a freshness rule, not a storage one.** An expired entry is a miss and is
+  dropped when met. The query cache keeps 2 h, matching the file cache, so a long-running VM
+  doesn't answer today's search with yesterday's rows.
+- **One instance per use**, each a VM-lifetime constant — never one shared instance, which
+  would need `query:` / `page:` key prefixes and put unlike entries under one cap. The file
+  caches already work this way, one dir each. The uses and their sizing:
+  - **Query caches: 100 entries, 2 h TTL** — an entry is one search's rows. One per mode,
+    mirroring the file side's `web_search/` and `web_search_text/`, since the two modes return
+    different rows.
+  - **Page store: 1,000 entries, no TTL** (`Float::INFINITY`, like `pikuri-mcp`'s cache) — an
+    entry is one *page*, so ~100 searches, the bound `cached-result-contents` first settled on.
+    No TTL because the text is the engine's snapshot, no staler on a later read, and the LRU
+    cap already bounds it — so "how long is a handle good for" is one rule: until evicted.
+  - Worst case resident: 1,000 full pages at ~100 KB ≈ 100 MB — accepted, no byte cap until
+    measured hurting.
 
 ## Still open
 
@@ -88,9 +114,6 @@ Its page store moves from disk to memory, which revises several settled bullets 
 - `Q_reaper` — with engine results off disk, what's left on disk is DuckDuckGo rows, scraped
   origin pages and MCP descriptions; none is under a storage clause. Leaning: drop the reaper
   from `cached-result-contents`, keep the old "stale files stay" behaviour.
-- `Q_memory_bound` — "take all the text the engine gives" means an Exa search can hold ~1 MB
-  (10 rows of full pages); 2 h of busy research is ~100 MB resident. Leaning: accept it, no
-  byte cap until it's measured hurting (same call as for the text cap).
 - `Q_spec_seam` — `spec_helper.rb` stubs each module's `.cache` to `UrlCache::NULL`. `Engines`
   grows a second accessor (`.memory_cache`) and both need a null: either one shared `NULL`
   object answering `read` / `write` / `fetch` (where does it live, with no common parent?), or
