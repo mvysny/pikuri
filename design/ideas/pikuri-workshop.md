@@ -161,6 +161,15 @@ Left out, and why:
 - **`pikuri-extractors`.** `pikuri-pdf` is enough. Office formats are a
   feature.
 
+**The index starts in memory, with Qdrant one flag away**, exactly as
+`pikuri-briefing` does it: in-memory vectors and keyword index by default
+(nothing to set up, re-embedded on every start), and `--qdrant` for a
+persistent index (the vectordb chapter's Qdrant container, plus the keyword
+index in a file beside it). The vectordb and rag chapters already teach both,
+so the secretary's chapter only points at them. A real `~/Documents` takes a
+while to re-embed, so the chapter suggests `--qdrant` once the first run
+works.
+
 ### What has to land upstream first
 
 These are Puri's open primitives. Because the demo needs them, they become
@@ -184,9 +193,6 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
 
 ### Open questions
 
-- `Q_rag_backend`: the demo indexes `~/Documents` in memory (re-embedded every
-  boot) or on Qdrant? The rag chapter already teaches both; the climax
-  probably wants whatever `pikuri-briefing` uses.
 
 ## The cut
 
