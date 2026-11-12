@@ -10,6 +10,18 @@ a lockstep release target, a book chapter, and a share of AGENTS.md's
 so the reader's cost isn't the issue. The maintainer's cost is, and so is
 the book, which now gets a chapter per integration.
 
+Worse, one repo pulls every gem two ways: stay simple enough to teach, and
+grow complete enough to handle the corner cases and the features. Bash's
+tokenizer and sandbox, language servers and MCP's container model are
+inherently complex and can't do both. Split, each project keeps one promise:
+book 1 stays readable in an evening, and book 2 is free to be as complex as
+the real world makes it, explaining the hard parts rather than every line.
+
+Book 1 still has three big gems: core (~8,900 lines), `pikuri-vectordb` and
+`pikuri-thunderbird` (~3,800 each). They stay because they pass both tests
+below, not because they're simple. If one starts growing features, the first
+test sends it to book 2.
+
 ## The proposal
 
 Two projects:
