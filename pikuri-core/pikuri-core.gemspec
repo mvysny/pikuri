@@ -17,8 +17,7 @@ Gem::Specification.new do |spec|
     as the one bundled example tool. Extensions (web tools, skills, MCP,
     workspace, coding stack, named-agent personas) live in
     sibling gems so a privacy-conscious user can install just this core and
-    audit a minimal dependency tree. For the convenience bundle that pulls
-    in everything, see the +pikuri+ metagem.
+    audit a minimal dependency tree.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'

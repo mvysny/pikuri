@@ -40,7 +40,6 @@ GEMS = %w[
   pikuri-thunderbird
   pikuri-vectordb
   pikuri-rag
-  pikuri
 ].freeze
 
 # Path to the single source of truth for the shared version constant.
@@ -253,7 +252,7 @@ end
 #
 # The ordering is the design. Everything slow and everything fallible
 # happens *before* the OTP is asked for, so one code covers all
-# sixteen pushes: gemspec errors surface before the first gem is
+# the pushes: gemspec errors surface before the first gem is
 # public, and the pre-flight refuses a squatted name up front. Then a
 # single narrated sleep lands on a fresh TOTP window, one prompt takes
 # the code, and the uploads — the only fast part — spend it.
@@ -397,7 +396,7 @@ task :release do
   # uploads fit inside one OTP window, and by how much? Printed every
   # release so the margin is observed rather than assumed — and so a
   # failure caused by overrunning the window says so in as many words
-  # instead of looking like sixteen unrelated rejections.
+  # instead of looking like a row of unrelated rejections.
   unless to_push.empty?
     puts "\n==> OTP window#{dry ? ' (rehearsal — nothing was uploaded, so the push time is not a measurement)' : ''}"
     accounting = format('%.1fs to paste, %.1fs to push %d gems %d-wide',

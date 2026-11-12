@@ -20,6 +20,31 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_no_metagem — Why is there no `gem install pikuri` that brings in every gem?
+
+**Context.** Until 2026-11 the `pikuri` metagem depended on every sibling, and
+`require 'pikuri'` booted them all. Its own gemspec told privacy-conscious users to
+skip it and install `pikuri-core` directly. Nothing in the repo required it; it was
+pure convenience.
+
+**Decision.** No metagem. A host lists the gems it wires, one `gem` line each. The
+book's lesson is to wire as little as the job needs, and only after you've placed
+each tool's `trifecta_legs`. A one-line "install everything" contradicts that, and it
+hands the reader all three legs before they've read the security chapter. The
+versions already published on rubygems.org stay as they are, unyanked and no longer
+updated, to keep the name for a later use.
+
+**Alternatives rejected.**
+
+- **Keep it with a warning in its README.** That's the state we dropped. A
+  convenience that has to warn its careful users away from itself is aimed at the
+  careless ones.
+- **A smaller metagem (core plus the "safe" gems).** Which gems are safe depends on
+  the wiring, not the gem: `pikuri-web` is harmless beside a calculator and the egress
+  leg beside private notes. No fixed bundle can carry that judgement.
+
+---
+
 ## D_read_what_you_run — Why is "readable in an evening" measured against core plus the gems you wire, not all of pikuri?
 
 **Context.** The promise read "the whole of pikuri can be read in one sitting". Measured
@@ -2859,11 +2884,11 @@ recovery that fires only when needed and says more.
   That stays a *shell* concern, where a picker may still want to show "saved
   by a different harness".
 
-## D_release_one_otp — Why one OTP code for sixteen pushes, taken on stdin only?
+## D_release_one_otp — Why one OTP code for every push, taken on stdin only?
 
-**Context.** A release pushes sixteen gems, and at rubygems.org MFA level
-`ui_and_api` every `gem push` is challenged — so a release meant sixteen
-interactive OTP prompts. Worse than the tedium was the failure mode: a push
+**Context.** A release pushes every gem (sixteen at v0.1.0), and at rubygems.org MFA level
+`ui_and_api` every `gem push` is challenged — so a release meant one
+interactive OTP prompt per gem. Worse than the tedium was the failure mode: a push
 that failed partway through the fan-out (an expired code, a typo, a network
 blip) aborted the task with the earlier gems already public and unyankable,
 and the documented recovery was to burn a version number and release the next
@@ -2882,8 +2907,8 @@ Two questions decided the design, and both were settled rather than assumed:
   dependency graph, but it no longer constrains scheduling.
 
 **Decision.** Do everything slow and everything fallible *before* asking for
-the code, then spend one deliberately fresh window on uploads alone: build all
-sixteen gems, pre-flight them against rubygems.org, sleep to the next TOTP
+the code, then spend one deliberately fresh window on uploads alone: build every
+gem, pre-flight them against rubygems.org, sleep to the next TOTP
 boundary with narration, take one code on stdin, and push two-wide with the
 code passed to each child through `GEM_HOST_OTP_CODE` and its stdin closed.
 

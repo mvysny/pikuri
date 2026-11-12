@@ -1,13 +1,12 @@
 source 'https://rubygems.org'
 
-# Monorepo layout: each gem (pikuri-core, plus extensions and the
-# +pikuri+ metagem as they're extracted) lives in its own subdirectory
-# with its own gemspec. Bundler is pointed at each via +gemspec path:+
-# below so a checkout-mode +bundle install+ resolves local sibling
-# versions rather than reaching out to rubygems. After release, end
-# users install via +gem install pikuri-core+ (or +gem install pikuri+
-# for the metagem) and the gemspec's +add_dependency+ entries take
-# over.
+# Monorepo layout: each gem (pikuri-core plus its extensions) lives in
+# its own subdirectory with its own gemspec. Bundler is pointed at each
+# via +gemspec path:+ below so a checkout-mode +bundle install+ resolves
+# local sibling versions rather than reaching out to rubygems. After
+# release, end users install +pikuri-core+ plus the extensions they
+# wire, and the gemspec's +add_dependency+ entries take over. There is
+# no metagem; see +D_no_metagem+.
 gemspec path: 'pikuri-core'
 gemspec path: 'pikuri-extractors'
 gemspec path: 'pikuri-pdf'
@@ -24,7 +23,6 @@ gemspec path: 'pikuri-thunderbird'
 gemspec path: 'pikuri-subagents'
 gemspec path: 'pikuri-vectordb'
 gemspec path: 'pikuri-rag'
-gemspec path: 'pikuri'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write

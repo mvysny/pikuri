@@ -115,27 +115,6 @@ PATH
       pikuri-core (= 0.1.0)
       reline (~> 0.6)
 
-PATH
-  remote: pikuri
-  specs:
-    pikuri (0.1.0)
-      pikuri-code (= 0.1.0)
-      pikuri-core (= 0.1.0)
-      pikuri-extractors (= 0.1.0)
-      pikuri-lsp (= 0.1.0)
-      pikuri-mcp (= 0.1.0)
-      pikuri-memory (= 0.1.0)
-      pikuri-os (= 0.1.0)
-      pikuri-pdf (= 0.1.0)
-      pikuri-rag (= 0.1.0)
-      pikuri-skills (= 0.1.0)
-      pikuri-subagents (= 0.1.0)
-      pikuri-tasks (= 0.1.0)
-      pikuri-thunderbird (= 0.1.0)
-      pikuri-vectordb (= 0.1.0)
-      pikuri-web (= 0.1.0)
-      pikuri-workspace (= 0.1.0)
-
 GEM
   remote: https://rubygems.org/
   specs:
@@ -268,7 +247,6 @@ PLATFORMS
 DEPENDENCIES
   irb (~> 1.14)
   minitest (~> 6.0)
-  pikuri!
   pikuri-code!
   pikuri-core!
   pikuri-extractors!
@@ -327,7 +305,6 @@ CHECKSUMS
   net-smtp (0.5.2) sha256=35103cc04d6b2d94632f9928ede07483c24b70b9c0db1f231fea43909b678f3c
   nokogiri (1.19.4-x86_64-linux-gnu) sha256=379fae440b28915e3f19d752ce2dcf8465ed2b2fbefd2a7ca0dd497bc981a06a
   pdf-reader (2.16.0) sha256=bf1b5564c085264d8279bde3cf1467778b75841494d20c0fe7da3dad475f3732
-  pikuri (0.1.0)
   pikuri-code (0.1.0)
   pikuri-core (0.1.0)
   pikuri-extractors (0.1.0)

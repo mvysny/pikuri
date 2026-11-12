@@ -10,8 +10,8 @@
 > — Frank Herbert, *Dune* (1965)
 
 A small Ruby AI assistant you run on your own machine, shipped as
-a family of gems in a monorepo (plus a convenience metagem that
-pulls in all of them). Defaults wire a local
+a family of gems in a monorepo; you install the ones you wire.
+Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
 conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
@@ -119,8 +119,10 @@ in:
     local Thunderbird profile as five read-only mail/calendar
     tools plus two human-gated hand-offs. No network, no
     autonomous send.
-  - [`pikuri`](pikuri/README.md) — convenience metagem:
-    `gem install pikuri` pulls in all of them.
+
+There is deliberately no `gem install pikuri` that brings in everything:
+every gem you add is a tool the model can call, so add only the ones
+the job needs.
 
 For browsable API docs, run `bundle exec yard` inside any gem
 directory (output is gitignored) — or, once gems are published,

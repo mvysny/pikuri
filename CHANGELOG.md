@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** the `pikuri` metagem is gone, because installing every gem goes against wiring only what the job needs (`D_no_metagem`); replace `gem 'pikuri'` with a `gem` line for each pikuri-* gem you wire, and `require 'pikuri'` with their requires.
 - **Breaking:** the HTML → Markdown extractor left pikuri-core for pikuri-web as `Pikuri::Web::HTML`, registered by `require 'pikuri-web'`, and takes nokogiri, ruby-readability and reverse_markdown with it; without pikuri-web a `text/html` body reads as raw markup. A host that wants rendered HTML outside the web tools (a mail attachment) requires pikuri-web.
 - **Breaking:** `Pikuri::Agent::Listener::RateLimited` is gone — nothing in pikuri wired it, and pacing a renderer's repaints is the renderer's business. A host that coalesced streaming deltas with it keeps a copy of the class in its own code.
 - **Breaking:** `pikuri-assistant` is gone, and the book's stub assistant chapter with it; the coda now points at the apps built on pikuri (pikuri-tui, pikuri-web, Puri), where the assistant's shape is being worked out. Wire `bin/pikuri-code`'s MCP registry, or one of those apps, instead.
