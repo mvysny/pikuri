@@ -357,13 +357,14 @@ project and develops independently, like any other app built on pikuri.
 
 ## Open questions
 
-- `Q_book2_shape`: book 2 ends on **a simple coding agent**
+- `Q_book2_shape` (**deferred** until the workshop repo exists; decide it
+  there): book 2 ends on **a simple coding agent**
   (`pikuri-code`), the way book 1 ends on the CLI Puri. The two climaxes
   pair up: book 1's is broken by construction; book 2's is the agent people
   actually run, which can't be, because it holds all three legs at full
   strength. So its chapter is about what each defense (the sandbox, the
   confirmer, the passive-command detector) buys and where it stops, which
-  absorbs most of `security-revisited.md`. Running order, roughly: the shell
+  absorbs most of `security-revisited.md`. Draft running order: the shell
   and its cage (harvests `code.md`'s sandbox half and `os-assistant.md`
   Part 1), the OS assistant (the opposite cut: `FullFsNoNet`), memories
   (mem0: automatic capture on the no-egress agents that can afford it),
