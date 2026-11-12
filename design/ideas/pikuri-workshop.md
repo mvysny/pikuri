@@ -1,4 +1,4 @@
-# pikuri-ext: split the functionality gems into a second project
+# pikuri-workshop: split the functionality gems into a second project
 
 Status: **direction agreed, cut agreed, climax agreed.** Nothing moved yet.
 
@@ -35,7 +35,7 @@ Two projects:
   You can point it at your real mail on your real machine, because the
   dangerous combinations don't exist. "The trifecta is broken by
   construction", made into a book.
-- **pikuri-ext**, book 2: **power, which needs a cage.** Safe because of
+- **pikuri-workshop**, book 2: **power, which needs a cage.** Safe because of
   what *surrounds* it: bash, MCP servers, skills' scripts, the coding agent and
   language servers (which often evaluate the project's build files) all run
   code you didn't write, and nothing can be left out to make that safe. The
@@ -46,11 +46,11 @@ Two projects:
 
 ### The rule that places a gem
 
-Two tests; failing either sends a gem to ext:
+Two tests; failing either sends a gem to the workshop:
 
 1. **Does the gem's future say "explain it better" or "more features"?**
    This is the learning principle, and it comes first: book 1 grows by
-   teaching a concept better, never by gaining features. Features go to ext
+   teaching a concept better, never by gaining features. Features go to the workshop
    even when they're host-safe. This is what places mem0 and the Docker
    office extractors. `design/ideas/` already answers it: `coding-agent.md`,
    `claude-parity.md`, `bash-confirmer.md` and `grok-build-cheap-borrows.md`
@@ -68,9 +68,9 @@ the placement.
 
 Two hard constraints come with the rule:
 
-- **Dependencies point from ext to vanilla, never back.** No vanilla
-  `lib/`, `bin/`, spec or book chapter may require an ext gem.
-- **Book 1 runs only vanilla.** A chapter whose demo needs an ext gem
+- **Dependencies point from the workshop to vanilla, never back.** No vanilla
+  `lib/`, `bin/`, spec or book chapter may require a workshop gem.
+- **Book 1 runs only vanilla.** A chapter whose demo needs a workshop gem
   belongs in book 2.
 
 ## The climax: a CLI Puri
@@ -173,7 +173,7 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
   `Q_search_description`).
 - **A subject-neutral memory file.** Today that's `Pikuri::Os::MachineMemory`,
   with its prompt section hard-wired to "Notes about this machine", and it
-  lives in `pikuri-os`, which goes to ext. A generic version moves to
+  lives in `pikuri-os`, which goes to the workshop. A generic version moves to
   vanilla, along with a write path confined to that one file and confirmed
   with a diff. Lean: `pikuri-workspace`, since a confined, confirmed write is
   exactly its `Filesystem` and `Confirmer` seams. `pikuri-os` then builds
@@ -190,7 +190,7 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
 
 ## The cut
 
-| Vanilla (book 1) | pikuri-ext (book 2) |
+| Vanilla (book 1) | pikuri-workshop (book 2) |
 |---|---|
 | `pikuri-core` | `pikuri-code`: the coding agent with `Bash`, the sandbox (`NONE`, `Bubblewrap`, `FullFsNoNet`), `PassiveCommandDetector`, the tokenizer, git hardening, plan mode, `git_clone`, `GIT_REPO_RESEARCHER`, `ToolchainPaths`, the coding prompt, `bin/pikuri-code` |
 | `pikuri-subagents` | `pikuri-lsp` |
@@ -201,10 +201,10 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
 | `pikuri-pdf` | `pikuri-mcp`, plus `bin/pikuri-openlibrary` |
 | **`pikuri-thunderbird`** (the climax needs it) | |
 
-Vanilla goes from 16 gems to 9; ext has 7. No `pikuri-bash` split: bash
-stays inside `pikuri-code` and goes to ext with it.
+Vanilla goes from 16 gems to 9; the workshop has 7. No `pikuri-bash` split: bash
+stays inside `pikuri-code` and goes to the workshop with it.
 
-The `pikuri` metagem is already gone (step 0, `D_no_metagem`), and ext gets
+The `pikuri` metagem is already gone (step 0, `D_no_metagem`), and the workshop gets
 none either.
 
 Notes on the individual placements:
@@ -227,7 +227,7 @@ Notes on the individual placements:
   a human) is the book's best concrete case of a human gate that counts.
 - **skills go.** Siri has no skills, and the climax doesn't wire them. A
   skill earns its keep by shipping scripts, and running a script needs the
-  shell, which is in ext. Without one, a skill is only instructions loaded on
+  shell, which is in the workshop. Without one, a skill is only instructions loaded on
   demand, and a note in `~/Documents` that the climax's rag finds covers
   most of that. What a note doesn't give is the catalog: the model knows
   what exists without searching. Path-activated skills (promoted when a
@@ -273,7 +273,7 @@ ends on the climax: setup, base vocabulary (chat, sub-agents), retrieval
 (vectordb, rag), security, measuring the trifecta, tasks, maybe wire,
 hosting, **the climax chapter**, then the coda ("go run Puri").
 
-- `Q_wire_chapter`: with memory and skills both in ext, nothing in vanilla
+- `Q_wire_chapter`: with memory and skills both in the workshop, nothing in vanilla
   injects a mid-conversation message any more. Both of `wire.md`'s victims
   of the dropped `system` message (memory prefetch, skill promotions) are
   gone, and so is the core `Control::Interloper`'s only in-repo caller
@@ -312,27 +312,35 @@ with a forward link.
 
 ## How the two repos relate (decided)
 
-**pikuri is "just" a dependency of pikuri-ext.** Nothing more: no shared
+**pikuri is "just" a dependency of pikuri-workshop.** Nothing more: no shared
 version number, no shared release.
 
-- **Wiring:** ext's root `Gemfile` takes the pikuri gems from git, `master`,
+- **Names:** the repo is pikuri-workshop and book 2 is "the workshop": power
+  tools you use with care, where book 1 is what you can safely leave lying
+  around the house. ("pikuri-ext" was the working name; it blurred with
+  `Pikuri::Agent::Extension`, which gems in both repos ship.) **The gems keep
+  their names** (`pikuri-mcp`, not `pikuri-workshop-mcp`): a gem's name is
+  tied to its namespace and entry file (`Pikuri::Mcp`, `pikuri-mcp.rb`), so
+  a rename churns every constant for nothing; the placement rule can move a
+  gem between repos, and its name mustn't encode which; and which repo a gem
+  lives in is a maintainer's concern, carried by its gemspec's
+  `homepage` / `source_code_uri`, not something a user wiring it needs.
+
+- **Wiring:** the workshop's root `Gemfile` takes the pikuri gems from git, `master`,
   with `Gemfile.lock` pinning the commit, the way Puri, pikuri-tui and
   pikuri-web already ride pikuri. `bundle update pikuri-core` moves it.
-  Without backward compatibility, a vanilla rename breaks ext until ext
+  Without backward compatibility, a vanilla rename breaks the workshop until it
   catches up, and one change becomes two commits. That's the price.
-- **Release:** independent cycles. An ext release needs the pikuri version
+- **Release:** independent cycles. A workshop release needs the pikuri version
   it was built against to be on rubygems first; its gemspecs pin that with
   `~>`. `D_release_one_otp` keeps lockstep *inside* each repo: 9 pushes for
-  pikuri, 7 for ext.
+  pikuri, 7 for the workshop.
 
 ## Open questions
 
-- `Q_ext_name`: is "pikuri-ext" the right name for the repo and book 2? The
-  gems keep their own names (`pikuri-code`, `pikuri-lsp`…), so this names
-  only the repo and the book.
 - `Q_tripwires`: the five seam checks (`tasks/tripwires.rake`) guard
-  invariants that ext code also has to honour (subprocess, loop seam…).
-  Does ext copy the rake file, or does vanilla ship it so ext can load it?
+  invariants that workshop code also has to honour (subprocess, loop seam…).
+  Does the workshop copy the rake file, or does vanilla ship it so the workshop can load it?
   The closed-set-of-five rule (`D_tripwire_bar`) still applies.
 - `Q_book2_shape`: book 2 ends on **a simple coding agent**
   (`pikuri-code`), the way book 1 ends on the CLI Puri. The two climaxes
@@ -351,7 +359,7 @@ version number, no shared release.
 
 ## What moves where (the mechanical list)
 
-**Docs that travel to ext:**
+**Docs that travel to the workshop:**
 
 - per-gem `AGENTS.md` and `design/architecture.md` for `pikuri-code`,
   `pikuri-lsp`, `pikuri-os`, `pikuri-extractors`, `pikuri-memory`,
@@ -380,11 +388,11 @@ version number, no shared release.
   whistles", then pikuri-tui and pikuri-web; plus a pointer at book 2.
 - AGENTS.md: the module map, the "Name a gem after what it refuses to
   become" line (add: "a gem whose future is more features goes to
-  pikuri-ext, and so does one that isn't safe on the host as-is"), the
+  pikuri-workshop, and so does one that isn't safe on the host as-is"), the
   promises (book 1's theme is *Privacy first* plus the trifecta promise;
   *Readable in an evening* stays as the learning principle's promise), the pitch (skills, MCP and "a
   full in-repo coding agent" go), and Promises → *Readable in an evening*.
-- `SECURITY.md`: drop the sections about ext gems, or link to them.
+- `SECURITY.md`: drop the sections about workshop gems, or link to them.
 - `CHANGELOG.md`: one line per move.
 
 ## Order of work (sketch)
@@ -396,7 +404,7 @@ version number, no shared release.
 2. Build the climax binary and its prompt.
 3. Write the climax chapter; rebuild `trifecta-detector.md`'s examples on it;
    rehost `tasks.md`; rewrite `security.md`.
-4. Create the pikuri-ext repo and move the seven gems (`git filter-repo` per
+4. Create the pikuri-workshop repo and move the seven gems (`git filter-repo` per
    path, or just a plain copy, since git is for syncing code, not curating
    history). Move their docs, `D_` entries, ideas and chapters with them.
 5. Rewrite `book/README.md`, AGENTS.md, SECURITY.md and the coda.
