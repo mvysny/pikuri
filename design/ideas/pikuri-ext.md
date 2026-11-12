@@ -83,6 +83,12 @@ simplicity, as every pikuri demo does. The coda then says: if you want this
 with all the bells and whistles (a popup on a global shortcut, streamed
 Markdown, a conversation history), run Puri.
 
+**The binary is `bin/pikuri-secretary`, at the repo root.** Its wiring spans
+five gems, and root `bin/pikuri-*` are dev/demo entry points. The name is
+plain on purpose: it's a teaching demo, and it was Puri's name back in
+pikuri-tui. Not `pikuri-puri`: sharing a name with the app would need
+constant attention to which one a sentence means.
+
 ### Why this and not the coding agent
 
 The coding agent is huge, and it puts all three trifecta legs into one
@@ -170,11 +176,6 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
 
 ### Open questions
 
-- `Q_climax_name`: the binary's name and home. Its wiring spans five gems, so
-  a root `bin/` demo fits (AGENTS.md: root `bin/pikuri-*` are dev/demo entry
-  points). Not `pikuri-assistant`: that name was just retired for a
-  different idea. Candidates: `pikuri-secretary` (Puri's ancestor name in
-  pikuri-tui), `pikuri-siri`-free names like `pikuri-desk`.
 - `Q_notes_write_gate`: confirm every note write, only edits to notes the
   agent didn't write, or none in the demo (diff shown in the transcript)?
   Shared with Puri.
