@@ -59,6 +59,18 @@ module Pikuri
           'Brave'
         end
 
+        # Whether {Engines} may keep this provider's results in its on-disk
+        # cache. No: the Search API terms (§3(b)(i),
+        # https://api-dashboard.search.brave.com/terms-of-service) forbid to
+        # "store, cache, or create a database of Search Results … other than
+        # transient storage required for operation", so they stay in memory
+        # ({UrlCache::InMemory}).
+        #
+        # @return [Boolean] +false+
+        def disk_cacheable?
+          false
+        end
+
         # Fetch results for +query+ as an +Array<Result>+. Throttled to 1/sec and
         # circuit-broken 5 min on rate-limit/quota (see {LIMITER}). The caller
         # ({Engines#search}) normalizes the query and wraps this in a cache.

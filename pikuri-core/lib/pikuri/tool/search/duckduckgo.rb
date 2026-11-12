@@ -36,6 +36,15 @@ module Pikuri
           'DuckDuckGo'
         end
 
+        # Whether {Engines} may keep this provider's results in its on-disk
+        # cache. Yes: pikuri scrapes the keyless HTML endpoint, under no API
+        # agreement restricting what it keeps.
+        #
+        # @return [Boolean] +true+
+        def disk_cacheable?
+          true
+        end
+
         # Fetch results for +query+ as an +Array<Result>+. Throttled to one every
         # 2s and circuit-broken 5 min after a soft-block (see {LIMITER}). The
         # caller ({Engines#search}) normalizes the query and wraps this in a cache.

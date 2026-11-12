@@ -22,7 +22,7 @@ RSpec.describe Pikuri::Tool::WebScrape, '.visit' do
 
   def with_real_cache
     Dir.mktmpdir('pikuri-cache-test-') do |dir|
-      cache = Pikuri::UrlCache.new(ttl: 60, dir: dir)
+      cache = Pikuri::UrlCache::OnDisk.new(ttl: 60, dir: dir)
       original_cache = described_class.method(:cache)
       described_class.singleton_class.define_method(:cache) { cache }
       begin

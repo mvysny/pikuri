@@ -8,15 +8,18 @@ require 'minitest/assertions'
 
 require 'pikuri-core'
 
-# Disable on-disk caching by default in the test suite. The specs that
-# genuinely exercise caching behavior opt back in by stubbing +.cache+
-# with a real {Pikuri::UrlCache} pointed at a tmpdir.
-[Pikuri::Tool::WebScrape, Pikuri::Tool::Fetch, Pikuri::Tool::Search::Engines].each do |mod|
+# Disable caching by default in the test suite. The specs that genuinely
+# exercise caching opt back in by stubbing an accessor with a real
+# {Pikuri::UrlCache::OnDisk} on a tmpdir, or a fresh {Pikuri::UrlCache::InMemory}.
+[Pikuri::Tool::WebScrape, Pikuri::Tool::Fetch].each do |mod|
   mod.singleton_class.define_method(:cache) { Pikuri::UrlCache::NULL }
 end
-# +Engines.cache+ is the class-level default the +Engines.new(cache:)+
-# constructor falls back to, so the override above makes every engine built
-# in the suite (including via +Tool::WebSearch.build+) default to NULL.
+# The class-level defaults +Engines.new(disk_cache:, memory_cache:)+ falls back
+# to, so every engine built in the suite (including via
+# +Tool::WebSearch.build+) defaults to NULL.
+%i[disk_cache memory_cache].each do |accessor|
+  Pikuri::Tool::Search::Engines.singleton_class.define_method(accessor) { Pikuri::UrlCache::NULL }
+end
 
 # Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output. Specs that exercise logging

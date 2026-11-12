@@ -66,6 +66,20 @@ module Pikuri
           'Exa'
         end
 
+        # Whether {Engines} may keep this provider's results in its on-disk
+        # cache. No: Exa's Terms of Service, which cover the API, forbid to
+        # "copy … duplicate … any information … obtained from or through, the
+        # Services, except for temporary files that are automatically cached
+        # by your web browser" (§4.2(a), https://exa.ai/terms), so they stay in
+        # memory ({UrlCache::InMemory}). Its Master Subscription Agreement,
+        # which lets a customer own the output, binds Order Form (Enterprise)
+        # customers, not a pay-as-you-go key.
+        #
+        # @return [Boolean] +false+
+        def disk_cacheable?
+          false
+        end
+
         # Fetch results for +query+ as an +Array<Result>+. Circuit-broken for
         # 5 minutes on rate-limit/unavailable (see {LIMITER}). The caller
         # ({Engines#search}) normalizes the query and wraps this in a cache.

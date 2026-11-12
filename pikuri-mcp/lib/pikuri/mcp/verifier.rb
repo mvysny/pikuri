@@ -102,7 +102,7 @@ module Pikuri
 
         # The cache stores ONLY the literal string "OK". A rejection
         # raises {InjectionDetected} from inside the cache block, and
-        # {UrlCache#fetch} skips persistence when the block raises —
+        # {UrlCache::OnDisk#fetch} skips persistence when the block raises —
         # so a rejected server gets re-verified on the next boot.
         @cache.fetch(entry: entry, client: client, tools: tools) do
           # Cache miss → real LLM round-trip. The same heads-up

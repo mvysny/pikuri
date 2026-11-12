@@ -80,7 +80,7 @@ module Pikuri
   #   ten simultaneous requests from one IP and earn the ban it exists to
   #   avoid.
   # * *P_shared_benign* — unprotected process-wide state whose race is
-  #   harmless; the doc names the race ({Pikuri::UrlCache}: both callers
+  #   harmless; the doc names the race ({Pikuri::UrlCache::OnDisk}: both callers
   #   compute a cold key and write identical bytes).
   # * *P_one_agent* — agent-scoped state, so exactly one agent. It needs no
   #   lock because its only caller is that agent, whose calls are already

@@ -160,6 +160,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
     parent = self
     Module.new do
       define_singleton_method(:label) { 'Good' }
+      define_singleton_method(:disk_cacheable?) { true }
       define_singleton_method(:search) do |query, max_results:, cancellable: nil|
         _ = cancellable
         parent.good_result(query, max_results)
@@ -186,12 +187,12 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
   end
 
   # Build an engine whose provider cascade is the given synthetic list.
-  # The cache defaults to NULL (no disk) — caching examples pass a real
-  # tmpdir cache instead. Provider selection is normally derived from the
+  # Both caches default to NULL — caching examples pass a real tmpdir
+  # disk cache or a fresh memory cache instead. Provider selection is normally derived from the
   # keys; here we override it directly on the instance so the cascade can
   # be exercised with synthetic providers.
-  def engine_with(providers, cache: Pikuri::UrlCache::NULL)
-    e = described_class.new(cache: cache)
+  def engine_with(providers, disk_cache: Pikuri::UrlCache::NULL, memory_cache: Pikuri::UrlCache::NULL)
+    e = described_class.new(disk_cache: disk_cache, memory_cache: memory_cache)
     e.define_singleton_method(:providers) { providers }
     e
   end
@@ -207,6 +208,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
   it 'renders an empty result list as the standard no-results stub' do
     empty = Module.new do
       def self.label = 'Empty'
+      def self.disk_cacheable? = true
       def self.search(_q, max_results:, cancellable: nil) = (_ = [max_results, cancellable]; [])
     end
     assert_equal "## Search Results\n\nNo results found.", engine_with([empty]).search('ruby', max_results: 10).to_s
@@ -237,6 +239,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
     seen = nil
     spy = Module.new
     spy.define_singleton_method(:label) { 'Spy' }
+    spy.define_singleton_method(:disk_cacheable?) { true }
     spy.define_singleton_method(:search) do |q, max_results:, cancellable: nil|
         _ = cancellable
       seen = q
@@ -253,16 +256,17 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
 
   it 'caches the answer so a subsequent call with the same query skips providers' do
     Dir.mktmpdir('pikuri-cache-test-') do |dir|
-      cache = Pikuri::UrlCache.new(ttl: 60, dir: dir)
+      cache = Pikuri::UrlCache::OnDisk.new(ttl: 60, dir: dir)
       calls = 0
       once = Module.new
       once.define_singleton_method(:label) { 'Once' }
+      once.define_singleton_method(:disk_cacheable?) { true }
       once.define_singleton_method(:search) do |q, max_results:, cancellable: nil|
         _ = cancellable
         calls += 1
         [Pikuri::Tool::Search::Result.new(url: 'https://example.com', title: "ok: #{q} (#{max_results})", body: '')]
       end
-      engine = engine_with([once], cache: cache)
+      engine = engine_with([once], disk_cache: cache)
 
       expected = "## Search Results\n\n[ok: ruby (10)](https://example.com)\n"
       assert_equal expected, engine.search('ruby', max_results: 10).to_s
@@ -273,14 +277,59 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
 
   it 'does not cache the all-unavailable error string' do
     Dir.mktmpdir('pikuri-cache-test-') do |dir|
-      cache = Pikuri::UrlCache.new(ttl: 60, dir: dir)
-      engine = engine_with([bad, bad], cache: cache)
+      cache = Pikuri::UrlCache::OnDisk.new(ttl: 60, dir: dir)
+      engine = engine_with([bad, bad], disk_cache: cache)
       engine.search('ruby', max_results: 10)
       # Now flip to a working provider on the same cache — if the error had
       # been cached, this would still return the previous "Error: ..." string.
       working = good
       engine.define_singleton_method(:providers) { [working] }
       assert_equal good_markdown('ruby', 10), engine.search('ruby', max_results: 10).to_s
+    end
+  end
+
+  describe 'where results are cached' do
+    # A provider answering +disk_cacheable?+ as given, counting its calls.
+    def counting(disk_cacheable)
+      parent = self
+      calls = 0
+      provider = Module.new
+      provider.define_singleton_method(:label) { 'Counting' }
+      provider.define_singleton_method(:disk_cacheable?) { disk_cacheable }
+      provider.define_singleton_method(:calls) { calls }
+      provider.define_singleton_method(:search) do |query, max_results:, cancellable: nil|
+        _ = cancellable
+        calls += 1
+        parent.good_result(query, max_results)
+      end
+      provider
+    end
+
+    around do |example|
+      Dir.mktmpdir('pikuri-cache-test-') do |dir|
+        @disk = Pikuri::UrlCache::OnDisk.new(ttl: 60, dir: dir)
+        @memory = Pikuri::UrlCache::InMemory.new(ttl: 60, max_entries: 10)
+        example.run
+      end
+    end
+
+    it 'keeps a disk_cacheable winner\'s results on disk, not in memory' do
+      engine_with([counting(true)], disk_cache: @disk, memory_cache: @memory).search('ruby', max_results: 10)
+      assert_equal good_markdown('ruby', 10), @disk.read('ruby')
+      assert_nil @memory.read('ruby')
+    end
+
+    it 'never writes a non-disk_cacheable winner\'s results to disk' do
+      engine_with([counting(false)], disk_cache: @disk, memory_cache: @memory).search('ruby', max_results: 10)
+      assert_nil @disk.read('ruby')
+      assert_equal good_markdown('ruby', 10), @memory.read('ruby')
+    end
+
+    it 'serves a memory-cached search without asking the provider again' do
+      provider = counting(false)
+      engine = engine_with([provider], disk_cache: @disk, memory_cache: @memory)
+      2.times { engine.search('ruby', max_results: 10) }
+      assert_equal 1, provider.calls
     end
   end
 end
@@ -291,6 +340,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
   let(:pair_provider) do
     Module.new do
       def self.label = 'Pair'
+      def self.disk_cacheable? = true
 
       def self.search(query, max_results:, cancellable: nil)
         _ = cancellable
@@ -316,7 +366,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
   # Each engine has its own @last_logged_providers memo, so a fresh engine
   # per example starts unlogged — no global reset needed.
   def engine_with(providers)
-    e = Pikuri::Tool::Search::Engines.new(cache: Pikuri::UrlCache::NULL)
+    e = Pikuri::Tool::Search::Engines.new(disk_cache: Pikuri::UrlCache::NULL, memory_cache: Pikuri::UrlCache::NULL)
     e.define_singleton_method(:providers) { providers }
     e
   end
@@ -340,8 +390,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
 
   it 'logs a cache=hit line when a subsequent search is served from cache' do
     Dir.mktmpdir('pikuri-cache-test-') do |dir|
-      cache = Pikuri::UrlCache.new(ttl: 60, dir: dir)
-      engine = Pikuri::Tool::Search::Engines.new(cache: cache)
+      cache = Pikuri::UrlCache::OnDisk.new(ttl: 60, dir: dir)
+      engine = Pikuri::Tool::Search::Engines.new(disk_cache: cache, memory_cache: Pikuri::UrlCache::NULL)
       provider = pair_provider
       engine.define_singleton_method(:providers) { [provider] }
       engine.search('ruby', max_results: 10)
@@ -356,6 +406,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
   it 'relogs the available-engines line when the provider set changes' do
     other = Module.new do
       def self.label = 'Other'
+      def self.disk_cacheable? = true
 
       def self.search(_query, max_results:, cancellable: nil)
         _ = cancellable

@@ -25,8 +25,8 @@ module Pikuri
     #
     # What *is* per instance is trivial — the provider list and a
     # last-logged-set memo, which can only duplicate an INFO line. The result
-    # cache ({Engines::CACHE}) is class-level as well, so one agent's search
-    # answers another's within the TTL.
+    # caches ({Engines::DISK_CACHE}, {Engines::MEMORY_CACHE}) are class-level
+    # as well, so one agent's search answers another's within the TTL.
     #
     # The consequence a host should plan for is latency, not corruption: see
     # {Search::RateLimiter} for the serialization and the shared circuit

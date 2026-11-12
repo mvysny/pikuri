@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::UrlCache` is now a namespace holding `UrlCache::OnDisk` (the old class, plus `read` / `write`) and the new `UrlCache::InMemory`, and `web_search` keeps Brave and Exa results in memory only — their API terms forbid storing them — via each provider's `disk_cacheable?`. Replace `UrlCache.new` with `UrlCache::OnDisk.new`, and `Engines.new(cache:)` with `disk_cache:` / `memory_cache:`.
 - **Breaking:** `Pikuri::Workspace::Confirmer#ask` answers `Approved`, a textless `Rejected` (the model is told to stop) or the new `Redirected(message:)` (the human's typed words, handed to the model as guidance), and `Confirmer::Terminal` asks `[y] approve  [n] reject  [r] redirect`; a custom confirmer returns `Rejected.new` for a plain no and `Redirected` wherever it used to send a reason, and may raise `Agent::Control::Cancellable::Cancelled` from a parked `#ask` to cancel the turn. See `D_bare_rejected`.
 - Add `Pikuri::Agent::ChatTransport#with_detected_modalities`, which reads a llama.cpp router's `/v1/models` (or a single server's `/props`) without loading the model, so `Agent#modalities` is known before the first turn; `Agent#modalities` now also follows a model switch at once. See `D_refuse_unsupported_attachments`.
 - **Breaking:** `Pikuri::Agent::Extension#on_user_message` takes a third argument, the turn's `Pikuri::Attachment`s, and now fires on an attachment-only turn too (with `""`), so `pikuri-memory` records a note naming each attached file. Add the parameter to your override.

@@ -61,4 +61,8 @@ RSpec.describe Pikuri::Tool::Search::Brave do
       assert_includes err.message, 'Brave Search API key is blank'
     end
   end
+
+  it 'keeps its results off disk, per the API terms' do
+    refute described_class.new(api_key: 'k').disk_cacheable?
+  end
 end

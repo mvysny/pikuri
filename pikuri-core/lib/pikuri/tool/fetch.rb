@@ -36,11 +36,11 @@ module Pikuri
       # +web_scrape+ on the same URL don't collide (raw body vs extracted
       # Markdown). A method so specs can swap {UrlCache::NULL}.
       #
-      # @return [UrlCache, #fetch]
-      CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/fetch")
+      # @return [UrlCache::OnDisk, #fetch]
+      CACHE = UrlCache::OnDisk.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/fetch")
       # Accessor for {CACHE}; specs swap in {UrlCache::NULL} or an isolated cache.
       #
-      # @return [UrlCache, #fetch]
+      # @return [UrlCache::OnDisk, #fetch]
       def self.cache
         CACHE
       end
@@ -113,7 +113,7 @@ module Pikuri
     # Sharing: +P_shared_benign+ — no per-agent state, but {Fetch::CACHE} is
     # process-wide (and on disk, so cross-process too): agent B's +fetch+ can
     # be answered from agent A's download within the TTL. See
-    # {Pikuri::UrlCache} for the race and why it's harmless.
+    # {Pikuri::UrlCache::OnDisk} for the race and why it's harmless.
     #
     # @return [Tool]
     FETCH = new(

@@ -4,7 +4,7 @@ module Pikuri
   class Tool
     # Namespace for the web-search stack behind {Tool::WebSearch}: per-provider
     # modules ({DuckDuckGo}, {Brave}, {Exa}), the {Result} they return, the
-    # {Engines} cascade with its on-disk cache, and the shared {RateLimiter}.
+    # {Engines} cascade with its result caches, and the shared {RateLimiter}.
     module Search
       # Search-orchestration object: the cascade across selected providers, the
       # result cache, and the {Unavailable} marker the cascade falls back on.
@@ -57,18 +57,32 @@ module Pikuri
         # anything else bubbles up so genuine bugs stay visible.
         class Unavailable < StandardError; end
 
-        # Process-shared on-disk cache backing {#search}, at class level so every
-        # engine dedupes into one directory; the constructor's +cache:+ injects a
-        # different store for tests.
+        # On-disk result cache for providers whose +disk_cacheable?+ is true, at
+        # class level so every engine dedupes into one directory.
         #
-        # @return [UrlCache, #fetch]
-        CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_search")
-        # Accessor for {CACHE}, the constructor's +cache:+ default; specs swap in
-        # {UrlCache::NULL}.
+        # @return [UrlCache::OnDisk]
+        DISK_CACHE = UrlCache::OnDisk.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_search")
+
+        # In-memory result cache for the rest (Brave, Exa: their terms forbid
+        # storing results), shared by every engine in the process.
         #
-        # @return [UrlCache, #fetch]
-        def self.cache
-          CACHE
+        # @return [UrlCache::InMemory]
+        MEMORY_CACHE = UrlCache::InMemory.new(ttl: UrlCache::DEFAULT_TTL, max_entries: 100)
+
+        # Accessor for {DISK_CACHE}, the constructor's +disk_cache:+ default;
+        # specs swap in {UrlCache::NULL}.
+        #
+        # @return [UrlCache::OnDisk, #read, #write]
+        def self.disk_cache
+          DISK_CACHE
+        end
+
+        # Accessor for {MEMORY_CACHE}, the constructor's +memory_cache:+
+        # default; specs swap in {UrlCache::NULL}.
+        #
+        # @return [UrlCache::InMemory, #read, #write]
+        def self.memory_cache
+          MEMORY_CACHE
         end
 
         # Resolve an +engines:+ selection into the engine names to build,
@@ -207,10 +221,14 @@ module Pikuri
         #   derives the set from the keys. See {.resolve}.
         # @param brave_key [String, nil] Brave token.
         # @param exa_key [String, nil] Exa key.
-        # @param cache [UrlCache, #fetch] result store; defaults to {.cache}.
+        # @param disk_cache [UrlCache::OnDisk, #read, #write] store for a
+        #   +disk_cacheable?+ winner's results; defaults to {.disk_cache}.
+        # @param memory_cache [UrlCache::InMemory, #read, #write] store for
+        #   every other winner's; defaults to {.memory_cache}.
         # @return [Engines]
         # @raise [ArgumentError] as {.resolve}.
-        def initialize(engines: nil, brave_key: nil, exa_key: nil, cache: self.class.cache)
+        def initialize(engines: nil, brave_key: nil, exa_key: nil,
+                       disk_cache: self.class.disk_cache, memory_cache: self.class.memory_cache)
           @providers = self.class.resolve(engines: engines, brave_key: brave_key, exa_key: exa_key).map do |name|
             case name
             when :duckduckgo then DuckDuckGo.new
@@ -218,7 +236,8 @@ module Pikuri
             when :exa then Exa.new(api_key: exa_key)
             end
           end
-          @cache = cache
+          @disk_cache = disk_cache
+          @memory_cache = memory_cache
           @last_logged_providers = nil
         end
 
@@ -230,9 +249,10 @@ module Pikuri
         # {Unavailable}. The shuffle spreads load so one provider isn't always
         # hit (and exhausted) first. The query is whitespace-normalized first;
         # the winning provider's +Array<Result>+ is rendered to Markdown and
-        # cached on disk keyed by the cleaned query (a hit short-circuits the
-        # cascade). +max_results+ is *not* in the cache key, so a non-default
-        # value may return a previously-cached size.
+        # cached keyed by the cleaned query (a hit short-circuits the cascade):
+        # on disk when the winner is +disk_cacheable?+, else in memory only.
+        # +max_results+ is *not* in the cache key, so a non-default value may
+        # return a previously-cached size.
         #
         # If every provider is unavailable, returns an +"Error: ..."+ string
         # (the tool convention) rather than raising. Any non-{Unavailable}
@@ -257,30 +277,12 @@ module Pikuri
           current_providers = providers
           log_providers(current_providers)
 
-          hit = true
-          result = @cache.fetch(cleaned) do
-            hit = false
-            failures = []
-            results = nil
-            chosen = nil
-            current_providers.shuffle.each do |provider|
-              results = provider.search(cleaned, max_results: max_results, cancellable: cancellable)
-              chosen = provider
-              break
-            rescue Unavailable => e
-              failures << "#{provider.label} (#{e.message})"
-            end
-            # Raise so {UrlCache#fetch} does NOT persist the all-unavailable
-            # message — else it would block every future search for this query
-            # until the TTL expires. The outer rescue turns it into "Error: …".
-            chosen or raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
-
-            LOGGER.info do
-              "engine=#{chosen.label} query=#{cleaned.inspect} results=#{results.size}"
-            end
-            render(results)
+          result = @memory_cache.read(cleaned) || @disk_cache.read(cleaned)
+          if result
+            LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{result.bytesize}" }
+          else
+            result = run_cascade(cleaned, current_providers, max_results: max_results, cancellable: cancellable)
           end
-          LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{result.bytesize}" } if hit
           Tool::Result.new(
             content: result,
             summary: "Returned #{Pikuri::Tool.pluralize(count_rendered(result), 'search result')}"
@@ -290,6 +292,32 @@ module Pikuri
         end
 
         private
+
+        # Ask the providers in random order until one answers, then render its
+        # rows and store them where its terms allow.
+        #
+        # @param cleaned [String] the normalized query
+        # @param current_providers [Array<#search, #label, #disk_cacheable?>]
+        # @param max_results [Integer]
+        # @param cancellable [Pikuri::Agent::Control::Cancellable]
+        # @return [String] the rendered Markdown
+        # @raise [Unavailable] when every provider is — raised, never stored, so
+        #   the all-unavailable message can't block this query for the TTL
+        def run_cascade(cleaned, current_providers, max_results:, cancellable:)
+          failures = []
+          current_providers.shuffle.each do |provider|
+            results = provider.search(cleaned, max_results: max_results, cancellable: cancellable)
+            disk = provider.disk_cacheable?
+            LOGGER.info do
+              "engine=#{provider.label} query=#{cleaned.inspect} results=#{results.size} " \
+                "cache=#{disk ? 'disk' : 'memory'}"
+            end
+            return (disk ? @disk_cache : @memory_cache).write(cleaned, render(results))
+          rescue Unavailable => e
+            failures << "#{provider.label} (#{e.message})"
+          end
+          raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
+        end
 
         # Render an +Array<Result>+ into the smolagents-style Markdown the LLM
         # consumes (+"## Search Results"+ header, then +[title](url)\nbody+

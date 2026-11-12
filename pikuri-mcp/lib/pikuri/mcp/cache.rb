@@ -6,7 +6,7 @@ require 'json'
 module Pikuri
   module Mcp
     # On-disk cache for the per-server descriptions {Synthesizer} pays an LLM
-    # round-trip to produce. Wraps {Pikuri::UrlCache} for storage; this class
+    # round-trip to produce. Wraps {Pikuri::UrlCache::OnDisk} for storage; this class
     # owns the *key calculation* — the fingerprint of every input that could
     # change the output, so an unchanged surface short-circuits and a changed
     # one auto-invalidates. The key hashes canonical JSON over: +model_id+
@@ -19,7 +19,7 @@ module Pikuri
     #
     # +ttl: Float::INFINITY+: no time expiry, entries valid until the keyed
     # surface changes; force a full rebuild by +rm+-ing {DIR} or bumping the
-    # prompt version. {#fetch} mirrors {UrlCache#fetch} (yield on miss, persist
+    # prompt version. {#fetch} mirrors {UrlCache::OnDisk#fetch} (yield on miss, persist
     # the result); callers rescue around it for corrupt-file robustness.
     class Cache
       # On-disk root. Sibling of {Pikuri::UrlCache::ROOT_DIR} so all of pikuri's
@@ -34,7 +34,7 @@ module Pikuri
       def initialize(model_id:, prompt_version:, dir: DIR)
         @model_id = model_id
         @prompt_version = prompt_version
-        @url_cache = UrlCache.new(ttl: Float::INFINITY, dir: dir)
+        @url_cache = UrlCache::OnDisk.new(ttl: Float::INFINITY, dir: dir)
       end
 
       # Return the cached description for the +(entry, client, tools)+ triple, or
@@ -50,7 +50,7 @@ module Pikuri
       end
 
       # The canonical fingerprint for a +(entry, client, tools)+ triple —
-      # {Pikuri::UrlCache} SHA-256s it into the filename; we return the raw JSON
+      # {Pikuri::UrlCache::OnDisk} SHA-256s it into the filename; we return the raw JSON
       # (not a hash) so it's inspectable in tests.
       #
       # @return [String] canonical JSON over the keyed inputs

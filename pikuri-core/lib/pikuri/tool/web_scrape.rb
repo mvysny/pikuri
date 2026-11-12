@@ -19,11 +19,11 @@ module Pikuri
 
       # On-disk cache for {.visit}. A method so specs can swap {UrlCache::NULL}.
       #
-      # @return [UrlCache, #fetch]
-      CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_scrape")
+      # @return [UrlCache::OnDisk, #fetch]
+      CACHE = UrlCache::OnDisk.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_scrape")
       # Accessor for {CACHE}; specs swap in {UrlCache::NULL} or an isolated cache.
       #
-      # @return [UrlCache, #fetch]
+      # @return [UrlCache::OnDisk, #fetch]
       def self.cache
         CACHE
       end
@@ -71,7 +71,7 @@ module Pikuri
     #
     # Sharing: +P_shared_benign+ — as {Tool::FETCH}: no per-agent state, but
     # {WebScrape::CACHE} is process-wide and on disk, so one agent's scrape
-    # answers another's within the TTL. See {Pikuri::UrlCache}.
+    # answers another's within the TTL. See {Pikuri::UrlCache::OnDisk}.
     #
     # @return [Tool]
     WEB_SCRAPE = new(

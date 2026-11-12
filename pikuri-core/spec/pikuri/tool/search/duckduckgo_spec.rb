@@ -74,4 +74,8 @@ RSpec.describe Pikuri::Tool::Search::DuckDuckGo do
       assert_includes err.message, 'Unfortunately, bots use DuckDuckGo too.'
     end
   end
+
+  it 'lets its results be cached on disk' do
+    assert described_class.new.disk_cacheable?
+  end
 end
