@@ -32,9 +32,10 @@ module Pikuri
     # past the sample — bytes go to markitdown with no hint and its own
     # detection takes over. Consequence: a *local* +.xls+ (no transport
     # content-type, sniff blind) isn't claimed at all and keeps today's
-    # binary refusal. Ordering edge: this instance sits *after* core's
-    # +HTML+, so a PDF served under a lying +text/html+ header goes to
-    # HTML (pikuri-pdf front-inserts and wins that) — accepted, rare.
+    # binary refusal. Ordering edge: whichever of this and pikuri-web's
+    # +HTML+ registers first sits first, so a PDF served under a lying
+    # +text/html+ header may go to HTML (pikuri-pdf front-inserts and wins
+    # that) — accepted, rare.
     class Documents
       # @return [Logger] gem-wide diagnostics logger.
       LOGGER = Pikuri.logger_for('Extractors')
@@ -166,9 +167,9 @@ module Pikuri
       end
 
       # Plug this extractor into {Pikuri::Extractor.registry}, before the
-      # terminal +Passthrough+ entry but after core's +HTML+ and
-      # pikuri-pdf's front-inserted +PDF+ (both keep winning their
-      # formats). Idempotent — a second call is a no-op.
+      # terminal +Passthrough+ entry and after pikuri-pdf's front-inserted
+      # +PDF+ (which keeps winning PDFs). Idempotent — a second call is a
+      # no-op.
       #
       # @return [Documents] self, for chaining.
       def register

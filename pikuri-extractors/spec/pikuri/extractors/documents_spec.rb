@@ -120,12 +120,11 @@ RSpec.describe Pikuri::Extractors::Documents do
   end
 
   describe '#register' do
-    it 'inserts before the terminal Passthrough entry, after HTML' do
+    it 'inserts before the terminal Passthrough entry' do
       documents.register
       registry = Pikuri::Extractor.registry
       assert_equal Pikuri::Extractor::Passthrough, registry.last
       assert_equal documents, registry[-2]
-      assert registry.index(Pikuri::Extractor::HTML) < registry.index(documents)
     end
 
     it 'is idempotent and returns self' do

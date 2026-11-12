@@ -30,8 +30,8 @@ module Pikuri
     # +Pikuri::Extractors::PDF.register+, which *front*-inserts into the
     # registry (unlike pikuri-extractors' before-terminal insert)
     # because the +%PDF-+ magic sniff is the registry's strongest
-    # signal — it must beat +HTML+'s content-type match so a PDF under a
-    # lying header still extracts, and it never misfires on text.
+    # signal — it must beat pikuri-web's +HTML+ content-type match so a
+    # PDF under a lying header still extracts, and it never misfires on text.
     module PDF
       # Insert this extractor at the front of
       # +Pikuri::Extractor.registry+ (see "Registration is explicit"

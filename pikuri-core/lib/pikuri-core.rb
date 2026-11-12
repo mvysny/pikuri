@@ -146,7 +146,6 @@ module Pikuri
   # from a spec), kept off the production load path — so don't autoload or
   # eager-load it. See {Pikuri::Testing}.
   Loader.ignore(File.expand_path('pikuri/testing.rb', __dir__))
-  Loader.inflector.inflect('html' => 'HTML')
   Loader.setup
   Loader.eager_load
 

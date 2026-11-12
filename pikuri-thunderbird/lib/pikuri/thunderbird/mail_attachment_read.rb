@@ -21,7 +21,8 @@ module Pikuri
     # mbox ({MessageStore}); the +mail+ gem walks to the attachment's MIME part
     # number and undoes its transfer encoding; the {Pikuri::Extractor} registry
     # turns it into text, so which formats read depends on what the host
-    # registered (pikuri-pdf, pikuri-extractors).
+    # registered (pikuri-pdf, pikuri-extractors; an HTML attachment renders
+    # only when pikuri-web is loaded, and is raw markup otherwise).
     #
     # Refused up front: images, forwarded mails (+message/rfc822+), encrypted
     # parts, links to online files, and detached stubs. Inbound-only, with the

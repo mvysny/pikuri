@@ -52,21 +52,9 @@ Gem::Specification.new do |spec|
   # probe, and (transitively) by ruby_llm.
   spec.add_dependency 'faraday',          '~> 2.9'
 
-  # HTML parser, under Pikuri::Extractor::HTML.
-  spec.add_dependency 'nokogiri',         '~> 1.19'
-
   # ANSI color for terminal output (reasoning dim, tool calls tan, …)
   # in the agent loop.
   spec.add_dependency 'rainbow',          '~> 3.1'
-
-  # HTML → Markdown conversion. Used by Pikuri::Extractor::HTML to hand
-  # the LLM Markdown rather than raw HTML.
-  spec.add_dependency 'reverse_markdown', '~> 3.0'
-
-  # Readability-style main-content extraction (require 'readability').
-  # Used by Pikuri::Extractor::HTML to strip chrome from a page before
-  # converting it to Markdown.
-  spec.add_dependency 'ruby-readability', '~> 0.7'
 
   # LLM transport + agent loop. Pikuri sits on top of ruby_llm and owns
   # only the extension surface (see AGENTS.md "Invariants (seams)" and

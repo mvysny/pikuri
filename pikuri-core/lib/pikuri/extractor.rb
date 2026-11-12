@@ -2,8 +2,8 @@
 
 module Pikuri
   # The format→text extraction seam: one ordered registry of extractors
-  # turning an +IO+ of a recognised format (HTML + plain text in core;
-  # PDF / office formats via the pikuri-pdf / pikuri-extractors gems) into
+  # turning an +IO+ of a recognised format (plain text in core; HTML via
+  # pikuri-web, PDF / office formats via pikuri-pdf / pikuri-extractors) into
   # Markdown-flavoured UTF-8, behind two front doors:
   #
   # * {.extract} — the whole document as one String (no windowing).
@@ -36,7 +36,7 @@ module Pikuri
   #   the moment the window fills, so the document's tail is never parsed
   #   (pikuri-pdf parses pages on access). Must be consumed while +io+ is
   #   open; may raise {Error} mid-iteration. Extractors needing the whole
-  #   document ({HTML}, any subprocess-based one) omit it, and
+  #   document (pikuri-web's HTML, any subprocess-based one) omit it, and
   #   {.extract_paged} extracts in full then windows.
   #
   # Windowing (offset / limit / byte cap / truncation) is presentation and
@@ -133,16 +133,16 @@ module Pikuri
     Page = Data.define(:lines, :start_line, :total_lines, :more, :byte_capped, :kind)
 
     # The extractor registry, consulted in order — first match wins. Core
-    # ships {HTML} (content-type) then the terminal {Passthrough} plain-text
-    # arm. A gem picks its insertion point by claim strength: a magic-byte
-    # sniff that never misfires on text goes at the *front* to beat {HTML}
+    # ships only the terminal {Passthrough} plain-text arm. A gem picks its
+    # insertion point by claim strength: a magic-byte sniff that never
+    # misfires on text goes at the *front* to beat a content-type claimer
     # under a lying header (+registry.unshift(X)+ — pikuri-pdf); a
     # content-type/weaker claimer inserts before the terminal entry
-    # (+registry.insert(-2, X)+ — pikuri-extractors).
+    # (+registry.insert(-2, X)+ — pikuri-web's HTML, pikuri-extractors).
     #
     # @return [Array<#matches?>] mutable, deliberately — the plug-in seam.
     def registry
-      @registry ||= [HTML, Passthrough]
+      @registry ||= [Passthrough]
     end
 
     # Extract the whole document behind +io+ as one Markdown-flavoured UTF-8

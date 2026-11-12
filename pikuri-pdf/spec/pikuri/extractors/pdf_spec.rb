@@ -88,7 +88,7 @@ RSpec.describe Pikuri::Extractors::PDF, '.extract' do
   describe '.register' do
     after { Pikuri::Extractor.registry.delete(described_class) }
 
-    it 'inserts at the front of the registry, ahead of HTML' do
+    it 'inserts at the front of the registry' do
       described_class.register
       assert_equal described_class, Pikuri::Extractor.registry.first
     end

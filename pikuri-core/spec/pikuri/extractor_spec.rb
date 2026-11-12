@@ -4,7 +4,7 @@ require 'stringio'
 
 # Exercise the registry front doors — routing (which extractor claims
 # what, in which order) and the two consumption shapes. The extractors
-# themselves are tested in spec/pikuri/extractor/; the path-aware
+# themselves are tested beside their own files; the path-aware
 # wrappers in file_type_spec.rb cover the same windowing through real
 # files, so this spec sticks to what only the registry decides.
 RSpec.describe Pikuri::Extractor do
@@ -22,17 +22,9 @@ RSpec.describe Pikuri::Extractor do
       assert_equal "# Title\n\nbody", extract("# Title\n\nbody")
     end
 
-    it 'routes text/html through the HTML extractor' do
-      out = extract('<html><body><h1>Hi</h1><p>hello world</p></body></html>',
-                    content_type: 'text/html')
-      assert_includes out, 'hello world'
-      refute_includes out, '<p>'
-    end
-
-    it 'routes application/xhtml+xml through the HTML extractor' do
-      out = extract('<html><body><p>xhtml content</p></body></html>',
-                    content_type: 'application/xhtml+xml')
-      assert_includes out, 'xhtml content'
+    it 'passes text/html through as raw markup out of the box (rendering lives in pikuri-web)' do
+      html = '<html><body><p>hello world</p></body></html>'
+      assert_equal html, extract(html, content_type: 'text/html')
     end
 
     it 'raises Unsupported for application/pdf out of the box (PDF support lives in pikuri-pdf)' do
@@ -92,14 +84,29 @@ RSpec.describe Pikuri::Extractor do
     end
 
     it 'extracts formats without extract_lines in full, so their total is known even when the window fills' do
-      html = '<html><head><title>T</title></head><body><article>' \
-             "<p>#{'x' * 600}</p></article></body></html>"
-      page = extract_paged(html, content_type: 'text/html', limit: 1)
+      whole = Module.new do
+        def self.kind = :whole
 
-      assert_equal 1, page.lines.length
-      assert page.more
-      refute_nil page.total_lines
-      assert_equal :html, page.kind
+        def self.matches?(sample:, content_type:)
+          sample.start_with?('WHOLE')
+        end
+
+        def self.extract(io)
+          io.read.split.join("\n")
+        end
+      end
+
+      described_class.registry.unshift(whole)
+      begin
+        page = extract_paged('WHOLE a b c d', limit: 1)
+
+        assert_equal %w[WHOLE], page.lines
+        assert page.more
+        assert_equal 5, page.total_lines
+        assert_equal :whole, page.kind
+      ensure
+        described_class.registry.delete(whole)
+      end
     end
 
     it 'consumes extract_lines lazily, stopping the moment the window fills' do
@@ -148,9 +155,8 @@ RSpec.describe Pikuri::Extractor do
   end
 
   describe '.registry' do
-    it 'ships HTML before the terminal Passthrough; further formats are plug-in gems' do
-      assert_equal [Pikuri::Extractor::HTML, Pikuri::Extractor::Passthrough],
-                   described_class.registry
+    it 'ships only the terminal Passthrough; further formats are plug-in gems' do
+      assert_equal [Pikuri::Extractor::Passthrough], described_class.registry
     end
   end
 end

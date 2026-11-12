@@ -11,10 +11,7 @@ PATH
   specs:
     pikuri-core (0.1.0)
       faraday (~> 2.9)
-      nokogiri (~> 1.19)
       rainbow (~> 3.1)
-      reverse_markdown (~> 3.0)
-      ruby-readability (~> 0.7)
       ruby_llm (~> 2.1)
       zeitwerk (~> 2.7)
 
@@ -108,6 +105,8 @@ PATH
       faraday (~> 2.9)
       nokogiri (~> 1.19)
       pikuri-core (= 0.1.0)
+      reverse_markdown (~> 3.0)
+      ruby-readability (~> 0.7)
 
 PATH
   remote: pikuri-workspace

@@ -5,7 +5,7 @@ require 'pikuri-core'
 # Entry file for the pikuri-web gem: mounts a per-gem Zeitwerk loader at this
 # +lib/+ and eager-loads it, so the +ALL_CAPS+ tool constants ({Pikuri::Web::FETCH}
 # and friends), which Zeitwerk's filename↔CamelCase rule won't auto-load, are
-# defined at boot.
+# defined at boot; then registers {Pikuri::Web::HTML} with the extractor registry.
 module Pikuri
   # The tools that reach the internet: search, scrape, fetch, and a reader for a
   # search's stored page text.
@@ -26,8 +26,10 @@ module Pikuri
     LOADER.tag = 'pikuri-web'
     LOADER.push_dir(File.expand_path('.', __dir__))
     LOADER.ignore(__FILE__)
-    LOADER.inflector.inflect('duckduckgo' => 'DuckDuckGo')
+    LOADER.inflector.inflect('duckduckgo' => 'DuckDuckGo', 'html' => 'HTML')
     LOADER.setup
     LOADER.eager_load
+
+    HTML.register
   end
 end

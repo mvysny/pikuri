@@ -6,14 +6,23 @@ require 'readability'
 require 'reverse_markdown'
 
 module Pikuri
-  module Extractor
-    # HTML → Markdown extractor.
+  module Web
+    # HTML → Markdown extractor for the {Pikuri::Extractor} registry.
     #
     # Matched by content-type only (+text/html+ / +application/xhtml+xml+) —
     # no byte sniff: the web path always has the header, and sniffing would
     # route a +Workspace::Read+ of a local +.html+ *source* file through
     # readability when the developer wants the source. Local HTML stays on the
-    # {Passthrough} arm.
+    # {Pikuri::Extractor::Passthrough} arm.
+    #
+    # Lives in pikuri-web rather than core because only a response's
+    # +Content-Type+ ever claims it, and the scraper is where responses come
+    # from; core stays free of nokogiri, readability and reverse_markdown.
+    # Requiring pikuri-web registers it (see {.register}) — it has no rival
+    # arm to choose between, unlike the two PDF ones, so there is no host
+    # decision to make explicit. Another content-type-carrying caller (a mail
+    # attachment) gets rendered HTML only when the host loads pikuri-web, and
+    # the raw markup through +Passthrough+ otherwise.
     #
     # Renders both views when available, concatenated with a horizontal rule,
     # so the LLM gets structured metadata and rendered body and picks whichever
@@ -65,7 +74,18 @@ module Pikuri
       #   below it the ratio is noise-dominated and would swap on tiny pages.
       MAIN_FALLBACK_MIN_CHARS = 500
 
-      # @return [Symbol] {Page#kind} tag.
+      # Plug this extractor into {Pikuri::Extractor.registry}, before the
+      # terminal +Passthrough+ entry, which would otherwise claim +text/html+
+      # as plain text. pikuri-web's entry file calls it. Idempotent.
+      #
+      # @return [Module] self
+      def self.register
+        registry = Pikuri::Extractor.registry
+        registry.insert(-2, self) unless registry.include?(self)
+        self
+      end
+
+      # @return [Symbol] {Pikuri::Extractor::Page#kind} tag.
       def self.kind
         :html
       end

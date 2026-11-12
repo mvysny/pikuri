@@ -9,7 +9,7 @@ require 'stringio'
 # horizontal rule. The earlier "is the JSON-LD authoritative for this
 # page?" heuristic is gone; we hand the LLM both views and let it
 # pick.
-RSpec.describe Pikuri::Extractor::HTML, '.extract' do
+RSpec.describe Pikuri::Web::HTML, '.extract' do
   # The duck-type entry point takes an IO; every fixture here is an
   # in-memory String, so wrap it once.
   def extract(html)
@@ -232,5 +232,19 @@ RSpec.describe Pikuri::Extractor::HTML, '.extract' do
     out = extract(html)
     assert_includes out, '# Plain'
     refute_includes out, "\n---\n", 'no JSON-LD section, so no separator should appear'
+  end
+end
+
+RSpec.describe Pikuri::Web::HTML, '.register' do
+  it 'is registered by requiring pikuri-web, ahead of the terminal Passthrough' do
+    registry = Pikuri::Extractor.registry
+    assert_equal Pikuri::Extractor::Passthrough, registry.last
+    assert registry.index(described_class) < registry.index(Pikuri::Extractor::Passthrough)
+  end
+
+  it 'is idempotent and returns self' do
+    before_count = Pikuri::Extractor.registry.length
+    assert_equal described_class, described_class.register
+    assert_equal before_count, Pikuri::Extractor.registry.length
   end
 end
