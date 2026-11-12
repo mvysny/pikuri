@@ -59,7 +59,7 @@ Gem::Specification.new do |spec|
   # only the extension surface (see AGENTS.md "Invariants (seams)" and
   # "Out of scope"). The tight pin reflects the bus-factor and Chat-API-churn risk
   # of leaning on a single upstream for the loop itself.
-  spec.add_dependency 'ruby_llm',         '~> 2.1'
+  spec.add_dependency 'ruby_llm',         '~> 2.2'
 
   # Convention-based autoloader for lib/. Set up in lib/pikuri.rb; lets
   # every file declare exactly the constant matching its path without the

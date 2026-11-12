@@ -348,34 +348,33 @@ on the same wrong count.
 
 ---
 
-## D_inline_think_tags — Why does pikuri split inline `<think>` tags itself rather than patch ruby_llm?
+## D_inline_think_tags — Why does every chat turn on ruby_llm's `split_think_tags`?
 
-**Context.** Some servers leave reasoning inline in `content` as `<think>…</think>`: llama.cpp
-with `--reasoning-format none`, a template that does not split it out, some proxies. ruby_llm
-1.16 lifted it into `thinking`. 2.0.0 dropped that without a release note, and 2.1.1 has not
-restored it ([ruby_llm#1345](https://github.com/crmne/ruby_llm/issues/1345)). Since then the
-reasoning reached every shell as answer text, `last_assistant_content` and `History` kept it as
-content, and every later turn replayed it as content.
+**Context.** Some servers leave reasoning inline in `content` as `<think>…</think>`, llama.cpp
+with `--reasoning-format none` among them. Unsplit, the reasoning reaches every shell as answer
+text, `last_assistant_content` and `History` keep it as content, and every later turn replays
+it as content. ruby_llm 2.2 splits it behind `config.split_think_tags`, off by default
+([ruby_llm#1345](https://github.com/crmne/ruby_llm/issues/1345)).
 
-**Decision.** {Pikuri::Agent::ThinkTagSplitter} splits it in `agent.rb`, at the two places every
-reply passes. `after_message` rewrites the stored message in place, so events, export, replay
-and the model-switch strip all see the split. `emit_chunk` feeds each streamed chunk through a
-per-request splitter that holds back a tag cut across chunks. A server that already sends
-`reasoning_content` never sends a tag, so the split never triggers for it, and if upstream
-restores the split it simply finds no tags left to take out.
+**Decision.** `Agent#build_context` sets `split_think_tags = true` on each chat's context, so
+the connection seam holds. Upstream splits streamed chunks before `Chat#complete` hands them to
+the caller's block, holding back a tag cut across chunks, so `emit_chunk` gets clean deltas.
+Only a block that *opens* the content is split, so a literal `<think>` mid-answer survives; an
+explicit `reasoning_content` wins and the content is left alone. `inline_think_spec.rb` pins
+the line against a ruby_llm rename.
+
+**Known gap.** An empty `reasoning_content: ""` counts as present and suppresses the split.
+llama.cpp never sends one: measured 2026-11-03 against `b10438`, `reasoning_format: none` sends
+no `reasoning_content` key at all, streamed or not, and every other format sends a real string
+with clean content. A proxy that sends `""` beside inline tags would defeat the split; none
+pikuri targets is known to.
 
 **Alternatives rejected.**
 
-- **Prepend a fix into ruby_llm** (`Protocols::ChatCompletions::Chat`,
-  `Protocol::StreamAccumulator`), restoring 1.16's code. It would still leave the deltas dirty:
-  read in 1.16.0's `streaming.rb`, the stream loop hands the caller each *raw* chunk before the
-  accumulator cleans it, so even 1.16 previewed `<think>` in every delta. The streaming half had
-  to live in pikuri anyway. The rest would patch private methods that 2.0 rewrote, for every
-  ruby_llm user in the host process.
-- **Wait for upstream.** #1345 may well answer "intended", and the shells are broken meanwhile.
-- **Rebuild the message with `RubyLLM::Message.new`**, the way `strip_foreign_thinking!` does.
-  It drops the citations, finish reason and usage entries pikuri never passes on. Setting the two
-  instance variables keeps them, and it raises if ruby_llm ever renames them.
+- **Splitting in pikuri.** pikuri did, from the 2.1 upgrade until 2.2 shipped, but the
+  streaming half needs a stateful splitter threaded through `after_message`, `streaming_block`
+  and `emit_chunk`, and the stored message had to be rewritten through its instance variables.
+- **Repairing histories saved with the tags at load.** Only pre-release builds wrote them.
 
 ---
 
@@ -2845,17 +2844,6 @@ at both points identity can change, not just at load. That rode in here as a
 corollary with a rationale that did not survive checking; it now has its own
 entry, `D_thinking_block_replay`.
 
-**Reasoning left inline as `<think>…</think>` is lifted into thinking.**
-Between the ruby_llm 2.1 upgrade and `D_inline_think_tags`, such a turn was
-saved with the tags in its content, and replaying it hands the model its old
-reasoning as answer text on every turn. `History#lift_inline_thinking` reads
-the old shape and hands the agent the current one, the same split a live reply
-gets: text moves, none is lost. It keys on the tag, not on when the file was
-written — the format has no version to key on, a clean history has nothing to
-find, and a literal `<think>` in a real answer is already split live, so load
-adds no new false positive. It runs before the model-identity check, so a
-foreign model's lifted reasoning is withheld like any other thinking.
-
 **A tool the agent no longer wires draws no warning.** A recorded call is
 never re-executed; it is a record of the harness that made it. The only live
 risk is the model retrying a tool it can see in its own context, and ruby_llm
@@ -2877,9 +2865,6 @@ recovery that fires only when needed and says more.
   a live-agent durability feature, not something a history format can
   retrofit. Revisit if pikuri ever wants crash-resume rather than clean-exit
   resume.
-- **Leaving old conversations carrying their `<think>` tags**, since the
-  window that wrote them was short. The cost recurs on every resumed turn,
-  and the fix reuses `ThinkTagSplitter` whole.
 - **Warning on tool-set drift**, which pikuri-web records its tool list for.
   That stays a *shell* concern, where a picker may still want to show "saved
   by a different harness".

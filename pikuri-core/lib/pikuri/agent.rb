@@ -561,14 +561,12 @@ module Pikuri
     # to read it again before editing — which is right, since the file may
     # have changed while the conversation sat on disk.
     #
-    # Three repairs happen on the way in, each because a stored conversation
+    # Two repairs happen on the way in, each because a stored conversation
     # can describe something a provider will not accept or a model would
     # misread:
     #
     # - A tool call whose result never arrived gets a synthesized one
     #   ({History#repair_interrupted_tool_calls}).
-    # - Reasoning left inline as +<think>…</think>+ in a turn's content moves
-    #   to its thinking ({History#lift_inline_thinking}).
     # - A turn produced by a *different* model loses its whole thinking block
     #   — a foreign one lands in a slot the receiving model reads as its own
     #   scratchpad. Withheld from the conversation only; {#export_history}
@@ -588,9 +586,7 @@ module Pikuri
 
       clear_conversation
       current_model = @chat.model&.id
-      # Lift before {#keep_thinking?} sees the turn, so a foreign model's
-      # inline reasoning is withheld like any other thinking.
-      repaired = history.repair_interrupted_tool_calls.lift_inline_thinking
+      repaired = history.repair_interrupted_tool_calls
       repaired.messages.each do |m|
         keep = keep_thinking?(m.thinking, m.model_id, current_model)
         track_message(@chat.add_message(m.to_ruby_llm(keep_thinking: keep)),
@@ -723,10 +719,6 @@ module Pikuri
       @pending_tool_call = nil
 
       @chat.after_message do |msg|
-        split_inline_thinking!(msg)
-        # One splitter per request: the stream that just ended may have left
-        # it inside a tag.
-        @think_splitter = ThinkTagSplitter.new
         # A +:tool+ message is the one the summary computed just above belongs to.
         summary = @pending_tool_call[:summary] if msg.role == :tool && @pending_tool_call
         track_message(msg, summary: summary)
@@ -955,6 +947,9 @@ module Pikuri
         # llama.cpp and the other OpenAI-compatible servers pikuri targets speak
         # Chat Completions, which OpenAI itself still serves too.
         c.openai_protocol = :chat_completions
+        # llama.cpp with +--reasoning-format none+ leaves reasoning inline as
+        # +<think>…</think>+; a server sending +reasoning_content+ is untouched.
+        c.split_think_tags = true
         c.instrumenter = RequestThrottle.new(
           key: permit_key(slug, c), cancellable: @cancellable, chain: c.instrumenter
         )
@@ -1278,8 +1273,6 @@ module Pikuri
     #
     # @return [Proc] a +->(chunk) { ... }+ for +Chat#complete+
     def streaming_block
-      # Fresh per turn: a cancelled stream never reaches +after_message+'s reset.
-      @think_splitter = ThinkTagSplitter.new
       ->(chunk) {
         @cancellable&.check!
         emit_chunk(chunk)
@@ -1339,49 +1332,16 @@ module Pikuri
     end
 
     # Normalize a streaming +RubyLLM::Chunk+ into delta events
-    # ({Event::ThinkingDelta}/{Event::AssistantDelta}), routing inline
-    # +<think>+ text to thinking through +@think_splitter+. Empty fragments
-    # are filtered; tool-call deltas skipped (see {#streaming_block}).
-    #
-    # A fragment the splitter holds back as a possible partial tag is never
-    # flushed as a delta: the {Event::Assistant}/{Event::Thinking} bookend
-    # carries the authoritative whole.
+    # ({Event::ThinkingDelta}/{Event::AssistantDelta}). Empty fragments are
+    # filtered; tool-call deltas skipped (see {#streaming_block}).
     #
     # @param chunk [RubyLLM::Chunk]
     # @return [void]
     def emit_chunk(chunk)
-      content, inline_thinking = chunk.content.is_a?(String) ? @think_splitter.feed(chunk.content) : [nil, nil]
-      [chunk.thinking&.text, inline_thinking].each do |thinking|
-        @listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
-      end
-      @listeners.emit(Event::AssistantDelta.new(content: content)) if content && !content.empty?
-    end
-
-    # Lift +<think>…</think>+ reasoning a server left inline in an assistant
-    # message's content into its thinking, so every reader of the message —
-    # events, {#last_assistant_content}, {#export_history}, replay, and
-    # {#strip_foreign_thinking!} — sees the split. Why here and not in
-    # ruby_llm: +design/decisions.md+ +D_inline_think_tags+.
-    #
-    # Edits +msg+ in place: +RubyLLM::Message+ has no writers, and a rebuilt
-    # copy would drop the fields its constructor takes but pikuri never
-    # passes on (citations, finish reason, usage entries).
-    #
-    # @param msg [RubyLLM::Message]
-    # @return [void]
-    # @raise [RuntimeError] when ruby_llm renamed the instance variables this
-    #   writes, which would otherwise make the split a silent no-op.
-    def split_inline_thinking!(msg)
-      return unless msg.role == :assistant && msg.content&.include?(ThinkTagSplitter::OPEN)
-
-      unless %i[@content @thinking].all? { |ivar| msg.instance_variable_defined?(ivar) }
-        raise "RubyLLM::Message no longer keeps @content/@thinking: #{msg.instance_variables.inspect}"
-      end
-
-      content, inline = ThinkTagSplitter.split(msg.content)
-      text = [msg.thinking&.text, inline].compact.reject(&:empty?).join("\n")
-      msg.instance_variable_set(:@content, content)
-      msg.instance_variable_set(:@thinking, RubyLLM::Thinking.build(text: text, signature: msg.thinking&.signature))
+      thinking = chunk.thinking&.text
+      @listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
+      content = chunk.content
+      @listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
     end
 
     # Drain the interloper queue, landing each item per its
