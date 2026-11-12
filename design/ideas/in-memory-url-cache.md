@@ -12,12 +12,12 @@ Brave or Exa result lives in process memory only, gone at exit.
 
 ## Proposal
 
-**Two caches, one API** — today's `UrlCache` renamed, plus a sibling holding the same API in
-a `Hash`:
+**Two caches, one API, one namespace** — `Pikuri::UrlCache` becomes a module holding today's
+class as `OnDisk` and a sibling, `InMemory`, holding the same API in a `Hash`:
 
 ```ruby
-cache = Pikuri::UrlFileCache.new(ttl: 2 * 60 * 60, dir: "#{Pikuri::UrlFileCache::ROOT_DIR}/web_scrape")
-cache = Pikuri::UrlInMemoryCache.new(ttl: 2 * 60 * 60, max_entries: 100)
+cache = Pikuri::UrlCache::OnDisk.new(ttl: Pikuri::UrlCache::DEFAULT_TTL, dir: "#{Pikuri::UrlCache::ROOT_DIR}/web_scrape")
+cache = Pikuri::UrlCache::InMemory.new(ttl: Pikuri::UrlCache::DEFAULT_TTL, max_entries: 100)
 
 cache.fetch(key) { compute }    # today's contract: yield on miss, store, return; a raise stores nothing
 cache.read(key)                 # => String, or nil on a miss / stale entry
@@ -27,14 +27,14 @@ cache.write(key, value)         # => value — stores unconditionally, replacing
 `read` / `write` are new on both: `fetch` can't serve a caller that learns *where* a value may
 live only after computing it (the search cascade, below).
 
-- **`UrlInMemoryCache`**: `key → [value, stored_at]` behind a `Mutex` — `P_shared_locked`,
+- **`UrlCache::InMemory`**: `key → [value, stored_at]` behind a `Mutex` — `P_shared_locked`,
   held in class-level constants like today's caches, so every agent in the process shares it.
   Gone at process exit — the property the ToS asks for.
-- **`UrlFileCache`**: today's `UrlCache`, renamed, plus `read` / `write`. No other change.
-  Nothing in production, so no compat alias (`UrlCache` simply goes).
+- **`UrlCache::OnDisk`**: today's `UrlCache` class, moved, plus `read` / `write`. No other
+  change. Nothing in production, so no compat alias.
 
-**Engines declare whether their results may be stored**: every provider answers
-`can_cache?` — `DuckDuckGo` `true`, `Brave` and `Exa` `false`. A class-level fact about the
+**Engines declare whether their results may go to disk**: every provider answers
+`disk_cacheable?` — `DuckDuckGo` `true`, `Brave` and `Exa` `false`. A class-level fact about the
 engine's terms, documented on each provider beside its *Privacy posture* with the ToS clause
 that decides it.
 
@@ -42,18 +42,18 @@ that decides it.
 
 | Cache | Holds | Store |
 |---|---|---|
-| `Engines` query cache | the winning provider's rows | by `winner.can_cache?`: file for DuckDuckGo, memory for Brave / Exa |
-| `cached-result-contents` page store | Brave / Exa page text | memory, always |
-| `web_scrape`, `fetch` | origin pages pikuri fetched itself | file — no engine terms apply |
-| `pikuri-mcp` descriptions | MCP server tool lists | file (TTL ∞) — rename only |
+| `Engines` query caches | the winning provider's rows | by `winner.disk_cacheable?`: `OnDisk` for DuckDuckGo, `InMemory` for Brave / Exa |
+| `cached-result-contents` page store | Brave / Exa page text | `InMemory`, always |
+| `web_scrape`, `fetch` | origin pages pikuri fetched itself | `OnDisk` — no engine terms apply |
+| `pikuri-mcp` descriptions | MCP server tool lists | `OnDisk` (TTL ∞) — rename only |
 
 The cascade picks the store after the miss, so `Engines#search` swaps `fetch` for:
 
 ```ruby
-cached = @memory_cache.read(key) || @file_cache.read(key)
+cached = @memory_cache.read(key) || @disk_cache.read(key)
 unless cached
   rows, winner = run_cascade(...)
-  (winner.can_cache? ? @file_cache : @memory_cache).write(key, rows_json)
+  (winner.disk_cacheable? ? @disk_cache : @memory_cache).write(key, rows_json)
 end
 ```
 
@@ -68,12 +68,12 @@ Its page store moves from disk to memory, which revises several settled bullets 
   old ones answer "search again" and can never alias (a new handle matching an old string means
   a 32-bit collision across secrets).
 - **Handles live for the process**, until LRU-evicted (1,000 pages, no TTL) — no resume across
-  a restart; the 2 h page-store TTL there goes. Resume
-  *within* a process (`Agent::History` load in a long-running host) still works.
+  a restart; the 2 h page-store TTL there goes. Resume *within* a process (`Agent::History`
+  load in a long-running host) still works.
 - **Cross-process enumeration is gone** — another pikuri process has a different store and
   secret. Within one process the 8-hex argument stands unchanged.
 - **The reaper is dropped** (already removed there; see *No reaper*).
-- The text-mode query cache follows `can_cache?` like the snippet one — in memory whenever
+- The text-mode query cache follows `disk_cacheable?` like the snippet one — in memory whenever
   Brave or Exa won.
 
 ## Settled in discussion (2026-11-12)
@@ -82,19 +82,19 @@ Its page store moves from disk to memory, which revises several settled bullets 
   close, context clear or `Agent::History` load, and no `Finalizers` entry: exit frees it.
   VM-lifetime memory is "transient storage required for operation" for Brave and never leaves
   the process for Exa. It also keeps `pikuri-core`'s cache ignorant of `Agent`.
-- **Bounded by entry count, LRU.** `UrlInMemoryCache.new(ttl:, max_entries:)`; past
+- **Bounded by entry count, LRU.** `UrlCache::InMemory.new(ttl:, max_entries:)`; past
   `max_entries` a `write` evicts the least recently used. Ruby's `Hash` keeps insertion order,
   so LRU is a delete-and-reinsert on every hit (a `read` mutates, hence the `Mutex` on reads
   too) and eviction is `@entries.shift`. LRU over FIFO because a page the model is reading is
   the one to keep.
 - **The TTL stays, as a freshness rule, not a storage one.** An expired entry is a miss and is
-  dropped when met. The query cache keeps 2 h, matching the file cache, so a long-running VM
-  doesn't answer today's search with yesterday's rows.
+  dropped when met. The query caches keep 2 h, matching `OnDisk`, so a long-running VM doesn't
+  answer today's search with yesterday's rows.
 - **One instance per use**, each a VM-lifetime constant — never one shared instance, which
-  would need `query:` / `page:` key prefixes and put unlike entries under one cap. The file
+  would need `query:` / `page:` key prefixes and put unlike entries under one cap. The disk
   caches already work this way, one dir each. The uses and their sizing:
   - **Query caches: 100 entries, 2 h TTL** — an entry is one search's rows. One per mode,
-    mirroring the file side's `web_search/` and `web_search_text/`, since the two modes return
+    mirroring the disk side's `web_search/` and `web_search_text/`, since the two modes return
     different rows.
   - **Page store: 1,000 entries, no TTL** (`Float::INFINITY`, like `pikuri-mcp`'s cache) — an
     entry is one *page*, so ~100 searches, the bound `cached-result-contents` first settled on.
@@ -107,22 +107,30 @@ Its page store moves from disk to memory, which revises several settled bullets 
   it moves the choice behind a boolean, it doesn't remove it — and would need a namespace
   argument plus per-namespace TTL / cap / dir config, re-inventing the per-use instances. So
   "Brave/Exa text never reaches disk" is a fact of *construction*: the page store's constant
-  is a `UrlInMemoryCache`, it has no path to disk at all. The one runtime choice is `Engines`'
-  `winner.can_cache?` pick, the only place one store mixes engines — guarded by a spec that a
-  Brave / Exa win never writes the file cache.
+  is a `UrlCache::InMemory`, it has no path to disk at all. The one runtime choice is
+  `Engines`' `winner.disk_cacheable?` pick, the only place one store mixes engines — guarded by
+  a spec that a Brave / Exa win never writes the disk cache.
 - **No reaper.** With engine results off disk, the disk holds DuckDuckGo rows, pages pikuri
   scraped itself and MCP descriptions — none under a storage clause, so the reaper
   `cached-result-contents` once settled on (for the ToS alone) is dropped; stale files stay
   until their key is overwritten, as today. Disk growth is a separate, older question, for when
   it hurts.
-- **A `NULL` on each class** — `UrlFileCache::NULL`, `UrlInMemoryCache::NULL`, each answering
-  `read` (always `nil`), `write` (stores nothing) and `fetch` (always yields). Identical in
-  behaviour, but there is no common parent to hold a shared one, and a module invented just to
-  hold it is code-sharing by inheritance. `spec_helper.rb` stubs every cache accessor — the
-  file ones, `Engines`' two memory ones, the page store's — to its class's `NULL`; specs that
-  exercise caching inject a real one (a tmpdir file cache, a fresh memory cache).
+- **`UrlCache` is a namespace module, not a base class.** It holds the contract's overview doc,
+  `NULL`, `ROOT_DIR` and `DEFAULT_TTL`; `OnDisk` and `InMemory` stay the authority on their own
+  storage, TTL and thread-safety. No `AbstractUrlCache`: its content would be the shared
+  three-line `fetch`, `NULL` and docs — inheritance to share code — and abstract methods
+  raising `NotImplementedError` enforce nothing in a duck-typed API (`Engines` already types
+  its cache `[UrlCache, #fetch]`).
+  - **One `NULL`**, duck-typed for both: `read` → `nil`, `write` stores nothing, `fetch` always
+    yields. `spec_helper.rb` stubs every cache accessor — the disk ones, `Engines`' two memory
+    ones, the page store's — to it; specs that exercise caching inject a real one (a tmpdir
+    `OnDisk`, a fresh `InMemory`).
+  - **`OnDisk`, never `File`**: inside the namespace a bare `File.read` would resolve to the
+    cache class, not `::File`.
+- **`disk_cacheable?`, not `can_cache?`**: Brave and Exa results *are* cached, in memory, so
+  `can_cache? → false` would contradict the code beside it. The name says exactly what the
+  terms restrict and reads as prose at the one call site.
 
 ## Still open
-- `Q_can_cache_name` — `can_cache?` (as proposed) vs `storable?` / `results_storable?`. The
-  predicate is about the engine's *terms*, not a technical ability; `can_cache?` reads as the
-  latter. Leaning: keep `can_cache?`, say "per its terms" in the yardoc.
+
+Nothing — ready to implement, ahead of `cached-result-contents`, whose page store builds on it.
