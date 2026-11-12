@@ -310,16 +310,26 @@ built into the structure beat filters" was the kernel namespace. The
 replacement is search-never-fetch; MCP shrinks to "the instant trifecta",
 with a forward link.
 
+## How the two repos relate (decided)
+
+**pikuri is "just" a dependency of pikuri-ext.** Nothing more: no shared
+version number, no shared release.
+
+- **Wiring:** ext's root `Gemfile` takes the pikuri gems from git, `master`,
+  with `Gemfile.lock` pinning the commit, the way Puri, pikuri-tui and
+  pikuri-web already ride pikuri. `bundle update pikuri-core` moves it.
+  Without backward compatibility, a vanilla rename breaks ext until ext
+  catches up, and one change becomes two commits. That's the price.
+- **Release:** independent cycles. An ext release needs the pikuri version
+  it was built against to be on rubygems first; its gemspecs pin that with
+  `~>`. `D_release_one_otp` keeps lockstep *inside* each repo: 9 pushes for
+  pikuri, 7 for ext.
+
 ## Open questions
 
-- `Q_repo_wiring`: during development, ext's root `Gemfile` points at a
-  sibling checkout (`gemspec path: '../pikuri/pikuri-core'`)? Its CI
-  checks out pikuri at a pinned sha? Without backward compatibility, every
-  vanilla rename breaks ext until ext catches up, and one commit becomes
-  two. That's the price.
-- `Q_ext_release`: does ext release lockstep with vanilla (one version
-  number, `~>` pins), or independently? `D_release_one_otp` gets simpler
-  either way: 9 pushes instead of 16.
+- `Q_ext_name`: is "pikuri-ext" the right name for the repo and book 2? The
+  gems keep their own names (`pikuri-code`, `pikuri-lsp`…), so this names
+  only the repo and the book.
 - `Q_tripwires`: the five seam checks (`tasks/tripwires.rake`) guard
   invariants that ext code also has to honour (subprocess, loop seam…).
   Does ext copy the rake file, or does vanilla ship it so ext can load it?
