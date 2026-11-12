@@ -123,8 +123,22 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
 - `Q_search_cache` — `Engines::CACHE` is on disk, keyed by the query, and holds the rendered
   result. With a registry the entry must hold rows with text — a different key (or subdir) so a
   snippet-only hit never serves a reader, and ~10× bigger entries.
-- `Q_brave_snippet` — what `web_search` shows for a Brave row from `/llm/context`:
-  `sources[url].description` (needs `enable_source_metadata=true`), or the first chunk?
+- `Q_brave_snippet` — what `web_search` shows for a Brave row from `/llm/context`. **Probed
+  2026-11-12**, two queries × 10 rows, against today's `/web/search` `description`:
+  - `/web/search` `description` is a **query-biased** excerpt — the best for picking a row
+    ("The biggest difference between Data and Struct is that Data objects are immutable.").
+  - `/llm/context` `sources[url].description` (`enable_source_metadata=true`) is the page's
+    **meta description**, query-independent: usually a fair summary, sometimes useless (GitHub's
+    "LLM inference in C/C++. Contribute to …", "Psst, kid, want some cheap and small LLMs?").
+  - The first chunk (threshold `disabled`) is page order — title, lede, often the meta
+    description again, sometimes boilerplate ("Skip to content", a byline), now and then gold
+    (llama.cpp README's `--ctx-size` row).
+  - **The two endpoints rank differently**: only 5–6 of 10 URLs in common for the same query.
+    Switching endpoints changes which pages the model sees, not just the snippets — better or
+    worse, unmeasured.
+  Leaning: meta description, falling back to the first chunk when empty. In wiring (b) the
+  snippet only has to steer *which* row to read — the full text is one `web_read_cached` call
+  away — and the query-biased excerpt would cost a second request or a chunk-scoring heuristic.
 - `Q_text_cap` — Exa `maxCharacters` per row and Brave's 32k-token total: what to request, and
   `web_read_cached`'s own `max_chars` / truncation marker, shaped like `web_scrape`'s.
 - `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*). Prefetch sends
