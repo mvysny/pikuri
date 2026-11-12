@@ -362,9 +362,9 @@ with a forward link.
   *Readable in an evening* as the learning principle's promise; the owner rewords them.
 - **`D_keep_calculator`** argues against `bash` beside the calculator; check it still reads
   right with no `bash` in pikuri.
-- **Ideas that lean workshop:** `claude-code-researcher.md`, `tool-list-in-context.md`,
-  `more-confirmers.md` (its context is the OS assistant) and the sandbox and MCP parts of
-  `security-open-questions.md`.
+- **`more-confirmers.md`** stays, since confirmers are pikuri's seam and the secretary's
+  search confirmer grows out of it, but its examples are the OS assistant's; rebase them on
+  the secretary.
 - **Yardoc that names workshop symbols** (about 30, across core, workspace, subagents and
   vectordb: `{Pikuri::Code::Bash}`, `{Pikuri::Tasks::Extension}`, `{Pikuri::Mcp::Servers}`…)
   now dangles on rubydoc.info; each wants a rewrite that names the seam, not the consumer.

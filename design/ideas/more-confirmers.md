@@ -34,8 +34,7 @@ Related, already worked out:
   dual, and specifically its **"human as reader"** shape (untrusted bytes
   reach the human's eyes without round-tripping through the parent LLM).
   The ingest-axis idea below is its human-in-the-loop cousin.
-- [`assistant.md`](assistant.md) §"The central tension" — the
-  **forced-authorship handoff knife-edge**: a pre-filled draft the human
+- The **forced-authorship handoff knife-edge**: a pre-filled draft the human
   *edits* is convenience; one the human *rubber-stamps* is approver-mode.
   Every idea here lands on one side of that edge or the other.
 - `book/trifecta-detector.md` — the three legs, the payload-visibility test

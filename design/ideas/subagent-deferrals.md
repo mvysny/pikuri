@@ -12,10 +12,6 @@ bundled-persona inventory live in [`design/research.md`](../research.md)
 
 Related:
 
-- [`assistant.md`](assistant.md) — the federation reuses `Agent` +
-  `Persona` wholesale but human-routes siblings instead of LLM-routing
-  children; the "which extensions a child wires" question below is the
-  federation's inverse.
 - `book/trifecta-detector.md` — the per-persona toolset is the
   privilege-separation unit the shipped detector measures (one map node per
   persona, via `Extension#trifecta_contribution`).

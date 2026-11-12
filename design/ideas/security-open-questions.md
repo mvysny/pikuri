@@ -6,20 +6,19 @@ Promote an entry into a real plan (or its own long-form `design/ideas/` note)
 when the friction shows up.
 
 The *committed* model lives in [`../SECURITY.md`](../../SECURITY.md): a
-short code-trust baseline (pikuri + LLM trusted; project bash
-sandboxed via Bubblewrap; MCP processes left to Docker), then the
-load-bearing prompt-injection section (lethal trifecta broken by
-privilege-separated sub-agents, MCP description injection caught by
-`Mcp::Verifier`), three worked attacks, and explicit non-goals. This
-file is the not-yet-committed counterpart.
+short code-trust baseline (pikuri + LLM trusted, no code you didn't
+write), then the load-bearing prompt-injection section (lethal trifecta
+broken by privilege-separated sub-agents), and explicit non-goals. This
+file is the not-yet-committed counterpart. The open questions about
+the shell and MCP moved to
+[pikuri-workshop's log](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/security-open-questions.md)
+with those gems.
 
 Threat model scales with capability. `bin/pikuri-chat` today is
 small surface (calculator + three stateless network-out tools, no
-filesystem writes); `bin/pikuri-code` has the full
-read/write/edit/bash kit and is where most of the below bites; an
-eventual assistant app with MCP-backed Gmail / Calendar /
-Slack inherits both sets and adds the privacy-of-personal-data
-axis.
+filesystem writes); the planned secretary reads your mail, calendar
+and notes, writes notes and searches the web, and adds the
+privacy-of-personal-data axis.
 
 Related long-form notes (the entries below that already grew one):
 
@@ -91,19 +90,6 @@ the table:
 - **Content-level defenses against `web_scrape` injection** beyond
   persona separation (provenance tags are the obvious shape).
 
-## Unsandboxed Bash modes
-
-`Code::Bash::Sandbox::Bubblewrap` constrains `Bash` to the workspace's
-readable/writable roots + an OS-runtime baseline, and is the default in
-`bin/pikuri-code`. The residual concern is `--no-sandbox` / `--yolo`:
-there `cat ~/.ssh/id_rsa`, `env | grep -i key`,
-`curl --upload-file ~/.aws/credentials ...` all run as the user, and
-the per-command Confirmer is the only line of defense (`--yolo`
-disables that too). The help text says "use only with an outer
-sandbox" but nothing enforces it. Worth considering: detect a
-container / VM at boot and refuse `--no-sandbox` outside one, or at
-least surface a louder warning than the current `LOGGER.warn`.
-
 ## Egress is broader than `web_search`
 
 Anywhere bytes leave the box: `bash` → curl/scp/dns/`ping -p`;
@@ -117,24 +103,6 @@ detector's `:egress` leg is tagged generously (an undeclared tool is
 presumed to hold it — {Pikuri::Tool::TrifectaLegs::ASSUMED}), and why the killed
 `fetch` whitelist can't be rescued by URL-shape heuristics (see
 [`private-context-taint.md`](private-context-taint.md)).
-
-## MCP — open ergonomic / supply-chain questions
-
-The committed MCP story is split across [`../SECURITY.md`](../../SECURITY.md):
-the §"Code trust" bullet covers the Docker-for-untrusted-process
-recommendation (suggested, not automatic); §"Defense: MCP
-description verification" covers the `Mcp::Verifier` pre-flight
-scan, with user-curation as the first line of defense. Open:
-
-- **Per-tool first-use consent** (opencode-style sticky approval)
-  is probably the right ergonomics shape — first invocation of
-  the Gmail-MCP fetch tool is also the first consent prompt.
-  Composes with the skill-gated lazy-add design.
-- **First-class "wrap MCP in Docker" option** would close the
-  supply-chain gap without leaving containerization to the user.
-  Hard part: the wrapped MCP's egress / LLM-endpoint reachability
-  re-opens the trifecta inside the container, so the egress
-  policy of the inner Docker becomes the new question.
 
 ## Output-size DoS and cost
 

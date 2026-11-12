@@ -1289,7 +1289,7 @@ if a reader can run both readings in one sitting.
   note moves those bytes across by hand, undetectably. That makes the
   paraphrase rule load-bearing for a second reason and the tool permanently
   unnecessary rather than merely deferred. A draft feature would additionally
-  be `design/ideas/assistant.md`'s author→approver slope, one click from egress.
+  slide the human from author to approver of what leaves, one click from egress.
 - **Auto-memory under the flag.** Worse than redundant: it would carry facts
   distilled from untrusted mail into every later conversation, unattributed —
   precisely the attribution the fragment exists to enforce.
@@ -3873,7 +3873,7 @@ Rejected, all of them consequences of wanting a second level:
 told, it will faithfully relay or launder. Right for `pikuri-computer`, whose
 root reads attacker-authored mail on day one; pessimistic for a topology
 built to keep the root pristine, where untrusted content reaches it only as
-sub-agent summaries (the federation sketched in `design/ideas/assistant.md`). A
+sub-agent summaries (a federation of agents the human routes between). A
 per-node `poisoned: true|false` was floated so the two analyses could differ.
 
 **Decision.** No such field. It is redundant, and the direction it exists to
