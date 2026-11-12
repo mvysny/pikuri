@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `bin/pikuri-secretary`, a CLI personal assistant over your documents, notes, mail, calendar and the web, holding all three trifecta legs and weakening each: snippets-only confirmed search, Thunderbird hand-offs, and note writes confined to one folder and confirmed with a diff.
 - Add `Pikuri::Web::Search.build(confirmer:)`, which shows the human each query, editable, before it leaves, grading the leg `:human_reviewed`, and `snippets_only:`, which tells the model the snippets are the whole answer; `pikuri-web` now depends on `pikuri-workspace` for the `Confirmer` seam.
 - **Breaking:** `pikuri-code`, `pikuri-os`, `pikuri-lsp`, `pikuri-mcp`, `pikuri-skills`, `pikuri-tasks`, `pikuri-memory` and `pikuri-extractors` moved to [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), with their book chapters, because each needs a cage or grows by features (`pikuri-workshop:D_separate_repo`). A host that wires one takes it from that repo instead.
 - **Breaking:** the `pikuri` metagem is gone, because installing every gem goes against wiring only what the job needs (`D_no_metagem`); replace `gem 'pikuri'` with a `gem` line for each pikuri-* gem you wire, and `require 'pikuri'` with their requires.

@@ -1,7 +1,9 @@
 # The secretary: book 1's climax demo
 
-Status: **design agreed 2026-11-12, nothing built.** Next: the two upstream primitives, then
-the binary and its prompt. The chapter that teaches it is
+Status: **first cut built 2026-11-12**: `bin/pikuri-secretary`, `prompts/pikuri-secretary.txt`,
+smoke-tested on a scratch folder (rag answer with date arithmetic, a confirmed `SECRETARY.md`
+write, a confirmed search). Next: run it on real mail and `~/Documents`, then the chapter. The
+chapter that teaches it is
 [`book-rework.md`](book-rework.md)'s; this file owns the demo.
 
 ## What it is
@@ -157,10 +159,10 @@ from here:
 
 All agreed 2026-11-12.
 
-- **Today's date and weekday go into the secretary's prompt at boot** (was `Q_today`). Nothing
-  in pikuri tells a model the date (checked 2026-11-12): no prompt carries it, yet
-  `calendar_search` takes absolute `after`/`before` and expects the model to turn "tomorrow's
-  meetings" into a range. The binary's prompt, not core, since nothing else needs it yet. Stale
+- **Today's date and weekday go into the secretary's prompt at boot** (was `Q_today`), as
+  `pikuri-briefing` and `pikuri-thunderbird` already append `Current date:` (no weekday) to
+  theirs; `calendar_search` takes absolute `after`/`before` and expects the model to turn
+  "tomorrow's meetings" into a range. The binary's prompt, not core. Stale
   after midnight in a long session; accepted. Rejected for now: a clock tool, or `date.today() +
   timedelta(…)` in the calculator — a feature, and the model must think to call it. It becomes
   its own idea if transcripts show botched date arithmetic.
@@ -176,4 +178,14 @@ All agreed 2026-11-12.
 
 ## Open questions
 
-None yet; building it will raise some.
+- `Q_two_readers`: the notes folder has two read tools. Edit only touches a file read through
+  workspace `read` (the read-before-edit gate), so `read` is wired beside `rag_read` over the same
+  notes; `Workspace::Extension` was skipped because its grep, glob and file_list would duplicate
+  the rag tools too. 17 tools in all. Does the model pick the right reader before an edit, or
+  does it need rag's read to count for the gate?
+- `Q_decline_snippet`: without `Workspace::Extension`, its "a decline is final" prompt snippet
+  isn't wired. The confirmer's decline observation says the same and the smoke test honoured it;
+  wire the snippet anyway if transcripts show a retry.
+- `Q_mail_off`: with no Thunderbird profile the secretary boots anyway, with a warning and a map
+  missing the mail legs. Right for a reader without Thunderbird, but the chapter's story assumes
+  mail; should the chapter just say "you need Thunderbird"?
