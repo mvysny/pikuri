@@ -61,8 +61,12 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
 - **Two use cases, two wirings, no middle.** Don't mind exfil → `web_search` + `web_scrape`, as
   today. Want `:tool_vouched` *and* page text → `web_search` + this tool, and no
   attacker-reachable tool on the node.
-- **A new tool, not a `web_search` parameter** (working name `web_cache`): its own description,
-  output size and wiring; a host can wire `web_search` without it.
+- **A new tool, not a `web_search` parameter**, named **`web_read_cached`**: its own description,
+  output size and wiring; a host can wire `web_search` without it. The `web_` prefix is the
+  family (`web_search`, `web_scrape` already wear it); `read` is the verb pikuri already uses
+  for "give me the content", and `cached` warns it is no live fetch (`web_cache` read as a
+  command to cache something). Its description must say it takes a handle from `web_search`,
+  never a URL, since `web_scrape` next door does.
 - **Handles only, never a URL.** A URL argument carries an arbitrary payload
   (`https://attacker.example/<secret>`), so the vouched grade would rest on Exa never acting on
   a URL it doesn't know — and Exa is a crawler whose default on an unknown URL is to crawl it.
@@ -83,12 +87,12 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   {Pikuri::Tool}), so a plain counter is deterministic. If that ever flips, a `Mutex` around
   the increment (Ruby has no stdlib `AtomicInteger`) — not before.
 - **Shape**: a per-agent registry (handle → url, title, engine) that `web_search` writes and
-  `web_cache` reads; both built together per wiring, `P_one_agent`, rebuilt fresh for a
+  `web_read_cached` reads; both built together per wiring, `P_one_agent`, rebuilt fresh for a
   sub-agent via `for_sub_agent` (a child's `1.1` is its own). `web_search` renders handles only
   when a reader is attached.
-- **No prefetch.** `web_cache` reads lazily: it looks the handle up and asks the row's *engine*
+- **No prefetch.** `web_read_cached` reads lazily: it looks the handle up and asks the row's *engine*
   for the page (`entry.engine.cached_page(entry.url)` or so), so it never names Exa; a future
-  cache-capable engine implements that one method. Wiring `web_cache` with no cache-capable
+  cache-capable engine implements that one method. Wiring `web_read_cached` with no cache-capable
   engine in the cascade raises `ArgumentError`.
 - **The handle is the "readable" marker** — only a row whose page the engine can serve from
   cache gets one; no extra symbol. In case (c) no reader is wired, so no handles at all.
@@ -96,7 +100,7 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   it wires:
   (a) `web_search`, any engines, no reader — allowed, documented as crippled: on snippets alone
   a model loops, narrowing the query to learn one fact (observed);
-  (b) `web_search` with cache-capable engines only + `web_cache` — `:tool_vouched` and useful;
+  (b) `web_search` with cache-capable engines only + `web_read_cached` — `:tool_vouched` and useful;
   (c) `web_search`, any engines, + `web_scrape` — full exfil leg, as today.
   The (a) loop is the teaching point for (b) in `book/trifecta-detector.md`'s soft-cell part.
 
@@ -107,15 +111,25 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   evicted between search and read answers `CONTENT_NOT_CACHED` → `Tool::Result.error`.
 - `Q_wiring` — how a host builds the pair: one builder returning both tools around a fresh
   registry, or `WebCache.build(search:)`.
-- `Q_exa_miss` — even for Exa's own rows, verify that `/contents` with `maxAgeHours: -1`
-  answers a miss with an error and never a crawl, before declaring `:tool_vouched`.
+- `Q_exa_miss` — does `/contents` with `maxAgeHours: -1` answer a miss with an error and never a
+  crawl? **Probed 2026-11-12** (`/contents`, `text: {maxCharacters: 300}`):
+  - an Exa search row (`rrees.prose.sh/ruby-data`) → `success`, `source: "cached"`, $0.001;
+  - two never-seen URLs with a random token (`www.example.com/?pikuri-probe=<hex>`,
+    `httpbin.org/anything/pikuri-probe-<hex>`) → `error`, tag `CONTENT_NOT_CACHED`,
+    `httpStatusCode: 404`, in 262 ms (no synchronous fetch fits that), $0 for the misses;
+  - the same two, 10 minutes later → still `CONTENT_NOT_CACHED`, $0. No crawl that landed in the
+    cache within 10 minutes.
+  Not proven: a crawl that runs later than that, or one that never reaches the cache, is
+  invisible here. Closing it takes a host whose access log we can read, watched for days. With
+  handles the stakes are small but not zero: a handle names a row Exa's own index returned, so
+  no model-made payload can ride a miss — but a row evicted between search and read, re-crawled
+  on miss, would tell its owner *which* row was picked (the `D_no_result_scraper` selection
+  channel, on a rare path). With URL input it would be the whole secret.
 - `Q_brave_live_fetch` — does LLM Context hit the origin at request time? If yes, it carries
   exactly the leak `maxAgeHours: -1` closed for Exa, and Brave stays out. Testable: a page on a
   host we control, indexed by Brave, queried through LLM Context while watching its access log.
 - `Q_brave_shape` — if Brave turns out cache-only, LLM Context fits a different tool ("search
   with page chunks", replacing snippets) rather than "read this URL". Worth a tool, or just
   `extra_snippets` on the existing provider?
-- `Q_naming` — `web_read`? A `web_search_*` prefix claims a family sharing one backing resource,
-  which fits (same engines, same limiter, same key).
 - `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*); the URLs a user's
   agent reads are as revealing as its queries. The tool's doc should say so, as Exa's does.
