@@ -262,7 +262,7 @@ Notes on the individual placements:
   no egress" lesson moves into the climax chapter. Nothing in vanilla's
   `lib/` requires `pikuri-memory`. Lost from book 1: the automatic prefetch
   tier, and `wire.md`'s lead example (Qwen dropping the mid-conversation
-  `system` message that carried recalled memory). See `Q_wire_chapter`.
+  `system` message that carried recalled memory). So `wire.md` moves too (see Book 1's shape).
 - **pdf stays, extractors goes.** `pikuri-pdf` (139 lines, pure Ruby) is the
   cheap PDF option the vectordb, rag and climax demos need. Docker-based
   office conversion is a feature. The `Extractor` registry itself stays in
