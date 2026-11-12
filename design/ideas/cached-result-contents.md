@@ -204,13 +204,12 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
 - **Brave chunks are joined with a visible gap** (`\n\n…\n\n`), so excerpts don't read as one
   continuous page.
 
+- **Privacy: prefetch sends nothing new** — the query was going anyway — so
+  `web_read_cached`'s doc says it sends nothing and links each engine's *Privacy posture*
+  (Exa trains on queries; Brave keeps a 90-day log). Brave's Search API privacy notice covers
+  the whole API, so `/llm/context` falls under it like `/web/search`; `Search::Brave`'s yardoc
+  now cites it (re-read 2026-11-12, notice updated 3 Nov 2026).
+
 ## Still open
 
-- `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*). Prefetch sends
-  nothing extra — the query was going anyway — so `web_read_cached`'s doc says it sends nothing
-  and links each engine's posture. **Read 2026-11-12** (search.brave.com/help/privacy-policy,
-  the API ToS dated 1 Sep 2026, the LLM Context docs, brave.com/search/api/): nothing specific to
-  LLM Context; and **no 90-day retention figure and no Brave no-training promise for API data
-  found** — only the pricing page's "Queries never shared or trained on" and an "architectural
-  ZDR" with no plan named ("full-funnel ZDR" is Enterprise). `Search::Brave`'s *Privacy posture*
-  claims both; its source is unknown — find it, or correct the yardoc.
+Nothing — ready to implement.

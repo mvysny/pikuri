@@ -20,13 +20,20 @@ module Pikuri
       #
       # == Privacy posture
       #
-      # Brave's API notice retains Search Query Logs 90 days and collects no
-      # identifiers linking a query to a person; it publicly commits not to train
-      # on query data, and offers Zero Data Retention — but only on Enterprise,
-      # not the free tier pikuri defaults to. Bottom line: the cleanest
-      # API-level posture of pikuri's three providers (no training, no IP
-      # linkage, capped 90-day retention), but a logged 90-day window on the
-      # cheap tier, so not a ZDR substitute for genuinely sensitive queries.
+      # Brave's Search API privacy notice (updated 3 Nov 2026, covers the whole
+      # API, no per-endpoint terms —
+      # https://api-dashboard.search.brave.com/privacy-policy) keeps Search
+      # Query Logs at most 90 days for billing, troubleshooting and abuse
+      # prevention, and logs the caller's IP address and API token for the same
+      # purposes. It collects no identifier linking a query to an *end user* of
+      # the customer's app — but under pikuri the account holder *is* the end
+      # user, so that log is tied to your key. Zero Data Retention exists only
+      # on a custom Enterprise plan. The notice is silent on training; the
+      # pricing page (https://brave.com/search/api/) promises "Queries never
+      # shared or trained on". Bottom line: the cleanest API-level posture of
+      # pikuri's three providers (no training, capped retention), but a 90-day
+      # log tied to your key, so no ZDR substitute for genuinely sensitive
+      # queries.
       class Brave
         # @return [String] Web Search endpoint
         ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
