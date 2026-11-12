@@ -1,6 +1,8 @@
 # pikuri-workshop: split the functionality gems into a second project
 
-Status: **direction agreed, cut agreed, climax agreed.** Nothing moved yet.
+Status: **direction, cut and climax agreed. The eight gems moved to
+[pikuri-workshop](https://github.com/mvysny/pikuri-workshop) on 2026-11-12**, ahead of
+the order below (`pikuri-workshop:D_separate_repo`). What remains is book 1's side.
 
 ## The problem
 
@@ -348,108 +350,24 @@ built into the structure beat filters" was the kernel namespace. The
 replacement is search-never-fetch; MCP shrinks to "the instant trifecta",
 with a forward link.
 
-## How the two repos relate (decided)
+## Left over from the move
 
-**pikuri is "just" a dependency of pikuri-workshop.** Nothing more: no shared
-version number, no shared release, no shared tooling. The workshop is its own
-project and develops independently, like any other app built on pikuri.
-
-- **Tooling is copied, not shared.** The workshop copies
-  `tasks/tripwires.rake` (the five seam checks: workshop code honours the
-  subprocess, loop and other seams too), `design/verify_design_tripwires.sh`
-  and the `Rakefile`'s `check` / `release` tasks. From then on each copy
-  evolves on its own. Vanilla ships no tooling for the workshop to load, and
-  the closed-set-of-five rule (`D_tripwire_bar`) binds each repo separately.
-
-- **Names:** the repo is pikuri-workshop and book 2 is "the workshop": power
-  tools you use with care, where book 1 is what you can safely leave lying
-  around the house. ("pikuri-ext" was the working name; it blurred with
-  `Pikuri::Agent::Extension`, which gems in both repos ship.) **The gems keep
-  their names** (`pikuri-mcp`, not `pikuri-workshop-mcp`): a gem's name is
-  tied to its namespace and entry file (`Pikuri::Mcp`, `pikuri-mcp.rb`), so
-  a rename churns every constant for nothing; the placement rule can move a
-  gem between repos, and its name mustn't encode which; and which repo a gem
-  lives in is a maintainer's concern, carried by its gemspec's
-  `homepage` / `source_code_uri`, not something a user wiring it needs.
-
-- **Wiring:** the workshop's root `Gemfile` takes the pikuri gems from git, `master`,
-  with `Gemfile.lock` pinning the commit, the way Puri, pikuri-tui and
-  pikuri-web already ride pikuri. `bundle update pikuri-core` moves it.
-  Without backward compatibility, a vanilla rename breaks the workshop until it
-  catches up, and one change becomes two commits. That's the price.
-- **Release:** independent cycles. A workshop release needs the pikuri version
-  it was built against to be on rubygems first; its gemspecs pin that with
-  `~>`. `D_release_one_otp` keeps lockstep *inside* each repo: 8 pushes for
-  pikuri, 8 for the workshop.
-- **Promises:** the trifecta promise ("at most two legs at any node") is book
-  1's. Book 2's climax breaks it by design: the coding agent holds all three
-  at full strength. The workshop's own AGENTS.md needs its own promise,
-  along the lines of "contained, not constructed: every agent here runs
-  inside a cage, and the book says what each cage buys and where it stops."
-- **Downstream:** apps ride both repos, and that cost is accepted. Puri
-  wants `pikuri-extractors` for DOC, DOCX and the other office formats in
-  `~/Documents` (the secretary makes do with `pikuri-pdf`); pikuri-tui wires
-  `pikuri-code` and `pikuri-os` (`pikuri-tui-code`, `pikuri-tui-computer`).
-  Each rides two git dependencies.
-
-## Open questions
-
-- `Q_book2_shape` (**deferred** until the workshop repo exists; decide it
-  there): book 2 ends on **a simple coding agent**
-  (`pikuri-code`), the way book 1 ends on the CLI Puri. The two climaxes
-  pair up: book 1's is broken by construction; book 2's is the agent people
-  actually run, which can't be, because it holds all three legs at full
-  strength. So its chapter is about what each defense (the sandbox, the
-  confirmer, the passive-command detector) buys and where it stops, which
-  absorbs most of `security-revisited.md`. Draft running order: the shell
-  and its cage (harvests `code.md`'s sandbox half and `os-assistant.md`
-  Part 1), the OS assistant (the opposite cut: `FullFsNoNet`), memories
-  (mem0: automatic capture on the no-egress agents that can afford it),
-  skills, the wire chapter, your first MCP server, MCPs
-  revisited, language intelligence, then the coding agent as the climax. "Simple"
-  means checking whether plan mode, `git_clone` and `GIT_REPO_RESEARCHER`
-  each earn a place in it.
-
-## What moves where (the mechanical list)
-
-**Docs that travel to the workshop:**
-
-- per-gem `AGENTS.md` and `design/architecture.md` for `pikuri-code`,
-  `pikuri-lsp`, `pikuri-os`, `pikuri-extractors`, `pikuri-memory`,
-  `pikuri-skills`, `pikuri-mcp` and `pikuri-tasks`;
-- `D_` entries from `design/decisions.md`, at least: the seven LSP entries,
-  `D_headless_os_agent`, every MCP entry, and the non-Thunderbird half of
-  `D_gloda_locks_mcp_does_not` (needs a split). The two Thunderbird entries
-  stay;
-- `D_keep_calculator` and `D_command_inlining_legs` mention bash; check
-  whether they still hold in vanilla without it;
-- `R_permissions` and the grok-build sandbox deep-dive in
-  `design/research.md`: prior art for the sandbox, so they travel;
-- ideas: `coding-agent.md`, `claude-parity.md`, `bash-confirmer.md`,
-  `grok-build-cheap-borrows.md`. `thunderbird*.md` (3) stay with the gem;
-- book chapters: `code.md`, `lsp.md`, `os-assistant.md`,
-  `security-revisited.md`, `memories.md`, `skills.md`, `mcp.md`,
-  `mcp-revisited.md`, `wire.md`, `tasks.md`.
-
-**Docs that stay but need edits:**
-
-- Book chapters to repoint: `security.md`, `trifecta-detector.md`,
-  `chat.md`, `subagents.md`, `prerequisites.md`, `rag.md`; `vectordb.md`
-  drops or forward-links `pikuri-extractors`.
-- New book chapters: designing a tool (calculator), touching files
-  (workspace and confirmer), the secretary.
-- `book/README.md`: one track, the climax, the coda.
-- `apps.md` (the coda): Puri first, as "this, with all the bells and
-  whistles", then pikuri-tui and pikuri-web; plus a pointer at book 2.
-- AGENTS.md: the module map, the "Name a gem after what it refuses to
-  become" line (add: "a gem whose future is more features goes to
-  pikuri-workshop, and so does one that isn't safe on the host as-is"), the
-  promises (book 1's theme is *Privacy first* plus the trifecta promise;
-  *Readable in an evening* stays as the learning principle's promise), and
-  the pitch (skills, task tracking, MCP and "a full in-repo coding agent"
-  go).
-- `SECURITY.md`: drop the sections about workshop gems, or link to them.
-- `CHANGELOG.md`: one line per move.
+- **Chapters still built on the workshop.** `security.md` cites `code.md`, Bubblewrap and
+  MCP throughout, and its links now point at book 2; `trifecta-detector.md`'s worked
+  examples run `pikuri-code`. `chat.md`, `subagents.md`, `prerequisites.md`, `rag.md` and
+  `vectordb.md` still mention memories, mem0, skills, MCP or `pikuri-extractors`.
+- **The coda.** `apps.md`: Puri first, as "this, with all the bells and whistles", then
+  pikuri-tui and pikuri-web.
+- **Promises.** Book 1's theme is *Privacy first* plus the trifecta promise, with
+  *Readable in an evening* as the learning principle's promise; the owner rewords them.
+- **`D_keep_calculator`** argues against `bash` beside the calculator; check it still reads
+  right with no `bash` in pikuri.
+- **Ideas that lean workshop:** `claude-code-researcher.md`, `tool-list-in-context.md`,
+  `more-confirmers.md` (its context is the OS assistant) and the sandbox and MCP parts of
+  `security-open-questions.md`.
+- **Yardoc that names workshop symbols** (about 30, across core, workspace, subagents and
+  vectordb: `{Pikuri::Code::Bash}`, `{Pikuri::Tasks::Extension}`, `{Pikuri::Mcp::Servers}`…)
+  now dangles on rubydoc.info; each wants a rewrite that names the seam, not the consumer.
 
 ## Order of work (sketch)
 
@@ -461,7 +379,7 @@ project and develops independently, like any other app built on pikuri.
 3. Write the climax chapter and the two new ones (designing a tool, touching
    files); rebuild `trifecta-detector.md`'s examples on the climax; rewrite
    `security.md`.
-4. Create the pikuri-workshop repo and move the eight gems (`git filter-repo` per
-   path, or just a plain copy, since git is for syncing code, not curating
-   history). Move their docs, `D_` entries, ideas and chapters with them.
-5. Rewrite `book/README.md`, AGENTS.md, SECURITY.md and the coda.
+4. ~~Create the pikuri-workshop repo and move the eight gems, with their docs,
+   `D_` entries, ideas and chapters.~~ Done, out of order.
+5. ~~Rewrite `book/README.md`, AGENTS.md, SECURITY.md~~ (a first pass landed with the
+   move) and the coda.

@@ -1,7 +1,7 @@
 # Does the whole tool list need to be resident? — gating tool schemas
 
 Status: **open question, deliberately parked.** Split out of what is now
-the `paths:` build note (now shipped, `D_skill_path_activation`), where it was a
+the `paths:` build note (now shipped, `pikuri-workshop:D_skill_path_activation`), where it was a
 thread: the author's framing (2026-08-16) is that a user accumulates
 *tools* the way they accumulate skills — thunderbird, vectordb, memory, a
 pile of MCP servers — and only a slice of them applies to any one
@@ -20,7 +20,7 @@ though it shares their caching arithmetic.
 
 Related:
 
-- `design/decisions.md` `D_skill_path_activation` — the matcher and the
+- pikuri-workshop's `pikuri-workshop:D_skill_path_activation` — the matcher and the
   `Event::ToolCall` plumbing this would reuse, including the path-args map
   that is the first design problem either way. Its **Context** also carries
   the caching arithmetic, and you should read that before quoting any token
@@ -35,7 +35,7 @@ Related:
   AGENTS.md + skills catalog + tool schemas on every turn."* Only the
   tool-schema clause reaches this note, and it is the whole reason the
   note exists. The skills-catalog clause was answered by
-  `D_skill_path_activation`. The other two halves the review named — a
+  `pikuri-workshop:D_skill_path_activation`. The other two halves the review named — a
   tool-schema restatement in prose, and duplicated
   don't-mention-the-guidelines material — were prompt-editing rather than
   gating, and on inspection (2026-08-25) describe nothing pikuri ships:
@@ -141,7 +141,7 @@ longer declared is a shape some providers reject. **Gating is add-only.**
    *both* nouns?** Possibly the answer splits by axis: harness-driven
    `paths:` for skills (cheap, additive, appends), model-driven connect
    for tools (expensive, prefix-busting, deserves an explicit decision).
-   Shared with `D_skill_path_activation`'s reopen criterion 2.
+   Shared with `pikuri-workshop:D_skill_path_activation`'s reopen criterion 2.
 3. **Is per-tool the right granularity, or per-family?** Every rival
    above advertises a *family* (`<available_mcps>` lists servers, not
    tools). A gate that operates per tool multiplies activations — and

@@ -65,12 +65,12 @@ and delete this file once the live items are gone.
     once friction shows up. Tracked in `design/ideas/coding-agent.md`. grok-build is the richer
     reference — evaluation by severity rather than by source, per-segment matching, and a curated
     read-only command allowlist whose *exclusions* are the part worth reading before writing any
-    auto-approval logic (`R_permissions`).
+    auto-approval logic (`pikuri-workshop:R_permissions`).
 11. **Deferred MCP tool loading via search** (grok-build's `search_tool` / `use_tool`). Same goal as
     `mcp_connect` with a different lever; scales better when one server exposes a hundred tools.
 12. **Markdown-plus-SQLite memory substrate** (grok-build). Arguably the more pikuri-shaped answer on
     privacy and auditability grounds; not worth churning a shipped gem over, but the no-LLM-call
-    automatic save and the confirm-before-write review panel are separable and cheap (`R_memory`).
+    automatic save and the confirm-before-write review panel are separable and cheap (`pikuri-workshop:R_memory`).
 13. **Pluggable Operations interfaces** (pi). Lets a `bash` tool delegate to SSH / sandbox / cloud.
     `Subprocess.spawn` is the seam where this would hook in; today it only spawns local.
 

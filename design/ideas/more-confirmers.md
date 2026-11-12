@@ -6,7 +6,7 @@ human-in-the-loop confirmer ideas surfaced while scoping web access for
 quarantined in the `RESEARCHER` sub-agent (no filesystem), reached via
 the `agent` tool, gated on the task prompt before dispatch —
 `SubAgent::Extension.new(personas:, confirmer:)` (see
-[the OS-assistant chapter](../../book/os-assistant.md) §"Part 2 — The third
+[the OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md) §"Part 2 — The third
 leg returns"). That gate is
 now the **full author seat**: `Confirmer#ask` returns
 `Approved(new_request_detail)` / `Rejected` / `Redirected(message)`, the
@@ -43,7 +43,7 @@ Related, already worked out:
   (`web_search` reaches an engine pikuri picked, `fetch` a host the model
   chose) that motivates the whole file. Both shipped as
   {Pikuri::Tool::TrifectaLegs}' two egress axes.
-- [The OS-assistant chapter](../../book/os-assistant.md) §"Part 2 — The
+- [The OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md) §"Part 2 — The
   third leg returns" — the shipped gate these extend.
 
 ## Why these exist
@@ -221,7 +221,7 @@ largely *echoes* a caller-built string. To live up to the guide's
 fetch; target path or URL; egress destination; in/out of workspace), so
 the seam can *render* the load-bearing presentation rather than echoing
 whatever the caller built. Composes with the per-pattern stickiness
-wishlist in [`bash-confirmer.md`](bash-confirmer.md)
+wishlist in [`bash-confirmer.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/bash-confirmer.md)
 §"Permission-model granularity" — sticky rules key naturally on
 structured fields, badly on raw strings.
 
@@ -235,7 +235,7 @@ weak→strong spectrum, and they compound:
 - **Frequency (fatigue).** The rarer the prompt, the more attention each
   gets. Bash fires dozens of times a task → the forty-first is
   rubber-stamped (the whole premise of
-  [`bash-confirmer.md`](bash-confirmer.md)). A once-a-session action gets
+  [`bash-confirmer.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/bash-confirmer.md)). A once-a-session action gets
   real scrutiny.
 - **Legibility.** The gate is only as strong as the human's ability to
   *understand what they're approving*. Natural-language actions

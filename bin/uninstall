@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove the pikuri-chat / pikuri-code symlinks created by bin/install.
+# Remove the pikuri-chat symlink created by bin/install.
 # Only removes entries that are symlinks pointing back into this checkout —
 # an unrelated file or symlink with the same name in $PREFIX is left alone.
 #
@@ -17,7 +17,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # symlink with the same name in $PREFIX is left alone).
 declare -A BINARIES=(
   [pikuri-chat]="$ROOT/pikuri-core/bin/pikuri-chat"
-  [pikuri-code]="$ROOT/pikuri-code/bin/pikuri-code"
 )
 
 for name in "${!BINARIES[@]}"; do

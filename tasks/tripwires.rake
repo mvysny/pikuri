@@ -59,18 +59,10 @@ module Tripwires
   CHECKS = [
     Check.new(
       'subprocess chokepoint',
-      'All subprocess spawning in lib/ routes through Subprocess.spawn, ' \
-      'except two long-lived stdio children.',
-      # Two sanctioned exceptions (stated in +pikuri-mcp/AGENTS.md+ /
-      # +pikuri-lsp/AGENTS.md+), but only one path to allow: the MCP child
-      # is spawned *inside* the third-party +mcp+ gem
-      # (+MCP::Client::Stdio+), so pikuri's own +mcp/client_wrapper.rb+
-      # contains no spawn primitive to match.
-      -> {
-        confined(/Process\.spawn|Open3\.|\bsystem\(/,
-                 allowed: ['pikuri-core/lib/pikuri/subprocess.rb',
-                           'pikuri-lsp/lib/pikuri/lsp/client_wrapper.rb'])
-      }
+      'All subprocess spawning in lib/ routes through Subprocess.spawn.',
+      # pikuri-workshop's copy of this check allows its LSP client's
+      # long-lived stdio child; nothing in pikuri needs an exception.
+      -> { confined(/Process\.spawn|Open3\.|\bsystem\(/, allowed: ['pikuri-core/lib/pikuri/subprocess.rb']) }
     ),
 
     Check.new(
@@ -86,9 +78,7 @@ module Tripwires
                            'pikuri-workspace/lib/pikuri/workspace/listing.rb',
                            'pikuri-workspace/lib/pikuri/workspace/search/glob.rb',
                            'pikuri-workspace/lib/pikuri/workspace/search/grep.rb',
-                           'pikuri-workspace/lib/pikuri/workspace/search/utils.rb',
-                           'pikuri-lsp/lib/pikuri/lsp/sources.rb',
-                           'pikuri-lsp/lib/pikuri/lsp/renderer.rb'])
+                           'pikuri-workspace/lib/pikuri/workspace/search/utils.rb'])
       }
     ),
 

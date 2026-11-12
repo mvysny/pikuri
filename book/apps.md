@@ -5,9 +5,9 @@
 > by apps that build on these gems, not by this repo.
 
 Every agent in this book holds at most two of the trifecta's three
-legs. The OS assistant ([the OS-assistant chapter](os-assistant.md))
+legs. The OS assistant ([the OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md))
 keeps the disk and severs the network; the coding agent
-([the coding-agent chapter](code.md)) keeps the network and confines
+([the coding-agent chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md)) keeps the network and confines
 the disk. An everyday assistant wants all three at once: it remembers
 things about you, reads your mail, which anyone can write to, and
 looks things up on the web. Where to cut, and whether it is still
@@ -26,10 +26,10 @@ terminal front-ends:
 - **`pikuri-tui-chat`**: a general-purpose chat with web search and the
   calculator, the TUI version of `pikuri-chat`.
 - **`pikuri-tui-code`**: the in-repo coding agent from
-  [the coding-agent chapter](code.md), plus a git diff view and plan
+  [the coding-agent chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md), plus a git diff view and plan
   mode.
 - **`pikuri-tui-computer`**: a desktop assistant for your machine. It
-  has the OS helper from [the OS-assistant chapter](os-assistant.md),
+  has the OS helper from [the OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md),
   your Thunderbird mail and calendar, and web research kept behind an
   isolated sub-agent.
 
@@ -64,5 +64,8 @@ with you passing text between them.
 This is the end of the guide. You now have the vocabulary to read
 any pikuri-\* gem's sources and any of the apps above: `Pikuri::Agent`,
 `Tool`, listeners, the Extension protocol, configure/bind, sub-agent
-privilege separation, the kit from [the security chapter](security.md),
-and MCP's verifier, synthesizer and per-agent `mcp_connect`.
+privilege separation and the kit from [the security chapter](security.md).
+
+If you want the power tools (a shell, a coding agent, MCP servers,
+language servers) and the cages they need, read
+[book 2, the workshop](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md).

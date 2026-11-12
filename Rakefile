@@ -25,18 +25,10 @@ Dir.glob(File.expand_path('tasks/*.rake', __dir__)).sort.each { |f| load f }
 # So the push phase is free to fan out in any order — see +:release+.
 GEMS = %w[
   pikuri-core
-  pikuri-extractors
   pikuri-pdf
   pikuri-web
-  pikuri-memory
-  pikuri-skills
-  pikuri-tasks
-  pikuri-mcp
   pikuri-workspace
-  pikuri-lsp
   pikuri-subagents
-  pikuri-code
-  pikuri-os
   pikuri-thunderbird
   pikuri-vectordb
   pikuri-rag

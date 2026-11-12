@@ -139,7 +139,7 @@ is far more expensive.
   external program, like `lsp` or the extractors container.
   - Zero change to any existing gem — the "grow by adding tools" path.
   - Legs declared on the tool like every other tool (precedent:
-    `D_lsp_trifecta_legs`, a tool whose child goes online): untrusted +
+    `pikuri-workshop:D_lsp_trifecta_legs`, a tool whose child goes online): untrusted +
     `:attacker_reachable` / `:unreviewed` egress (WebFetch reaches
     model-chosen hosts), no private data.
   - Cancellation via `wants_context: true` + `Subprocess.spawn`; the

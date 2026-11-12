@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Symlink pikuri-chat and pikuri-code into $PREFIX (default ~/.local/bin) so
-# they're on $PATH. The scripts pin BUNDLE_GEMFILE to this checkout's Gemfile,
-# so they work from any working directory once installed.
+# Symlink pikuri-chat into $PREFIX (default ~/.local/bin) so it's
+# on $PATH. The script pins BUNDLE_GEMFILE to this checkout's Gemfile,
+# so it works from any working directory once installed.
 #
 # Usage:
 #   ./bin/install                # install into ~/.local/bin
@@ -17,7 +17,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # its gem subdir, some are still at the repo-level bin/.
 declare -A BINARIES=(
   [pikuri-chat]="$ROOT/pikuri-core/bin/pikuri-chat"
-  [pikuri-code]="$ROOT/pikuri-code/bin/pikuri-code"
 )
 
 mkdir -p "$DEST"

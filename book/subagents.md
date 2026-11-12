@@ -261,7 +261,7 @@ tool list — there is no `bash` to call. The reverse case (a
 same property in the other direction: it can read files but cannot
 reach the network.
 
-[The coding-agent chapter](code.md) makes this concrete: `pikuri-code` wires
+[The coding-agent chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md) makes this concrete: `pikuri-code` wires
 `FILE_MINER` (a read-only filesystem-recon persona) so the coding
 agent can delegate "find every spec referencing `Foo`" without
 polluting its main context, but a prompt-injected `FILE_MINER`
@@ -272,8 +272,8 @@ cannot reach `web_search` or `bash` because those aren't in its
 
 You now know the smallest extension shape (the `configure` +
 `bind` pair), and you've seen one persona in action. The next
-three chapters — [vectordb](vectordb.md), [memories](memories.md),
-and [MCP](mcp.md) — add the capabilities an assistant wants
+three chapters — [vectordb](vectordb.md), [memories](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md),
+and [MCP](https://github.com/mvysny/pikuri-workshop/blob/master/book/mcp.md) — add the capabilities an assistant wants
 (semantic search over your notes, persistent memories across
 conversations, external tool servers). The vector-DB chapter introduces a
 second persona — `LIBRARIAN` — and demonstrates the same

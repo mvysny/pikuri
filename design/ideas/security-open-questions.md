@@ -33,7 +33,7 @@ Related long-form notes (the entries below that already grew one):
 - [`typed-transports.md`](typed-transports.md) — classify each
   LLM-shaped transport (chat / embedder / reranker) `:private` vs
   `:public` from its endpoint host and refuse to mix by default.
-- [`bash-confirmer.md`](bash-confirmer.md) — the permission-model
+- [`bash-confirmer.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/bash-confirmer.md) — the permission-model
   granularity / fatigue work (risk tiers, dry-run, session grants).
 - [`more-confirmers.md`](more-confirmers.md) — the human-in-the-loop
   confirmer shapes and the structured-action-context seam.
@@ -63,7 +63,7 @@ the table:
   **kills the user-curated `fetch` whitelist** (an interactive host is
   attacker-readable), so the surviving live shape is the `bash`-egress /
   network-layer version. Gondolin's egress-proxy pattern (see
-  [`design/research.md`](../research.md) `R_permissions`) is the
+  pikuri-workshop's `pikuri-workshop:R_permissions`) is the
   heavyweight structural version.
 - **Prompt injection inside skill descriptions?** Skills are
   user-installed text, and "user-vetted by definition"
@@ -168,7 +168,7 @@ The deep survey of PI's two isolation weights (the bubblewrap-only
 egress-proxy + secret-placeholder pattern) and opencode's
 tree-sitter-backed `(permission, glob)` permission system — plus the
 "worth borrowing" shortlist — now lives in
-[`design/research.md`](../research.md) `R_permissions`, alongside
+pikuri-workshop's `pikuri-workshop:R_permissions`, alongside
 the higher-level permission/sandboxing comparison it extends. Findings
 reinforce pikuri's framing rather than contradict it: neither project
 ships prompt-injection defenses, both cap tool output to a tempfile,

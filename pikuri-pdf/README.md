@@ -28,7 +28,7 @@ needs PDFs, skip it (and its whole subtree) when it doesn't.
 Everything is pure Ruby, so the worst a malicious PDF can do to the
 parser is burn CPU and memory — there's no native code to corrupt.
 
-**This gem or [pikuri-extractors](../pikuri-extractors) — pick one
+**This gem or [pikuri-extractors](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-extractors) — pick one
 per wiring.** pikuri-extractors' converter container also has a PDF
 arm (poppler's `pdftotext`, sandboxed, same `--- Page N ---`
 markers): on an agent that fetches untrusted documents from the

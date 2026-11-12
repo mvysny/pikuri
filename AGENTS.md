@@ -9,9 +9,10 @@ Defaults wire a local
 conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
 `pikuri-chat` from [`pikuri-core`](pikuri-core/README.md); the rest
-of the family adds skills, task tracking, MCP, filesystem tools, a
-full in-repo coding agent, and local-corpus vector search à la
-carte.
+of the family adds filesystem tools, sub-agents, web search,
+local-corpus vector search and your Thunderbird mail à la carte.
+The power tools (a shell, a coding agent, MCP, skills) live in
+[pikuri-workshop](https://github.com/mvysny/pikuri-workshop).
 
 ## Promises
 
@@ -35,10 +36,12 @@ carte.
 | `SECURITY.md` | threat model + shipped defenses | — |
 | `CHANGELOG.md` | what changed and what you must do about it | — |
 
-Every fact lives in exactly one of these; the others link to it.
+Every fact lives in exactly one of these; the others link to it. A cite into pikuri-workshop's
+docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it to that repo.
 
 ## Invariants
 
+- **Nothing in pikuri requires a pikuri-workshop gem.** Dependencies point from the workshop to here, never back; a `lib/`, `bin/`, spec or chapter that needs one belongs there. See `pikuri-workshop:D_separate_repo`.
 - **Loop seam.** ruby_llm owns `Chat#complete`; never build a `RubyLLM::Chat` or attach its callbacks outside `pikuri-core`'s `agent.rb` and `tool.rb`. See {Pikuri::Agent}.
 - **Connection seam.** Every chat rides a per-chat `RubyLLM::Context` built from an `Agent::ChatTransport`, never the process-global `RubyLLM.configure`. See {Pikuri::Agent#build_chat}.
 - **An extra request parameter is opaque.** `ChatTransport#params` is deep-merged into the payload verbatim; pikuri never translates one, names one, or grows a typed flag for it. See `D_opaque_request_params`.
@@ -68,23 +71,16 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 `gemspec path:`; the top-level `Rakefile` fans out `rake test` and orchestrates `rake release`.
 
 - `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, the bundled `calculator`, `bin/pikuri-chat`.
-- `pikuri-extractors` — office/EPUB/RTF/PDF → Markdown for the `Extractor` registry via a one-shot networkless docker container.
-- `pikuri-pdf` — in-process pure-Ruby PDF → text for the registry. Pick one PDF arm per host (this or pikuri-extractors').
+- `pikuri-pdf` — in-process pure-Ruby PDF → text for the registry. The docker-free PDF arm; pikuri-workshop's pikuri-extractors is the other.
 - `pikuri-web` — the tools that reach the internet: `web_search` and its engines, `web_scrape`, `fetch`, `web_read_cached`, the URL caches, and the HTML extractor it registers on require.
-- `pikuri-skills` — Agent Skills standard, slash commands, the shared `Bundle::*` vocabulary. Rules: `pikuri-skills/AGENTS.md`
-- `pikuri-tasks` — in-memory per-agent task list + four `task_*` tools.
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams, the file tools, the `ReadOnly` gate. Rules: `pikuri-workspace/AGENTS.md`
-- `pikuri-lsp` — LSP client for read-only code navigation: the `lsp` tool + `bin/pikuri-lsp-check`. Rules: `pikuri-lsp/AGENTS.md`
-- `pikuri-code` — `Bash` + sandbox + `bin/pikuri-code`, the in-repo coding agent. Rules: `pikuri-code/AGENTS.md`
-- `pikuri-os` — offline, network-severed OS-helper agent + `bin/pikuri-os`; hosts the `bin/pikuri-computer` demo.
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: read-only inbound tools, human-gated outbound hand-offs. Rules: `pikuri-thunderbird/AGENTS.md`
-- `pikuri-mcp` — Model Context Protocol support + `bin/pikuri-openlibrary`, the one-MCP demo. Rules: `pikuri-mcp/AGENTS.md`
 - `pikuri-subagents` — the `agent` tool, the `Persona` record, the bundled personas, `bin/pikuri-minions`. Rules: `pikuri-subagents/AGENTS.md`
 - `pikuri-vectordb` — the retrieval *primitive*: topical vector search over a local corpus + `bin/pikuri-corpus`.
 - `pikuri-rag` — the retrieval *system* on that primitive: hybrid vector + FTS5 search + `bin/pikuri-briefing`. Rules: `pikuri-rag/AGENTS.md`
-- `pikuri-memory` — durable cross-conversation memory backed by mem0 + `bin/pikuri-memory`.
 - `book/` — "the book", also "the guide"; `book/README.md` is the ToC and the single source of truth for chapter order.
 - `assets/` — **Kuri**, the pika mascot (`kuri.svg` master, `kuri.png` raster); drawing + anatomy rule in `D_kuri_mascot`.
+- [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), a separate repo — the gems that need a cage: a shell, the coding agent, the OS assistant, LSP, MCP, skills, tasks, mem0, docker extractors.
 - `bin/pikuri-*` — dev / demo entry points, not gem executables; production binaries live downstream.
 
 ## Conventions
@@ -102,10 +98,11 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - **Errors are loud.** Unexpected internal state raises with the offending data; failures the LLM can react to answer `Tool::Result.error(message)`; only cosmetic paths secondary to the loop may rescue-and-degrade.
 - **Every tool declares a sharing posture.** `Agent` is thread-unsafe (the caller serializes; never key state off `Thread.current`), so a tool reachable from two agents carries a `Sharing:` yardoc line naming `P_stateless` / `P_shared_locked` / `P_shared_benign` / `P_one_agent` plus the state's owner; a waiting tool opts into `wants_context: true` and sleeps via `context.cancellable.sleep`. See `D_tool_sharing_postures`, `D_rate_limiter_scope`.
 - **Tool descriptions follow opencode-shape:** one-line summary, blank line, `Usage:` bullets; per-arg constraints go in the *parameter* description with an example value. Universal failure-recovery guidance lives in per-binary prompts.
-- **Tool naming: a prefix marks a family, a universal verb goes bare.** `foo_*` = a family sharing one backing resource; a verb every agent knows stays bare (`read`, `bash`, `fetch`, `agent`). See `D_directory_listing`.
+- **Tool naming: a prefix marks a family, a universal verb goes bare.** `foo_*` = a family sharing one backing resource; a verb every agent knows stays bare (`read`, `fetch`, `agent`). See `D_directory_listing`.
 - **No tool names in a main/binary system prompt.** `prompts/<bin>.txt` names no wired tool and restates no mechanics; persona prompts (`prompts/persona-*.txt`) are the carve-out.
 - **Grow by adding tools, listeners or controls** — new `Pikuri::Tool` / `Listener` / `Control` constants with their own specs; core and the loop stay ignorant of them.
 - **Name a gem after what it refuses to become.** A gem is earned by a *novel* threat model or cohesive lib code needing a home; a nameable posture alone ships as a demo.
+- **A gem whose future is more features goes to pikuri-workshop, and so does one that isn't safe on your host as-is.** pikuri grows by explaining better, never by gaining features.
 - **A `bin/` script is simple on purpose**, so its simplifications are not pikuri policy — never cite one as evidence of how pikuri behaves. Library behaviour is `lib/` and its yardoc.
 - **Book chapters are named, not numbered** — never an ordinal, anywhere. A new concept is one `book/<slug>.md`, one line in `book/README.md`, and fixed neighbouring "What's next" links.
 - **A CHANGELOG entry is one sentence**, new work under `[Unreleased]`, a shipped section closed.

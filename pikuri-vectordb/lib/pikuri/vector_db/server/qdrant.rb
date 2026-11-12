@@ -19,10 +19,10 @@ module Pikuri
       class Qdrant
         # @return [String] pinned qdrant docker image; bump it to upgrade
         #   ({#ensure_running!} recreates the container on next boot, data dir
-        #   untouched). **Kept in lockstep with
+        #   untouched). **Kept in lockstep with pikuri-workshop's
         #   +Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE+** so a host
-        #   running both stacks holds one image — a convention (the gems don't
-        #   depend on each other), bump both together.
+        #   running both stacks holds one image; a spec over there fails when
+        #   they drift, since only the workshop may see this gem.
         IMAGE = 'qdrant/qdrant:v1.12.4'
 
         # @return [String] container name; +"pikuri-internal-"+ namespace squat

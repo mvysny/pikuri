@@ -469,10 +469,9 @@ you'd rather it didn't.
 ## What's next
 
 You now have both halves of corpus retrieval: the vector primitive and
-the hybrid system on top of it. The next chapter —
-[memories](memories.md) — is the other kind of recall entirely: facts
-the agent extracted from your conversations and kept, rather than
-documents you handed it. It's also where the privacy posture gets
-sharper, because a memory store is private data *by definition*.
+the hybrid system on top of it, and an agent that reads your own
+private notes. [Security](security.md) is the chapter that says why
+that is safe: why there's no NX flag for tokens, the lethal trifecta,
+and why pikuri breaks it by construction rather than by filtering.
 
-→ Continue to [Memories](memories.md).
+→ Continue to [Security](security.md).

@@ -16,9 +16,10 @@ Defaults wire a local
 conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
 `pikuri-chat` from [`pikuri-core`](pikuri-core/README.md); the rest
-of the family adds skills, task tracking, MCP, filesystem tools, a
-full in-repo coding agent, and local-corpus vector search à la
-carte.
+of the family adds filesystem tools, sub-agents, web search,
+local-corpus vector search and your Thunderbird mail à la carte.
+The power tools (a shell, a coding agent, MCP, skills) live in
+[pikuri-workshop](https://github.com/mvysny/pikuri-workshop).
 
 That's **Kuri** on the right — a pika, which is a real animal: a
 palm-sized relative of the rabbit that lives in alpine rockslides,
@@ -39,8 +40,7 @@ bundle install
 ```
 
 From the vector-DB chapter onward, the guide also runs local
-infrastructure (vector store, memory store, MCP servers) in
-Docker — set up **rootless**,
+infrastructure (the vector store) in Docker — set up **rootless**,
 not via the `docker` group, which is passwordless root. The
 one-time setup lives in
 [book/prerequisites.md](book/prerequisites.md).
@@ -63,40 +63,22 @@ in:
   book — the [first-conversation chapter](book/chat.md) starts a
   chat agent, the [sub-agents chapter](book/subagents.md)
   introduces delegation (`pikuri-minions`), and the
-  [coding-agent chapter](book/code.md) walks the in-repo coding
-  agent (`pikuri-code`) and its security posture. Reading order
+  [security chapter](book/security.md) says why none of it can
+  leak your data. Reading order
   matters: each chapter assumes the previous one's vocabulary,
   and [`book/README.md`](book/README.md) is the running order.
 - **Or jump straight to whichever gem you want to use.** Each
   per-gem README is a reference card with a wired-up snippet:
   - [`pikuri-core`](pikuri-core/README.md) — `Pikuri::Agent`, the
     `Tool` framework, the `pikuri-chat` demo.
-  - [`pikuri-extractors`](pikuri-extractors/README.md) — documents
-    (DOCX / ODT / XLSX / PPTX / EPUB / RTF / PDF) → Markdown,
-    converted inside a one-shot networkless docker container.
   - [`pikuri-pdf`](pikuri-pdf/README.md) — PDF → text extraction,
     in-process and lazily paged (pure-Ruby pdf-reader); the
-    docker-free alternative to pikuri-extractors' PDF arm.
+    docker-free alternative to pikuri-workshop's pikuri-extractors.
   - [`pikuri-web`](pikuri-web/README.md) — the tools that reach the
     internet: `web_search` (DuckDuckGo, Brave, Exa), `web_scrape`,
     `fetch` and `web_read_cached`.
-  - [`pikuri-skills`](pikuri-skills/README.md) —
-    [Agent Skills](https://agentskills.io/specification)
-    discovery.
-  - [`pikuri-tasks`](pikuri-tasks/README.md) — in-memory task list
-    + the four `task_*` tools (create / in-progress / completed /
-    delete).
   - [`pikuri-workspace`](pikuri-workspace/README.md) — filesystem
     tools + `Workspace` / `Confirmer` seams.
-  - [`pikuri-code`](pikuri-code/README.md) — `Bash` + the in-repo
-    coding-agent binary. **Read the security notes before pointing
-    it at anything sensitive.**
-  - [`pikuri-lsp`](pikuri-lsp/README.md) — read-only code
-    navigation (go-to-definition, find-references, call and type
-    hierarchies) through a language server you already have
-    installed.
-  - [`pikuri-mcp`](pikuri-mcp/README.md) — [Model Context
-    Protocol](https://modelcontextprotocol.io) support.
   - [`pikuri-subagents`](pikuri-subagents/README.md) — the `agent`
     tool + `Persona` record + the `pikuri-minions` fan-out demo.
   - [`pikuri-vectordb`](pikuri-vectordb/README.md) — topical
@@ -109,16 +91,15 @@ in:
     also finds an invoice number and `rag_find` lists *every*
     matching document. Demo: `pikuri-briefing`, which briefs you on
     a customer from your own notes.
-  - [`pikuri-memory`](pikuri-memory/README.md) — durable
-    cross-conversation memory backed by mem0: the `recall` tool,
-    per-turn prefetch and capture, and the `pikuri-memory` demo.
-  - [`pikuri-os`](pikuri-os/README.md) — an offline,
-    network-severed whole-machine helper: desktop-index search,
-    a `MACHINE.md` resident memory, and `bin/pikuri-os`.
   - [`pikuri-thunderbird`](pikuri-thunderbird/README.md) — the
     local Thunderbird profile as five read-only mail/calendar
     tools plus two human-gated hand-offs. No network, no
     autonomous send.
+  - The power tools, which run code you didn't write and so need a
+    cage (`pikuri-code`, `pikuri-os`, `pikuri-lsp`, `pikuri-mcp`,
+    `pikuri-skills`, `pikuri-tasks`, `pikuri-memory`,
+    `pikuri-extractors`), live in
+    [pikuri-workshop](https://github.com/mvysny/pikuri-workshop).
 
 There is deliberately no `gem install pikuri` that brings in everything:
 every gem you add is a tool the model can call, so add only the ones
@@ -159,8 +140,7 @@ The threat model in one page — code-trust baseline (what runs
 where, and in which sandbox), then three worked prompt-injection
 attacks broken by capability boundaries, plus explicit non-goals
 — lives in [`SECURITY.md`](SECURITY.md). Read it once before
-pointing `pikuri-code` (or any future write-capable variant) at
-anything sensitive.
+pointing pikuri at anything sensitive.
 
 ## Contributing
 

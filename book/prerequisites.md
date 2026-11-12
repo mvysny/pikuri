@@ -12,8 +12,8 @@ In a hurry? The [first-conversation](chat.md) and
 [sub-agents](subagents.md) chapters need
 only Ruby and the checkout. Docker first earns its keep in
 [the vector-DB chapter](vectordb.md) (persisting the vector index) and
-becomes load-bearing in the [memories](memories.md),
-[MCP](mcp.md), and [MCP-revisited](mcp-revisited.md) chapters — skipping the
+becomes load-bearing in the [memories](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md),
+[MCP](https://github.com/mvysny/pikuri-workshop/blob/master/book/mcp.md), and [MCP-revisited](https://github.com/mvysny/pikuri-workshop/blob/master/book/mcp-revisited.md) chapters — skipping the
 Docker section now and coming back at the vector-DB chapter is a perfectly
 fine reading order.
 
@@ -51,7 +51,7 @@ all walled off from your real machine unless you explicitly punch
 a hole. The program inside thinks it has a whole Linux box; in
 reality it can't see your files, your other processes, or your
 keys. It's the same idea as the bubblewrap sandbox the coding
-agent uses ([the coding-agent chapter](code.md)), packaged as a widely-used,
+agent uses ([the coding-agent chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md)), packaged as a widely-used,
 batteries-included tool. Docker is everywhere — most server
 software ships as a Docker image now — so it's worth having
 installed regardless.
@@ -59,7 +59,7 @@ installed regardless.
 That's the whole mental model you need for now. The deeper
 material — what isolation Docker does and doesn't give you,
 ephemeral overlays, the container-socket footgun — is
-[the MCP-revisited chapter](mcp-revisited.md). For now: it's a box, the
+[the MCP-revisited chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/mcp-revisited.md). For now: it's a box, the
 program runs in the box, the box can't see your stuff.
 
 The guide leans on that box from the vector-DB chapter on: that
@@ -144,7 +144,7 @@ Two rootless quirks worth knowing about up front:
   line above is for: pikuri uses it to relay *one specific host
   service* to *the specific trusted containers that need it* over
   a unix socket file, leaving the loopback sealed for every other
-  container — [the memories chapter](memories.md) shows the mechanism. The
+  container — [the memories chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md) shows the mechanism. The
   other direction is unaffected: ports a container publishes, like
   Qdrant's `127.0.0.1:6333`, are reachable from the host as usual.
 - **Logging out stops your user's systemd services**, the rootless

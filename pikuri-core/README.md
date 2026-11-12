@@ -19,10 +19,10 @@ AI-assistant toolkit:
 Extensions (web tools, skills, MCP, workspace, coding stack,
 named-agent personas) live in sibling gems and opt in à la carte — see
 [`pikuri-web`](../pikuri-web/README.md),
-[`pikuri-skills`](../pikuri-skills/README.md),
-[`pikuri-mcp`](../pikuri-mcp/README.md),
+[`pikuri-skills`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-skills/README.md),
+[`pikuri-mcp`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-mcp/README.md),
 [`pikuri-workspace`](../pikuri-workspace/README.md),
-[`pikuri-code`](../pikuri-code/README.md).
+[`pikuri-code`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-code/README.md).
 
 ## Install
 

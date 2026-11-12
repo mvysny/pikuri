@@ -19,7 +19,7 @@ already homed and does **not** live here:
   `ReadOnly`'s thread-safety) is the owning class's YARD header.
 - The `AllowAll` × `Sandbox` interplay (why `ALLOW_ALL` + `Sandbox::NONE`
   only inside a container) belongs to the Sandbox owner —
-  [`../pikuri-code/design/architecture.md`](../../pikuri-code/design/architecture.md).
+  [`../pikuri-code/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-code/design/architecture.md).
 
 ## The read-before-edit gate
 

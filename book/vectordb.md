@@ -647,7 +647,7 @@ only needed after changing the embedder or chunker settings.
 rootless setup from [the prerequisites chapter](prerequisites.md), which until
 now you could put off, becomes load-bearing here; the
 container image tag is pinned in `Server::Qdrant::IMAGE` — the
-same tag as the Qdrant inside [the memories chapter](memories.md)'s
+same tag as the Qdrant inside [the memories chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md)'s
 memory stack, by convention, so a host running both holds one
 image on disk. The container is named under a `pikuri-internal-`
 prefix that pikuri considers fully owned, and is recreated
@@ -738,7 +738,7 @@ turn into "*every* note about Acme" and "which note has invoice
 #4471". Both are questions pure geometry cannot answer, and the fix
 is a keyword index beside the vectors.
 
-After that comes [memories](memories.md), the other half of recall:
+After that comes [memories](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md), the other half of recall:
 facts the agent learned across earlier conversations rather than a
 corpus you indexed. The two pair naturally inside one assistant —
 vector search over your notes plus persistent memories about you

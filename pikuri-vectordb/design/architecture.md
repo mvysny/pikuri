@@ -12,7 +12,7 @@ Point-in-time comparison — star counts, versions, and image sizes move;
 verify before depending. Context: `pikuri-vectordb` shipped
 `Backend::Chroma` + `Server::Chroma` first; `pikuri-memory`'s mem0 stack
 independently runs **Qdrant** (chosen there for correctness — see
-[`pikuri-memory/design/architecture.md`](../../pikuri-memory/design/architecture.md) §"Why Qdrant,
+[`pikuri-memory/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-memory/design/architecture.md) §"Why Qdrant,
 not pgvector"). Two gems, two self-managed vector databases, two
 engines. The decision this survey backs: **converge the preferred
 engine on Qdrant, keep Chroma as a supported alternative, let the user

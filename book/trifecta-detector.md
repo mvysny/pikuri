@@ -28,7 +28,7 @@ about a leg that you can ask about any harness you build.
 ## Prerequisites
 
 The [security chapter](security.md) for the trifecta itself, plus
-the [OS-assistant](os-assistant.md), [coding-agent](code.md) and
+the [OS-assistant](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md), [coding-agent](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md) and
 [hybrid-retrieval](rag.md) chapters, whose wirings are the worked
 examples here. No new binary and nothing to install: the detector
 is already running in every demo you've started.
@@ -264,7 +264,7 @@ vector, not on a symmetry argument.
 
 ## A leg's presence is binary. Its strength is not.
 
-The [OS-assistant chapter](os-assistant.md) ended on a line worth
+The [OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md) ended on a line worth
 re-reading:
 
 > The trifecta is **binary in presence** — all three legs live
@@ -349,7 +349,7 @@ The admissible test is structural:
   thumbnail — structurally identical to `curl`: a reference to
   bytes nobody saw. (Hypothetical here: pikuri-thunderbird ships
   no attachment support, and [that
-  chapter](os-assistant.md)'s hand-off carries only fields that
+  chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md)'s hand-off carries only fields that
   render literally, for exactly this reason.)
 
 The test is derived from structure, not from anyone's diligence,
@@ -709,7 +709,7 @@ legs is free — five surfaces or two, the count and the advisory are
 identical. This is the
 ["A leg's presence is binary"](#a-legs-presence-is-binary-its-strength-is-not)
 section seen from both sides in one wiring, and it is the same
-idempotence as the [OS-assistant chapter](os-assistant.md)'s Part 3,
+idempotence as the [OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md)'s Part 3,
 where *adding* a leg-holder to an already-assembled trifecta moves
 nothing either.
 
@@ -841,10 +841,6 @@ evidence, never as a certificate.
 
 ## What's next
 
-[MCPs revisited](mcp-revisited.md) takes the MCP surface to its
-harder shapes — servers whose code you can't read, servers holding
-credentials, and the full threat model. It's worth reading right
-after this one: foreign tools are the case where the framework
-knows least, which is why an MCP tool declares `{untrusted,
-egress}` by default and picks up `:private` the moment any
-registered server declares it.
+[Hosting many agents at once](hosting.md) steps outside the
+single-agent shape every binary so far has had: what changes when N
+agents share one process and one llama.cpp.

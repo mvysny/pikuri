@@ -18,7 +18,7 @@ Related, already worked out:
   human as **author, not approver** of a post-taint egress payload: clean
   by construction. The federation generalizes that one primitive from
   "egress payloads" to "the entire bus between agents."
-- [`../pikuri-memory/design/architecture.md`](../../pikuri-memory/design/architecture.md) §"Threat
+- [`../pikuri-memory/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-memory/design/architecture.md) §"Threat
   model and the @private posture" — the "private-only agent" whose input
   stream is all-trusted, where auto-extraction is safe (and the
   shared-vs-private reasoning). The federation gives that agent a home

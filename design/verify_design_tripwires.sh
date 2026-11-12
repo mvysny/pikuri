@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks the doc layer — the files described in AGENTS.md, "Design docs" — and nothing else:
-#   - every cited D_ / R_ slug has its "## " heading in design/decisions.md / design/research.md
+#   - every cited D_ / R_ slug has its "## " heading in design/decisions.md / design/research.md;
+#     a cite qualified with its repo (pikuri:D_x, pikuri-workshop:D_x) is that repo's to resolve
 #   - every "## D_" heading reads "D_<slug> — <the question>?"; decisions.md carries no
 #     "Superseded by" / "Amended by" / strikethrough / line-initial "Status:"
 #   - root AGENTS.md is under 34 KB, a nested one under 10 KB, design/architecture.md under 12 KB
@@ -35,8 +36,8 @@ tracked() { printf '%s\0' "${files[@]}"; }
 # $1 = prefix letter, $2 = the file whose "## <prefix>_<slug>" headings define them.
 check_namespace() {
   local prefix=$1 file=$2 pattern cited defined missing slug
-  pattern="\\b${prefix}_[a-z][a-z0-9_]*"
-  cited=$(tracked | xargs -0 grep -I -o -h -E "$pattern" 2>/dev/null | sort -u || true)
+  pattern="(\\bpikuri(-workshop)?:)?\\b${prefix}_[a-z][a-z0-9_]*"
+  cited=$(tracked | xargs -0 grep -I -o -h -E "$pattern" 2>/dev/null | grep -v : | sort -u || true)
   if [ ! -f "$file" ]; then
     [ -z "$cited" ] || err "$file does not exist but ${prefix}_ slugs are cited: $(printf '%s ' $cited)"
     return

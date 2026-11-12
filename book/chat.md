@@ -19,7 +19,7 @@ tuned for the recommended path: pikuri running on your own
 machine, on a project you'd already trust to live there. Within
 that path the built-in safeguards are designed to hold without
 you thinking about them. The security chapter (and its code-track companion,
-[the security-revisited chapter](security-revisited.md)) is the heavyweight reading
+[the security-revisited chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/security-revisited.md)) is the heavyweight reading
 for when you want to step outside that path — pulling in
 third-party plugins, pointing pikuri at code you don't already
 trust, or running it unattended.

@@ -43,7 +43,7 @@ Only the deferrals stay here.
 
 - **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
   start of each turn (no tool call) — hermes' prefetch shape (see
-  [`../pikuri-memory/design/architecture.md`](../../pikuri-memory/design/architecture.md) §"The three
+  [`../pikuri-memory/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-memory/design/architecture.md) §"The three
   retrieval tiers"). v1 ships agentic search only — fits the
   loop-agnostic ethos and the agent gets to refine queries. Add
   the listener variant if a concrete "the model forgot to search"
@@ -71,7 +71,7 @@ Only the deferrals stay here.
   and out of pikuri-vectordb's scope.
 - **Memory growth tier integration.** `pikuri-memory` v1 shipped on
   its own external semantic store (mem0 + Qdrant; see
-  [`../pikuri-memory/design/architecture.md`](../../pikuri-memory/design/architecture.md) §"Why mem0"),
+  [`../pikuri-memory/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-memory/design/architecture.md) §"Why mem0"),
   *not* pikuri-vectordb — so the once-open "could memory ride the same
   primitive?" question is moot for now. Revisit only if consolidating
   the two stores onto one backend ever becomes worth it; not a v1 goal.
