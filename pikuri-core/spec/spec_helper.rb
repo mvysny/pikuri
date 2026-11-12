@@ -18,7 +18,7 @@ end
 # to, so every engine built in the suite (including via
 # +Tool::WebSearch.build+) defaults to NULL.
 %i[disk_cache memory_cache].each do |accessor|
-  Pikuri::Tool::Search::Engines.singleton_class.define_method(accessor) { Pikuri::UrlCache::NULL }
+  Pikuri::Tool::Search::Engines.singleton_class.define_method(accessor) { |**| Pikuri::UrlCache::NULL }
 end
 
 # Silence Pikuri's default $stderr logging for the suite so production

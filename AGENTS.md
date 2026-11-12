@@ -67,7 +67,7 @@ Rails-shape monorepo: each gem owns its `lib/`, `spec/`, gemspec, entry file, an
 relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires every gem via
 `gemspec path:`; the top-level `Rakefile` fans out `rake test` and orchestrates `rake release`.
 
-- `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, four stateless bundled tools, `bin/pikuri-chat`.
+- `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, five bundled tools, `bin/pikuri-chat`.
 - `pikuri-extractors` — office/EPUB/RTF/PDF → Markdown for the `Extractor` registry via a one-shot networkless docker container.
 - `pikuri-pdf` — in-process pure-Ruby PDF → text for the registry. Pick one PDF arm per host (this or pikuri-extractors').
 - `pikuri-skills` — Agent Skills standard, slash commands, the shared `Bundle::*` vocabulary. Rules: `pikuri-skills/AGENTS.md`

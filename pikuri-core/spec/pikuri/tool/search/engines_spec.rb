@@ -313,16 +313,21 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
       end
     end
 
+    # The cached rows' URLs — an entry is rows as JSON, not Markdown.
+    def cached_urls(cache)
+      JSON.parse(cache.read('ruby')).map { |row| row['url'] }
+    end
+
     it 'keeps a disk_cacheable winner\'s results on disk, not in memory' do
       engine_with([counting(true)], disk_cache: @disk, memory_cache: @memory).search('ruby', max_results: 10)
-      assert_equal good_markdown('ruby', 10), @disk.read('ruby')
+      assert_equal ['https://example.com/ok'], cached_urls(@disk)
       assert_nil @memory.read('ruby')
     end
 
     it 'never writes a non-disk_cacheable winner\'s results to disk' do
       engine_with([counting(false)], disk_cache: @disk, memory_cache: @memory).search('ruby', max_results: 10)
       assert_nil @disk.read('ruby')
-      assert_equal good_markdown('ruby', 10), @memory.read('ruby')
+      assert_equal ['https://example.com/ok'], cached_urls(@memory)
     end
 
     it 'serves a memory-cached search without asking the provider again' do
@@ -422,5 +427,89 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
 
     assert_includes log_io.string, 'INFO -- Engines: engines available: Pair'
     assert_includes log_io.string, 'INFO -- Engines: engines available: Other'
+  end
+end
+
+RSpec.describe Pikuri::Tool::Search::Engines, 'page text' do
+  let(:store) { Pikuri::Tool::Search::PageStore.new }
+  let(:memory) { Pikuri::UrlCache::InMemory.new(ttl: 60, max_entries: 10) }
+
+  # Two rows: the first came back with page text, the second without.
+  let(:texty) do
+    calls = 0
+    Module.new do
+      define_singleton_method(:label) { 'Texty' }
+      define_singleton_method(:disk_cacheable?) { false }
+      define_singleton_method(:calls) { calls }
+      define_singleton_method(:search) do |_query, max_results:, cancellable: nil|
+        _ = [max_results, cancellable]
+        calls += 1
+        [
+          Pikuri::Tool::Search::Result.new(url: 'https://example.com/a', title: 'A', body: 'snippet a',
+                                           text: 'full text of a', indexed_at: Time.utc(2026, 11, 10)),
+          Pikuri::Tool::Search::Result.new(url: 'https://example.com/b', title: 'B', body: 'snippet b')
+        ]
+      end
+    end
+  end
+
+  def engine(providers, page_text: true, page_store: store)
+    e = described_class.new(engines: [:exa], exa_key: 'k', page_text: page_text,
+                            disk_cache: Pikuri::UrlCache::NULL, memory_cache: memory, page_store: page_store)
+    e.define_singleton_method(:providers) { providers }
+    e
+  end
+
+  it 'leads a row whose text came back with its handle, and stores the text under it' do
+    out = engine([texty]).search('ruby', max_results: 10).to_s
+    handle = store.handle_for('https://example.com/a')
+    assert_match(/\A\h{8}\z/, handle)
+    assert_includes out, "[#{handle}] [A](https://example.com/a)\nsnippet a"
+    assert_includes out, "\n\n[B](https://example.com/b)\nsnippet b"
+    page = store.read(handle)
+    assert_equal 'full text of a', page.text
+    assert_equal Time.utc(2026, 11, 10), page.indexed_at
+  end
+
+  it 'keeps page text out of the query cache' do
+    engine([texty]).search('ruby', max_results: 10)
+    rows = JSON.parse(memory.read('ruby'))
+    assert_equal [true, false], rows.map { |r| r['has_text'] }
+    refute(rows.any? { |r| r.key?('text') })
+  end
+
+  it 'still shows the handle on a query-cache hit' do
+    e = engine([texty])
+    first = e.search('ruby', max_results: 10).to_s
+    assert_equal first, e.search('ruby', max_results: 10).to_s
+    assert_equal 1, texty.calls
+  end
+
+  it 'renders a row whose page was evicted since without a handle' do
+    e = engine([texty])
+    e.search('ruby', max_results: 10)
+    evicted = engine([texty], page_store: Pikuri::Tool::Search::PageStore.new)
+    out = evicted.search('ruby', max_results: 10).to_s
+    assert_includes out, "## Search Results\n\n[A](https://example.com/a)"
+  end
+
+  it 'prints no handle and stores nothing without page_text, even for a row with text' do
+    out = engine([texty], page_text: false).search('ruby', max_results: 10).to_s
+    refute_match(/\[\h{8}\]/, out)
+    assert_nil store.handle_for('https://example.com/a')
+  end
+
+  it 'counts rows for the summary, whatever the snippets say' do
+    assert_equal 'Returned 2 search results', engine([texty]).search('ruby', max_results: 10).summary
+  end
+
+  it 'refuses page_text without an engine that can bring text back' do
+    err = assert_raises(ArgumentError) { described_class.new(engines: [:duckduckgo], page_text: true) }
+    assert_includes err.message, 'page_text needs brave or exa'
+  end
+
+  it 'builds its Brave and Exa in page-text mode' do
+    e = described_class.new(engines: %i[duckduckgo brave exa], brave_key: 'b', exa_key: 'e', page_text: true)
+    assert_equal [false, true, true], e.providers.map { |p| p.instance_variable_get(:@page_text) || false }
   end
 end

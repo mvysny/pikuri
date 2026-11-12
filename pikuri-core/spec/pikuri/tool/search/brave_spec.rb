@@ -65,4 +65,49 @@ RSpec.describe Pikuri::Tool::Search::Brave do
   it 'keeps its results off disk, per the API terms' do
     refute described_class.new(api_key: 'k').disk_cacheable?
   end
+
+  describe 'page text (LLM Context)' do
+    let(:json) do
+      JSON.generate(
+        'grounding' => { 'generic' => [
+          { 'url' => 'https://example.com/a', 'title' => 'A <strong>page</strong>', 'snippets' => ['chunk one', 'chunk two'] },
+          { 'url' => 'https://example.com/b', 'title' => 'B', 'snippets' => ["#{'word ' * 100}"] }
+        ], 'map' => [] },
+        'sources' => {
+          'https://example.com/a' => { 'title' => 'A page', 'description' => 'The meta description.',
+                                       'fetched_content_timestamp' => 1_794_460_934 },
+          'https://example.com/b' => { 'title' => 'B', 'description' => '' }
+        }
+      )
+    end
+
+    it 'asks for every chunk: thresholds off, token budgets at their ceilings' do
+      params = described_class.llm_context_params('ruby', max_results: 5)
+      assert_equal 'disabled', params[:context_threshold_mode]
+      assert_equal 32_768, params[:maximum_number_of_tokens]
+      assert_equal 8_192, params[:maximum_number_of_tokens_per_url]
+      assert_equal 5, params[:maximum_number_of_urls]
+      assert params[:enable_source_metadata]
+    end
+
+    it 'joins a page\'s chunks with a visible gap and keeps the index time' do
+      a = described_class.parse_llm_context(json).first
+      assert_equal 'A page', a.title
+      assert_equal "chunk one\n\n…\n\nchunk two", a.text
+      assert_equal Time.at(1_794_460_934).utc, a.indexed_at
+    end
+
+    it 'takes the meta description as the snippet, else the start of the first chunk' do
+      a, b = described_class.parse_llm_context(json)
+      assert_equal 'The meta description.', a.body
+      assert b.body.end_with?('…')
+      assert_equal described_class::SNIPPET_CHARS + 1, b.body.length
+      assert_nil b.indexed_at
+    end
+
+    it 'returns [] for an empty grounding and raises on an unknown shape' do
+      assert_equal [], described_class.parse_llm_context('{"grounding":{"generic":[]},"sources":{}}')
+      assert_raises(RuntimeError) { described_class.parse_llm_context('{"weird":true}') }
+    end
+  end
 end

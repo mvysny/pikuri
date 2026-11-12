@@ -18,6 +18,17 @@ module Pikuri
       # https://api-dashboard.search.brave.com — the free "Data for Search" tier
       # allows 1 query/sec, ~2k/month.
       #
+      # == Page text
+      #
+      # Built with +page_text: true+, it calls LLM Context ({LLM_CONTEXT_ENDPOINT})
+      # instead of Web Search — the same plan, the same price per call — which
+      # returns each page's text as chunks from Brave's index, never fetched
+      # live. A row's {Result#text} is its chunks joined with a visible +…+ gap
+      # (they are excerpts, not one continuous page), {Result#indexed_at} the
+      # index's last fetch, and {Result#body} the page's own meta description,
+      # else the start of its first chunk. The two endpoints rank differently,
+      # so the mode changes which pages come back, not only their snippets.
+      #
       # == Privacy posture
       #
       # Brave's Search API privacy notice (updated 3 Nov 2026, covers the whole
@@ -42,16 +53,32 @@ module Pikuri
         # @return [RateLimiter] free-tier Brave caps at 1 req/sec; the 5-minute
         #   cooldown protects the monthly quota from doomed retries on a 429.
         LIMITER = RateLimiter.new(min_interval: 1.0, cooldown: 300.0)
+        # @return [String] LLM Context endpoint, used with +page_text+
+        LLM_CONTEXT_ENDPOINT = 'https://api.search.brave.com/res/v1/llm/context'
+        # @return [Integer] LLM Context's ceiling on a response's tokens, asked
+        #   for whole: pikuri takes all the text Brave gives and trims only when
+        #   it is read
+        MAX_TOKENS = 32_768
+        # @return [Integer] LLM Context's ceiling on one URL's tokens
+        MAX_TOKENS_PER_URL = 8_192
+        # @return [Integer] chars of a first chunk kept as a row's snippet when
+        #   the page has no meta description
+        SNIPPET_CHARS = 300
+        # @return [String] between two chunks of one page's {Result#text}
+        CHUNK_SEPARATOR = "\n\n…\n\n"
 
         # @param api_key [String] Brave Search subscription token. Required
         #   and non-blank: pikuri reads no key from the environment — the
         #   host supplies it ({Engines} only constructs a Brave when a key
         #   was configured).
+        # @param page_text [Boolean] call LLM Context for each page's stored
+        #   text; see the class doc's +== Page text+
         # @raise [ArgumentError] if +api_key+ is blank
-        def initialize(api_key:)
+        def initialize(api_key:, page_text: false)
           raise ArgumentError, 'Brave Search API key is blank' if api_key.to_s.strip.empty?
 
           @api_key = api_key
+          @page_text = page_text
         end
 
         # @return [String] short provider label for {Engines}.
@@ -88,9 +115,13 @@ module Pikuri
         def search(query, max_results: DEFAULT_MAX_RESULTS,
                    cancellable: Pikuri::Agent::Control::Cancellable::NEVER)
           LIMITER.call(cancellable: cancellable) do
+            endpoint, params = if @page_text
+                                 [LLM_CONTEXT_ENDPOINT, self.class.llm_context_params(query, max_results: max_results)]
+                               else
+                                 [ENDPOINT, { q: query, count: max_results }]
+                               end
             response = Faraday.get(
-              ENDPOINT,
-              { q: query, count: max_results },
+              endpoint, params,
               { 'X-Subscription-Token' => @api_key, 'Accept' => 'application/json' }
             )
             unless response.success?
@@ -101,9 +132,87 @@ module Pikuri
               raise "Brave Search request failed: #{response.status} #{response.body}"
             end
 
-            self.class.parse(response.body, max_results: max_results)
+            if @page_text
+              self.class.parse_llm_context(response.body, max_results: max_results)
+            else
+              self.class.parse(response.body, max_results: max_results)
+            end
           end
         end
+
+        # The query parameters for an {LLM_CONTEXT_ENDPOINT} request: every
+        # relevance threshold off and the token budgets at their ceilings, so
+        # each row brings all the text Brave holds for it.
+        #
+        #   Brave.llm_context_params('ruby', max_results: 5)
+        #   # => { q: 'ruby', count: 5, maximum_number_of_urls: 5,
+        #   #      maximum_number_of_tokens: 32768, maximum_number_of_tokens_per_url: 8192,
+        #   #      context_threshold_mode: 'disabled', enable_source_metadata: true }
+        #
+        # @param query [String] search query (already normalized)
+        # @param max_results [Integer] max entries (1..50)
+        # @return [Hash{Symbol => Object}]
+        def self.llm_context_params(query, max_results: DEFAULT_MAX_RESULTS)
+          {
+            q: query,
+            count: max_results,
+            maximum_number_of_urls: max_results,
+            maximum_number_of_tokens: MAX_TOKENS,
+            maximum_number_of_tokens_per_url: MAX_TOKENS_PER_URL,
+            context_threshold_mode: 'disabled',
+            enable_source_metadata: true
+          }
+        end
+
+        # Parse an LLM Context response into {Result} rows with +text+ — see the
+        # class doc's +== Page text+ for what each field holds. A response with
+        # an empty +grounding.generic+ is Brave's "matched nothing" and returns
+        # +[]+; any other zero-result shape raises.
+        #
+        # @param json [String] response body from {LLM_CONTEXT_ENDPOINT}
+        # @param max_results [Integer] max entries
+        # @return [Array<Result>]
+        # @raise [RuntimeError] on an unrecognized zero-result response
+        def self.parse_llm_context(json, max_results: DEFAULT_MAX_RESULTS)
+          data = JSON.parse(json)
+          sources = data.is_a?(Hash) && data['sources'].is_a?(Hash) ? data['sources'] : {}
+          generic = data.is_a?(Hash) ? data.dig('grounding', 'generic') : nil
+          results = Array(generic).take(max_results).filter_map do |g|
+            href = g['url'].to_s
+            next nil if href.empty?
+
+            source = sources[href].is_a?(Hash) ? sources[href] : {}
+            chunks = Array(g['snippets']).map(&:to_s).reject { |c| c.strip.empty? }
+            title = strip_html(g['title'] || source['title'])
+            fetched = source['fetched_content_timestamp']
+            Result.new(
+              url: href,
+              title: title.empty? ? href : title,
+              body: llm_context_snippet(source['description'], chunks.first),
+              text: chunks.empty? ? nil : chunks.join(CHUNK_SEPARATOR),
+              indexed_at: fetched.is_a?(Integer) ? Time.at(fetched).utc : nil
+            )
+          end
+          return results unless results.empty?
+          return [] if data.is_a?(Hash) && data['grounding'].is_a?(Hash) && generic.is_a?(Array)
+
+          raise diagnose_empty(data, json)
+        end
+
+        # A row's snippet: the page's meta description, else the start of its
+        # first chunk.
+        #
+        # @param description [String, nil] +sources[url].description+
+        # @param first_chunk [String, nil]
+        # @return [String] possibly empty
+        def self.llm_context_snippet(description, first_chunk)
+          snippet = strip_html(description)
+          return snippet unless snippet.empty?
+
+          chunk = first_chunk.to_s.gsub(/\s+/, ' ').strip
+          chunk.length > SNIPPET_CHARS ? "#{chunk[0, SNIPPET_CHARS]}…" : chunk
+        end
+        private_class_method :llm_context_snippet
 
         # Parse a Brave JSON response into {Result} rows (+<strong>+ highlights
         # stripped). A genuine "no results" payload (recognized search shape,

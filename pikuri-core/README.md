@@ -13,8 +13,8 @@ AI-assistant toolkit:
 - Controls (`Cancellable`, `Interloper`) for cancellation and
   mid-loop injection. The loop itself is unbounded — see
   `design/decisions.md` `D_no_step_limit`.
-- Three stateless bundled tools (`CALCULATOR`, `WEB_SCRAPE`,
-  `FETCH`) plus a host-configured web-search tool built via
+- Four stateless bundled tools (`CALCULATOR`, `WEB_SCRAPE`,
+  `FETCH`, `WEB_READ_CACHED`) plus a host-configured web-search tool built via
   `Pikuri::Tool::WebSearch.build` (provider keys passed in, never
   read from the environment).
 - A demo binary, `bin/pikuri-chat`.

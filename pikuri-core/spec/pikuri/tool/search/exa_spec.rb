@@ -80,4 +80,25 @@ RSpec.describe Pikuri::Tool::Search::Exa do
   it 'keeps its results off disk, per the API terms' do
     refute described_class.new(api_key: 'k').disk_cacheable?
   end
+
+  describe 'page text' do
+    it 'asks for each page\'s text, cache-only, only in page-text mode' do
+      plain = described_class.request_body('ruby', max_results: 5)
+      texty = described_class.request_body('ruby', max_results: 5, page_text: true)
+      refute plain[:contents].key?(:text)
+      assert_equal({ maxCharacters: described_class::MAX_TEXT_CHARS }, texty[:contents][:text])
+      assert_equal(-1, texty[:contents][:maxAgeHours])
+    end
+
+    it 'parses a result\'s text, leaving a blank one nil and indexed_at unknown' do
+      json = JSON.generate('requestId' => 'r', 'results' => [
+        { 'url' => 'https://example.com/a', 'title' => 'A', 'highlights' => ['hi'], 'text' => "line 1\nline 2" },
+        { 'url' => 'https://example.com/b', 'title' => 'B', 'highlights' => ['hi'], 'text' => '  ' }
+      ])
+      a, b = described_class.parse(json)
+      assert_equal "line 1\nline 2", a.text
+      assert_nil a.indexed_at
+      assert_nil b.text
+    end
+  end
 end

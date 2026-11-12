@@ -25,8 +25,10 @@ module Pikuri
     #
     # What *is* per instance is trivial — the provider list and a
     # last-logged-set memo, which can only duplicate an INFO line. The result
-    # caches ({Engines::DISK_CACHE}, {Engines::MEMORY_CACHE}) are class-level
-    # as well, so one agent's search answers another's within the TTL.
+    # caches ({Engines::DISK_CACHE}, {Engines::MEMORY_CACHE} and their text
+    # twins) are class-level as well, so one agent's search answers another's
+    # within the TTL, and a +page_text+ build writes the one process-wide
+    # {Search::PageStore}, so a sub-agent's handle reads in its parent.
     #
     # The consequence a host should plan for is latency, not corruption: see
     # {Search::RateLimiter} for the serialization and the shared circuit
@@ -45,6 +47,18 @@ module Pikuri
         - Use this to find candidate URLs, then call web_scrape on the most promising one(s) for full content. Snippets alone rarely answer a question.
       DESC
 
+      # Description for a +page_text: true+ build, which pairs with
+      # +web_read_cached+ rather than +web_scrape+.
+      #
+      # @return [String]
+      PAGE_TEXT_DESCRIPTION = <<~DESC
+        Searches the web for a query and returns the top results as a Markdown list of titles, URLs, and short snippets.
+
+        Usage:
+        - A result led by a handle in brackets, e.g. [a3f9c21e], can be read in full: call web_read_cached with that handle. Snippets alone rarely answer a question.
+        - A result without a handle can't be read; pick another result or refine the query.
+      DESC
+
       # Build the +web_search+ tool. Calls {Search::Engines#search}, which
       # cascades the selected providers in random order, falling back on
       # unavailability and rendering the winner's rows to a stable Markdown
@@ -54,6 +68,13 @@ module Pikuri
       #   WebSearch.build(brave_key: 'BSA...')                     # DuckDuckGo + Brave
       #   WebSearch.build(engines: [:brave], brave_key: 'BSA...')  # Brave alone
       #
+      # For a search-only agent, pair a +page_text+ build with
+      # {Tool::WEB_READ_CACHED} instead of +web_scrape+: the reader makes no
+      # request, so the agent's one egress leg stays this tool's vouched one.
+      #
+      #   c.add_tool WebSearch.build(engines: [:exa], exa_key: 'xyz', page_text: true)
+      #   c.add_tool Tool::WEB_READ_CACHED
+      #
       # @param engines [Array<String, Symbol>, nil] engine names to use —
       #   +duckduckgo+, +brave+, +exa+. +nil+ selects DuckDuckGo plus every
       #   engine whose key is supplied. Order carries no preference; see
@@ -61,19 +82,19 @@ module Pikuri
       # @param brave_key [String, nil] Brave key
       #   (https://api-dashboard.search.brave.com).
       # @param exa_key [String, nil] Exa key (https://exa.ai).
+      # @param page_text [Boolean] bring back each result's page text from the
+      #   engine's index and print a handle for {Tool::WEB_READ_CACHED}; see
+      #   {Search::Engines}' +== Page text+. Needs Brave or Exa among the engines.
       # @return [Tool] the +web_search+ tool in OpenAI tool-call shape
       # @raise [ArgumentError] on an unusable selection: an empty or repeated
-      #   +engines+ list, an unknown engine name, or an engine named without
-      #   its key.
-      def self.build(engines: nil, brave_key: nil, exa_key: nil)
-        # Validated here as well as inside the cascade, so a mis-wired host is
-        # refused at the call it actually wrote even if this stops constructing
-        # the cascade eagerly.
-        Search::Engines.resolve(engines: engines, brave_key: brave_key, exa_key: exa_key)
-        cascade = Search::Engines.new(engines: engines, brave_key: brave_key, exa_key: exa_key)
+      #   +engines+ list, an unknown engine name, an engine named without its
+      #   key, or +page_text+ without Brave or Exa.
+      def self.build(engines: nil, brave_key: nil, exa_key: nil, page_text: false)
+        cascade = Search::Engines.new(engines: engines, brave_key: brave_key, exa_key: exa_key,
+                                      page_text: page_text)
         Tool.new(
           name: 'web_search',
-          description: DESCRIPTION,
+          description: page_text ? PAGE_TEXT_DESCRIPTION : DESCRIPTION,
           parameters: Parameters.build { |p|
             p.required_string :query,
                               'The search query, e.g. "BigDecimal precision Ruby".'
@@ -122,6 +143,11 @@ module Pikuri
       #
       # @param config [Hash{String, Symbol => Object}, nil] the +search:+ block;
       #   +nil+ (an absent key) yields the DuckDuckGo-only default.
+      # +page_text+ is a wiring choice, paired with the tools the host adds, so
+      # it never comes from the config file — a host wanting it calls {build}:
+      #
+      #   WebSearch.build(**Search::Engines.config_from_h(cfg), page_text: true)
+      #
       # @return [Tool] the +web_search+ tool in OpenAI tool-call shape
       # @raise [ArgumentError] as {build}, plus on a malformed block; see
       #   {Search::Engines.config_from_h}.

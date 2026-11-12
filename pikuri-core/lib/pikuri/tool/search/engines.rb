@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'json'
+
 module Pikuri
   class Tool
     # Namespace for the web-search stack behind {Tool::WebSearch}: per-provider
@@ -26,6 +28,21 @@ module Pikuri
       # +exa_key:+, both optional) — pikuri reads no key from the environment,
       # so a host supplies them. See AGENTS.md "Environment is not a secret
       # store".
+      #
+      # == Page text
+      #
+      # Built with +page_text: true+, Brave and Exa also bring back each page's
+      # text from their own index, in the same request. {#search} stores it in
+      # a {PageStore} and prints the row's handle before its title, for
+      # +web_read_cached+ to read:
+      #
+      #   [a3f9c21e] [Ruby Data](https://docs.ruby-lang.org/en/3.4/Data.html)
+      #   Data objects are immutable.
+      #
+      # A row gets a handle only when *this* search returned its text — never a
+      # DuckDuckGo row — even if the store holds that URL from another search.
+      # The two modes cache apart ({DISK_TEXT_CACHE}, {MEMORY_TEXT_CACHE}): they
+      # return different rows.
       class Engines
         # Subsystem logger; level via +PIKURI_LOG_ENGINES+ or +PIKURI_LOG+.
         #
@@ -45,6 +62,11 @@ module Pikuri
         # @return [Hash{Symbol => Symbol}]
         KEYED_ENGINES = { brave: :brave_key, exa: :exa_key }.freeze
 
+        # Engines that can bring back page text; +page_text: true+ needs one.
+        #
+        # @return [Array<Symbol>]
+        PAGE_TEXT_ENGINES = %i[brave exa].freeze
+
         # The fields {.config_from_h} accepts from a config file's +search:+
         # block, matching this class's keywords.
         #
@@ -58,7 +80,9 @@ module Pikuri
         class Unavailable < StandardError; end
 
         # On-disk result cache for providers whose +disk_cacheable?+ is true, at
-        # class level so every engine dedupes into one directory.
+        # class level so every engine dedupes into one directory. An entry is
+        # the rows as JSON, never rendered Markdown: handles are looked up at
+        # render time.
         #
         # @return [UrlCache::OnDisk]
         DISK_CACHE = UrlCache::OnDisk.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_search")
@@ -69,20 +93,32 @@ module Pikuri
         # @return [UrlCache::InMemory]
         MEMORY_CACHE = UrlCache::InMemory.new(ttl: UrlCache::DEFAULT_TTL, max_entries: 100)
 
-        # Accessor for {DISK_CACHE}, the constructor's +disk_cache:+ default;
-        # specs swap in {UrlCache::NULL}.
+        # {DISK_CACHE}'s twin for +page_text: true+ engines.
         #
+        # @return [UrlCache::OnDisk]
+        DISK_TEXT_CACHE = UrlCache::OnDisk.new(ttl: UrlCache::DEFAULT_TTL,
+                                               dir: "#{UrlCache::ROOT_DIR}/web_search_text")
+
+        # {MEMORY_CACHE}'s twin for +page_text: true+ engines.
+        #
+        # @return [UrlCache::InMemory]
+        MEMORY_TEXT_CACHE = UrlCache::InMemory.new(ttl: UrlCache::DEFAULT_TTL, max_entries: 100)
+
+        # The constructor's +disk_cache:+ default; specs swap in {UrlCache::NULL}.
+        #
+        # @param page_text [Boolean] which mode's cache
         # @return [UrlCache::OnDisk, #read, #write]
-        def self.disk_cache
-          DISK_CACHE
+        def self.disk_cache(page_text: false)
+          page_text ? DISK_TEXT_CACHE : DISK_CACHE
         end
 
-        # Accessor for {MEMORY_CACHE}, the constructor's +memory_cache:+
-        # default; specs swap in {UrlCache::NULL}.
+        # The constructor's +memory_cache:+ default; specs swap in
+        # {UrlCache::NULL}.
         #
+        # @param page_text [Boolean] which mode's cache
         # @return [UrlCache::InMemory, #read, #write]
-        def self.memory_cache
-          MEMORY_CACHE
+        def self.memory_cache(page_text: false)
+          page_text ? MEMORY_TEXT_CACHE : MEMORY_CACHE
         end
 
         # Resolve an +engines:+ selection into the engine names to build,
@@ -215,42 +251,58 @@ module Pikuri
 
         # Builds the provider cascade once, from the engines {.resolve} selects.
         # From here each provider is just an object answering
-        # +#search+/+#label+.
+        # +#search+/+#label+/+#disk_cacheable?+.
         #
         # @param engines [Array<String, Symbol>, nil] engine names; +nil+
         #   derives the set from the keys. See {.resolve}.
         # @param brave_key [String, nil] Brave token.
         # @param exa_key [String, nil] Exa key.
+        # @param page_text [Boolean] bring back page text and print handles;
+        #   see the class doc's +== Page text+
         # @param disk_cache [UrlCache::OnDisk, #read, #write] store for a
-        #   +disk_cacheable?+ winner's results; defaults to {.disk_cache}.
+        #   +disk_cacheable?+ winner's rows; defaults to {.disk_cache}.
         # @param memory_cache [UrlCache::InMemory, #read, #write] store for
         #   every other winner's; defaults to {.memory_cache}.
+        # @param page_store [PageStore] where page text goes; defaults to
+        #   {PageStore.default}
         # @return [Engines]
-        # @raise [ArgumentError] as {.resolve}.
-        def initialize(engines: nil, brave_key: nil, exa_key: nil,
-                       disk_cache: self.class.disk_cache, memory_cache: self.class.memory_cache)
-          @providers = self.class.resolve(engines: engines, brave_key: brave_key, exa_key: exa_key).map do |name|
+        # @raise [ArgumentError] as {.resolve}, or when +page_text+ is set but
+        #   no selected engine can bring back page text
+        def initialize(engines: nil, brave_key: nil, exa_key: nil, page_text: false,
+                       disk_cache: self.class.disk_cache(page_text: page_text),
+                       memory_cache: self.class.memory_cache(page_text: page_text),
+                       page_store: PageStore.default)
+          names = self.class.resolve(engines: engines, brave_key: brave_key, exa_key: exa_key)
+          if page_text && (names & PAGE_TEXT_ENGINES).empty?
+            raise ArgumentError, "search engines: page_text needs #{PAGE_TEXT_ENGINES.join(' or ')}, " \
+                                 "got #{names.join(', ')}"
+          end
+
+          @providers = names.map do |name|
             case name
             when :duckduckgo then DuckDuckGo.new
-            when :brave then Brave.new(api_key: brave_key)
-            when :exa then Exa.new(api_key: exa_key)
+            when :brave then Brave.new(api_key: brave_key, page_text: page_text)
+            when :exa then Exa.new(api_key: exa_key, page_text: page_text)
             end
           end
+          @page_text = page_text
           @disk_cache = disk_cache
           @memory_cache = memory_cache
+          @page_store = page_store
           @last_logged_providers = nil
         end
 
-        # @return [Array<#search, #label>] the selected provider instances, in
-        #   {ENGINE_NAMES} order (the cascade shuffles them per call).
+        # @return [Array<#search, #label, #disk_cacheable?>] the selected
+        #   provider instances, in {ENGINE_NAMES} order (the cascade shuffles
+        #   them per call).
         attr_reader :providers
 
         # Run +query+ through the providers in random order, falling back on each
         # {Unavailable}. The shuffle spreads load so one provider isn't always
         # hit (and exhausted) first. The query is whitespace-normalized first;
-        # the winning provider's +Array<Result>+ is rendered to Markdown and
-        # cached keyed by the cleaned query (a hit short-circuits the cascade):
-        # on disk when the winner is +disk_cacheable?+, else in memory only.
+        # the winning provider's rows are cached keyed by the cleaned query (a
+        # hit short-circuits the cascade) — on disk when the winner is
+        # +disk_cacheable?+, else in memory only — and rendered to Markdown.
         # +max_results+ is *not* in the cache key, so a non-default value may
         # return a previously-cached size.
         #
@@ -263,8 +315,8 @@ module Pikuri
         # @param cancellable [Pikuri::Agent::Control::Cancellable, nil] handed
         #   to each provider so its {RateLimiter} pacing wait is interruptible.
         #   A cache hit never reaches a provider, so it never waits at all.
-        # @return [String] Markdown result list, or +"Error: ..."+ when all
-        #   providers are exhausted
+        # @return [Tool::Result] the Markdown result list (+"Returned 3 search
+        #   results"+), or {Tool::Result.error} when all providers are exhausted
         # @raise [ArgumentError] if the query is empty after normalization
         # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] if
         #   +cancellable+ trips while a provider is pacing. It is *not* caught
@@ -277,30 +329,29 @@ module Pikuri
           current_providers = providers
           log_providers(current_providers)
 
-          result = @memory_cache.read(cleaned) || @disk_cache.read(cleaned)
-          if result
-            LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{result.bytesize}" }
+          json = @memory_cache.read(cleaned) || @disk_cache.read(cleaned)
+          if json
+            LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{json.bytesize}" }
           else
-            result = run_cascade(cleaned, current_providers, max_results: max_results, cancellable: cancellable)
+            json = run_cascade(cleaned, current_providers, max_results: max_results, cancellable: cancellable)
           end
-          Tool::Result.new(
-            content: result,
-            summary: "Returned #{Pikuri::Tool.pluralize(count_rendered(result), 'search result')}"
-          )
+          rows = JSON.parse(json)
+          Tool::Result.new(content: render(rows),
+                           summary: "Returned #{Pikuri::Tool.pluralize(rows.size, 'search result')}")
         rescue Unavailable => e
           Pikuri::Tool::Result.error(e.message)
         end
 
         private
 
-        # Ask the providers in random order until one answers, then render its
-        # rows and store them where its terms allow.
+        # Ask the providers in random order until one answers, store its page
+        # text, then cache its rows where its terms allow.
         #
         # @param cleaned [String] the normalized query
         # @param current_providers [Array<#search, #label, #disk_cacheable?>]
         # @param max_results [Integer]
         # @param cancellable [Pikuri::Agent::Control::Cancellable]
-        # @return [String] the rendered Markdown
+        # @return [String] the rows as JSON, as cached
         # @raise [Unavailable] when every provider is — raised, never stored, so
         #   the all-unavailable message can't block this query for the TTL
         def run_cascade(cleaned, current_providers, max_results:, cancellable:)
@@ -312,35 +363,48 @@ module Pikuri
               "engine=#{provider.label} query=#{cleaned.inspect} results=#{results.size} " \
                 "cache=#{disk ? 'disk' : 'memory'}"
             end
-            return (disk ? @disk_cache : @memory_cache).write(cleaned, render(results))
+            return (disk ? @disk_cache : @memory_cache).write(cleaned, JSON.generate(rows_of(results)))
           rescue Unavailable => e
             failures << "#{provider.label} (#{e.message})"
           end
           raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
         end
 
-        # Render an +Array<Result>+ into the smolagents-style Markdown the LLM
-        # consumes (+"## Search Results"+ header, then +[title](url)\nbody+
-        # joined by blank lines). Empty → the +"No results found."+ stub.
+        # The cacheable rows of +results+, storing each one's page text first.
+        # A row's +has_text+ is what earns it a handle at render time; its text
+        # lives only in the {PageStore}, never in a query cache.
         #
-        # @param results [Array<Result>] hits from the winning provider
-        # @return [String] Markdown result list
-        def render(results)
-          return "## Search Results\n\nNo results found." if results.empty?
-
-          "## Search Results\n\n" + results.map { |r| "[#{r.title}](#{r.url})\n#{r.body}" }.join("\n\n")
+        # @param results [Array<Result>]
+        # @return [Array<Hash{String => Object}>] +url+, +title+, +snippet+,
+        #   +has_text+ per row
+        def rows_of(results)
+          results.map do |r|
+            has_text = @page_text && !r.text.nil?
+            @page_store.store(url: r.url, title: r.title, text: r.text, indexed_at: r.indexed_at) if has_text
+            { 'url' => r.url, 'title' => r.title, 'snippet' => r.body, 'has_text' => has_text }
+          end
         end
 
-        # How many rows a rendering holds, counted back off the Markdown rather
-        # than off the {Result} structs: a cache hit has only the Markdown, and
-        # a display line that appeared on a miss and vanished on a hit would be
-        # worse than one a hostile snippet can inflate by opening with a link of
-        # its own.
+        # Render rows into the smolagents-style Markdown the LLM consumes
+        # (+"## Search Results"+ header, then +[title](url)\nsnippet+ joined by
+        # blank lines), each readable row led by its handle. Empty → the +"No
+        # results found."+ stub.
         #
-        # @param markdown [String] what {#render} produced
-        # @return [Integer]
-        def count_rendered(markdown)
-          markdown.lines.count { |line| line.match?(%r{\A\[[^\]]*\]\(\S+\)}) }
+        # @param rows [Array<Hash{String => Object}>] as {#rows_of} made them
+        # @return [String] Markdown result list
+        def render(rows)
+          return "## Search Results\n\nNo results found." if rows.empty?
+
+          "## Search Results\n\n" + rows.map { |row| render_row(row) }.join("\n\n")
+        end
+
+        # @param row [Hash{String => Object}]
+        # @return [String] one row; a +has_text+ row still in the {PageStore}
+        #   gets its handle, one evicted since renders without
+        def render_row(row)
+          line = "[#{row['title']}](#{row['url']})\n#{row['snippet']}"
+          handle = row['has_text'] && @page_store.handle_for(row['url'])
+          handle ? "[#{handle}] #{line}" : line
         end
 
         # INFO-log the currently-available providers, but only when the set

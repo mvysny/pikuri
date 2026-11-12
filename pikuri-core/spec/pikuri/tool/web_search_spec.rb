@@ -117,4 +117,22 @@ RSpec.describe 'Pikuri::Tool::WebSearch.build' do
       assert_equal [{ query: 'ruby', max_results: 10 }], @calls
     end
   end
+
+  describe 'page_text' do
+    it 'points the model at web_read_cached instead of web_scrape' do
+      texty = Pikuri::Tool::WebSearch.build(engines: [:exa], exa_key: 'k', page_text: true)
+      assert_includes texty.description, 'web_read_cached'
+      refute_includes texty.description, 'web_scrape'
+      assert_includes tool.description, 'web_scrape'
+    end
+
+    it 'keeps the vouched egress grade' do
+      texty = Pikuri::Tool::WebSearch.build(engines: [:brave], brave_key: 'k', page_text: true)
+      assert_equal :tool_vouched, texty.trifecta_legs.egress_destination
+    end
+
+    it 'refuses page_text when no engine can bring text back' do
+      assert_raises(ArgumentError) { Pikuri::Tool::WebSearch.build(page_text: true) }
+    end
+  end
 end

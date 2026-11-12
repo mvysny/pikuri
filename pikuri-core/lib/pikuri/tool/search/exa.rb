@@ -20,7 +20,10 @@ module Pikuri
       #
       # Requests +type: "auto"+ (Exa picks neural vs keyword) and +contents: {
       # highlights: true }+ so each result carries a neural-ranked snippet
-      # populating {Result#body} — the analog to Brave's +description+.
+      # populating {Result#body} — the analog to Brave's +description+. Built
+      # with +page_text: true+, the same request also asks for each page's full
+      # text ({Result#text}, up to {MAX_TEXT_CHARS}) — at no extra charge up to
+      # 10 results. Exa gives no crawl date, so {Result#indexed_at} stays +nil+.
       #
       # == Cache-only, never a live fetch
       #
@@ -49,15 +52,21 @@ module Pikuri
         #   so no minimum interval; the 5-minute cooldown still applies on
         #   {Engines::Unavailable} so the budget isn't burned on doomed retries.
         LIMITER = RateLimiter.new(min_interval: 0.0, cooldown: 300.0)
+        # @return [Integer] per-page text cap asked for with +page_text+ — the
+        #   +/search+ maximum, so pikuri takes all the text Exa gives and trims
+        #   only when it is read
+        MAX_TEXT_CHARS = 1_000_000
 
         # @param api_key [String] Exa API key. Required and non-blank:
         #   pikuri reads no key from the environment — the host supplies it
         #   ({Engines} only constructs an Exa when a key was configured).
+        # @param page_text [Boolean] also fetch each page's stored text
         # @raise [ArgumentError] if +api_key+ is blank
-        def initialize(api_key:)
+        def initialize(api_key:, page_text: false)
           raise ArgumentError, 'Exa Search API key is blank' if api_key.to_s.strip.empty?
 
           @api_key = api_key
+          @page_text = page_text
         end
 
         # @return [String] short provider label for {Engines} logging /
@@ -101,7 +110,8 @@ module Pikuri
               req.headers['x-api-key'] = @api_key
               req.headers['Content-Type'] = 'application/json'
               req.headers['Accept'] = 'application/json'
-              req.body = JSON.dump(self.class.request_body(query, max_results: max_results))
+              req.body = JSON.dump(self.class.request_body(query, max_results: max_results,
+                                                                  page_text: @page_text))
             end
             unless response.success?
               if response.status == 429 || response.status >= 500
@@ -120,21 +130,23 @@ module Pikuri
         #   Exa.request_body('ruby', max_results: 5)
         #   # => { query: 'ruby', type: 'auto', numResults: 5,
         #   #      contents: { highlights: true, maxAgeHours: -1 } }
+        #   Exa.request_body('ruby', max_results: 5, page_text: true)
+        #   # => … contents: { highlights: true, maxAgeHours: -1,
+        #   #                  text: { maxCharacters: 1_000_000 } } }
         #
         # @param query [String] search query (already normalized)
         # @param max_results [Integer] max entries; Exa's +numResults+
+        # @param page_text [Boolean] also ask for each page's text
         # @return [Hash{Symbol => Object}]
-        def self.request_body(query, max_results: DEFAULT_MAX_RESULTS)
-          {
-            query: query,
-            type: 'auto',
-            numResults: max_results,
-            contents: { highlights: true, maxAgeHours: -1 }
-          }
+        def self.request_body(query, max_results: DEFAULT_MAX_RESULTS, page_text: false)
+          contents = { highlights: true, maxAgeHours: -1 }
+          contents[:text] = { maxCharacters: MAX_TEXT_CHARS } if page_text
+          { query: query, type: 'auto', numResults: max_results, contents: contents }
         end
 
         # Parse an Exa JSON response into {Result} rows, +body+ the first
-        # non-empty +highlights+ snippet. A genuine "no results" payload
+        # non-empty +highlights+ snippet, +text+ the page text when the response
+        # carries any. A genuine "no results" payload
         # (+requestId+ present, empty +results+) returns +[]+ so {Engines.search}
         # renders its no-results stub; any other zero-result shape raises.
         #
@@ -152,7 +164,8 @@ module Pikuri
             Result.new(
               url: href,
               title: clean(r['title']) || href,
-              body: first_highlight(r['highlights'])
+              body: first_highlight(r['highlights']),
+              text: r['text'].is_a?(String) && !r['text'].strip.empty? ? r['text'] : nil
             )
           end
 

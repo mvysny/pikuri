@@ -21,7 +21,7 @@ require_relative 'pikuri/version'
 # == Why eager-load
 #
 # The stateless bundled tools (+Tool::CALCULATOR+, +Tool::WEB_SCRAPE+,
-# +Tool::FETCH+) are +ALL_CAPS+ value constants, and Zeitwerk only auto-loads
+# +Tool::FETCH+, +Tool::WEB_READ_CACHED+) are +ALL_CAPS+ value constants, and Zeitwerk only auto-loads
 # constants matching its filename↔CamelCase convention. Eager-loading runs the
 # files defining those values so a bin script can +c.add_tool+ them without
 # per-file +require+. (web_search is host-configured via
