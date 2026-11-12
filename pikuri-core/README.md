@@ -13,14 +13,12 @@ AI-assistant toolkit:
 - Controls (`Cancellable`, `Interloper`) for cancellation and
   mid-loop injection. The loop itself is unbounded — see
   `design/decisions.md` `D_no_step_limit`.
-- Four stateless bundled tools (`CALCULATOR`, `WEB_SCRAPE`,
-  `FETCH`, `WEB_READ_CACHED`) plus a host-configured web-search tool built via
-  `Pikuri::Tool::WebSearch.build` (provider keys passed in, never
-  read from the environment).
+- One bundled example tool, `Pikuri::Tool::CALCULATOR`.
 - A demo binary, `bin/pikuri-chat`.
 
-Extensions (skills, MCP, workspace, coding stack, named-agent
-personas) live in sibling gems and opt in à la carte — see
+Extensions (web tools, skills, MCP, workspace, coding stack,
+named-agent personas) live in sibling gems and opt in à la carte — see
+[`pikuri-web`](../pikuri-web/README.md),
 [`pikuri-skills`](../pikuri-skills/README.md),
 [`pikuri-mcp`](../pikuri-mcp/README.md),
 [`pikuri-workspace`](../pikuri-workspace/README.md),
@@ -59,7 +57,6 @@ agent = Pikuri::Agent.new(
   system_prompt: Pikuri.prompt(:'pikuri-chat')
 ) do |c|
   c.add_tool Pikuri::Tool::CALCULATOR
-  c.add_tool Pikuri::Tool::WebSearch.build
   c.add_listener Pikuri::Agent::Listener::Terminal.new
 end
 agent.run_loop(user_message: 'What is 17 * 23?')
@@ -72,8 +69,7 @@ handling, and cancellation.
 
 - **Narrative walkthrough:** [the first-conversation chapter of the pikuri guide](../book/chat.md)
   — install llama.cpp, start the server, run `pikuri-chat`, the
-  agentic loop, the bundled tools, and search-provider
-  privacy postures.
+  agentic loop, and the tools `pikuri-chat` wires.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-core> (once published), or run
   `bundle exec yard` in this directory for a local copy.

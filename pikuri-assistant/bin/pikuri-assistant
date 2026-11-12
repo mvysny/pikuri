@@ -32,6 +32,7 @@ require 'reline' # line editing + history for the interactive prompt
 require 'pikuri-assistant'
 require 'pikuri-subagents'
 require 'pikuri-extractors'
+require 'pikuri-web'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
@@ -177,10 +178,10 @@ begin
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
-    c.add_tool Pikuri::Tool::WebSearch.from_h(examples_config['search'])
+    c.add_tool Pikuri::Web::Search.from_h(examples_config['search'])
     c.add_tool Pikuri::Tool::CALCULATOR
-    c.add_tool Pikuri::Tool::WEB_SCRAPE
-    c.add_tool Pikuri::Tool::FETCH
+    c.add_tool Pikuri::Web::SCRAPE
+    c.add_tool Pikuri::Web::FETCH
     c.add_extension mcp_ext
     c.add_extension Pikuri::Command::Extension.new(registry: command_registry)
     c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::RESEARCHER])

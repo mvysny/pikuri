@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri-web'
+
 RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
   it 'is a Persona record named "git_repo_researcher"' do
     assert_kind_of Pikuri::SubAgent::Persona, described_class
@@ -34,9 +36,9 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
         Pikuri::Workspace::Search::Grep.new(workspace: workspace),
         Pikuri::Workspace::Search::Glob.new(workspace: workspace),
         Pikuri::Workspace::FileList.new(workspace: workspace),
-        Pikuri::Tool::WebSearch.build,
-        Pikuri::Tool::WEB_SCRAPE,
-        Pikuri::Tool::FETCH
+        Pikuri::Web::Search.build,
+        Pikuri::Web::SCRAPE,
+        Pikuri::Web::FETCH
       ]
     end
 

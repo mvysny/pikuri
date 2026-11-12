@@ -27,6 +27,7 @@ require 'pikuri-mcp'
 require 'pikuri-lsp'
 require 'pikuri-subagents'
 require 'pikuri-code'
+require 'pikuri-web'
 
 sandbox_enabled = true
 confirm_enabled = true
@@ -509,9 +510,9 @@ begin
       read_only: read_only
     )
     c.add_tool Pikuri::Tool::CALCULATOR
-    c.add_sub_agent_tool Pikuri::Tool::WebSearch.from_h(examples_config['search'])
-    c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
-    c.add_sub_agent_tool Pikuri::Tool::FETCH
+    c.add_sub_agent_tool Pikuri::Web::Search.from_h(examples_config['search'])
+    c.add_sub_agent_tool Pikuri::Web::SCRAPE
+    c.add_sub_agent_tool Pikuri::Web::FETCH
     c.add_extension Pikuri::Code::Extension.new(
       filesystem: filesystem,
       confirmer: confirmer,

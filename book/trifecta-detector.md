@@ -380,7 +380,7 @@ values name the answer to the real question:
   set and its author vouches that nothing in it hands the bytes to
   a third party.
 
-`web_search` is the one bundled tool that declares it, and it's
+`web_search` is the one pikuri tool that declares it, and it's
 why its line differs from `fetch`'s in every map in this chapter.
 A search query does leave your machine — but it reaches an engine
 this repo picked, not a host an injection chose, so a secret can

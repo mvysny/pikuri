@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri-web'
+
 RSpec.describe Pikuri::SubAgent::RESEARCHER do
   it 'is a Persona record named "researcher"' do
     assert_kind_of Pikuri::SubAgent::Persona, described_class
@@ -17,7 +19,7 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
 
   describe 'integration with Pikuri::SubAgent::Extension' do
     let(:tools) do
-      [Pikuri::Tool::WebSearch.build, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH]
+      [Pikuri::Web::Search.build, Pikuri::Web::SCRAPE, Pikuri::Web::FETCH]
     end
 
     let(:configurator) do
@@ -31,7 +33,7 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
       )
     end
 
-    it 'configures cleanly when the three bundled web tools are present' do
+    it 'configures cleanly when the three web tools are present' do
       tools.each { |t| configurator.add_tool(t) }
       ext = Pikuri::SubAgent::Extension.new(personas: [described_class])
       # No raise — the persona's tool_names are a subset of registered tools.
@@ -40,7 +42,7 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
     end
 
     it "raises Extension#configure when one of the persona's tools is missing" do
-      configurator.add_tool(Pikuri::Tool::WebSearch.build)
+      configurator.add_tool(Pikuri::Web::Search.build)
       # web_scrape and fetch deliberately missing
       ext = Pikuri::SubAgent::Extension.new(personas: [described_class])
 

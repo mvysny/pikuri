@@ -311,8 +311,10 @@ wrapped in tools, listeners, and sub-agents.
 
 ## The bundled tools
 
-The ones `pikuri-chat` wires, all defined in
-`pikuri-core/lib/pikuri/tool/`:
+The ones `pikuri-chat` wires. `calculator` is pikuri-core's one
+bundled tool; the three that reach the internet come from the
+[`pikuri-web`](../pikuri-web/README.md) gem, which an agent that
+should stay offline simply doesn't load:
 
 - **`calculator`** — evaluates a Python-syntax arithmetic
   expression with a small built-in parser. Local, no network.
@@ -406,7 +408,7 @@ the script prints is the same with or without it.
 
 `web_search` is a cascade across whichever providers you selected. The
 orchestration lives in
-`pikuri-core/lib/pikuri/tool/search/engines.rb`; each provider's
+`pikuri-web/lib/pikuri/web/search/engines.rb`; each provider's
 privacy posture is documented in detail at the top of its source
 file.
 
@@ -451,7 +453,7 @@ Microsoft for fulfillment, even though identifying info is
 stripped on the way out.
 
 Good enough for everyday curiosity. See
-`pikuri-core/lib/pikuri/tool/search/duckduckgo.rb` for the full
+`pikuri-web/lib/pikuri/web/search/duckduckgo.rb` for the full
 write-up.
 
 ### Brave Search API (recommended for sensitive queries)
@@ -474,7 +476,7 @@ search:
 Once the key is present, Brave joins the cascade and may be chosen
 over DuckDuckGo for any given query — add `engines: [brave]` to leave
 DuckDuckGo out entirely. See
-`pikuri-core/lib/pikuri/tool/search/brave.rb`.
+`pikuri-web/lib/pikuri/web/search/brave.rb`.
 
 ### Exa (paid, weakest privacy)
 
@@ -486,7 +488,7 @@ and their privacy policy explicitly says queries are used for
 training. Don't enable Exa if your search history would be
 embarrassing or sensitive in a training set.
 
-See `pikuri-core/lib/pikuri/tool/search/exa.rb` for the full
+See `pikuri-web/lib/pikuri/web/search/exa.rb` for the full
 privacy posture.
 
 ### Recommended setup for best privacy

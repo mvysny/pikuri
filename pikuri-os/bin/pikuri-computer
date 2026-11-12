@@ -28,6 +28,7 @@ require 'pikuri-os' # pulls in pikuri-core + -workspace + -code
 require 'pikuri-subagents' # the `agent` tool + RESEARCHER persona (web research)
 require 'pikuri-thunderbird' # local mail + calendar (dev/demo dep of this binary)
 require 'pikuri-pdf' # PDF → text extractor (see registration below)
+require 'pikuri-web' # the RESEARCHER's web tools
 
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing): teach the
 # Extractor registry to handle PDFs, so the file tools and the researcher's
@@ -198,9 +199,9 @@ begin
     # separate network boundary. Must precede the SubAgent extension, whose
     # configure validates the persona's tool_names.
     if internet_enabled
-      c.add_sub_agent_tool Pikuri::Tool::WebSearch.from_h(examples_config['search'])
-      c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
-      c.add_sub_agent_tool Pikuri::Tool::FETCH
+      c.add_sub_agent_tool Pikuri::Web::Search.from_h(examples_config['search'])
+      c.add_sub_agent_tool Pikuri::Web::SCRAPE
+      c.add_sub_agent_tool Pikuri::Web::FETCH
       c.add_extension Pikuri::SubAgent::Extension.new(
         personas: [Pikuri::SubAgent::RESEARCHER],
         confirmer: confirmer

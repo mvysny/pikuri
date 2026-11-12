@@ -70,14 +70,16 @@ in:
 - **Or jump straight to whichever gem you want to use.** Each
   per-gem README is a reference card with a wired-up snippet:
   - [`pikuri-core`](pikuri-core/README.md) — `Pikuri::Agent`, the
-    `Tool` framework, the bundled web and calculator tools, the
-    `pikuri-chat` demo.
+    `Tool` framework, the `pikuri-chat` demo.
   - [`pikuri-extractors`](pikuri-extractors/README.md) — documents
     (DOCX / ODT / XLSX / PPTX / EPUB / RTF / PDF) → Markdown,
     converted inside a one-shot networkless docker container.
   - [`pikuri-pdf`](pikuri-pdf/README.md) — PDF → text extraction,
     in-process and lazily paged (pure-Ruby pdf-reader); the
     docker-free alternative to pikuri-extractors' PDF arm.
+  - [`pikuri-web`](pikuri-web/README.md) — the tools that reach the
+    internet: `web_search` (DuckDuckGo, Brave, Exa), `web_scrape`,
+    `fetch` and `web_read_cached`.
   - [`pikuri-skills`](pikuri-skills/README.md) —
     [Agent Skills](https://agentskills.io/specification)
     discovery.

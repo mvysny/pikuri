@@ -1,13 +1,14 @@
 # frozen_string_literal: true
 
 require 'digest'
+require 'fileutils'
 require 'json'
 
 module Pikuri
   module Mcp
     # On-disk cache for the per-server descriptions {Synthesizer} pays an LLM
-    # round-trip to produce. Wraps {Pikuri::UrlCache::OnDisk} for storage; this class
-    # owns the *key calculation* — the fingerprint of every input that could
+    # round-trip to produce, one +<sha256 of the key>.txt+ file per entry. Most of
+    # the work is the *key calculation*: the fingerprint of every input that could
     # change the output, so an unchanged surface short-circuits and a changed
     # one auto-invalidates. The key hashes canonical JSON over: +model_id+
     # (quality varies by model), +prompt_version+, the transport descriptor
@@ -17,14 +18,12 @@ module Pikuri
     # cache. The server's registry *id* is deliberately excluded — a rename
     # doesn't change what the server does.
     #
-    # +ttl: Float::INFINITY+: no time expiry, entries valid until the keyed
-    # surface changes; force a full rebuild by +rm+-ing {DIR} or bumping the
-    # prompt version. {#fetch} mirrors {UrlCache::OnDisk#fetch} (yield on miss, persist
-    # the result); callers rescue around it for corrupt-file robustness.
+    # No time expiry: an entry is valid until the keyed surface changes; force a
+    # full rebuild by +rm+-ing {DIR} or bumping the prompt version. Callers rescue
+    # around {#fetch} for corrupt-file robustness.
     class Cache
-      # On-disk root. Sibling of {Pikuri::UrlCache::ROOT_DIR} so all of pikuri's
-      # caches live under one path.
-      DIR = File.join(File.dirname(UrlCache::ROOT_DIR), 'mcp_descriptions').freeze
+      # On-disk root, under {Paths.cache} with pikuri's other persistent caches.
+      DIR = Paths.cache.join('mcp_descriptions').to_path.freeze
 
       # @param model_id [String, nil] model id; folded into the key so a model
       #   swap doesn't serve stale output.
@@ -34,11 +33,12 @@ module Pikuri
       def initialize(model_id:, prompt_version:, dir: DIR)
         @model_id = model_id
         @prompt_version = prompt_version
-        @url_cache = UrlCache::OnDisk.new(ttl: Float::INFINITY, dir: dir)
+        @dir = dir
       end
 
       # Return the cached description for the +(entry, client, tools)+ triple, or
-      # yield to compute + persist + return it on a miss.
+      # yield to compute + persist + return it on a miss. A raising block
+      # persists nothing, so a failed computation is retried next time.
       #
       # @param entry [Registry::StdioEntry, Registry::HttpEntry]
       # @param client [MCP::Client] for +server_info+ (name + version)
@@ -46,12 +46,18 @@ module Pikuri
       # @yieldreturn [String] freshly-computed description
       # @return [String] cached or freshly-computed description
       def fetch(entry:, client:, tools:, &block)
-        @url_cache.fetch(key_for(entry, client, tools), &block)
+        path = File.join(@dir, "#{Digest::SHA256.hexdigest(key_for(entry, client, tools))}.txt")
+        return File.read(path) if File.exist?(path)
+
+        value = block.call
+        FileUtils.mkdir_p(@dir)
+        File.write(path, value)
+        value
       end
 
       # The canonical fingerprint for a +(entry, client, tools)+ triple —
-      # {Pikuri::UrlCache::OnDisk} SHA-256s it into the filename; we return the raw JSON
-      # (not a hash) so it's inspectable in tests.
+      # {#fetch} SHA-256s it into the filename; this returns the raw JSON (not a
+      # hash) so it's inspectable in tests.
       #
       # @return [String] canonical JSON over the keyed inputs
       def key_for(entry, client, tools)
@@ -104,7 +110,7 @@ module Pikuri
 
       # Null cache: always misses, never persists — the default when no real
       # cache is provided, so callers +@cache.fetch(...)+ unconditionally
-      # instead of branching on +nil+. Same shape as {Pikuri::UrlCache::NULL}.
+      # instead of branching on +nil+.
       NULL = Object.new
       def NULL.fetch(entry:, client:, tools:)
         yield

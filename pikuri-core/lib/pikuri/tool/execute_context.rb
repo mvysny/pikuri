@@ -22,8 +22,8 @@ module Pikuri
     # The obvious shape is +context.args[:query]+, with one object carrying
     # everything. It loses to a plain fact about {Parameters#validate}: it
     # returns only the keys the model actually sent and applies no defaults, so
-    # half the bundled tools declare theirs in the +execute+ signature
-    # (+max_results: 10+). Fold the arguments in here and every one of those
+    # tools declare theirs in the +execute+ signature (+web_search+'s
+    # +max_results: 10+). Fold the arguments in here and every one of those
     # defaults has to be re-expressed. Arguments therefore stay kwargs, and this
     # object carries only what has no other home.
     #

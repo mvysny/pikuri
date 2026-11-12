@@ -60,4 +60,8 @@ Gem::Specification.new do |spec|
   # multi-step work — is wired into +bin/pikuri-code+ by default.
   # See book/tasks.md for the rationale.
   spec.add_dependency 'pikuri-tasks',     "= #{Pikuri::VERSION}"
+
+  # +web_search+ / +web_scrape+ / +fetch+, wired into +bin/pikuri-code+ so
+  # the agent can read docs and issue trackers.
+  spec.add_dependency 'pikuri-web',       "= #{Pikuri::VERSION}"
 end

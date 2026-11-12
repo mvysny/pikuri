@@ -38,8 +38,7 @@ RSpec.describe Pikuri::Mcp::Verifier do
       verifier = described_class.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'))
       cache = verifier.instance_variable_get(:@cache)
       assert_kind_of Pikuri::Mcp::Cache, cache
-      url_cache = cache.instance_variable_get(:@url_cache)
-      assert_equal Pikuri::Mcp::Verifier::CACHE_DIR, url_cache.instance_variable_get(:@dir)
+      assert_equal Pikuri::Mcp::Verifier::CACHE_DIR, cache.instance_variable_get(:@dir)
     end
 
     it 'defaults to Cache::NULL on the thinker: path' do

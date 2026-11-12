@@ -202,7 +202,7 @@ state directly. **Not decided.**
 ### Constraint on either answer: sever *before* the tool body runs
 
 Whichever way Q3 goes, enforcement has to refuse the call, not clean up
-after it. The reason is {Pikuri::UrlCache}: `fetch`, `web_scrape` and
+after it. The reason is {Pikuri::Web::UrlCache}: `fetch`, `web_scrape` and
 `web_search` each hold their cache in a **class-level constant**, so it is
 one on-disk store (`~/.cache/pikuri/url_cache/<tool>/<sha256-of-key>.txt`,
 2 h TTL) shared by every agent in the process *and* every pikuri process on

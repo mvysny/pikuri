@@ -51,11 +51,13 @@ Gem::Specification.new do |spec|
   # Agent runtime + Tool base class + Extension protocol live in
   # pikuri-core; the file tools + Confirmer live in
   # pikuri-workspace; Bash + Bash::Sandbox (the net-isolation seam this
-  # agent rides) live in pikuri-code. Lockstep-versioned so an upgrade
+  # agent rides) live in pikuri-code; the web tools the --with-internet
+  # RESEARCHER uses live in pikuri-web. Lockstep-versioned so an upgrade
   # to any of them always pulls the matching peer.
   spec.add_dependency 'pikuri-code',      "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-pdf',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-web',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

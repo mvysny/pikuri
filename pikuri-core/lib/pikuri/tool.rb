@@ -76,11 +76,11 @@ module Pikuri
   # * *P_stateless* — no mutable state. Share freely.
   # * *P_shared_locked* — process-wide mutable state under a lock. Sharing is
   #   intended, and for anything pacing a shared *external* resource it is
-  #   mandatory: a per-agent {Search::RateLimiter} would let ten agents fire
+  #   mandatory: a per-agent rate limiter (pikuri-web's search engines) would let ten agents fire
   #   ten simultaneous requests from one IP and earn the ban it exists to
   #   avoid.
   # * *P_shared_benign* — unprotected process-wide state whose race is
-  #   harmless; the doc names the race ({Pikuri::UrlCache::OnDisk}: both callers
+  #   harmless; the doc names the race (pikuri-web's on-disk URL cache: both callers
   #   compute a cold key and write identical bytes).
   # * *P_one_agent* — agent-scoped state, so exactly one agent. It needs no
   #   lock because its only caller is that agent, whose calls are already

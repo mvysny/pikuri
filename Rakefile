@@ -27,6 +27,7 @@ GEMS = %w[
   pikuri-core
   pikuri-extractors
   pikuri-pdf
+  pikuri-web
   pikuri-memory
   pikuri-skills
   pikuri-tasks

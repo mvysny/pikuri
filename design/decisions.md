@@ -42,7 +42,9 @@ new gem.
   splitting a cohesive gem just to pass.
 
 **Consequences.** Bloat costs most in core, since every deployment pays for it. Anything that not
-every agent needs belongs in a gem.
+every agent needs belongs in a gem. The web tools were the first to leave: they bring untrusted text
+in and most send bytes out, so they went to `pikuri-web`, and core keeps `calculator` as its one
+example tool.
 
 ---
 
@@ -2329,7 +2331,7 @@ tool does the same thing.
 **Context.** A host wanting ten agents in one Ruby VM has to know, per
 tool, whether one instance may serve all ten. Nothing answered it.
 `Tool::CALCULATOR` obviously can (it is a shared constant, so there is no
-other way); `Tool::WebSearch` looked like the interesting case and turned
+other way); `Web::Search` looked like the interesting case and turned
 out not to be, because its throttle state is neither per agent nor per
 instance (see `D_rate_limiter_scope`); and the genuinely dangerous cases
 were not tools at all. The house style had the *habit* without the

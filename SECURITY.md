@@ -276,8 +276,8 @@ as a guarantee:
   capability — a prompt-injected model that chooses not to delegate
   can reach the residual leg-(a) surface (project source, `.env`,
   dependency caches) through the parent's own `fetch` /
-  `web_scrape`. A custom Agent built from `pikuri-core` can
-  recreate the shape either way.
+  `web_scrape`. A custom Agent built from `pikuri-core` and
+  `pikuri-web` can recreate the shape either way.
 
 ## See also
 

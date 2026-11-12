@@ -16,6 +16,7 @@ require 'reline' # line editing + history for the interactive prompt
 require 'pikuri-os' # pulls in pikuri-core + -workspace + -code
 require 'pikuri-subagents' # the `agent` tool + RESEARCHER persona (--with-internet only)
 require 'pikuri-pdf' # PDF → text extractor (see registration below)
+require 'pikuri-web' # the RESEARCHER's web tools (--with-internet only)
 
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing): teach the
 # Extractor registry to handle PDFs, so both the file tools (local
@@ -202,9 +203,9 @@ agent = Pikuri::Agent.new(
   # boundary. The add_sub_agent_tool calls must precede the SubAgent
   # extension, whose configure validates the persona's tool_names.
   if internet_enabled
-    c.add_sub_agent_tool Pikuri::Tool::WebSearch.from_h(examples_config['search'])
-    c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
-    c.add_sub_agent_tool Pikuri::Tool::FETCH
+    c.add_sub_agent_tool Pikuri::Web::Search.from_h(examples_config['search'])
+    c.add_sub_agent_tool Pikuri::Web::SCRAPE
+    c.add_sub_agent_tool Pikuri::Web::FETCH
     c.add_extension Pikuri::SubAgent::Extension.new(
       personas: [Pikuri::SubAgent::RESEARCHER],
       confirmer: confirmer

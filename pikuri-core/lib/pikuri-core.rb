@@ -20,12 +20,10 @@ require_relative 'pikuri/version'
 #
 # == Why eager-load
 #
-# The stateless bundled tools (+Tool::CALCULATOR+, +Tool::WEB_SCRAPE+,
-# +Tool::FETCH+, +Tool::WEB_READ_CACHED+) are +ALL_CAPS+ value constants, and Zeitwerk only auto-loads
-# constants matching its filename↔CamelCase convention. Eager-loading runs the
-# files defining those values so a bin script can +c.add_tool+ them without
-# per-file +require+. (web_search is host-configured via
-# {Tool::WebSearch.build}, so it's not a value constant.) Cost: a few ms.
+# The bundled {Tool::CALCULATOR} is an +ALL_CAPS+ value constant, and Zeitwerk
+# only auto-loads constants matching its filename↔CamelCase convention.
+# Eager-loading runs the file defining it so a bin script can +c.add_tool+ it
+# without a per-file +require+. Cost: a few ms.
 module Pikuri
   # Search path for bundled system prompts. Mutable: each pikuri gem appends its
   # own +prompts/+ at boot, so +Pikuri.prompt(name)+ from a host requiring
@@ -148,10 +146,7 @@ module Pikuri
   # from a spec), kept off the production load path — so don't autoload or
   # eager-load it. See {Pikuri::Testing}.
   Loader.ignore(File.expand_path('pikuri/testing.rb', __dir__))
-  Loader.inflector.inflect(
-    'html'       => 'HTML',
-    'duckduckgo' => 'DuckDuckGo'
-  )
+  Loader.inflector.inflect('html' => 'HTML')
   Loader.setup
   Loader.eager_load
 

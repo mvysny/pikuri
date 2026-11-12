@@ -10,7 +10,7 @@ module Pikuri
   # * {.extract_paged} — the same, windowed to a line range with a byte
   #   cap, as a {Page} the caller renders.
   #
-  # +Tool::Scraper+ (dispatching on the HTTP +Content-Type+) and {FileType}
+  # pikuri-web's scraper (dispatching on the HTTP +Content-Type+) and {FileType}
   # (resolving local paths) both route through this registry, so "support a
   # new format" is a registry entry, not a new dispatcher arm.
   #

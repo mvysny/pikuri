@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
     +pikuri+ is the convenience bundle for the pikuri AI-assistant
     toolkit. It ships no Ruby code of its own beyond a tiny entry
     file that +require+'s each sibling gem; +gem install pikuri+
-    pulls in pikuri-core, pikuri-extractors, pikuri-pdf,
+    pulls in pikuri-core, pikuri-extractors, pikuri-pdf, pikuri-web,
     pikuri-skills, pikuri-tasks, pikuri-memory, pikuri-workspace,
     pikuri-code, pikuri-lsp, pikuri-mcp, pikuri-subagents,
     pikuri-vectordb, pikuri-rag, pikuri-assistant, and pikuri-os in one
@@ -65,5 +65,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-tasks',      "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-thunderbird', "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-vectordb',   "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-web',        "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-workspace',  "= #{Pikuri::VERSION}"
 end

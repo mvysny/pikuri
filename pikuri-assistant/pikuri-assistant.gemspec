@@ -44,7 +44,8 @@ Gem::Specification.new do |spec|
   # sandboxed document extractor (pikuri-extractors — its PDF arm
   # supersedes pikuri-pdf here, so that gem is deliberately NOT a
   # dependency), VectorDb::Extension + the LIBRARIAN persona
-  # (pikuri-vectordb) and Memory::Extension (pikuri-memory). All
+  # (pikuri-vectordb), Memory::Extension (pikuri-memory) and the web
+  # tools (pikuri-web). All
   # runtime deps, lockstep-pinned to the matching versions.
   #
   # NOTE: the vectordb and memory deps are forward-prep for the
@@ -61,4 +62,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-skills',     "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-subagents',  "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-vectordb',   "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-web',        "= #{Pikuri::VERSION}"
 end

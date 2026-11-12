@@ -139,7 +139,7 @@ in the register of a limit the tool enforces. Two things to decide:
   tool doesn't enforce and can't verify is worse than no number: it
   reads as a contract, and the failure it invites (asking for 50,
   silently getting whatever the engine returns) is invisible. Leaning
-  toward clamping, since {Pikuri::Tool::WebSearch} fans out over
+  toward clamping, since {Pikuri::Web::Search} fans out over
   engines with different ceilings and the model shouldn't have to know
   which one is wired.
 

@@ -465,9 +465,9 @@ down, on a privilege-separated research sub-agent — the bundled
 the `agent` tool:
 
 ```ruby
-c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(brave_key:, exa_key:)
-c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
-c.add_sub_agent_tool Pikuri::Tool::FETCH
+c.add_sub_agent_tool Pikuri::Web::Search.build(brave_key:, exa_key:)
+c.add_sub_agent_tool Pikuri::Web::SCRAPE
+c.add_sub_agent_tool Pikuri::Web::FETCH
 c.add_extension Pikuri::SubAgent::Extension.new(
   personas: [Pikuri::SubAgent::RESEARCHER],
   confirmer: confirmer

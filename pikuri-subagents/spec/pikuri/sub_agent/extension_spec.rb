@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri-web'
+
 RSpec.describe Pikuri::SubAgent::Extension do
   # Minimal fake chat + RubyLLM.chat stub — same shape as agent_spec.rb
   # in pikuri-core, scoped down to what the integration tests below
@@ -51,7 +53,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
 
   # A concrete tool named `web_search` for the personas above to reference
   # by name. Built once so identity comparisons (sub_agent_tools) hold.
-  let(:web_search_tool) { Pikuri::Tool::WebSearch.build }
+  let(:web_search_tool) { Pikuri::Web::Search.build }
 
   # +Context#chat+, not +RubyLLM.chat+: every chat an Agent builds rides a
   # per-transport +RubyLLM::Context+.
@@ -161,7 +163,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
                           system_prompt: 's') do |c|
           c.add_listener recorder
           c.add_tool Pikuri::Tool::CALCULATOR    # parent pool, irrelevant name
-          c.add_sub_agent_tool Pikuri::Tool::FETCH # sub-agent pool, irrelevant name
+          c.add_sub_agent_tool Pikuri::Web::FETCH # sub-agent pool, irrelevant name
           c.add_extension described_class.new(personas: [tiny_persona])
         end
       end

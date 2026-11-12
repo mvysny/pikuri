@@ -18,6 +18,7 @@ require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-core'
 require 'pikuri-subagents'
+require 'pikuri-web'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
@@ -96,8 +97,8 @@ agent = Pikuri::Agent.new(
   # `<available_agents>` block in the system prompt and wires the
   # `agent` tool for fan-out delegation.
   c.add_tool Pikuri::Tool::WEB_SEARCH
-  c.add_tool Pikuri::Tool::WEB_SCRAPE
-  c.add_tool Pikuri::Tool::FETCH
+  c.add_tool Pikuri::Web::SCRAPE
+  c.add_tool Pikuri::Web::FETCH
   c.add_tool Pikuri::Tool::CALCULATOR
   c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::RESEARCHER])
 end

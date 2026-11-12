@@ -288,9 +288,9 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   # receive them through the `agent` delegation tool. This keeps
   # untrusted web/repo content inside a child that has no bash /
   # write / edit to hijack.
-  c.add_sub_agent_tool Pikuri::Tool::WebSearch.build
-  c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
-  c.add_sub_agent_tool Pikuri::Tool::FETCH
+  c.add_sub_agent_tool Pikuri::Web::Search.build
+  c.add_sub_agent_tool Pikuri::Web::SCRAPE
+  c.add_sub_agent_tool Pikuri::Web::FETCH
   c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
 
   # Four extensions — same configure/bind shape as the sub-agents chapter

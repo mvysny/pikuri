@@ -373,7 +373,7 @@ extensions like `pikuri-tasks` put them anyway:
 # once, at boot — everything whose posture isn't P_one_agent
 SHARED_TOOLS = [
   Pikuri::Tool::CALCULATOR, # P_stateless
-  Pikuri::Tool::FETCH,      # P_shared_benign (its URL cache races harmlessly)
+  Pikuri::Web::FETCH,      # P_shared_benign (its URL cache races harmlessly)
   # ...
 ]
 

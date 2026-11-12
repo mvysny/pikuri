@@ -8,14 +8,14 @@ Gem::Specification.new do |spec|
   spec.authors     = ['Martin Vysny']
   spec.email       = ['martin@vysny.me']
 
-  spec.summary     = 'The minimal core of the pikuri AI-assistant toolkit (Agent, Tool framework, web tools, bin/pikuri-chat).'
+  spec.summary     = 'The minimal core of the pikuri AI-assistant toolkit (Agent, Tool framework, bin/pikuri-chat).'
   spec.description = <<~DESC
     pikuri-core is the lean, audit-friendly foundation of the pikuri family:
     Pikuri::Agent (a thin wrapper around ruby_llm's chat loop) with its
     Configurator + Extension protocol, the strict Pikuri::Tool framework, a
-    listener surface for rendering / budgets / sub-agents, and four bundled
-    stateless tools (calculator, web search, web scrape, fetch). Extensions
-    (skills, MCP, workspace, coding stack, named-agent personas) live in
+    listener surface for rendering / budgets / sub-agents, and a calculator
+    as the one bundled example tool. Extensions (web tools, skills, MCP,
+    workspace, coding stack, named-agent personas) live in
     sibling gems so a privacy-conscious user can install just this core and
     audit a minimal dependency tree. For the convenience bundle that pulls
     in everything, see the +pikuri+ metagem.
@@ -48,25 +48,24 @@ Gem::Specification.new do |spec|
   # Runtime deps — alphabetical. The Gemfile pulls these in via `gemspec`
   # so this list is the single source of truth.
 
-  # HTTP client. Used by the web-fetch scraper, the Brave / DuckDuckGo
-  # search providers, and (transitively) by ruby_llm.
+  # HTTP client. Used by the agent's request throttle and context-window
+  # probe, and (transitively) by ruby_llm.
   spec.add_dependency 'faraday',          '~> 2.9'
 
-  # HTML parser. Used by the web-fetch scraper and by both search
-  # providers (Brave, DuckDuckGo) to extract results from HTML responses.
+  # HTML parser, under Pikuri::Extractor::HTML.
   spec.add_dependency 'nokogiri',         '~> 1.19'
 
   # ANSI color for terminal output (reasoning dim, tool calls tan, …)
   # in the agent loop.
   spec.add_dependency 'rainbow',          '~> 3.1'
 
-  # HTML → Markdown conversion. Used by Pikuri::Tool::Scraper::Simple to
-  # hand the LLM Markdown rather than raw HTML.
+  # HTML → Markdown conversion. Used by Pikuri::Extractor::HTML to hand
+  # the LLM Markdown rather than raw HTML.
   spec.add_dependency 'reverse_markdown', '~> 3.0'
 
   # Readability-style main-content extraction (require 'readability').
-  # Used by Pikuri::Tool::Scraper::Simple to strip chrome from fetched
-  # pages before converting to Markdown.
+  # Used by Pikuri::Extractor::HTML to strip chrome from a page before
+  # converting it to Markdown.
   spec.add_dependency 'ruby-readability', '~> 0.7'
 
   # LLM transport + agent loop. Pikuri sits on top of ruby_llm and owns
