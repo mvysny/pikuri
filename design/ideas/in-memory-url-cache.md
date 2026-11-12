@@ -72,8 +72,7 @@ Its page store moves from disk to memory, which revises several settled bullets 
   *within* a process (`Agent::History` load in a long-running host) still works.
 - **Cross-process enumeration is gone** — another pikuri process has a different store and
   secret. Within one process the 8-hex argument stands unchanged.
-- **The reaper loses its reason**: engine results no longer reach disk, so its ToS argument is
-  void (see `Q_reaper`).
+- **The reaper is dropped** (already removed there; see *No reaper*).
 - The text-mode query cache follows `can_cache?` like the snippet one — in memory whenever
   Brave or Exa won.
 
@@ -103,17 +102,22 @@ Its page store moves from disk to memory, which revises several settled bullets 
     cap already bounds it — so "how long is a handle good for" is one rule: until evicted.
   - Worst case resident: 1,000 full pages at ~100 KB ≈ 100 MB — accepted, no byte cap until
     measured hurting.
+- **No global caching API; each user holds the store its data allows.** A facade with
+  `write(key, value, transient_only:)` would still need every caller to pass the flag right —
+  it moves the choice behind a boolean, it doesn't remove it — and would need a namespace
+  argument plus per-namespace TTL / cap / dir config, re-inventing the per-use instances. So
+  "Brave/Exa text never reaches disk" is a fact of *construction*: the page store's constant
+  is a `UrlInMemoryCache`, it has no path to disk at all. The one runtime choice is `Engines`'
+  `winner.can_cache?` pick, the only place one store mixes engines — guarded by a spec that a
+  Brave / Exa win never writes the file cache.
+- **No reaper.** With engine results off disk, the disk holds DuckDuckGo rows, pages pikuri
+  scraped itself and MCP descriptions — none under a storage clause, so the reaper
+  `cached-result-contents` once settled on (for the ToS alone) is dropped; stale files stay
+  until their key is overwritten, as today. Disk growth is a separate, older question, for when
+  it hurts.
 
 ## Still open
 
-- `Q_flag_home` — you described "caching comes with a `transient_only` flag". Two shapes:
-  (a) the pick above, one line in `Engines`, the flag being `winner.can_cache?`; or (b) a third
-  class composing both, `write(key, value, transient_only:)`, `read` checking memory then disk.
-  Leaning (a): `Engines` is the only caller that mixes, and the page store is memory-only —
-  (b) is a class for one call site.
-- `Q_reaper` — with engine results off disk, what's left on disk is DuckDuckGo rows, scraped
-  origin pages and MCP descriptions; none is under a storage clause. Leaning: drop the reaper
-  from `cached-result-contents`, keep the old "stale files stay" behaviour.
 - `Q_spec_seam` — `spec_helper.rb` stubs each module's `.cache` to `UrlCache::NULL`. `Engines`
   grows a second accessor (`.memory_cache`) and both need a null: either one shared `NULL`
   object answering `read` / `write` / `fetch` (where does it live, with no common parent?), or

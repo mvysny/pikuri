@@ -99,7 +99,7 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   mean a fetch — the `D_no_result_scraper` channel, or with a URL argument the whole secret.
   Same for following a link inside a cached page.
 - **Under revision — `in-memory-url-cache.md`** moves the page store and every Brave/Exa result
-  into process memory; the disk, secret-file, resume and reaper bullets below change with it.
+  into process memory; the disk, secret-file, TTL and resume bullets below change with it.
 - **The page store is on disk, keyed by handle — no in-memory registry.** One JSON file per
   page, `<handle>.json` holding url, title, the full text and the engine's index timestamp when
   it gives one, in its own dir under `UrlCache::ROOT_DIR`. A search writes every row that came
@@ -148,7 +148,7 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   `D_no_result_scraper` channel again, and the leg turns `:attacker_reachable`.
 - **Plain files, no SQLite.** The handle is the URL index (looking one up is computing it), so
   SQLite would buy only atomic writes and real expiry — not worth a native extension in
-  `pikuri-core`; real expiry comes from the reaper below.
+  `pikuri-core`.
 - **Engine results are stored transiently, by design.** Both engines' terms forbid keeping
   them (read 2026-11-12):
   - Brave's API ToS §3(b)(i): the customer may not "store, cache, or create a database of
@@ -161,18 +161,9 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
     browser for display purposes". Its Master Subscription Agreement says "Customer owns all
     Customer Data" (output included), but binds Order Form customers — a pay-as-you-go key is
     under the ToS.
-  Read literally, Exa's clause forbids even the existing 2 h `web_search` cache; 2 h is the line
-  we call transient — every engine-result cache (both query caches, the page store) keeps it.
-  Not legal advice; a host needing more buys storage rights.
-- **`UrlCache` reaps.** A file we stop reading after the TTL is still stored, so every
-  `UrlCache` (also `web_scrape`'s) deletes files older than its TTL: on its first use in a
-  process, then at most every ~10 min on a write; `Errno::ENOENT` from a racing sweeper or reader
-  is a miss. Claim: while pikuri runs nothing outlives its TTL by more than the sweep interval;
-  leftovers of a stopped pikuri go on its next start. The gap — the last 2 h sit on disk until
-  pikuri runs again — is documented, not closed (a `systemd` timer is the host's business, an
-  `at_exit` sweep misses a crash). Kept in mind, not done: `$XDG_RUNTIME_DIR` (tmpfs, wiped at
-  logout) as the engine caches' home would keep them off disk entirely, at the cost of a new
-  `Paths` entry and a fallback.
+  Read literally, Exa's clause forbids even the existing 2 h on-disk `web_search` cache — so
+  Brave and Exa results live in process memory only (`in-memory-url-cache.md`). Not legal
+  advice; a host needing more buys storage rights.
 - **Wiring**: `WebSearch.build(..., page_text: false)` turns text mode on; given `true` with no
   cache-capable engine it raises `ArgumentError`. `web_read_cached` is a stateless constant like
   `FETCH`, `P_shared_benign` like `UrlCache` (racing writers write the same bytes). Lost: a
