@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'pikuri-core'
+require 'pikuri-workspace'
 
 # Entry file for the pikuri-web gem: mounts a per-gem Zeitwerk loader at this
 # +lib/+ and eager-loads it, so the +ALL_CAPS+ tool constants ({Pikuri::Web::FETCH}

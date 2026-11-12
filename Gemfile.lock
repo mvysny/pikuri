@@ -51,6 +51,7 @@ PATH
       faraday (~> 2.9)
       nokogiri (~> 1.19)
       pikuri-core (= 0.1.0)
+      pikuri-workspace (= 0.1.0)
       reverse_markdown (~> 3.0)
       ruby-readability (~> 0.7)
 

@@ -2,7 +2,7 @@
 
 The filesystem and confirmation seams, the file tools built on them, and the
 `ReadOnly` gate. Owns `Workspace` / `Filesystem` / `Confirmer`, three seams *consumed* by other gems
-(`Bash` and `agent` take a `Confirmer`; `Bash` takes the bare `Filesystem`; the LSP tool renders
+(`Bash`, `agent` and `web_search` take a `Confirmer`; `Bash` takes the bare `Filesystem`; the LSP tool renders
 walked paths) — their `AGENTS.md` point here and never restate.
 
 ## Invariants

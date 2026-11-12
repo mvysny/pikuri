@@ -118,6 +118,93 @@ RSpec.describe 'Pikuri::Web::Search.build' do
     end
   end
 
+  describe 'confirmer' do
+    # A scripted confirmer: answers each ask with the next decision and
+    # records the request it was shown.
+    let(:asked) { [] }
+    let(:decisions) { [] }
+    let(:confirmer) do
+      asked = self.asked
+      decisions = self.decisions
+      Class.new(Pikuri::Workspace::Confirmer) do
+        define_method(:ask) do |request:|
+          asked << request
+          decisions.shift
+        end
+      end.new
+    end
+    let(:gated) { Pikuri::Web::Search.build(confirmer: confirmer) }
+
+    around do |example|
+      original = Pikuri::Web::Search::DuckDuckGo.instance_method(:search)
+      @calls = []
+      calls = @calls
+      Pikuri::Web::Search::DuckDuckGo.define_method(:search) do |query, max_results:, cancellable: nil|
+        _ = cancellable
+        calls << query
+        [Pikuri::Web::Search::Result.new(url: 'https://example.com', title: "about #{query}", body: '')]
+      end
+      begin
+        example.run
+      ensure
+        Pikuri::Web::Search::DuckDuckGo.define_method(:search, original)
+      end
+    end
+
+    it 'shows the query, editable, before searching it' do
+      decisions << Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: 'ruby')
+      result = gated.run('query' => 'ruby')
+      assert_equal ['ruby'], asked.map(&:detail)
+      assert asked.first.editable
+      assert_equal ['ruby'], @calls
+      refute_includes result.content, 'changed the query'
+    end
+
+    it 'searches the edited query and tells the model it changed' do
+      decisions << Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: 'ruby 3.4')
+      result = gated.run('query' => 'ruby Jan Novák')
+      assert_equal ['ruby 3.4'], @calls
+      assert_includes result.content, 'The user changed the query to: ruby 3.4'
+      assert_includes result.content, 'about ruby 3.4'
+    end
+
+    it 'sends nothing on a decline' do
+      decisions << Pikuri::Workspace::Confirmer::Rejected.new
+      result = gated.run('query' => 'ruby')
+      assert_empty @calls
+      assert_includes result.content, 'user declined the web search'
+    end
+
+    it 'passes the human\'s words back on a redirect' do
+      decisions << Pikuri::Workspace::Confirmer::Redirected.new(message: 'leave the name out')
+      result = gated.run('query' => 'Jan Novák')
+      assert_empty @calls
+      assert_includes result.content, 'leave the name out'
+    end
+
+    it 'grades the query human-reviewed only when the confirmer blocks on a human' do
+      assert_equal :human_reviewed, gated.trifecta_legs.egress_payload_review
+      yolo = Pikuri::Web::Search.build(confirmer: Pikuri::Workspace::Confirmer::AUTO_APPROVE)
+      assert_equal :unreviewed, yolo.trifecta_legs.egress_payload_review
+      assert_equal :tool_vouched, gated.trifecta_legs.egress_destination
+    end
+  end
+
+  describe 'snippets_only' do
+    it 'tells the model the snippets are all it gets, naming no page reader' do
+      snippy = Pikuri::Web::Search.build(snippets_only: true)
+      assert_includes snippy.description, 'snippets are all you get'
+      refute_includes snippy.description, 'web_scrape'
+      refute_includes snippy.description, 'web_read_cached'
+    end
+
+    it 'refuses to combine with page_text' do
+      assert_raises(ArgumentError) do
+        Pikuri::Web::Search.build(engines: [:exa], exa_key: 'k', page_text: true, snippets_only: true)
+      end
+    end
+  end
+
   describe 'page_text' do
     it 'points the model at web_read_cached instead of web_scrape' do
       texty = Pikuri::Web::Search.build(engines: [:exa], exa_key: 'k', page_text: true)

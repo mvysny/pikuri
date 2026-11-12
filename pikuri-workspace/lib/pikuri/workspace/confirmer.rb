@@ -3,8 +3,8 @@
 module Pikuri
   module Workspace
     # Port for resolving a "may I do this?" confirmation to a decision —
-    # currently {Pikuri::Code::Bash}, {Write}, and the +agent+ tool's
-    # delegation gate. Subclass and implement {#ask}.
+    # currently {Pikuri::Code::Bash}, {Write}, the +agent+ tool's delegation
+    # gate, and +web_search+'s query gate. Subclass and implement {#ask}.
     #
     # == The one job: resolve a {Request} to a decision
     #

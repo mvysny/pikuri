@@ -142,12 +142,12 @@ secretary's chapter only points at them.
 ## What has to land upstream first
 
 Puri's open primitives. Because the demo needs them, they land in pikuri and Puri picks them up
-from here. None exists yet (checked 2026-11-12):
+from here:
 
-- **A confirmer on `Web::Search.build`** that also flips the leg to
-  `egress_payload_review: :human_reviewed` (Puri's `Q_gate_primitive`).
-- **A "snippets are all you get" variant of `Web::Search::DESCRIPTION`**, since today's tells the
-  model to follow up with `web_scrape` (Puri's `Q_search_description`).
+- ~~A confirmer on `Web::Search.build`~~ Done 2026-11-12: `confirmer:` (Puri's
+  `Q_gate_primitive`).
+- ~~A "snippets are all you get" description~~ Done 2026-11-12: `snippets_only:` (Puri's
+  `Q_search_description`).
 - ~~A subject-neutral memory file.~~ Not needed: the memory is a note (see *Durable memory*).
   The workshop's `pikuri-os` keeps its own `MachineMemory`.
 - **The system prompt.** It lives in pikuri, which settles Puri's `Q_prompt_home`. Puri may keep

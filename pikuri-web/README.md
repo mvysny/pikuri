@@ -49,6 +49,17 @@ c.add_tool Pikuri::Web::Search.build(engines: [:exa], exa_key: 'xyz', page_text:
 c.add_tool Pikuri::Web::READ_CACHED
 ```
 
+For an agent that reads your mail or notes, give it the snippets and
+nothing else, and show yourself every query before it goes out. The
+model may otherwise put "Jan Novák chemo side effects" into a search,
+straight from a mail it just read, and that query then sits in the
+search engine's logs:
+
+```ruby
+c.add_tool Pikuri::Web::Search.build(snippets_only: true,
+                                     confirmer: Pikuri::Workspace::Confirmer::Terminal.new)
+```
+
 ## Further reading
 
 - [The first-conversation chapter](../book/chat.md) — the tools in a

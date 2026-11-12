@@ -42,6 +42,9 @@ Gem::Specification.new do |spec|
   # lockstep-versioned so an upgrade to either always pulls the matching peer.
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
 
+  # The Confirmer seam a +web_search+ built with +confirmer:+ asks through.
+  spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
+
   # HTTP client for the scraper and the Brave / Exa APIs.
   spec.add_dependency 'faraday',     '~> 2.9'
 

@@ -36,6 +36,10 @@ module Pikuri
     # per-call {Tool::ExecuteContext} (see {Pikuri::Tool}'s +== Cancellation+):
     # an agent queued behind another agent's pacing wait can abandon it, even
     # though the tool itself may be shared.
+    #
+    # A build with a +confirmer:+ takes the confirmer's posture as well: a
+    # {Workspace::Confirmer::Terminal} is +P_one_agent+, so share that build
+    # only as far as the confirmer allows.
     module Search
       # Description shown to the LLM, opencode-shape (summary + +Usage:+).
       #
@@ -59,6 +63,18 @@ module Pikuri
         - A result without a handle can't be read; pick another result or refine the query.
       DESC
 
+      # Description for a +snippets_only: true+ build, which pairs with no
+      # page reader at all.
+      #
+      # @return [String]
+      SNIPPETS_ONLY_DESCRIPTION = <<~DESC
+        Searches the web for a query and returns the top results as a Markdown list of titles, URLs, and short snippets.
+
+        Usage:
+        - The snippets are all you get; you can't open the result pages. Answer from the snippets, or refine the query and search again.
+        - When a snippet answers the question, cite its URL.
+      DESC
+
       # Build the +web_search+ tool. Calls {Search::Engines#search}, which
       # cascades the selected providers in random order, falling back on
       # unavailability and rendering the winner's rows to a stable Markdown
@@ -75,6 +91,24 @@ module Pikuri
       #   c.add_tool Search.build(engines: [:exa], exa_key: 'xyz', page_text: true)
       #   c.add_tool Web::READ_CACHED
       #
+      # For an agent with no page reader whatsoever, +snippets_only: true+
+      # tells the model the snippets are the whole answer, rather than sending
+      # it after a +web_scrape+ it doesn't have. Its egress is then this
+      # tool's query and nothing else, which is what makes the next knob
+      # worth having.
+      #
+      # A +confirmer:+ shows the human each query before it leaves, editable,
+      # and the edited text is what gets searched. The query is the tool's
+      # whole payload, so a confirmer that {Workspace::Confirmer#blocks_on_human?}
+      # grades the leg +:human_reviewed+ — the human sees the bytes, not a
+      # proxy. It is not an injection defense: the destination is already
+      # +:tool_vouched+, so an injected query lands in an engine's logs the
+      # attacker can't read, and the trifecta verdict doesn't move. What it
+      # buys is privacy from the engine operator, for an agent holding
+      # private data that may otherwise quote it into a query unprompted.
+      #
+      #   c.add_tool Search.build(snippets_only: true, confirmer: Workspace::Confirmer::Terminal.new)
+      #
       # @param engines [Array<String, Symbol>, nil] engine names to use —
       #   +duckduckgo+, +brave+, +exa+. +nil+ selects DuckDuckGo plus every
       #   engine whose key is supplied. Order carries no preference; see
@@ -85,16 +119,29 @@ module Pikuri
       # @param page_text [Boolean] bring back each result's page text from the
       #   engine's index and print a handle for {Web::READ_CACHED}; see
       #   {Search::Engines}' +== Page text+. Needs Brave or Exa among the engines.
+      # @param snippets_only [Boolean] describe the snippets as the whole
+      #   answer, for an agent wired with no page reader; excludes +page_text+.
+      # @param confirmer [Workspace::Confirmer, nil] asks the human to approve
+      #   (and possibly rewrite) each query before it is sent; +nil+ sends
+      #   unasked.
       # @return [Tool] the +web_search+ tool in OpenAI tool-call shape
       # @raise [ArgumentError] on an unusable selection: an empty or repeated
       #   +engines+ list, an unknown engine name, an engine named without its
-      #   key, or +page_text+ without Brave or Exa.
-      def self.build(engines: nil, brave_key: nil, exa_key: nil, page_text: false)
+      #   key, +page_text+ without Brave or Exa, or +page_text+ together with
+      #   +snippets_only+.
+      def self.build(engines: nil, brave_key: nil, exa_key: nil, page_text: false,
+                     snippets_only: false, confirmer: nil)
+        raise ArgumentError, 'page_text and snippets_only exclude each other' if page_text && snippets_only
+
         cascade = Search::Engines.new(engines: engines, brave_key: brave_key, exa_key: exa_key,
                                       page_text: page_text)
+        description = if page_text then PAGE_TEXT_DESCRIPTION
+                      elsif snippets_only then SNIPPETS_ONLY_DESCRIPTION
+                      else DESCRIPTION
+                      end
         Tool.new(
           name: 'web_search',
-          description: page_text ? PAGE_TEXT_DESCRIPTION : DESCRIPTION,
+          description: description,
           parameters: Tool::Parameters.build { |p|
             p.required_string :query,
                               'The search query, e.g. "BigDecimal precision Ruby".'
@@ -106,12 +153,29 @@ module Pikuri
           # a shared instance still honours whichever agent is waiting.
           wants_context: true,
           execute: lambda { |query:, max_results: 10, context:|
-            cascade.search(query, max_results: max_results, cancellable: context.cancellable)
+            asked = query
+            if confirmer
+              case decision = confirmer.ask(request: Workspace::Confirmer::Request.new(
+                question: 'Send this web search query to the search engine?',
+                detail: query, editable: true
+              ))
+              in Workspace::Confirmer::Approved(new_request_detail:) then query = new_request_detail
+              in Workspace::Confirmer::Rejected | Workspace::Confirmer::Redirected
+                return decision.observation('the web search')
+              end
+            end
+            result = cascade.search(query, max_results: max_results, cancellable: context.cancellable)
+            return result if query == asked || result.content.start_with?('Error:')
+
+            # The model would otherwise read results that don't match what it
+            # asked for, and wonder why.
+            result.with(content: "The user changed the query to: #{query}\n\n#{result.content}")
           },
           # Snippets are written by whoever ranks for the query, and the query
           # string itself leaves the machine — a search is an outbound channel
-          # even though nothing is "sent". Nobody reviews that query, hence
-          # +:unreviewed+; the whole difference from {FETCH} is the destination.
+          # even though nothing is "sent". Unless a human-blocking confirmer
+          # shows it first, nobody reviews that query, hence +:unreviewed+;
+          # the whole difference from {FETCH} is the destination.
           #
           # +:tool_vouched+ against the three clauses: the caller supplies a
           # query, never a host, and the engine set is this file's own
@@ -126,7 +190,8 @@ module Pikuri
           # while this stays the agent's sole egress leg.
           trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
             private: false, untrusted: :hard,
-            egress_payload_review: :unreviewed, egress_destination: :tool_vouched
+            egress_payload_review: confirmer&.blocks_on_human? ? :human_reviewed : :unreviewed,
+            egress_destination: :tool_vouched
           )
         )
       end
