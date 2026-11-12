@@ -10,84 +10,94 @@ the row *selection* is the channel (`D_no_result_scraper`).
 
 ## Proposal
 
-A tool that returns a search hit's page text **from the search engine's own cache**, never from
-the origin. The request goes to the same vouched engine `web_search` already reaches, so the tool
-declares what `web_search` declares:
+When a host wants page text, `web_search` asks its engine for **the page text of every row in the
+same search request**, served from the engine's own index — never from the origin — and stores it
+in a registry. A new tool, `web_read_cached`, returns a stored row's text by handle. It makes **no
+request at all**, so it holds no egress leg:
 
 ```ruby
-TrifectaLegs.new(private: false, untrusted: :hard,
-                 egress_payload_review: :unreviewed, egress_destination: :tool_vouched)
+TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
 ```
 
-That makes a search-only agent (no `fetch`, no `web_scrape`) actually useful — the first wiring in
-the soft verdict cell. Likely home: a narrower researcher persona in `pikuri-subagents`.
+`web_search` keeps its own `:tool_vouched` grade, unchanged. That makes a search-only agent (no
+`fetch`, no `web_scrape`) actually useful — the first wiring in the soft verdict cell. Likely
+home: a narrower researcher persona in `pikuri-subagents`.
 
-Only for engines that can serve page text from a cache with no live crawl. Wired only when such an
-engine is configured.
+## What the engines offer (probed 2026-11-12)
 
-## What the engines offer (checked 2026-11-12)
+**Exa — compatible, free.** `/search` with `contents: {highlights: true, text: {maxCharacters:
+n}, maxAgeHours: -1}`: 10 rows, every one with text (2.8k–23.6k chars), 137 KB response, **$0.007
+— the same as highlights alone**. Exa's docs: contents are "available in Exa Search for returned
+URLs, at no extra charge up to 10 results per search ($1/1000 pages afterwards)". `maxAgeHours:
+-1` keeps it cache-only (fef8288). (`/contents` takes a URL and is cache-only under `-1` too — a
+miss is `CONTENT_NOT_CACHED`, 404, ~260 ms, $0, still uncached 10 minutes later — but prefetch
+means pikuri never calls it.)
 
-**Exa — compatible.** pikuri already pins `contents.maxAgeHours: -1` on `/search` (fef8288), the
-replacement for the deprecated `livecrawl: "never"`. Exa's `/contents` endpoint takes URLs and
-returns text; the same `maxAgeHours: -1` makes it cache-only. Request: `POST
-https://api.exa.ai/contents`, header `x-api-key`, body `{urls: [...], text: {maxCharacters: n},
-maxAgeHours: -1}`; per-URL outcome in `statuses[]` (`status`, `source: "cached"|"crawled"`,
-`error: {tag, httpStatusCode}`). Exa's docs never say what a miss under `-1` does — probed, see
-`Q_exa_miss`.
+**Brave — compatible via LLM Context.**
+- Web Search (`/res/v1/web/search`, what `Search::Brave` calls today) returns no page text;
+  `extra_snippets` adds ≤5 excerpts per row, on some plans only.
+- **LLM Context** (`GET /res/v1/llm/context`, header `X-Subscription-Token`, launched Feb 2026,
+  the Search plan's $5 / 1000 requests — **the same price as a Web Search call**) returns page
+  chunks grouped per URL (`grounding.generic[]` of `{url, title, snippets[]}`); `sources[url]`
+  carries title, hostname and, with `enable_source_metadata=true`, `description` and
+  `fetched_content_timestamp`. With `context_threshold_mode=disabled`,
+  `maximum_number_of_tokens_per_url=8192`, `maximum_number_of_tokens=32768`: 10 rows, 0.7k–25k
+  chars each, ~103k chars total, 1.5 s.
+- **Served from the index, no live fetch.** Every `fetched_content_timestamp` was 1.3–2934 h
+  before the request (15 rows, three queries). Clock pages settle it: each chunk's clock text
+  matches its timestamp to the second (`time.is/UTC` chunk "05:22:14", fetched `05:22:14Z`,
+  requested 06:41). The launch blog's "in real time" is the chunking over stored HTML.
+- Query-only — no URL input. Reading one row later would mean re-running its query pinned by an
+  inline Goggle (`"$discard\n/<path>$site=<host>"`, which works) — needing the page to rank again
+  and a second request. Prefetch avoids all of that.
 
-**Brave — not today, maybe via LLM Context.**
-- Web Search (`/res/v1/web/search`, what `Search::Brave` calls) returns no page text. The
-  `extra_snippets` flag adds up to 5 more excerpts per result, on some plans only — a cheap boost
-  for `web_search` itself, not a page read.
-- **LLM Context** (`/res/v1/llm/context`, launched Feb 2026, in the Search plan at $5 / 1000
-  requests) returns page content as query-relevant chunks grouped per URL (`grounding.generic[]`
-  of `{url, title, snippets[]}`), with token budgets (`maximum_number_of_tokens_per_url` up to
-  8192), Goggles and `site:` operators. **Query-only** — no URL or result-id input, so it cannot
-  answer "give me row 3's page"; it is "search with contents", relevance-filtered, not full text.
-- Cache or live? Unclear. The docs describe `fetched_content_timestamp` as "the index's last fetch
-  of the page"; the launch blog says Brave digs "into each page's content in real time". No
-  max-age / live-crawl knob exists. See `Q_brave_live_fetch`.
+**DuckDuckGo — incompatible.** HTML scrape, snippets only; its rows get no handle.
 
-**DuckDuckGo — incompatible.** HTML scrape, snippets only.
+Not covered for either engine: whether a query ever schedules a background re-crawl of a row.
+That is an index-freshness question about `web_search`'s own request, which already holds the
+vouched leg — `web_read_cached` adds no request for it to ride.
+
+Probe scripts were throwaway (`Net::HTTP`, keys from the examples config).
 
 Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-context>,
 <https://brave.com/blog/most-powerful-search-api-for-ai/>,
-<https://api-dashboard.search.brave.com/app/documentation/web-search>.
+<https://api-dashboard.search.brave.com/app/documentation/web-search>,
+<https://docs.exa.ai/reference/get-contents>, <https://docs.exa.ai/reference/livecrawling-contents>.
 
-## Open questions
+## Settled in discussion (2026-11-12)
 
-### Settled in discussion (2026-11-12)
-
-- **Two use cases, two wirings, no middle.** Don't mind exfil → `web_search` + `web_scrape`, as
-  today. Want `:tool_vouched` *and* page text → `web_search` + this tool, and no
-  attacker-reachable tool on the node.
-- **A new tool, not a `web_search` parameter**, named **`web_read_cached`**: its own description,
-  output size and wiring; a host can wire `web_search` without it. The `web_` prefix is the
-  family (`web_search`, `web_scrape` already wear it); `read` is the verb pikuri already uses
-  for "give me the content", and `cached` warns it is no live fetch (`web_cache` read as a
+- **Three wirings, the orchestrator picks** by the engines it passes `web_search` and the tools
+  it wires:
+  (a) `web_search`, any engines, no reader — allowed, documented as crippled: on snippets alone a
+  model loops, narrowing the query to learn one fact (observed);
+  (b) `web_search` with cache-capable engines only + `web_read_cached` — vouched search, a
+  no-egress read;
+  (c) `web_search`, any engines, + `web_scrape` — full exfil leg, as today.
+  The (a) loop is the teaching point for (b) in `book/trifecta-detector.md`'s soft-cell part.
+- **A new tool, not a `web_search` parameter**, named **`web_read_cached`**: its own
+  description, output size and wiring. The `web_` prefix is the family; `read` is the verb pikuri
+  already uses for "give me the content"; `cached` says it is no live fetch (`web_cache` read as a
   command to cache something). Its description must say it takes a handle from `web_search`,
   never a URL, since `web_scrape` next door does.
-- **Handles only, never a URL.** A URL argument carries an arbitrary payload
-  (`https://attacker.example/<secret>`), so the vouched grade would rest on Exa never acting on
-  a URL it doesn't know — and Exa is a crawler whose default on an unknown URL is to crawl it.
-  If a `maxAgeHours: -1` miss ever enqueues a later crawl, the secret is in the attacker's log.
-  That is unverifiable from outside, so we don't vouch for it. Same reason rules out following a
-  link found inside a cached page. Cost accepted: after `Agent::History` load the registry is
-  empty, so old handles answer an error telling the model to search again.
-- **Only rows the cache engine itself returned are readable.** A DuckDuckGo row Exa never
-  indexed would miss, and if that miss ever triggered a crawl, the *selection* channel of
-  `D_no_result_scraper` is back. Rows Exa's own search returned come from its index. A row from
-  another engine renders without a handle.
-- **Handle = `<search>.<row>`, both 1-based, per registry**: the registry numbers searches, so
-  the second row of the third search is `3.2`, rendered in the list (`[3.2] Title — url`) so the
-  model copies it, never computes it. Unique for the conversation, so search → read → search →
-  read keeps working and older rows stay readable. An unknown handle answers
-  `Tool::Result.error` naming the valid ones.
-- **Wiring**: the host makes the registry — `Search::ResultHandleRegistry`, a mouthful but
-  clear — and hands it to both —
-  `WebSearch.build(..., registry: nil)` (optional: no registry, no handles — cases (a) and (c)
-  need nothing) and `WebReadCached.build(registry:)` (required). The registry holds
-  handle → url, title, engine; `web_search` writes it, `web_read_cached` reads it.
+- **Prefetch, in the search request.** With a registry, `Search::Exa` adds `text` to its
+  contents and `Search::Brave` calls `/llm/context` instead of `/web/search`; both still render
+  snippets for the model (Exa highlights; Brave `description`, or the first chunk). Same price
+  either engine, one request. (This reverses an earlier "read lazily per handle", which needed
+  a read-time request, a miss path and, for Brave, a second ranked search.)
+- **Handles only, never a URL.** `web_read_cached` answers from the registry, so a URL would mean
+  a fetch — the `D_no_result_scraper` channel, or with a URL argument the whole secret. Same for
+  following a link inside a cached page. Cost accepted: after `Agent::History` load the registry
+  is empty, so old handles answer an error telling the model to search again.
+- **The handle is the "readable" marker.** A row gets one iff its text came back with the search
+  — never a DuckDuckGo row, never an Exa/Brave row that came back without text. No extra symbol.
+- **Handle = `<search>.<row>`, both 1-based, per registry**: the second row of the third search
+  is `3.2`, rendered in the list (`[3.2] Title — url`) so the model copies it, never computes it.
+  Unique for the conversation, so search → read → search → read keeps working and older rows
+  stay readable. An unknown handle answers `Tool::Result.error` naming the valid ones.
+- **Wiring**: the host makes a `Search::ResultHandleRegistry` (a mouthful, but clear) and hands
+  it to both — `WebSearch.build(..., registry: nil)` (optional: no registry, no handles, no
+  prefetch — cases (a) and (c) need nothing) and `WebReadCached.build(registry:)` (required). It
+  holds handle → url, title, text.
   - `WebSearch.build` given a registry but no cache-capable engine raises `ArgumentError`.
   - `WebSearch.build` attaches itself to the registry; `web_read_cached` executed against a
     registry no search ever attached **raises** (a host wiring bug, not something the model can
@@ -98,54 +108,24 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   researcher child can reply "see `7.2`" for a parent holding `web_read_cached`. Not a side
   channel around the delegation gate: rows are what the engine returned, never model-written
   text.
-- **`P_shared_locked`**: shared across agents (and possibly threads, if a host runs agents
-  side by side), so a `Mutex` around the counter and the row map — in Ruby, the stand-in for
-  `AtomicInteger`. A tool batch itself runs one call at a time (`tool_concurrency` off), so
-  numbering within one agent is deterministic.
-- **No prefetch.** `web_read_cached` reads lazily: it looks the handle up and asks the row's
-  *engine* for the page (`entry.engine.cached_page(entry.url)` or so), so it never names Exa; a
-  future cache-capable engine implements that one method.
-- **The handle is the "readable" marker** — only a row whose page the engine can serve from
-  cache gets one; no extra symbol. In case (c) no reader is wired, so no handles at all.
-- **Three wirings, the orchestrator picks** by the engines it passes `web_search` and the tools
-  it wires:
-  (a) `web_search`, any engines, no reader — allowed, documented as crippled: on snippets alone
-  a model loops, narrowing the query to learn one fact (observed);
-  (b) `web_search` with cache-capable engines only + `web_read_cached` — `:tool_vouched` and useful;
-  (c) `web_search`, any engines, + `web_scrape` — full exfil leg, as today.
-  The (a) loop is the teaching point for (b) in `book/trifecta-detector.md`'s soft-cell part.
+- **`P_shared_locked`**: shared across agents (and possibly threads), so a `Mutex` around the
+  counter and the row map — Ruby's stand-in for `AtomicInteger`. A tool batch runs one call at a
+  time (`tool_concurrency` off), so numbering within one agent is deterministic.
+- **The registry keeps the last 100 searches** (a constant, not a knob) — ~100–140 KB of text
+  per search, so ≤ ~14 MB, tree-wide. The oldest search's rows drop silently; reading one of its
+  handles answers "search N is no longer stored; search again" — told apart from a handle that
+  never existed by the search number alone (≤ counter − 100), same advice as after a resume.
+- **Attack vectors are documented publicly**, no private store: nothing here is an unfixed bug
+  to embargo, and the host choosing (b) over (c) is who needs to know.
 
-### Still open
-- `Q_readable_at_search_time` — is "Exa can serve this row from cache" knowable from the
-  `/search` response? With `maxAgeHours: -1`, a highlight can only come from the cache, so a
-  row carrying highlights should be readable; all 5 rows of one probe search did. A row
-  evicted between search and read answers `CONTENT_NOT_CACHED` → `Tool::Result.error`.
-- `Q_exa_miss` — does `/contents` with `maxAgeHours: -1` answer a miss with an error and never a
-  crawl? **Probed 2026-11-12** (`/contents`, `text: {maxCharacters: 300}`):
-  - an Exa search row (`rrees.prose.sh/ruby-data`) → `success`, `source: "cached"`, $0.001;
-  - two never-seen URLs with a random token (`www.example.com/?pikuri-probe=<hex>`,
-    `httpbin.org/anything/pikuri-probe-<hex>`) → `error`, tag `CONTENT_NOT_CACHED`,
-    `httpStatusCode: 404`, in 262 ms (no synchronous fetch fits that), $0 for the misses;
-  - the same two, 10 minutes later → still `CONTENT_NOT_CACHED`, $0. No crawl that landed in the
-    cache within 10 minutes.
-  Not proven: a crawl that runs later than that, or one that never reaches the cache, is
-  invisible here. Closing it takes a host whose access log we can read, watched for days. With
-  handles the stakes are small but not zero: a handle names a row Exa's own index returned, so
-  no model-made payload can ride a miss — but a row evicted between search and read, re-crawled
-  on miss, would tell its owner *which* row was picked (the `D_no_result_scraper` selection
-  channel, on a rare path). With URL input it would be the whole secret.
-  **Accepted risk (2026-11-12).** It needs three things at once: the attacker's page indexed and
-  returned, evicted in the minutes between search and read (not the attacker's to time), and a
-  re-crawl on a `-1` miss (unobserved). Each burnt page needs a fresh path, so it is slow and
-  targeted. Documented **publicly** — no private attack-vector store: there is no fix to
-  embargo, the host choosing wiring (b) over (c) is who needs it, and `D_no_result_scraper`
-  already publishes the general channel. On graduation: one line in `SECURITY.md` *Non-goals*
-  plus the `web_read_cached` yardoc.
-- `Q_brave_live_fetch` — does LLM Context hit the origin at request time? If yes, it carries
-  exactly the leak `maxAgeHours: -1` closed for Exa, and Brave stays out. Testable: a page on a
-  host we control, indexed by Brave, queried through LLM Context while watching its access log.
-- `Q_brave_shape` — if Brave turns out cache-only, LLM Context fits a different tool ("search
-  with page chunks", replacing snippets) rather than "read this URL". Worth a tool, or just
-  `extra_snippets` on the existing provider?
-- `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*); the URLs a user's
-  agent reads are as revealing as its queries. The tool's doc should say so, as Exa's does.
+## Still open
+
+- `Q_search_cache` — `Engines::CACHE` is on disk, keyed by the query, and holds the rendered
+  result. With a registry the entry must hold rows with text — a different key (or subdir) so a
+  snippet-only hit never serves a reader, and ~10× bigger entries.
+- `Q_brave_snippet` — what `web_search` shows for a Brave row from `/llm/context`:
+  `sources[url].description` (needs `enable_source_metadata=true`), or the first chunk?
+- `Q_text_cap` — Exa `maxCharacters` per row and Brave's 32k-token total: what to request, and
+  `web_read_cached`'s own `max_chars` / truncation marker, shaped like `web_scrape`'s.
+- `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*). Prefetch sends
+  nothing extra — the query was going anyway — but the tool's doc should say what it says.
