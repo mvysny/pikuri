@@ -12,7 +12,7 @@ the row *selection* is the channel (`D_no_result_scraper`).
 
 When a host wants page text, `web_search` asks its engine for **the page text of every row in the
 same search request**, served from the engine's own index — never from the origin — and stores it
-in a registry. A new tool, `web_read_cached`, returns a stored row's text by handle. It makes **no
+in an on-disk page store. A new tool, `web_read_cached`, returns a stored row's text by handle. It makes **no
 request at all**, so it holds no egress leg:
 
 ```ruby
@@ -50,6 +50,17 @@ means pikuri never calls it.)
 - Query-only — no URL input. Reading one row later would mean re-running its query pinned by an
   inline Goggle (`"$discard\n/<path>$site=<host>"`, which works) — needing the page to rank again
   and a second request. Prefetch avoids all of that.
+- **Snippet candidates** (two queries × 10 rows): `/web/search`'s `description` is a
+  **query-biased** excerpt, the best for picking a row ("The biggest difference between Data and
+  Struct is that Data objects are immutable."). `/llm/context`'s `sources[url].description`
+  (`enable_source_metadata=true`) is the page's **meta description**, query-independent: usually a
+  fair summary, sometimes useless (GitHub's "LLM inference in C/C++. Contribute to …", "Psst, kid,
+  want some cheap and small LLMs?"). The first chunk (threshold `disabled`) is page order —
+  title, lede, often the meta description again, sometimes boilerplate ("Skip to content", a
+  byline), now and then gold (llama.cpp README's `--ctx-size` row).
+- **The two endpoints rank differently**: only 5–6 of 10 URLs in common for the same query, so
+  switching endpoints changes which pages the model sees, not just the snippets — better or worse,
+  unmeasured.
 
 **DuckDuckGo — incompatible.** HTML scrape, snippets only; its rows get no handle.
 
@@ -79,67 +90,94 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   already uses for "give me the content"; `cached` says it is no live fetch (`web_cache` read as a
   command to cache something). Its description must say it takes a handle from `web_search`,
   never a URL, since `web_scrape` next door does.
-- **Prefetch, in the search request.** With a registry, `Search::Exa` adds `text` to its
-  contents and `Search::Brave` calls `/llm/context` instead of `/web/search`; both still render
-  snippets for the model (Exa highlights; Brave `description`, or the first chunk). Same price
-  either engine, one request. (This reverses an earlier "read lazily per handle", which needed
-  a read-time request, a miss path and, for Brave, a second ranked search.)
-- **Handles only, never a URL.** `web_read_cached` answers from the registry, so a URL would mean
-  a fetch — the `D_no_result_scraper` channel, or with a URL argument the whole secret. Same for
-  following a link inside a cached page. Cost accepted: after `Agent::History` load the registry
-  is empty, so old handles answer an error telling the model to search again.
-- **The handle is the "readable" marker.** A row gets one iff its text came back with the search
-  — never a DuckDuckGo row, never an Exa/Brave row that came back without text. No extra symbol.
-- **Handle = `<search>.<row>`, both 1-based, per registry**: the second row of the third search
-  is `3.2`, rendered in the list (`[3.2] Title — url`) so the model copies it, never computes it.
-  Unique for the conversation, so search → read → search → read keeps working and older rows
-  stay readable. An unknown handle answers `Tool::Result.error` naming the valid ones.
-- **Wiring**: the host makes a `Search::ResultHandleRegistry` (a mouthful, but clear) and hands
-  it to both — `WebSearch.build(..., registry: nil)` (optional: no registry, no handles, no
-  prefetch — cases (a) and (c) need nothing) and `WebReadCached.build(registry:)` (required). It
-  holds handle → url, title, text.
-  - `WebSearch.build` given a registry but no cache-capable engine raises `ArgumentError`.
-  - `WebSearch.build` attaches itself to the registry; `web_read_cached` executed against a
-    registry no search ever attached **raises** (a host wiring bug, not something the model can
-    react to). Not checkable at build time — the two builds come in either order.
-- **One registry for the whole agent tree, no `for_sub_agent`.** `SubAgentTool` rebuilds each
-  tool through its own no-arg `for_sub_agent`, so two tools each minting a fresh registry would
-  split the pair in the child. Sharing is better anyway: handles are unique tree-wide, and a
-  researcher child can reply "see `7.2`" for a parent holding `web_read_cached`. Not a side
-  channel around the delegation gate: rows are what the engine returned, never model-written
-  text.
-- **`P_shared_locked`**: shared across agents (and possibly threads), so a `Mutex` around the
-  counter and the row map — Ruby's stand-in for `AtomicInteger`. A tool batch runs one call at a
-  time (`tool_concurrency` off), so numbering within one agent is deterministic.
-- **The registry keeps the last 100 searches** (a constant, not a knob) — ~100–140 KB of text
-  per search, so ≤ ~14 MB, tree-wide. The oldest search's rows drop silently; reading one of its
-  handles answers "search N is no longer stored; search again" — told apart from a handle that
-  never existed by the search number alone (≤ counter − 100), same advice as after a resume.
+- **Prefetch, in the search request.** In text mode `Search::Exa` adds `text` to its contents
+  and `Search::Brave` calls `/llm/context` instead of `/web/search`; both still render snippets
+  for the model. Same price either engine, one request. (This reverses an earlier "read lazily
+  per handle", which needed a read-time request, a miss path and, for Brave, a second ranked
+  search.)
+- **Handles only, never a URL.** `web_read_cached` answers from the page store, so a URL would
+  mean a fetch — the `D_no_result_scraper` channel, or with a URL argument the whole secret.
+  Same for following a link inside a cached page.
+- **The page store is on disk, keyed by handle — no in-memory registry.** One JSON file per
+  page, `<handle>.json` holding url, title, the full text and the engine's index timestamp when
+  it gives one, in its own dir under `UrlCache::ROOT_DIR`. A search writes every row that came
+  back with text (overwriting a stale or same-URL entry); `web_read_cached` reads. Disk, not
+  memory, so handles survive `Agent::History` load, are shared tree-wide and across processes,
+  and need no counter, `Mutex`, eviction cap or wiring object.
+- **Handle = `HMAC-SHA256(secret, url)`, first 8 hex digits**, rendered in the list
+  (`[a3f9c21e] Title — url`) so the model copies it. The secret is random, made once, kept
+  beside the files (mode `0600`). A keyed hash because each property the alternatives broke
+  matters:
+  - *Collision-free by construction*: when `<h8>.json` is fresh and holds a different URL, the
+    new URL takes 12 digits instead. Random collisions are rare (~10k fresh entries in 2³²);
+    engineered ones need the secret — an unkeyed hash lets a crafted URL take over a popular
+    page's handle in minutes of CPU, defeating the model's choice of row.
+  - *Never aliased*: a handle is a function of its URL, so a stale one can't come back meaning
+    another page — the bug in a per-process `<search>.<row>` counter, which restarts at 1 after
+    a resume, and in any scheme that reuses freed IDs.
+  - *Not enumerable*: the store is machine-wide, so small or sequential IDs would let a model in
+    one conversation walk through another's research — private data reaching a node that holds
+    untrusted text and a query leg, all three legs. At 2³² a blind guess hits once in ~400k
+    calls, and then a random page. Without the URL there is no way to compute a handle; with
+    it, the only way to get one is a search that writes fresh text anyway.
+  - *Same page, same handle* across repeated queries and searches.
+  Deleting the secret changes every handle — old ones answer "search again", a safe failure.
+  **Why not shorter** (say 4 hex, growing on collision): a keyed hash is unpredictable, not
+  unguessable — what counts is the store's fill. ~10k entries in 4 hex (65,536) is a ~14% hit
+  per blind guess, 5 hex ~1%; the shortest handles are always the most guessable, so the length
+  is set by the guess rate (space ≳ 10⁵ × store), not by collisions. 8 hex is a few tokens, the
+  size of the tool-call ids models already copy.
+- **The handle is the "readable" marker.** A row gets one iff its text came back with *this*
+  search — never a DuckDuckGo row, never an Exa/Brave row without text, even when the store
+  holds that URL from another search (else a handle's presence would tell one session what
+  another read). No extra symbol. An unknown or expired handle answers `Tool::Result.error`
+  telling the model to search again.
+- **7-day TTL on the page store** — how long a handle stays readable, not freshness: the text
+  is the engine's snapshot (Brave's were 1.3–2934 h old when searched), no staler on a later
+  read. Covers resuming the next working day or after a weekend. Freshness is shown instead:
+  the read prints the engine's index timestamp when there is one (Brave
+  `fetched_content_timestamp`; Exa's to check). Asking the origin for its `Cache-Control` is
+  out: the query picks which pages rank, so a per-row origin request is the
+  `D_no_result_scraper` channel again, and the leg turns `:attacker_reachable`.
+- **Plain files, no SQLite.** The handle is the URL index (looking one up is computing it), so
+  SQLite would buy only atomic writes and real expiry — not worth a native extension in
+  `pikuri-core`. `UrlCache` never deletes stale files; full texts over 7 days grow the dir.
+  Accepted; a reaper when it measurably hurts.
+- **Wiring**: `WebSearch.build(..., page_text: false)` turns text mode on; given `true` with no
+  cache-capable engine it raises `ArgumentError`. `web_read_cached` is a stateless constant like
+  `FETCH`, `P_shared_benign` like `UrlCache` (racing writers write the same bytes). Lost: a
+  reader wired without a text-mode search can't be caught — every read answers "search again".
+- **One store tree-wide, no `for_sub_agent`.** A researcher child can reply "see `a3f9c21e`" for
+  a parent holding `web_read_cached`. Not a side channel around the delegation gate: rows are
+  what the engine returned, never model-written text.
 - **Attack vectors are documented publicly**, no private store: nothing here is an unfixed bug
   to embargo, and the host choosing (b) over (c) is who needs to know.
+- **Brave's snippet from `/llm/context` is the meta description**, falling back to the first
+  chunk when empty. In wiring (b) the snippet only steers *which* row to read — the full text is
+  one `web_read_cached` call away — and the query-biased `/web/search` excerpt would cost a second
+  request or a chunk-scoring heuristic. Without text mode Brave stays on `/web/search`.
+- **The search cache holds rows, not Markdown.** An entry is JSON `[{url, title, snippet,
+  has_text}]`; rendering and handle lookup run after the cache lookup. `count_rendered` goes: the
+  summary counts rows, which a hostile snippet can't inflate. No migration of old Markdown
+  entries (nothing in production).
+  - **Text mode gets its own query cache**, a second `UrlCache` under `web_search_text/` beside
+    `web_search/`: the two modes return different rows (Brave's endpoint and ranking), so a
+    snippet-only hit never hides handles and a `/llm/context` ranking never reaches a
+    snippet-mode wiring. Text lives only in the page store; its 7-day TTL outlives the query
+    cache's 2 h, so a hit's rows are still readable.
+  - A hit makes no request, so no leg.
+- **Take all the text the engine gives; trim at read time.** The search asks for each engine's
+  maximum (Exa: no `maxCharacters`, or its ceiling; Brave: the per-URL and total token ceilings —
+  both limits to confirm against the docs when implementing), and the page store keeps it whole.
+  `web_read_cached` takes `max_chars` with `web_scrape`'s defaults (20k, clamped to 100k) and the
+  same truncation marker — one truncation helper for both tools. Its output starts with the
+  stored url and title. No optimizing until there's a measured need.
+- **Brave chunks are joined with a visible gap** (`\n\n…\n\n`), so excerpts don't read as one
+  continuous page.
 
 ## Still open
 
-- `Q_search_cache` — `Engines::CACHE` is on disk, keyed by the query, and holds the rendered
-  result. With a registry the entry must hold rows with text — a different key (or subdir) so a
-  snippet-only hit never serves a reader, and ~10× bigger entries.
-- `Q_brave_snippet` — what `web_search` shows for a Brave row from `/llm/context`. **Probed
-  2026-11-12**, two queries × 10 rows, against today's `/web/search` `description`:
-  - `/web/search` `description` is a **query-biased** excerpt — the best for picking a row
-    ("The biggest difference between Data and Struct is that Data objects are immutable.").
-  - `/llm/context` `sources[url].description` (`enable_source_metadata=true`) is the page's
-    **meta description**, query-independent: usually a fair summary, sometimes useless (GitHub's
-    "LLM inference in C/C++. Contribute to …", "Psst, kid, want some cheap and small LLMs?").
-  - The first chunk (threshold `disabled`) is page order — title, lede, often the meta
-    description again, sometimes boilerplate ("Skip to content", a byline), now and then gold
-    (llama.cpp README's `--ctx-size` row).
-  - **The two endpoints rank differently**: only 5–6 of 10 URLs in common for the same query.
-    Switching endpoints changes which pages the model sees, not just the snippets — better or
-    worse, unmeasured.
-  Leaning: meta description, falling back to the first chunk when empty. In wiring (b) the
-  snippet only has to steer *which* row to read — the full text is one `web_read_cached` call
-  away — and the query-biased excerpt would cost a second request or a chunk-scoring heuristic.
-- `Q_text_cap` — Exa `maxCharacters` per row and Brave's 32k-token total: what to request, and
-  `web_read_cached`'s own `max_chars` / truncation marker, shaped like `web_scrape`'s.
 - `Q_privacy` — Exa trains on query data (`Search::Exa` *Privacy posture*). Prefetch sends
-  nothing extra — the query was going anyway — but the tool's doc should say what it says.
+  nothing extra — the query was going anyway — so `web_read_cached`'s doc says it sends nothing
+  and links each engine's posture. Unchecked: whether Brave's API privacy notice (90-day logs,
+  no training) covers `/llm/context` as well as `/web/search`.
