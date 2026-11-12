@@ -26,8 +26,7 @@ module Pikuri
       # a class-level constant, so every agent in the VM queues behind the same
       # one. Per-agent limiters would let ten agents fire ten simultaneous
       # requests from one IP and earn exactly the ban this class exists to
-      # avoid. (Contrast {Pikuri::Agent::Listener::RateLimited}, which paces one
-      # renderer's repaints and is therefore per listener chain.)
+      # avoid.
       #
       # Two consequences of that scope, both correct and both surprising:
       #

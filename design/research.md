@@ -650,8 +650,8 @@ Closing that gap is the whole portable half of grok-build's template machinery.
 sealed `Data.define` hierarchy covering turns, thinking, assistant text, both delta modes, tool
 calls, tool results, token usage, context cap and cancellation, all through one `on_event` entry
 point. langchainrb's two-callback model is the same *architectural shape* pikuri started with; the
-sealed hierarchy is the upgrade pi and opencode have and Ruby otherwise lacks. The four bundled
-listeners (`Terminal`, `InMemoryEventList`, `TokenLog`, `RateLimited`) are examples of the shape a
+sealed hierarchy is the upgrade pi and opencode have and Ruby otherwise lacks. The three bundled
+listeners (`Terminal`, `InMemoryEventList`, `TokenLog`) are examples of the shape a
 new sink would take, not "the" listener.
 
 On compaction, pikuri's answer today is `exit 1` in a `bin/` script

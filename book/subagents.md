@@ -214,9 +214,8 @@ A sub-agent isn't a clone of its parent. The split:
   doesn't, consistently.
 - **`listeners`** — but routed through
   `ListenerList#for_sub_agent(id:)` first, so the bundled
-  `Terminal` listener can pad its prefix with the child's id,
-  `TokenLog` can tag the child's per-agent snapshot, and
-  `RateLimited` can split its budget. Listeners that want
+  `Terminal` listener can pad its prefix with the child's id
+  and `TokenLog` can tag the child's per-agent snapshot. Listeners that want
   sub-agent awareness implement `for_sub_agent`; ones that don't
   fall through to the default.
 

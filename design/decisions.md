@@ -2438,9 +2438,6 @@ leave the machine.
 **Decision.** Scope a limiter to the resource, which here means a
 class-level constant per provider: every agent in the VM queues behind the
 same limiter, whether hosts share one `web_search` tool or build ten.
-`Pikuri::Agent::Listener::RateLimited` is the same rule pointing the other
-way — it paces one renderer's repaints, a per-listener resource, so
-`for_sub_agent` mints a fresh one per child.
 
 **Alternatives rejected.**
 

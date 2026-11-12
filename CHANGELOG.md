@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::Agent::Listener::RateLimited` is gone — nothing in pikuri wired it, and pacing a renderer's repaints is the renderer's business. A host that coalesced streaming deltas with it keeps a copy of the class in its own code.
 - **Breaking:** `pikuri-assistant` is gone, and the book's stub assistant chapter with it; the coda now points at the apps built on pikuri (pikuri-tui, pikuri-web, Puri), where the assistant's shape is being worked out. Wire `bin/pikuri-code`'s MCP registry, or one of those apps, instead.
 - **Breaking:** `pikuri-code` and `pikuri-os` no longer depend on the gems only their demo binaries wire: `pikuri-code` drops `pikuri-tasks` and `pikuri-web`, `pikuri-os` drops `pikuri-pdf`, `pikuri-subagents` and `pikuri-web`. A host that relied on one arriving transitively adds it to its own `Gemfile`.
 
