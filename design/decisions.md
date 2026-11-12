@@ -20,6 +20,36 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_no_result_scraper — Why is there no scraper confined to the last search's results?
+
+**Context.** `web_search` is the one `:tool_vouched` egress leg: a query reaches an engine this repo
+picked, so a secret pushed into it cannot be read back. Proposed 2026-11-12: a `web_scrape` taking
+no URL, only a handle to a row of the last search, so that a destination the model cannot type
+would keep that grade beside it.
+
+**Decision.** Not built. Worked through against the three `:tool_vouched` clauses, it fails the
+first and the third. The model does not type the host, but it writes the query, and the query
+picks the rows — "search `site:attacker.example`" makes every row the attacker's. Pinning the URL
+kills the `?k=<secret>` payload and leaves the *selection*: the attacker publishes sixteen pages
+labelled "choose this for 0" … "choose this for f", and the injection has the model scrape, per
+hex digit of a key, the row carrying that digit's label. The access log returns the key in
+timestamp order — one search for the lot, four bits a GET, more pages for more bits. So the tool
+is `ASSUMED` like `web_scrape`, and `max` at the node hardens `web_search` beside it.
+
+**Alternatives rejected.**
+
+- **Accept it because it is slow.** A 40-character key is 40 calls, and the loop is unbounded
+  (`D_no_step_limit`); the detector grades a leg's presence, never its bandwidth.
+- **Filter the query** — refuse `site:`, rate-limit scrapes. A planted unique token ranks as well
+  as `site:` does, and the trifecta is broken by construction, never by filtering (AGENTS.md
+  *Promises*).
+
+**Consequences.** The same channel is why `Search::Exa` pins `maxAgeHours: -1`: a live crawl during
+a search tells a page's owner which of their pages the query matched. A full-text read that keeps
+the vouched grade must be served from the engine's own cache, never fetched from the origin.
+
+---
+
 ## D_bare_rejected — Why does a declined confirmation carry no reason, with every typed word a separate `Redirected`?
 
 **Context.** `Confirmer::Rejected(reason:)` meant both "no, stop" and "do it differently", and the
