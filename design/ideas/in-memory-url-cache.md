@@ -115,14 +115,14 @@ Its page store moves from disk to memory, which revises several settled bullets 
   `cached-result-contents` once settled on (for the ToS alone) is dropped; stale files stay
   until their key is overwritten, as today. Disk growth is a separate, older question, for when
   it hurts.
+- **A `NULL` on each class** — `UrlFileCache::NULL`, `UrlInMemoryCache::NULL`, each answering
+  `read` (always `nil`), `write` (stores nothing) and `fetch` (always yields). Identical in
+  behaviour, but there is no common parent to hold a shared one, and a module invented just to
+  hold it is code-sharing by inheritance. `spec_helper.rb` stubs every cache accessor — the
+  file ones, `Engines`' two memory ones, the page store's — to its class's `NULL`; specs that
+  exercise caching inject a real one (a tmpdir file cache, a fresh memory cache).
 
 ## Still open
-
-- `Q_spec_seam` — `spec_helper.rb` stubs each module's `.cache` to `UrlCache::NULL`. `Engines`
-  grows a second accessor (`.memory_cache`) and both need a null: either one shared `NULL`
-  object answering `read` / `write` / `fetch` (where does it live, with no common parent?), or
-  a `NULL` on each class. Leaning: a `NULL` on each — two tiny objects, no shared home to
-  invent.
 - `Q_can_cache_name` — `can_cache?` (as proposed) vs `storable?` / `results_storable?`. The
   predicate is about the engine's *terms*, not a technical ability; `can_cache?` reads as the
   latter. Leaning: keep `can_cache?`, say "per its terms" in the yardoc.
