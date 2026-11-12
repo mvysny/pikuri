@@ -125,6 +125,13 @@ Sources: <https://api-dashboard.search.brave.com/documentation/services/llm-cont
   no model-made payload can ride a miss — but a row evicted between search and read, re-crawled
   on miss, would tell its owner *which* row was picked (the `D_no_result_scraper` selection
   channel, on a rare path). With URL input it would be the whole secret.
+  **Accepted risk (2026-11-12).** It needs three things at once: the attacker's page indexed and
+  returned, evicted in the minutes between search and read (not the attacker's to time), and a
+  re-crawl on a `-1` miss (unobserved). Each burnt page needs a fresh path, so it is slow and
+  targeted. Documented **publicly** — no private attack-vector store: there is no fix to
+  embargo, the host choosing wiring (b) over (c) is who needs it, and `D_no_result_scraper`
+  already publishes the general channel. On graduation: one line in `SECURITY.md` *Non-goals*
+  plus the `web_read_cached` yardoc.
 - `Q_brave_live_fetch` — does LLM Context hit the origin at request time? If yes, it carries
   exactly the leak `maxAgeHours: -1` closed for Exa, and Brave stays out. Testable: a page on a
   host we control, indexed by Brave, queried through LLM Context while watching its access log.
