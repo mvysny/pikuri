@@ -276,18 +276,23 @@ Notes on the individual placements:
 
 The assistant/code split in `book/README.md` collapses into one track that
 ends on the climax: setup, base vocabulary (chat, sub-agents), retrieval
-(vectordb, rag), security, measuring the trifecta, tasks, maybe wire,
-hosting, **the climax chapter**, then the coda ("go run Puri").
+(vectordb, rag), security, measuring the trifecta, tasks, hosting, **the
+climax chapter**, then the coda ("go run Puri").
 
-- `Q_wire_chapter`: with memory and skills both in the workshop, nothing in vanilla
-  injects a mid-conversation message any more. Both of `wire.md`'s victims
-  of the dropped `system` message (memory prefetch, skill promotions) are
-  gone, and so is the core `Control::Interloper`'s only in-repo caller
-  (`Pikuri::Skill::Extension`). Options: `wire.md` moves to book 2 with
-  skills, where its bug lives, or it stays with `pikuri-wire-check` as a
-  standalone debugging demo and a forward link to the bug. Lean: book 2.
-  The template-flattening half (the messages array is not the prompt) is a
-  vanilla concept either way; maybe it moves into `chat.md`.
+**`wire.md` moves to book 2.** With memory and skills both in the workshop,
+nothing in vanilla injects a mid-conversation message any more, so both of
+the chapter's victims of the dropped `system` message (memory prefetch, skill
+promotions) live there. What stays in vanilla:
+
+- **`pikuri-core/bin/pikuri-wire-check`.** It requires only core, so the book 2
+  chapter runs vanilla's binary, the right direction for a dependency.
+- **`Control::Interloper`, as core machinery.** Its last in-repo caller,
+  `Pikuri::Skill::Extension`, moves out, but pikuri-tui and pikuri-web inject
+  through it, and the workshop will. Revisit if it ever has no caller at all.
+- **The invariant** that nothing pikuri appends mid-conversation is
+  `role: :system`, with `D_reference_text_as_user_turn` behind it.
+- Maybe the template-flattening half of the lesson (the messages array is not
+  the prompt), folded into `chat.md` as a paragraph with a forward link.
 
 Where the climax chapter sits relative to hosting and the shorter chapters
 is open; it may read best right after measuring the trifecta, since that's
@@ -362,7 +367,7 @@ project and develops independently, like any other app built on pikuri.
   and its cage (harvests `code.md`'s sandbox half and `os-assistant.md`
   Part 1), the OS assistant (the opposite cut: `FullFsNoNet`), memories
   (mem0: automatic capture on the no-egress agents that can afford it),
-  skills, the wire chapter (if it moves), your first MCP server, MCPs
+  skills, the wire chapter, your first MCP server, MCPs
   revisited, language intelligence, then the coding agent as the climax. "Simple"
   means checking whether plan mode, `git_clone` and `GIT_REPO_RESEARCHER`
   each earn a place in it.
@@ -386,7 +391,7 @@ project and develops independently, like any other app built on pikuri.
   `grok-build-cheap-borrows.md`. `thunderbird*.md` (3) stay with the gem;
 - book chapters: `code.md`, `lsp.md`, `os-assistant.md`,
   `security-revisited.md`, `memories.md`, `skills.md`, `mcp.md`,
-  `mcp-revisited.md`, probably `wire.md`.
+  `mcp-revisited.md`, `wire.md`.
 
 **Docs that stay but need edits:**
 
