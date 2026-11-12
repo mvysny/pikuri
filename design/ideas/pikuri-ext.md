@@ -141,7 +141,7 @@ Left out, and why:
 
 - **Reminders.** `pikuri-thunderbird` doesn't read or write tasks (VTODO),
   and a reminder that notifies needs a resident process a CLI doesn't have.
-  Puri keeps them.
+  Puri leaves them out too, at least to start with.
 - **The machine itself.** The agent tells the user to use another agent for
   that. In book 1 the pointer is book 2's `pikuri-os`.
 - **`pikuri-extractors`.** `pikuri-pdf` is enough. Office formats are a
