@@ -119,10 +119,8 @@ in:
     local Thunderbird profile as five read-only mail/calendar
     tools plus two human-gated hand-offs. No network, no
     autonomous send.
-  - [`pikuri-assistant`](pikuri-assistant/README.md) — MCP-aware
-    demo binary.
   - [`pikuri`](pikuri/README.md) — convenience metagem:
-    `gem install pikuri` pulls in all sixteen.
+    `gem install pikuri` pulls in all of them.
 
 For browsable API docs, run `bundle exec yard` inside any gem
 directory (output is gitignored) — or, once gems are published,

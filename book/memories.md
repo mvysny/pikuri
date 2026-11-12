@@ -442,8 +442,9 @@ a **hard boundary, not advice**: porting memory onto an egress-capable
 agent re-opens recall-poisoning, and you'd have to re-derive the
 mitigations (cap recall size, frame recalled text as untrusted, log
 every recall) before doing it. [The security chapter](security.md) makes the
-full argument; [the universal-assistant chapter](assistant.md) is where memory, vector
-search, and MCP finally share one agent and the cuts have to be made.
+full argument. An assistant where memory, vector search and MCP share
+one agent, and the cuts have to be made, is still being worked out in
+[the apps built on pikuri](apps.md).
 
 ## The forget story
 
@@ -479,13 +480,12 @@ for readers who want the full design journey rather than the tour.
 
 This chapter and the vector-DB one are the two halves of recall: vector search *over a
 corpus you indexed*, and memory *of facts the agent learned about
-you*. They pair naturally inside `pikuri-assistant`
-([the universal-assistant chapter](assistant.md)) — but that's still a few chapters off,
-and it's the chapter where these private capabilities first share an
-agent that *also* has egress, so it leans hardest on the security kit.
+you*. They pair naturally inside one assistant, but an assistant
+where these private capabilities share an agent that *also* has
+egress leans hardest on the security kit.
 
-Before that, [Your first MCP server](mcp.md) adds the
-last capability the assistant needs: external tool servers that give
+First, [Your first MCP server](mcp.md) adds the last capability
+such an assistant needs: external tool servers that give
 the agent integrations pikuri itself doesn't ship. It goes one step
 gentler than this chapter — the server you wire in reads only a public
 book catalogue, so nothing of yours is at stake while you learn the

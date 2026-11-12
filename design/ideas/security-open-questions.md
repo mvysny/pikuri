@@ -17,7 +17,7 @@ Threat model scales with capability. `bin/pikuri-chat` today is
 small surface (calculator + three stateless network-out tools, no
 filesystem writes); `bin/pikuri-code` has the full
 read/write/edit/bash kit and is where most of the below bites; an
-eventual `bin/pikuri-assistant` with MCP-backed Gmail / Calendar /
+eventual assistant app with MCP-backed Gmail / Calendar /
 Slack inherits both sets and adds the privacy-of-personal-data
 axis.
 

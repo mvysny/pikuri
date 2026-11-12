@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
     pulls in pikuri-core, pikuri-extractors, pikuri-pdf, pikuri-web,
     pikuri-skills, pikuri-tasks, pikuri-memory, pikuri-workspace,
     pikuri-code, pikuri-lsp, pikuri-mcp, pikuri-subagents,
-    pikuri-vectordb, pikuri-rag, pikuri-assistant, and pikuri-os in one
+    pikuri-vectordb, pikuri-rag, pikuri-os and pikuri-thunderbird in one
     shot, and
     +require 'pikuri'+ boots all of them.
 
@@ -50,7 +50,6 @@ Gem::Specification.new do |spec|
   # +X.Y.Z+ requires every sibling already at +X.Y.Z+ — the top-level
   # Rakefile's +rake release+ task handles the lockstep bump so this
   # constraint is satisfied automatically on every release.
-  spec.add_dependency 'pikuri-assistant',  "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-code',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-core',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-extractors', "= #{Pikuri::VERSION}"

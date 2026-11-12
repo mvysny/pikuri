@@ -19,7 +19,8 @@ march on.
 
 ## [Unreleased]
 
-- **Breaking:** `pikuri-code`, `pikuri-os` and `pikuri-assistant` no longer depend on the gems only their demo binaries wire: `pikuri-code` drops `pikuri-tasks` and `pikuri-web`, `pikuri-os` drops `pikuri-pdf`, `pikuri-subagents` and `pikuri-web`, and `pikuri-assistant` keeps only `pikuri-core`. A host that relied on one arriving transitively adds it to its own `Gemfile`.
+- **Breaking:** `pikuri-assistant` is gone, and the book's stub assistant chapter with it; the coda now points at the apps built on pikuri (pikuri-tui, pikuri-web, Puri), where the assistant's shape is being worked out. Wire `bin/pikuri-code`'s MCP registry, or one of those apps, instead.
+- **Breaking:** `pikuri-code` and `pikuri-os` no longer depend on the gems only their demo binaries wire: `pikuri-code` drops `pikuri-tasks` and `pikuri-web`, `pikuri-os` drops `pikuri-pdf`, `pikuri-subagents` and `pikuri-web`. A host that relied on one arriving transitively adds it to its own `Gemfile`.
 
 - **Breaking:** the web tools left pikuri-core for the new `pikuri-web` gem, renamed into its namespace — `Pikuri::Web::Search` (was `Tool::WebSearch` plus `Tool::Search::*`), `Web::SCRAPE`, `Web::FETCH`, `Web::READ_CACHED`, `Web::Scraper`, `Web::UrlCache` — so an agent that wires none never loads them. Add `gem 'pikuri-web'` and `require 'pikuri-web'`, then rename the constants; see `D_read_what_you_run`.
 - `Pikuri::Testing` scripts now drive a `streaming: true` agent with every verb, a tool call streamed in fragments as a server sends it; `Script#responses` holds `Testing::Completion`s.

@@ -9,13 +9,12 @@ rather than aspirational: [the OS-assistant chapter](os-assistant.md) is a
 full-disk OS assistant made safe by a kernel-severed network,
 [the coding-agent chapter](code.md) is a coding agent with `bash` plus
 network egress, [the MCP-revisited chapter](mcp-revisited.md) wires in MCPs
-that hold credentials, and [the universal-assistant chapter](assistant.md) is the
-universal assistant that reaches for all three trifecta legs at
-once. Each of those rests on a piece of what this chapter
-introduces.
+that hold credentials. Each of those rests on a piece of what this
+chapter introduces, and so does any app that
+[reaches for all three trifecta legs at once](apps.md).
 
 That framing matters because pikuri is a *toolkit*, not a single
-product. `pikuri-chat`, `pikuri-assistant`, and `pikuri-code` are
+product. `pikuri-chat`, `pikuri-os` and `pikuri-code` are
 three harnesses someone built on `pikuri-core`; the next one is
 the one *you* build. This chapter is about how to pick a security
 model for it. By the end you should be able to look at any agent
@@ -201,8 +200,8 @@ heart of this chapter:
    built a coding agent.** A coding agent reads your source (a),
    pulls docs and dependencies (b), and runs builds and pushes
    (c). You *cannot* take a leg away without breaking the job.
-   `pikuri-code` and `pikuri-assistant` are exactly this shape, and
-   they don't pretend otherwise. Now you fall back to the rest of
+   `pikuri-code` is exactly this shape, and it doesn't pretend
+   otherwise. Now you fall back to the rest of
    the kit, and the split is **whether a human is present**:
    - **Attended** (someone is driving the session): blast-radius
      containment as the floor, the human gate as the live check.
@@ -518,8 +517,8 @@ Stated plainly so the model above isn't mistaken for a guarantee
   docker socket and they're exposed too.
 - **A parent agent with file-read + egress** reassembles the
   trifecta if the model skips delegating to a persona. `pikuri-code`
-  and `pikuri-assistant` have this shape and rely on the system
-  prompt to nudge delegation — not on capability to enforce it.
+  has this shape and relies on the system prompt to nudge
+  delegation — not on capability to enforce it.
 
 ## What's next
 
@@ -529,9 +528,9 @@ than aspirational — and the cleanest demonstration of one move
 from this chapter. It holds two trifecta legs (your whole disk,
 untrusted logs and downloads) and structurally removes the third:
 the network is severed in the kernel, so a poisoned file has
-nowhere to send what it steals. The universal assistant that
-reaches for all three legs at once waits for
-[the universal-assistant chapter](assistant.md).
+nowhere to send what it steals. An assistant that reaches for all
+three legs at once is still being worked out in
+[the apps built on pikuri](apps.md).
 
 For the committed one-page posture — what pikuri guarantees and
 what it explicitly doesn't — see [`SECURITY.md`](../SECURITY.md)

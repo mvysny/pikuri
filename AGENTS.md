@@ -83,7 +83,6 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `pikuri-vectordb` — the retrieval *primitive*: topical vector search over a local corpus + `bin/pikuri-corpus`.
 - `pikuri-rag` — the retrieval *system* on that primitive: hybrid vector + FTS5 search + `bin/pikuri-briefing`. Rules: `pikuri-rag/AGENTS.md`
 - `pikuri-memory` — durable cross-conversation memory backed by mem0 + `bin/pikuri-memory`.
-- `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`; no library code of its own.
 - `pikuri` — convenience metagem depending on all siblings; lockstep version pins.
 - `book/` — "the book", also "the guide"; `book/README.md` is the ToC and the single source of truth for chapter order.
 - `assets/` — **Kuri**, the pika mascot (`kuri.svg` master, `kuri.png` raster); drawing + anatomy rule in `D_kuri_mascot`.

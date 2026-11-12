@@ -1466,8 +1466,7 @@ inconsistency.
 
 - The binary lives in `pikuri-rag/bin/` rather than `pikuri-vectordb/bin/`,
   following the same "the bin lives with the base agent it extends" rule
-  that puts `bin/pikuri-computer` in `pikuri-os/bin/`. Not
-  `pikuri-assistant/bin/`: that gem's binary belongs to the book's coda.
+  that puts `bin/pikuri-computer` in `pikuri-os/bin/`.
 - No gem: no novel threat model, no cohesive lib code of its own — the
   `pikuri-computer` shape (AGENTS.md §"Working on this codebase").
 - **The corpus layout convention is documented, not enforced.** Chunks carry
@@ -4526,10 +4525,10 @@ shell.
 
 **Alternatives rejected.**
 
-- **Drop it from `pikuri-core` outright.** Ten bins wire `CALCULATOR`; only
+- **Drop it from `pikuri-core` outright.** Nine bins wire `CALCULATOR`; only
   three (`pikuri-code`, `pikuri-os`, `pikuri-computer`) wire a `bash`. In the
-  other seven — `pikuri-chat`, `pikuri-thunderbird`, `pikuri-memory`,
-  `pikuri-corpus`, `pikuri-minions`, `pikuri-openlibrary`, `pikuri-assistant` —
+  other six — `pikuri-chat`, `pikuri-thunderbird`, `pikuri-memory`,
+  `pikuri-corpus`, `pikuri-minions`, `pikuri-openlibrary` —
   "bash/python already exist" is simply false, and there is no fallback at all:
   a mail agent totalling invoice amounts, `LIBRARIAN` computing a percentage
   over corpus hits. This is `D_directory_listing`'s asymmetry again, and the

@@ -127,7 +127,7 @@ to understand the content:
   narrow by design.
 
 It helps **least** in a general conversational assistant — the shape
-`bin/pikuri-assistant` actually is. That agent reads → reasons →
+an app like [Puri](https://github.com/mvysny/puri) actually is. That agent reads → reasons →
 responds in one context, and its entire value is that the model *did*
 see the bytes. Quarantining the content there removes the thing the
 user came for. So the assistant is the wrong home; this wants a

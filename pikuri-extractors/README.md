@@ -50,9 +50,8 @@ wiring.** This gem parses PDFs inside the sandbox (poppler is native
 code chewing attacker-controlled bytes — exactly what the container
 is for) but re-converts the whole document on every paged read;
 pikuri-pdf is in-process pure Ruby with lazy page-windowed reads and
-no infrastructure to set up. The guide wires pikuri-pdf in the
-vector-DB chapter and supersedes it with this gem in the
-universal-assistant chapter.
+no infrastructure to set up. The guide's vector-DB chapter wires
+pikuri-pdf and shows when to swap in this gem.
 
 ## Install
 

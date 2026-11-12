@@ -314,10 +314,8 @@ recorded as `D_reference_text_as_user_turn`.
 the coda, and the one that steps outside the single-agent shape every
 demo in this book has used: what changes when a real host runs N
 conversations in one process, plus the housekeeping jobs that caption
-them. Then the book closes on [pikuri-assistant](assistant.md), itself
-still a stub; a fleshed-out version of it — waiting on the vectordb
-and memories gems stabilising — is the natural follow-on to the whole
-guide. Until then, the vocabulary you have now (`Pikuri::Agent`,
+them. Then the book closes on [the apps built on pikuri](apps.md).
+The vocabulary you have now (`Pikuri::Agent`,
 `Tool`, listeners, the Extension protocol, configure/bind, sub-agent
 privilege separation, the kit from the security chapter, MCP's verifier
 + synthesizer + per-agent `mcp_connect`) is enough to read any

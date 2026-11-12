@@ -21,10 +21,9 @@ Only the deferrals stay here.
   `LIBRARIAN` wiring actually waits on, and the reason no binary wires that
   persona yet. `#configure` registers all three tools with `c.add_tool`
   (`extension.rb:103–105`), so the boss always sees `vectordb_search`, which
-  is the leg `book/assistant.md`'s design note wants gone.
+  is the leg a quarantined corpus wants gone.
 
-  **Not blocked on the sub-agent side, despite what that chapter used to
-  say.** `Configurator#add_sub_agent_tool` hides a tool from the parent's
+  **Not blocked on the sub-agent side.** `Configurator#add_sub_agent_tool` hides a tool from the parent's
   LLM and a persona's `tool_names` resolves against both pools
   (`sub_agent_tool.rb:91`) — the shape `RESEARCHER`'s web tools already
   ship in. A host can build the quarantined wiring *today* by

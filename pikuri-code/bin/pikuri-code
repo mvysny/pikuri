@@ -410,8 +410,8 @@ read_only = Pikuri::Workspace::ReadOnly.new(
 # providers — id is what the LLM references via +mcp_connect("...")+.
 # Two entry types: +StdioEntry+ for a local subprocess (argv to spawn)
 # and +HttpEntry+ for a remote endpoint (url + optional headers). Empty
-# by default; pikuri-assistant will behave identically to pikuri-chat
-# until at least one entry is added here.
+# by default, so no MCP tool is wired until at least one entry is
+# added here.
 #
 # == Examples
 #
@@ -464,7 +464,6 @@ end
 # Boot-time LLM work — synthesize_descriptions: + verify_mcp_servers:
 # each run a one-shot thinker agent once per configured MCP server on a cold
 # cache. Trap SIGINT around Agent.new so a Ctrl+C unwinds startup.
-# See bin/pikuri-assistant for the same pattern.
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
 begin
   agent = Pikuri::Agent.new(

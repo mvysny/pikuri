@@ -86,7 +86,7 @@ Three load-bearing points:
 - **Fail-fast at construction, not per-request.** Strict mode
   refuses cross-class wiring; `:mixed` is the explicit opt-in for
   "private chat + public embedder" with loud boot logging.
-  Default is `:strict` in `bin/pikuri-assistant`; no-op in
+  Default is `:strict`; no-op in
   `bin/pikuri-chat` where there's only the one transport today.
 - **The concept ends up broader than ruby_llm.** Embedders ride
   `RubyLLM.embed`; rerankers don't exist in ruby_llm at all, so

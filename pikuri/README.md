@@ -23,7 +23,6 @@ Transitively installs:
 - [`pikuri-lsp`](../pikuri-lsp/README.md) — read-only code navigation via a language server
 - [`pikuri-mcp`](../pikuri-mcp/README.md) — MCP support
 - [`pikuri-subagents`](../pikuri-subagents/README.md) — `agent` tool + bundled personas + `bin/pikuri-minions`
-- [`pikuri-assistant`](../pikuri-assistant/README.md) — `bin/pikuri-assistant`
 
 All version-locked together — bumping the metagem requires the
 matching sibling versions.
@@ -43,8 +42,8 @@ gem 'pikuri-skills'  # if they want skills
 
 `pikuri-core` is the minimal install. Adding `pikuri-mcp` adds
 exactly one new runtime gem (`mcp`); `pikuri-workspace` /
-`pikuri-skills` / `pikuri-code` / `pikuri-subagents` /
-`pikuri-assistant` add nothing beyond pikuri's own gems. The dep
+`pikuri-skills` / `pikuri-code` / `pikuri-subagents` add nothing
+beyond pikuri's own gems. The dep
 tree stays auditable.
 
 ## Further reading

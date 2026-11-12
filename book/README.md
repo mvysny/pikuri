@@ -31,8 +31,8 @@ carefully reattaches it through a quarantined researcher. The
 taking those very seams and making the *opposite* cut, then
 revisits security and MCP at the sharper edges. Tasks and skills
 close out as smaller chapters across both tracks, and the last
-chapter is a coda — the universal assistant that combines every
-gem, landing once they stabilise.
+chapter is a coda pointing at the apps built on pikuri, where the
+assistant that combines every gem is still being worked out.
 
 ## Chapters
 
@@ -70,8 +70,7 @@ gem, landing once they stabilise.
   private, give the reader an agent that can't leak it. Demo via
   `pikuri-corpus` against the pikuri guide itself. (The
   privilege-separated `LIBRARIAN` persona, for an agent that
-  *does* have egress, is deferred to the universal-assistant
-  chapter.)
+  *does* have egress, gets a short section of its own.)
 - **[Hybrid retrieval: the questions vectors can't answer](rag.md).**
   The two questions pure geometry cannot answer — *completeness*
   ("every note mentioning Acme": top-k is a sample and cosine has no
@@ -227,12 +226,11 @@ gem, landing once they stabilise.
 
 ### Coda
 
-- **[pikuri-assistant (stub)](assistant.md).** The book's
-  coda: the universal privacy-conscious assistant — vector-DB
-  recall, persistent memories, MCP, and the bundled tools
-  in one binary, the one agent that reaches for all three
-  trifecta legs. Stub until the gems it integrates stabilise and
-  the quarantined corpus wiring lands.
-
-Further chapters — a deeper `pikuri-assistant` walkthrough and more
-advanced coding-agent recipes — will land as those surfaces stabilise.
+- **[Apps built on pikuri](apps.md).** The book's coda. An everyday
+  assistant reaches for all three trifecta legs at once, and what it
+  should look like is being worked out by apps, not by this repo:
+  [pikuri-tui](https://codeberg.org/mvysny/pikuri-tui)'s terminal
+  shells, [pikuri-web](https://codeberg.org/mvysny/pikuri-web)'s
+  browser chat and [Puri](https://github.com/mvysny/puri), a
+  Siri-style desktop assistant. A piece that proves itself there moves
+  back into a gem.

@@ -37,9 +37,8 @@ posture. This gem is the no-infrastructure wiring — in-process
 means no docker and no host CLIs, and it's what makes the lazy
 page-windowed reads possible (a subprocess converter must convert
 the whole document before emitting anything, and re-converts it on
-every paged read). The guide wires this gem in the vector-DB
-chapter and supersedes it with pikuri-extractors in the
-universal-assistant chapter.
+every paged read). The guide's vector-DB chapter wires this gem and
+shows when to swap in pikuri-extractors.
 
 ## Install
 

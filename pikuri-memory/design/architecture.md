@@ -14,10 +14,10 @@ heading is the anchor.
 
 A note on scope: some of this describes **`@private`** — an egress-free,
 no-untrusted-ingest assistant agent that *wires* memory + vectordb onto
-one agent. That agent does not exist yet (it lives in the future
-federation/assistant gem; see [`../design/ideas/assistant.md`](../../design/ideas/assistant.md)).
-`pikuri-memory` ships the pieces; `@private` is its intended worked home,
-the same precedent as `pikuri-vectordb`'s `LIBRARIAN`.
+one agent. That agent does not exist yet: it belongs to an assistant app
+such as [Puri](https://github.com/mvysny/puri), and the federation it is
+part of is sketched in [`../design/ideas/assistant.md`](../../design/ideas/assistant.md).
+`pikuri-memory` ships the pieces.
 
 ## The three retrieval tiers
 

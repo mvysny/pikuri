@@ -11,8 +11,8 @@
 # The registry below is HARDCODED on purpose. This binary exists so that
 # chapter's reader can watch the pikuri-mcp machinery fire end-to-end
 # (verifier pass, synthesizer pass, `mcp_connect` activation) without
-# first editing anything. The "hand-edit your own registry" lesson lives
-# in `pikuri-assistant`, which keeps an empty registry slot for that.
+# first editing anything. `bin/pikuri-code` keeps an empty registry slot
+# to hand-edit your own servers into.
 #
 # The toolset is deliberately tiny: the Open Library MCP tools plus
 # `calculator`, nothing else. The server talks to the public internet

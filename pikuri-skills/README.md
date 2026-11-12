@@ -118,8 +118,8 @@ author asked to narrow. Add
 `Pikuri::Command::Extension.new(registry: registry)` to the agent so
 the trifecta report knows the commands are there.
 
-Try it in `bin/pikuri-code` or `bin/pikuri-assistant`: both list the
-commands they found at boot and dispatch a typed `/name`.
+Try it in `bin/pikuri-code`: it lists the commands it found at boot
+and dispatches a typed `/name`.
 
 ## Further reading
 

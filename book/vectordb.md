@@ -332,14 +332,30 @@ Two deliberate design choices worth noticing:
   audit surface. Install `pikuri-pdf` when your corpus needs it,
   skip it when it doesn't.
 
-One forward note: pikuri-pdf is the *training-wheels* PDF extractor
-— in-process, pure Ruby, nothing to install — and it's the right
-wiring for this chapter's no-egress corpus agent. The universal-assistant chapter's
-assistant, which fetches untrusted documents from the open web,
-will swap it out for `pikuri-extractors`: the same registry slot,
-but the parsing happens inside a networkless docker container, and
-DOCX / EPUB / spreadsheets come along for the ride. By then you'll
-already know the pattern — it's this same `register` call.
+pikuri-pdf is the *training-wheels* PDF extractor — in-process, pure
+Ruby, nothing to install — and it's the right wiring for this
+chapter's no-egress agent reading a corpus *you* chose. An agent that
+browses the open web flips both assumptions: the documents it parses
+are exactly the bytes an attacker controls. Such a wiring drops
+`pikuri-pdf` and registers `pikuri-extractors` instead, in the same
+registry slot:
+
+```ruby
+require 'pikuri-extractors'
+
+Pikuri::Extractors::DOCUMENTS.register
+```
+
+Every conversion then runs inside a one-shot **networkless docker
+container** (`--network=none --read-only --cap-drop=ALL`, bytes in
+via stdin, Markdown out via stdout, no volume mounts), so a malicious
+PDF exploiting poppler's parser detonates somewhere with no network
+and no filesystem. DOCX, ODT, XLSX, PPTX, EPUB and RTF come along in
+the same registration, and the `--- Page N ---` markers survive the
+swap. What you give up is lazy paging: the container re-converts the
+whole document per `read` window (the trade-off table is in the
+`Extractors::Documents` yardoc). One extractor per format per wiring;
+registering both gems buys nothing.
 
 ## The five pipeline pieces
 
@@ -551,7 +567,7 @@ untrusted: the folder you vouch for should contain only what you vouch
 for. One thing `trusted:` deliberately says nothing about is *parser*
 exposure — a hostile PDF attacking poppler is a code-execution problem
 for the extractor, not an injection problem for the model, and that's
-the extractors gem's job (the universal-assistant chapter).
+the extractors gem's job (`pikuri-extractors`, above).
 
 That "give the agent no dangerous tools" stance is the cheapest
 privilege boundary there is, and it's enough whenever reading the
@@ -560,9 +576,7 @@ you want one agent that browses the web, runs MCP servers, *and*
 reaches your private corpus — then the corpus has to be quarantined
 behind a sub-agent that itself has no egress: the bundled
 `LIBRARIAN` persona, the privilege-separation arc from
-[the sub-agents chapter](subagents.md) applied to retrieval. [The security chapter](security.md) makes the full trifecta argument and shows where
-the `LIBRARIAN` cut goes; [the universal-assistant chapter](assistant.md) wires it into
-the assistant. Here, with retrieval as the agent's only job, we
+[the sub-agents chapter](subagents.md) applied to retrieval. [The security chapter](security.md) makes the full trifecta argument. Here, with retrieval as the agent's only job, we
 don't need it.
 
 One caveat on that quarantine, now that the corpus can declare itself:
@@ -711,9 +725,8 @@ takes the Qdrant container down — so no write is ever cut off
 half-done. The next boot's reconcile sweep folds in anything the
 interrupted run didn't reach.
 
-This is the shape `pikuri-assistant` ([the universal-assistant chapter](assistant.md))
-builds on: a corpus that stays indexed between sessions and keeps
-itself current.
+This is the shape a long-running assistant builds on: a corpus that
+stays indexed between sessions and keeps itself current.
 
 ## What's next
 
@@ -727,10 +740,8 @@ is a keyword index beside the vectors.
 
 After that comes [memories](memories.md), the other half of recall:
 facts the agent learned across earlier conversations rather than a
-corpus you indexed. The two pair naturally inside
-`pikuri-assistant` — the privacy-conscious assistant binary
-the universal-assistant chapter walks through, with vector search over your notes plus
-persistent memories about you across sessions — but each is
-introduced on its own first.
+corpus you indexed. The two pair naturally inside one assistant —
+vector search over your notes plus persistent memories about you
+across sessions — but each is introduced on its own first.
 
 → Continue to [Hybrid retrieval: the questions vectors can't answer](rag.md).

@@ -274,8 +274,7 @@ cannot reach `web_search` or `bash` because those aren't in its
 You now know the smallest extension shape (the `configure` +
 `bind` pair), and you've seen one persona in action. The next
 three chapters — [vectordb](vectordb.md), [memories](memories.md),
-and [MCP](mcp.md) — are the buildup toward
-`pikuri-assistant`: capabilities that an assistant binary wants
+and [MCP](mcp.md) — add the capabilities an assistant wants
 (semantic search over your notes, persistent memories across
 conversations, external tool servers). The vector-DB chapter introduces a
 second persona — `LIBRARIAN` — and demonstrates the same

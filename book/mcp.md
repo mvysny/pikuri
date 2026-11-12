@@ -203,11 +203,10 @@ it's just a subprocess that speaks MCP.
 The toolset is the other half of the design. No web tools, no
 files, no memory — the missing trifecta leg from the top of this
 chapter is missing *structurally*, baked into the binary, not held
-open by your restraint. (That's also why this demo gets its own
-binary instead of riding `pikuri-assistant`: the assistant will
-grow memory and file access in [the universal-assistant chapter](assistant.md), and
-this chapter's "nothing private is wired in" guarantee has to
-survive that.)
+open by your restraint. (That's also why this demo is its own
+binary rather than an MCP slot in a bigger agent: an assistant with
+memory and file access next to the MCP server would break this
+chapter's "nothing private is wired in" guarantee.)
 
 Run it:
 
@@ -289,10 +288,8 @@ shows up one more time here:
   synthesizer passes, holds one live client per server, and owns
   `#close`.
 
-The registry is the layer `bin/pikuri-openlibrary` hardcodes —
-and the layer `bin/pikuri-assistant` ([the universal-assistant chapter](assistant.md))
-instead leaves as an empty slot for you to hand-edit your own
-servers into.
+The registry is the layer `bin/pikuri-openlibrary` hardcodes, and
+the one a host builds from its own config to wire your servers.
 
 The split is why the same gem can be unit-tested without ever
 opening a real MCP transport (`Registry` has no dependencies on
@@ -350,8 +347,8 @@ Sub-agents do **not** inherit the extension or the `mcp_connect`
 tool — the sub-agents chapter's lesson about extension non-inheritance
 applies. `pikuri-openlibrary` spawns no sub-agents, but the rule
 matters the moment you wire MCP into an agent that does, as
-[the universal-assistant chapter](assistant.md)'s assistant will: a `RESEARCHER` it
-spawns has no way to reach the Open Library MCP. If you want a
+`pikuri-code` does: a `RESEARCHER` it spawns has no way to reach
+the MCP servers its parent holds. If you want a
 persona to reach MCP tools, you'd have to write one whose
 `tool_names` includes the MCP-synthesised tools by name — out of
 scope for this chapter, and a thing the codebase deliberately

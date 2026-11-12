@@ -152,7 +152,7 @@ sub-agent's one-paragraph reply, never the raw untrusted bytes.
 
 *The honest gap — the relay leg (not structural).* That reply is
 itself attacker-influenced content, and it flows into a parent that
-in `pikuri-code` / `pikuri-assistant` holds `read` + `bash` +
+in `pikuri-code` holds `read` + `bash` +
 `fetch`. A flag-don't-relay instruction in the persona prompts and
 the lossy one-paragraph summary narrow it, but neither bites on an
 injection subtle enough that the model never classifies it as one
@@ -270,9 +270,8 @@ as a guarantee:
   A parent with `read` + `fetch` + a tool that scrapes the web
   reassembles the trifecta if the model skips delegating to
   `RESEARCHER`. `bin/pikuri-chat` structurally avoids this shape
-  (no `read` / `bash` / `write`); `bin/pikuri-code` and
-  `bin/pikuri-assistant` currently have the shape and rely on the
-  system prompt to nudge delegation rather than enforcing it by
+  (no `read` / `bash` / `write`); `bin/pikuri-code` currently
+  has the shape and relies on the system prompt to nudge delegation rather than enforcing it by
   capability — a prompt-injected model that chooses not to delegate
   can reach the residual leg-(a) surface (project source, `.env`,
   dependency caches) through the parent's own `fetch` /

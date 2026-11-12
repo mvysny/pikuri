@@ -458,8 +458,7 @@ If you're building a host, the short version:
 
 ## What's next
 
-The book closes on [pikuri-assistant](assistant.md), itself still a
-stub. Everything in this chapter is also the reading list for
+The book closes on [the apps built on pikuri](apps.md). Everything in this chapter is also the reading list for
 [pikuri-web](https://codeberg.org/mvysny/pikuri-web) itself: it's
 the host these conventions were shaped by, and with the vocabulary
 you now have — `Agent`, `Tool`, listeners, the Extension protocol,

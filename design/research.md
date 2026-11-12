@@ -114,7 +114,7 @@ The set spans very different scopes; nothing about anyone's size is a target.
   process, and a tool layer built as an A/B harness rather than a fixed set. **[src]**
 
 **Takeaway.** Pikuri spans three application shapes — general-purpose chat (`bin/pikuri-chat`),
-in-repo coding (`bin/pikuri-code`) and an MCP-augmented assistant (`bin/pikuri-assistant`) — all
+in-repo coding (`bin/pikuri-code`) and a network-severed OS helper (`bin/pikuri-os`) — all
 on the same `Agent` + `Tool` core (~10k lines of `pikuri-core/lib`). The job is the *extension surface* on
 top of ruby_llm: strict validation, the sealed `Event` hierarchy, listener-based rendering,
 controls for cancellation and mid-loop injection, sub-agents, skills, MCP, and a fixed deliberate
@@ -158,7 +158,7 @@ a count.
 
 ## R_provider_abstraction — How each project reaches more than one model provider
 
-- **pikuri**: delegates to ruby_llm. `bin/pikuri-chat` / `pikuri-code` / `pikuri-assistant`
+- **pikuri**: delegates to ruby_llm. `bin/pikuri-chat` / `pikuri-code` / `pikuri-os`
   configure the OpenAI provider for the local llama.cpp server (`openai_api_base` +
   `assume_model_exists: true`); switching to Anthropic / Gemini / Bedrock / Ollama is a one-block
   edit, no pikuri-side code change. `Agent::ContextWindowDetector` resolves the context-window cap
@@ -383,8 +383,8 @@ pay for MCP schemas you aren't using — with a different lever, search-then-cal
 connect-then-register, and it degrades better when one server exposes a hundred tools. The pikuri
 row is the union of what the bundled binaries wire: `bin/pikuri-chat` wires calc + web_search +
 web_scrape + fetch + sub_agent; `bin/pikuri-code` the file/shell stack plus tasks, plan mode, MCP
-and (where a language server is configured) `lsp`; `bin/pikuri-assistant` adds the MCP connector
-to the chat set; `bin/pikuri-corpus` the vectordb tools. Pikuri covers the general-purpose,
+and (where a language server is configured) `lsp`; `bin/pikuri-openlibrary` one MCP server;
+`bin/pikuri-corpus` the vectordb tools. Pikuri covers the general-purpose,
 coding-agent and MCP-augmented surfaces from one codebase, with Skills bridging static text
 knowledge between them. What it still declines is the write half of an LSP — rename, formatting,
 code actions, diagnostics — which is where a read-only navigator would need the `Confirmer` seam
@@ -1097,7 +1097,7 @@ side in pikuri's favour: a model's own injection resistance is the one leg livin
 component an injection compromises, so it cannot be leaned on alone, and neither project does.
 
 Where they converge: pikuri cannot break the trifecta for its own coding agent either —
-`bin/pikuri-code` / `bin/pikuri-assistant` hold `read` + `bash` + `fetch` on the parent and fall
+`bin/pikuri-code` holds `read` + `bash` + `fetch` on the parent and falls
 back to system-prompt nudging plus the `Confirmer` (SECURITY.md "Non-goals"). Coding is the harness
 where the structural model runs out and the operational one takes over. And Claude Code's visible
 investment in reducing confirmation fatigue is the same conclusion driving pikuri's

@@ -22,8 +22,7 @@ named-agent personas) live in sibling gems and opt in à la carte — see
 [`pikuri-skills`](../pikuri-skills/README.md),
 [`pikuri-mcp`](../pikuri-mcp/README.md),
 [`pikuri-workspace`](../pikuri-workspace/README.md),
-[`pikuri-code`](../pikuri-code/README.md),
-[`pikuri-assistant`](../pikuri-assistant/README.md). For the
+[`pikuri-code`](../pikuri-code/README.md). For the
 convenience bundle that pulls in everything, see the
 [`pikuri`](../pikuri/README.md) metagem.
 

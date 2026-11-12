@@ -40,7 +40,6 @@ GEMS = %w[
   pikuri-thunderbird
   pikuri-vectordb
   pikuri-rag
-  pikuri-assistant
   pikuri
 ].freeze
 

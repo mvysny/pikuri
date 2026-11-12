@@ -26,8 +26,9 @@ Related, already worked out:
 - [`security-open-questions.md`](security-open-questions.md) §"Trifecta
   — open mitigations" and the bundled privilege-separated `RESEARCHER` /
   `FILE_MINER`.
-- Likely home: the `pikuri-assistant` gem — same precedent as `LIBRARIAN`
-  and `GIT_REPO_RESEARCHER` ([`AGENTS.md`](../../AGENTS.md) inventory).
+- Likely proving ground: an assistant app, [Puri](https://github.com/mvysny/puri)
+  (its `design/ideas/federation.md` picks this up for its v2). Whatever
+  proves out there and needs library support comes back as a gem.
 - `bin/pikuri-briefing` (`design/decisions.md` `D_briefing_wiring` +
   `D_briefing_with_mail`, walk-through in `book/rag.md`) — a candidate
   *first member*, and the week-long prototype this note says the
@@ -250,8 +251,8 @@ stays a brainstorm, not a plan.
   thread — and that nothing in the union view leaks back into a context.
 - **Does this fight pikuri's "start slowly" ethos?** A federation is more
   upfront surface than one chat box. Possibly it's a *growth-tier* shape:
-  `bin/pikuri-chat` stays single-agent; the federation is what
-  `pikuri-assistant` graduates into once the user has private data + comms
+  `bin/pikuri-chat` stays single-agent; the federation is what an
+  assistant app graduates into once the user has private data + comms
   + research to keep apart.
 - **Relationship to the sub-agent gem.** Reuse `Agent` + `Persona`
   wholesale, but the orchestration is human, not `SubAgentTool`. Worth a

@@ -15,8 +15,8 @@
 standard for packaging "when you see *X*, do *Y*" instructions as
 a folder. Each skill is a directory with a `SKILL.md`
 (YAML frontmatter — `name`, `description` — followed by a free-form
-Markdown body) plus any sidecar files the skill needs. Both
-`pikuri-code` and `pikuri-assistant` discover skills at startup
+Markdown body) plus any sidecar files the skill needs. `pikuri-code`
+discovers skills at startup
 under `.pikuri/skills`, `.claude/skills`, or `.agents/skills`
 beneath the project root and the user's home directory.
 A skill's description gets advertised to the LLM in an
@@ -38,7 +38,7 @@ description: Reply with "lol" to anything.
 When the user asks anything, just reply "lol". Nothing else.
 ```
 
-Restart `pikuri-code` (or `pikuri-assistant`). The boot banner
+Restart `pikuri-code`. The boot banner
 now reports the skill is loaded. Asking anything should trigger
 the model to call `skill(name: "lol")`, load the body into
 context, and answer accordingly.
@@ -228,7 +228,7 @@ the strings.
 
 The honest reason: a skill is a refactor of *repetition*. The
 chapter that motivates skills well is the one where the reader
-has used `pikuri-code` or `pikuri-assistant` enough to feel "I
+has used `pikuri-code` enough to feel "I
 keep retyping the same setup at the start of every session" —
 and the guide isn't there yet. A `lol` demo proves the wiring
 works, but it doesn't show why anyone would write a real skill.

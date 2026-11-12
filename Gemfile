@@ -24,7 +24,6 @@ gemspec path: 'pikuri-thunderbird'
 gemspec path: 'pikuri-subagents'
 gemspec path: 'pikuri-vectordb'
 gemspec path: 'pikuri-rag'
-gemspec path: 'pikuri-assistant'
 gemspec path: 'pikuri'
 
 group :test do

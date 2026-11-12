@@ -97,9 +97,9 @@ that ship today both answer "no" a different way —
   egress question was answered by the **sub-agent hop**, the very move
   item 1 of "Why these exist" was probing whether we could *avoid*. We
   didn't avoid it; we leaned on it.
-- **pikuri-assistant** puts `fetch`/`web_scrape` *on* the parent
+- **pikuri-chat** puts `fetch`/`web_scrape` *on* the parent
   (`c.add_tool`) with **no URL confirmer at all** — the egress-capable
-  shape, a different threat model where the trifecta isn't being broken.
+  shape with nothing private to leak, a different threat model.
 
 So a parent `fetch` gated by an editable-URL confirmer is the one shape
 nobody has built. The two sub-shapes it could take are already decided:
