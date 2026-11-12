@@ -30,6 +30,8 @@ require 'yaml'
 require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-assistant'
+require 'pikuri-skills'
+require 'pikuri-mcp'
 require 'pikuri-subagents'
 require 'pikuri-extractors'
 require 'pikuri-web'

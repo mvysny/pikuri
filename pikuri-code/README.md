@@ -35,7 +35,7 @@ in-memory task list (`task_create` / `task_in_progress` /
 gem 'pikuri-code'
 ```
 
-Pulls in `pikuri-core` + `pikuri-workspace` transitively.
+Pulls in `pikuri-core` + `pikuri-workspace` + `pikuri-subagents` transitively.
 
 ## Usage
 

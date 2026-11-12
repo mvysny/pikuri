@@ -38,29 +38,9 @@ Gem::Specification.new do |spec|
   ]
   spec.require_paths = ['lib']
 
-  # The assistant binary wires Agent (pikuri-core) + Skill::Extension
-  # (pikuri-skills) + Mcp::Extension (pikuri-mcp) +
-  # Tool::SubAgent::RESEARCHER (pikuri-subagents) together, plus the
-  # sandboxed document extractor (pikuri-extractors — its PDF arm
-  # supersedes pikuri-pdf here, so that gem is deliberately NOT a
-  # dependency), VectorDb::Extension + the LIBRARIAN persona
-  # (pikuri-vectordb), Memory::Extension (pikuri-memory) and the web
-  # tools (pikuri-web). All
-  # runtime deps, lockstep-pinned to the matching versions.
-  #
-  # NOTE: the vectordb and memory deps are forward-prep for the
-  # assistant shape of book/assistant.md (egress + private-corpus
-  # recall with the corpus quarantined in the LIBRARIAN sub-agent,
-  # plus durable memories). The quarantined wiring wants a per-tool
-  # pool choice on VectorDb::Extension, which registers all three
-  # tools parent-visibly today — see design/ideas/vectordb-deferrals.md — so
-  # the binary registers neither yet; the deps declare intent.
-  spec.add_dependency 'pikuri-core',       "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-extractors', "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-mcp',        "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-memory',     "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-skills',     "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-subagents',  "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-vectordb',   "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-web',        "= #{Pikuri::VERSION}"
+  # The entry file only registers +prompts/+ on +Pikuri::PROMPT_DIRS+,
+  # which lives in pikuri-core. Everything +bin/pikuri-assistant+ wires
+  # (skills, MCP, sub-agents, extractors, web) is the binary's choice,
+  # reached through the root Gemfile, not this gem's.
+  spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
 end

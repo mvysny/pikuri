@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `pikuri-code`, `pikuri-os` and `pikuri-assistant` no longer depend on the gems only their demo binaries wire: `pikuri-code` drops `pikuri-tasks` and `pikuri-web`, `pikuri-os` drops `pikuri-pdf`, `pikuri-subagents` and `pikuri-web`, and `pikuri-assistant` keeps only `pikuri-core`. A host that relied on one arriving transitively adds it to its own `Gemfile`.
+
 - **Breaking:** the web tools left pikuri-core for the new `pikuri-web` gem, renamed into its namespace — `Pikuri::Web::Search` (was `Tool::WebSearch` plus `Tool::Search::*`), `Web::SCRAPE`, `Web::FETCH`, `Web::READ_CACHED`, `Web::Scraper`, `Web::UrlCache` — so an agent that wires none never loads them. Add `gem 'pikuri-web'` and `require 'pikuri-web'`, then rename the constants; see `D_read_what_you_run`.
 - `Pikuri::Testing` scripts now drive a `streaming: true` agent with every verb, a tool call streamed in fragments as a server sends it; `Script#responses` holds `Testing::Completion`s.
 - Add `Pikuri::Tool::WEB_READ_CACHED` and `WebSearch.build(page_text: true)`: Brave (via LLM Context) and Exa bring back each result's page text from their own index in the same request, `web_search` prints a handle beside each readable row, and `web_read_cached` returns that text by handle without any network request — a search-only agent whose one egress leg stays the vouched search.

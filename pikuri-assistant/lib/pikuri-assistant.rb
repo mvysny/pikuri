@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require 'pikuri-core'
-require 'pikuri-skills'
-require 'pikuri-mcp'
 
 # Entry file for the pikuri-assistant gem. The gem itself has no
 # Ruby library code — it ships only the +bin/pikuri-assistant+

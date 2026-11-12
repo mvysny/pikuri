@@ -16,7 +16,8 @@ pikuri-core) until the user opts in by adding entries.
 gem 'pikuri-assistant'
 ```
 
-Pulls in `pikuri-core` + `pikuri-skills` + `pikuri-mcp` transitively.
+Pulls in only `pikuri-core`: the binary runs from a checkout, where the
+root `Gemfile` supplies the skills, MCP, sub-agent and web gems it wires.
 
 ## Usage
 

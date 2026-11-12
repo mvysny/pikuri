@@ -43,9 +43,9 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # pikuri-core ships the +Agent+ runtime + +Pikuri::Tool+ base class
-  # that +SubAgentTool+ subclasses; the bundled +RESEARCHER+ persona's
-  # +tool_names+ list (+web_search+, +web_scrape+, +fetch+) also
-  # resolves to constants in pikuri-core.
+  # that +SubAgentTool+ subclasses. The bundled +RESEARCHER+ persona's
+  # +tool_names+ (+web_search+, +web_scrape+, +fetch+) resolve against
+  # whatever the host wires, so pikuri-web is the host's dependency.
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
   # pikuri-workspace ships +Pikuri::Workspace::Filesystem+, which
   # +SubAgentTool+ constructs directly when a +Persona+ sets

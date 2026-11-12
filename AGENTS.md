@@ -96,6 +96,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - **`# frozen_string_literal: true`** atop every Ruby file (`lib/`, `spec/`, `bin/*`).
 - **YARD on every public module/class/method** in `lib/`: concrete `@param` / `@return` types, `@raise` for expected exceptions, one-line summary then tags, and the local *why*.
 - **Bundler.** `bin/` scripts self-bootstrap via `require 'bundler/setup'`; pessimistic `~>` constraints.
+- **A gemspec's runtime dependencies are what its `lib/` requires.** A sibling gem only a `bin/` script or a spec uses comes from the root `Gemfile`; a third-party gem only they use is an `add_development_dependency`.
 - **Per-gem Zeitwerk loaders**, eager-loading at boot; no `require_relative` inside a gem's `lib/`. One constant per file at the Zeitwerk path, everything under `Pikuri::`, acronyms need an `inflector.inflect` entry, no top-level constants. `Pikuri::PROMPT_DIRS` is likewise cooperative.
 - **Tests: rspec-core with minitest-style asserts.** `describe` / `it` but `assert_equal` / `assert` / `refute`, no RSpec matchers, no rspec-mocks (stub with `define_singleton_method` in `before`, restore in `after`). Pattern: `pikuri-core/spec/pikuri/agent_spec.rb`.
 - **Diagnostics go through `Pikuri.logger_for('Name')`**, never `puts` / `warn` / `$stderr`; listener rendering of the LLM stream on stdout via `Terminal` is not logging.

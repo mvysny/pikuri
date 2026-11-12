@@ -3,13 +3,6 @@ PATH
   specs:
     pikuri-assistant (0.1.0)
       pikuri-core (= 0.1.0)
-      pikuri-extractors (= 0.1.0)
-      pikuri-mcp (= 0.1.0)
-      pikuri-memory (= 0.1.0)
-      pikuri-skills (= 0.1.0)
-      pikuri-subagents (= 0.1.0)
-      pikuri-vectordb (= 0.1.0)
-      pikuri-web (= 0.1.0)
 
 PATH
   remote: pikuri-code
@@ -17,8 +10,6 @@ PATH
     pikuri-code (0.1.0)
       pikuri-core (= 0.1.0)
       pikuri-subagents (= 0.1.0)
-      pikuri-tasks (= 0.1.0)
-      pikuri-web (= 0.1.0)
       pikuri-workspace (= 0.1.0)
 
 PATH
@@ -65,9 +56,6 @@ PATH
     pikuri-os (0.1.0)
       pikuri-code (= 0.1.0)
       pikuri-core (= 0.1.0)
-      pikuri-pdf (= 0.1.0)
-      pikuri-subagents (= 0.1.0)
-      pikuri-web (= 0.1.0)
       pikuri-workspace (= 0.1.0)
 
 PATH

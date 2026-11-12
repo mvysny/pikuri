@@ -49,19 +49,10 @@ Gem::Specification.new do |spec|
   # in pikuri-workspace; +Pikuri::Code::Bash+ takes both via constructor.
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 
-  # +Pikuri::SubAgent::FILE_MINER+ — the read-only fs recon persona —
-  # is wired into +bin/pikuri-code+ via
-  # +Pikuri::SubAgent::Extension+. Lockstep-pinned for the same
-  # reason as the other peers.
+  # +Pikuri::SubAgent::Persona+ — the record type the bundled
+  # +GIT_REPO_RESEARCHER+ persona is an instance of. Its +tool_names+
+  # also name the web tools, resolved against whatever the host wires,
+  # so pikuri-web is the host's dependency, not this gem's. Lockstep-
+  # pinned for the same reason as the other peers.
   spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
-
-  # +Pikuri::Tasks::Extension+ — in-memory task list + four
-  # +task_*+ tools the LLM uses to externalize its plan on
-  # multi-step work — is wired into +bin/pikuri-code+ by default.
-  # See book/tasks.md for the rationale.
-  spec.add_dependency 'pikuri-tasks',     "= #{Pikuri::VERSION}"
-
-  # +web_search+ / +web_scrape+ / +fetch+, wired into +bin/pikuri-code+ so
-  # the agent can read docs and issue trackers.
-  spec.add_dependency 'pikuri-web',       "= #{Pikuri::VERSION}"
 end
