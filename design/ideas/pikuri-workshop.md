@@ -188,7 +188,7 @@ book 1 blockers and land in vanilla, so Puri picks them up from here:
   exactly its `Filesystem` and `Confirmer` seams. `pikuri-os` then builds
   `MACHINE.md` on it.
 - **The system prompt.** It lives in pikuri, which settles Puri's
-  `Q_prompt_home`. Puri may keep its own prompts (`D_own_prompts` there) and
+  `Q_prompt_home`. Puri may keep its own prompts (a decision in Puri's repo) and
   reuse the fragments.
 
 ## The cut
@@ -417,9 +417,9 @@ project and develops independently, like any other app built on pikuri.
 - per-gem `AGENTS.md` and `design/architecture.md` for `pikuri-code`,
   `pikuri-lsp`, `pikuri-os`, `pikuri-extractors`, `pikuri-memory`,
   `pikuri-skills`, `pikuri-mcp` and `pikuri-tasks`;
-- `D_` entries from `design/decisions.md`, at least: the `D_lsp_*` family
-  (7), `D_headless_os_agent`, every MCP entry, and the non-Thunderbird
-  half of `D_gloda_locks_mcp_does_not` (needs a split). `D_thunderbird_*`
+- `D_` entries from `design/decisions.md`, at least: the seven LSP entries,
+  `D_headless_os_agent`, every MCP entry, and the non-Thunderbird half of
+  `D_gloda_locks_mcp_does_not` (needs a split). The two Thunderbird entries
   stay;
 - `D_keep_calculator` and `D_command_inlining_legs` mention bash; check
   whether they still hold in vanilla without it;
