@@ -30,7 +30,7 @@ without the file-edit / shell stack that makes the coding agent
 the dense one. Its toolset, on the design board: vector-DB recall
 over your notes (the vector-DB chapter), persistent memories about you across
 conversations (the memories chapter), a curated set of MCP servers you wired
-in (the MCP chapter), and the four bundled tools from the first-conversation chapter
+in (the MCP chapter), and the bundled tools from the first-conversation chapter
 (calculator, web search, web scrape, fetch). All four pieces have
 been introduced by the time you reach this chapter; the chapter's
 job is to show how they compose into a single binary that's

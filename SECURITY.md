@@ -65,9 +65,10 @@ Before anything else: which processes do you trust to execute? Once
 this is settled, every defense below assumes those processes are
 running their intended code.
 
-- **Pikuri itself — trust it (and read it).** Pikuri's code
-  (especially `core`) is designed to be small: plain Ruby across
-  eight gems, deliberately small enough to read in an evening. Every
+- **Pikuri itself — trust it (and read it).** Pikuri is plain Ruby
+  split into gems, and you only read the code you run: `core` stays
+  lean, and core plus the gems you wire is deliberately small
+  enough to read in an evening. Every
   public class has a YARD header explaining *why* it exists. See
   [`AGENTS.md`](AGENTS.md) for the design map. Audit it; you're
   meant to.

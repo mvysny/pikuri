@@ -3,8 +3,8 @@
 ## What this is
 
 A small Ruby AI assistant you run on your own machine, shipped as
-a family of seventeen gems in a monorepo (sixteen functional gems plus
-a convenience metagem). Defaults wire a local
+a family of gems in a monorepo (plus a convenience metagem that
+pulls in all of them). Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
 conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
@@ -16,7 +16,7 @@ carte.
 ## Promises
 
 - **Privacy first.** By default nothing leaves the machine; every hosted provider and every network-reaching tool is an explicit opt-in, and a feature that only works against a hosted one breaks the posture even when nobody turns it on.
-- **Readable in an evening.** The whole of pikuri can be read end to end in one sitting; growth is by bounded gems with a closeable threat model, never by fattening one, and a layer or a knob not needed for the next concrete step is a violation even when it is small.
+- **Readable in an evening.** You read only the code you run: core plus the gems you wire fits one sitting. Core is in every deployment, so it stays lean and clean; a gem may carry the complexity its job genuinely needs, bounded by a closeable threat model, and new work grows a new gem rather than fattening one. A layer or a knob not needed for the next concrete step is a violation even when it is small. See `D_read_what_you_run`.
 - **The trifecta is broken by construction.** No agent that reads untrusted content also holds private data and a way to send bytes out — at most two legs at any node, and never by filtering, because filters lose to adversarial text.
 
 ## Design docs
@@ -67,7 +67,7 @@ Rails-shape monorepo: each gem owns its `lib/`, `spec/`, gemspec, entry file, an
 relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires every gem via
 `gemspec path:`; the top-level `Rakefile` fans out `rake test` and orchestrates `rake release`.
 
-- `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, five bundled tools, `bin/pikuri-chat`.
+- `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, the bundled web and calculator tools, `bin/pikuri-chat`.
 - `pikuri-extractors` — office/EPUB/RTF/PDF → Markdown for the `Extractor` registry via a one-shot networkless docker container.
 - `pikuri-pdf` — in-process pure-Ruby PDF → text for the registry. Pick one PDF arm per host (this or pikuri-extractors').
 - `pikuri-skills` — Agent Skills standard, slash commands, the shared `Bundle::*` vocabulary. Rules: `pikuri-skills/AGENTS.md`

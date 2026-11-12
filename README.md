@@ -10,8 +10,8 @@
 > — Frank Herbert, *Dune* (1965)
 
 A small Ruby AI assistant you run on your own machine, shipped as
-a family of seventeen gems in a monorepo (sixteen functional gems plus
-a convenience metagem). Defaults wire a local
+a family of gems in a monorepo (plus a convenience metagem that
+pulls in all of them). Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
 conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
@@ -55,7 +55,8 @@ conversation, from a fresh checkout to a working assistant.
 
 ## Where to go next
 
-Pikuri is small enough to read end-to-end in an evening. Two ways
+You only read the code you run: `pikuri-core` plus the gems you
+wire is small enough to read end-to-end in an evening. Two ways
 in:
 
 - **Read the guide** at [`book/`](book/). It's a short
@@ -69,7 +70,8 @@ in:
 - **Or jump straight to whichever gem you want to use.** Each
   per-gem README is a reference card with a wired-up snippet:
   - [`pikuri-core`](pikuri-core/README.md) — `Pikuri::Agent`, the
-    `Tool` framework, four bundled tools, the `pikuri-chat` demo.
+    `Tool` framework, the bundled web and calculator tools, the
+    `pikuri-chat` demo.
   - [`pikuri-extractors`](pikuri-extractors/README.md) — documents
     (DOCX / ODT / XLSX / PPTX / EPUB / RTF / PDF) → Markdown,
     converted inside a one-shot networkless docker container.

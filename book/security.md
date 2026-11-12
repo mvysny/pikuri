@@ -293,7 +293,8 @@ their intended code at all? Settle this first; the content
 defenses all assume it.
 
 - **Pikuri itself — trust it, and read it.** It's small Ruby
-  across eight gems, deliberately auditable in an evening, with a
+  split into gems, and you only read the ones you run: core plus
+  the gems you wire is deliberately auditable in an evening, with a
   YARD header on every class explaining why it exists.
 - **Your LLM provider — the load-bearing trust choice.** The
   default wires a local `llama.cpp`; your prompts never leave the

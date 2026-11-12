@@ -20,6 +20,32 @@ the yardoc already says, and cut what is left over.
 
 ---
 
+## D_read_what_you_run — Why is "readable in an evening" measured against core plus the gems you wire, not all of pikuri?
+
+**Context.** The promise read "the whole of pikuri can be read in one sitting". Measured
+2026-11-12: about 16k lines of code across the gems' `lib/`, about 39k with yardoc, so nobody can
+read it all in an evening. Some gems carry complexity their job requires: an LSP client
+(`pikuri-lsp`), reading mail and calendar from Thunderbird's files (`pikuri-thunderbird`), a vector
+store (`pikuri-vectordb`). And core was the largest gem, nearly three times the next one.
+
+**Decision.** You read only the code you run, so the budget is core plus the gems a deployment
+wires. Core is in every deployment and stays lean and clean. A gem may carry the complexity its job
+genuinely needs, bounded by a threat model you can close, and is never grown speculatively. Prose
+names no gem or tool count either, since `ls` answers that and a written count goes stale with every
+new gem.
+
+**Alternatives rejected.**
+
+- **Keep "the whole of pikuri".** It was already false, and holding to it would mean refusing
+  gems whose job needs more code.
+- **A line budget per gem.** Lines count yardoc as much as logic, and a hard number invites
+  splitting a cohesive gem just to pass.
+
+**Consequences.** Bloat costs most in core, since every deployment pays for it. Anything that not
+every agent needs belongs in a gem.
+
+---
+
 ## D_page_text_by_handle — Why does a result's page text come back in the search itself, read by handle?
 
 **Context.** Snippets rarely answer a question — on snippets alone a model loops, narrowing its

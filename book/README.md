@@ -51,7 +51,7 @@ gem, landing once they stabilise.
   `llama.cpp`, start the server, run `pikuri-chat`. Establishes
   the base vocabulary: `Pikuri::Agent`, `Pikuri::Tool`,
   listeners, the Thought → Tool-call → Observation loop. The
-  four bundled tools and the privacy posture of each search
+  bundled tools and the privacy posture of each search
   provider.
 - **[Sub-agents](subagents.md).** One new concept on top of
   the last chapter: delegation. The `Persona` record, the
@@ -229,7 +229,7 @@ gem, landing once they stabilise.
 
 - **[pikuri-assistant (stub)](assistant.md).** The book's
   coda: the universal privacy-conscious assistant — vector-DB
-  recall, persistent memories, MCP, and the four bundled tools
+  recall, persistent memories, MCP, and the bundled tools
   in one binary, the one agent that reaches for all three
   trifecta legs. Stub until the gems it integrates stabilise and
   the quarantined corpus wiring lands.

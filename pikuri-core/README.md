@@ -72,7 +72,7 @@ handling, and cancellation.
 
 - **Narrative walkthrough:** [the first-conversation chapter of the pikuri guide](../book/chat.md)
   — install llama.cpp, start the server, run `pikuri-chat`, the
-  agentic loop, the four bundled tools, and search-provider
+  agentic loop, the bundled tools, and search-provider
   privacy postures.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-core> (once published), or run

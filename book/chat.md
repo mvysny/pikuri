@@ -309,10 +309,10 @@ with nothing else in the way, the sister project
 is written exactly for that. Pikuri uses the same shape, just
 wrapped in tools, listeners, and sub-agents.
 
-## The four bundled tools
+## The bundled tools
 
-All defined in `pikuri-core/lib/pikuri/tool/` and wired into
-`pikuri-chat`:
+The ones `pikuri-chat` wires, all defined in
+`pikuri-core/lib/pikuri/tool/`:
 
 - **`calculator`** — evaluates a Python-syntax arithmetic
   expression with a small built-in parser. Local, no network.
@@ -513,7 +513,7 @@ of quietly asking someone else.
 
 ## Next chapter — sub-agents
 
-You now have a working chat agent with four tools. The next
+You now have a working chat agent with a handful of tools. The next
 concept on top is **delegation**: letting the model spawn a
 sub-agent with a narrow toolset and a focused system prompt, then
 absorb only its summary back into the parent conversation. It's
