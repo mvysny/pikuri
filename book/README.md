@@ -91,8 +91,10 @@ Until the rework lands, a few chapters here still point there.
 
 - **[Security: picking a defense for your harness](security.md).**
   The synthesis chapter. Why there's no NX flag for tokens,
-  the lethal trifecta, the defense kit, a decision procedure
-  for your own harness, the five worked attacks, and how
+  the lethal trifecta, breaking it with sub-agents, and when a job
+  needs all three legs, weakening the one that leaves (search,
+  never fetch). The defense kit, a decision procedure for your own
+  harness, the five worked attacks, and how
   pikuri's structural bet compares to Claude Code's
   operational one. No new binary — read it before pointing any
   write- or network-capable agent at something sensitive. This

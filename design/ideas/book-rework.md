@@ -57,10 +57,11 @@ chapters). Some are legitimate links to book 2.
    folder, and drops to soft when `fetch` and `web_scrape` go; the briefing flag stays its
    worked example. Book 2 is still named where it is the honest example (a shell tool behind
    a confirmer, a coding agent loud by design).
-3. **`security.md`, rewritten.** It cites `code.md` and Bubblewrap throughout and MCP eighteen
-   times, its strongest case for "cuts built into the structure beat filters" was the kernel
-   namespace, and it says the book's one loud shape is a coding agent. The replacement case is
-   search-never-fetch; MCP shrinks to "the instant trifecta", with a link to book 2.
+3. ~~**`security.md`, rewritten.**~~ Done 2026-11-13. Its structural case is now "weaken the
+   leg that leaves" (search never fetch, hand-offs you review) instead of the kernel namespace;
+   the kit, the decision procedure and the five attacks are book-1 ones (scraped page, a
+   downloaded file, a search query, stored injection, a phishing reply); code you didn't write
+   is one line pointing at book 2.
 4. **The two new chapters**, below.
 5. **The sweep**, below.
 
