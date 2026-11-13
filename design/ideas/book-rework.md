@@ -1,8 +1,15 @@
 # Book 1 rework: one track that ends on the secretary
 
-Status: **shape agreed, not started.** The workshop split (2026-11-12) took the chapters about
-running code you didn't write to book 2; book 1 now ends on [the secretary](secretary.md), and
-several chapters still lean on what moved out.
+Status: **shape agreed; the secretary chapter outlined, no prose yet. Paused 2026-11-13** on
+mail transcripts: they need a demo Thunderbird profile, see
+[`thunderbird-testbed.md`](thunderbird-testbed.md). The workshop split (2026-11-12) took the
+chapters about running code you didn't write to book 2; book 1 now ends on
+[the secretary](secretary.md), and several chapters still lean on what moved out.
+
+**To pick up:** settle the testbed; build the demo mailbox (and put the demo `~/Documents` in the
+repo beside it); capture the outline's scenes on demo data only — the non-mail ones (boot map,
+notes, memory, the search confirm, the four prompt fixes, briefing's map for comparison) can
+be captured on the VM today; then write `book/secretary.md` from the outline below.
 
 ## Approach
 
