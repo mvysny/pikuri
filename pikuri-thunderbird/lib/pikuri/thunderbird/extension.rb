@@ -146,7 +146,7 @@ module Pikuri
       #   {MailCompose} / {CalendarCreate}). Names no tool; the relay-the-flag
       #   nudge is the one bit no single tool's description can own.
       OUTBOUND_USAGE = <<~USAGE.chomp
-        When the user asks you to draft a reply or add an event, you prepare it and hand it off to Thunderbird, where the user reviews it and Sends or confirms it themselves — the user commits, never you. The hand-off may report that it changed or flagged something (a recipient dropped for the user to retype, or a warning that the user has no prior mail with a recipient's domain); relay any such flag to the user in plain language so they can double-check it out of band.
+        When the user asks you to draft a reply or add an event, you prepare it and hand it off to Thunderbird, where the user reviews it and Sends or confirms it themselves — the user commits, never you. The hand-off may report that it changed or flagged something (a recipient dropped for the user to retype, or a warning that the user has never sent mail to a recipient's domain); relay any such flag to the user in plain language so they can double-check it out of band.
       USAGE
 
       # @param profile_dir [String, nil] explicit Thunderbird profile

@@ -121,10 +121,28 @@ describe 'thunderbird_contact_search' do
     end
   end
 
-  it 'reports which recipient domains the user has a mail history with (novelty)' do
+  it 'counts a domain as known only once the user has sent mail to it (novelty)' do
     with_contacts do |contacts|
-      assert_equal ['vysny.me'], contacts.domains_seen(%w[vysny.me ghost.example])
-      assert_empty contacts.domains_seen([])
+      # phish.example and synergi.so only ever wrote to the user: an attacker
+      # earns "known" by writing first, so received mail must not count.
+      assert_equal %w[vysny.me acme.com],
+                   contacts.domains_sent_to(%w[vysny.me acme.com phish.example synergi.so ghost.example])
+      # A substring of a Sent recipient's domain is not that domain.
+      assert_empty contacts.domains_sent_to(%w[acme.co vysny.me.evil.example])
+      assert_empty contacts.domains_sent_to([])
+    end
+  end
+
+  it 'cannot answer novelty when no Sent-folder mail is indexed' do
+    Dir.mktmpdir do |dir|
+      path = make_gloda(dir)
+      SQLite3::Database.new(path) { |db| db.execute('UPDATE folderLocations SET indexingPriority = 50') }
+      gloda = Pikuri::Thunderbird::Gloda.new(gloda_path: path, cache_dir: File.join(dir, 'cache'))
+      begin
+        assert_nil Contacts.new(gloda: gloda).domains_sent_to(%w[vysny.me])
+      ensure
+        gloda.close
+      end
     end
   end
 

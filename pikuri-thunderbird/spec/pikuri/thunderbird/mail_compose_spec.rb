@@ -5,7 +5,7 @@ describe Pikuri::Thunderbird::MailCompose do
   def tool(seen: nil)
     @launched = []
     launched = @launched
-    backend = seen && Class.new { define_method(:domains_seen) { |d| d & seen } }.new
+    backend = seen && Class.new { define_method(:domains_sent_to) { |d| d & seen } }.new
     launcher = Object.new
     launcher.define_singleton_method(:launch) { |uri| launched << uri }
     Pikuri::Thunderbird::MailCompose.new(backend: backend, launcher: launcher)
@@ -27,7 +27,7 @@ describe Pikuri::Thunderbird::MailCompose do
   it 'relays the recipient-novelty warning in the observation' do
     out = tool(seen: ['paypal.com']).run('to' => 'a@paypa1.com', 'body' => 'ok').to_s
     assert_equal 1, @launched.size
-    assert_match(/no prior mail with paypa1\.com/, out)
+    assert_match(/never sent mail to paypa1\.com/, out)
   end
 
   it 'still opens a window (empty To, body kept) when the recipient is dropped' do

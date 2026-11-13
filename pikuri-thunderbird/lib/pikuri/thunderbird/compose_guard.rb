@@ -23,9 +23,9 @@ module Pikuri
     #   must be ASCII-only and non-punycode (an +xn--+ domain is a pre-encoded
     #   homoglyph that would otherwise pass {Pikuri::Sanitizer}'s mixed-script
     #   check as pure ASCII).
-    # * *Soft warn* — the correspondence-graph novelty check: a recipient domain
-    #   the user has never exchanged mail with (per {Gloda::Contacts#domains_seen}) stays
-    #   in the draft but earns a loud note urging out-of-band verification. A
+    # * *Soft warn* — the novelty check: a recipient domain the user has never
+    #   sent mail to (per {Gloda::Contacts#domains_sent_to}) stays in the draft
+    #   but earns a loud note urging out-of-band verification. A
     #   hard reject here would fire on every genuinely-new correspondent. A body
     #   carrying an *encoded-looking blob* (a long base64, hex or base32 run —
     #   see {#body_blob_note}) likewise stays but earns a located note.
@@ -171,10 +171,10 @@ module Pikuri
         Pikuri::Sanitizer.sanitize(addr).warnings.empty?
       end
 
-      # Append the correspondence-graph novelty warning for any recipient domain
-      # the user has no prior mail with. Best-effort: degrades to a "couldn't
-      # check" note when the backend is absent or its identity schema differs
-      # from the probed shape (the schema is unverified across TB versions).
+      # Append the novelty warning for any recipient domain the user has never
+      # sent mail to. Best-effort: degrades to a "couldn't check" note when the
+      # backend is absent, no Sent mail is indexed, or the schema differs from
+      # the probed shape (it is unverified across TB versions).
       #
       # @return [void]
       def novelty_note(addrs, notes)
@@ -187,11 +187,16 @@ module Pikuri
           return
         end
 
-        seen = @backend.domains_seen(domains)
-        novel = domains - seen
+        sent_to = @backend.domains_sent_to(domains)
+        unless sent_to
+          notes << "Couldn't check whether you've mailed these recipients before " \
+                   '(no sent mail is indexed) — double-check the address is correct.'
+          return
+        end
+        novel = domains - sent_to
         return if novel.empty?
 
-        notes << "You have no prior mail with #{novel.join(', ')}. If you expected a " \
+        notes << "You have never sent mail to #{novel.join(', ')}. If you expected a " \
                  'familiar contact, watch for a look-alike domain and verify out of ' \
                  'band (not by replying to a suspect message).'
       rescue SQLite3::SQLException => e

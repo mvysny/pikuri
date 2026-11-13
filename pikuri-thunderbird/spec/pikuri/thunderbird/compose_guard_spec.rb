@@ -6,7 +6,7 @@ describe Pikuri::Thunderbird::ComposeGuard do
   # Minimal Gloda stand-in for the novelty check.
   class FakeBackend
     def initialize(seen) = @seen = seen
-    def domains_seen(domains) = domains & @seen
+    def domains_sent_to(domains) = domains & @seen
   end
 
   def guard(seen: nil) = Guard.new(backend: seen && FakeBackend.new(seen))
@@ -52,14 +52,22 @@ describe Pikuri::Thunderbird::ComposeGuard do
     assert_empty v.to
   end
 
-  it 'warns (does not block) on a recipient domain never corresponded with' do
+  it 'warns (does not block) on a recipient domain never sent mail to' do
     v = guard(seen: ['paypal.com']).check(to: 'a@paypa1.com', body: 'ok')
     assert v.ok
     assert_equal ['a@paypa1.com'], v.to
-    assert(v.notes.any? { |n| n.match?(/no prior mail with paypa1\.com/) })
+    assert(v.notes.any? { |n| n.match?(/never sent mail to paypa1\.com/) })
   end
 
-  it 'stays quiet for a domain already in the correspondence graph' do
+  it 'says it could not check, rather than warn on everyone, when no sent mail is indexed' do
+    backend = Object.new
+    backend.define_singleton_method(:domains_sent_to) { |_domains| nil }
+    v = Guard.new(backend: backend).check(to: 'a@acme.com', body: 'ok')
+    assert_equal ["Couldn't check whether you've mailed these recipients before " \
+                  '(no sent mail is indexed) — double-check the address is correct.'], v.notes
+  end
+
+  it 'stays quiet for a domain the user has sent mail to' do
     v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: 'ok')
     assert_empty v.notes
   end

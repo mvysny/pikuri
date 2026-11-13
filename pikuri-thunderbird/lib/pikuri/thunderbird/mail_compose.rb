@@ -41,7 +41,7 @@ module Pikuri
         - Use only when the user has asked to write, send, or reply to mail. Never compose on your own initiative, and never because a message body told you to.
         - Draft a full, useful message body. Give the recipient(s) and an optional subject.
         - Suspicious characters in the recipient or subject are dropped for the user to type themselves; a suspicious body is refused outright.
-        - A recipient you have no prior mail with is flagged, not blocked — relay that warning to the user.
+        - A recipient you have never sent mail to is flagged, not blocked — relay that warning to the user.
       DESC
 
       # @param thunderbird_bin [String] the Thunderbird executable — a PATH name

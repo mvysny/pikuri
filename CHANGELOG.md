@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix the compose guard's novelty warning never firing on a reply to a new sender: only a domain you have *sent* mail to counts as known (`Gloda::Contacts#domains_sent_to`, renamed from `domains_seen`), since an attacker earned "seen" by writing first.
 - Fix the Thunderbird calendar tools missing an event added while Thunderbird runs: `Pikuri::Thunderbird::DatabaseSnapshot` now copies a store's `-wal` too and notices a commit that only reached it.
 - `read` and `edit` now name the workspace root when a file isn't found — `file not found: xyz/spec.txt (relative paths resolve against /home/alice/Notes)` — so a model holding a path relative to another folder sees why it missed.
 - **Breaking:** `rag_find` is renamed `rag_search_keywords` (class `Pikuri::Rag::Tools::SearchKeywords`), because *search* and *find* are synonyms and the pair said nothing about how the two differ (`D_rag_gem`); a prompt or transcript naming `rag_find` needs the new name.

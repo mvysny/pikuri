@@ -19,7 +19,7 @@ Thunderbird compose window** — you read it, and *you* click Send. It draws the
 draft in plain text (no hidden HTML, no tracking images), refuses a body laced
 with invisible characters, drops look-alike recipient addresses for you to
 retype, and warns you when you're about to mail a domain you've never
-corresponded with. See [`design/architecture.md`](design/architecture.md).
+sent mail to. See [`design/architecture.md`](design/architecture.md).
 
 ## Requirements
 

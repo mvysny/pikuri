@@ -12,21 +12,19 @@ module Pikuri
       #
       #   contacts = Gloda::Contacts.new(gloda: gloda)
       #   contacts.resolve(query: 'jon', limit: 5)  # name → ranked addresses
-      #   contacts.domains_seen(['acme.com', 'paypa1.com'])  # => ['acme.com']
+      #   contacts.domains_sent_to(['acme.com', 'paypa1.com'])  # => ['acme.com']
       #
       # It owns no resources: it queries {Gloda}'s live snapshot through
       # {Gloda#with_fresh_db} (so a rebuild under it is transparent), and there
       # is nothing to close — the {Gloda} it holds is closed by its own owner.
       #
-      # == Two graphs, one purpose
+      # == Implementation details
       #
-      # {#resolve} reads the *derived* graph — the decoded +c3author+ /
-      # +c4recipients+ columns, where display name and address sit together —
-      # because Gloda's +contacts+ table is dead for this (frecency/popularity
-      # unpopulated, +name+ unreliable). {#domains_seen} reads the *identity*
-      # graph (the +identities+ table). Both answer "who has this user actually
-      # corresponded with?" — {#resolve} to fill a recipient, {#domains_seen}
-      # to flag a novel one.
+      # Both read the decoded +c3author+ / +c4recipients+ columns, where display
+      # name and address sit together, never Gloda's own graph tables: +contacts+
+      # is dead (frecency/popularity unpopulated, +name+ unreliable), and
+      # +identities+ holds every author, so a domain that only ever wrote to
+      # the user would count as known.
       class Contacts
         LOGGER = Pikuri.logger_for('Thunderbird::Gloda::Contacts')
 
@@ -97,35 +95,55 @@ module Pikuri
           tally(rows, terms).first(limit)
         end
 
-        # Which of +domains+ the user has correspondence history with, per
-        # Gloda's identity graph (+identities+ collects the email of every
-        # author *and* recipient across all indexed messages, Sent included —
-        # so it answers "have I ever exchanged mail with this domain?" in both
-        # directions). Powers {ComposeGuard}'s recipient-novelty warn.
+        # Which of +domains+ the user has *sent* mail to: a recipient of a
+        # message in a Sent folder. Powers {ComposeGuard}'s recipient-novelty
+        # warn.
         #
-        #   contacts.domains_seen(['acme.com', 'paypa1.com'])  # => ['acme.com']
+        #   contacts.domains_sent_to(['acme.com', 'paypa1.com'])  # => ['acme.com']
+        #
+        # Received mail never counts, since an attacker earns that by writing
+        # first: a reply to a phishing mail has to warn. Sent mail archived out
+        # of the Sent folder doesn't count either, which only adds a warning.
         #
         # @param domains [Array<String>] lowercased bare domains.
-        # @return [Array<String>] the subset present in the identity graph.
-        # @raise [SQLite3::SQLException] if the +identities+ schema differs from
-        #   the probed shape — the caller degrades (the schema is unverified
-        #   across Thunderbird versions).
-        def domains_seen(domains)
+        # @return [Array<String>, nil] the subset the user has sent mail to, or
+        #   +nil+ when no Sent-folder mail is indexed at all (an account that
+        #   keeps no Sent copies), where every recipient would look new.
+        # @raise [SQLite3::SQLException] if the schema differs from the probed
+        #   shape — the caller degrades (it is unverified across Thunderbird
+        #   versions).
+        def domains_sent_to(domains)
           return [] if domains.empty?
 
           @gloda.with_fresh_db do |db|
-            domains.select do |domain|
-              db.get_first_value(<<~SQL, [domain])
-                SELECT 1 FROM identities
-                WHERE kind = 'email'
-                  AND lower(substr(value, instr(value, '@') + 1)) = ?
-                LIMIT 1
-              SQL
-            end
+            next nil unless db.get_first_value(<<~SQL, [SENT_PRIORITY])
+              SELECT 1 FROM messages m JOIN folderLocations fl ON fl.id = m.folderID
+              WHERE fl.indexingPriority = ? AND m.deleted = 0 LIMIT 1
+            SQL
+
+            domains.select { |domain| sent_to?(db, domain) }
           end
         end
 
         private
+
+        # @param db [SQLite3::Database]
+        # @param domain [String] a lowercased bare domain.
+        # @return [Boolean] whether a Sent-folder message has a recipient at
+        #   exactly +domain+ (the SQL +instr+ only narrows; +@acme.com+ is also
+        #   inside +@acme.com.evil.example+).
+        def sent_to?(db, domain)
+          cells = db.execute(<<~SQL, [SENT_PRIORITY, "@#{domain}"])
+            SELECT c.c4recipients FROM messages m
+            JOIN messagesText_content c ON c.docid = m.id
+            JOIN folderLocations fl ON fl.id = m.folderID
+            WHERE fl.indexingPriority = ? AND m.deleted = 0
+              AND instr(lower(c.c4recipients), ?) > 0
+          SQL
+          cells.any? do |(cell)|
+            cell.to_s.scan(EMAIL_RE).any? { |email| email.downcase.split('@', 2).last == domain }
+          end
+        end
 
         # FTS5 expression matching any query term, restricted to the author /
         # recipient columns (each term phrase-quoted so punctuation in the name

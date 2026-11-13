@@ -211,8 +211,8 @@ field so a body can't smuggle `&bcc=`), the body is plain-text-only (no hidden
 content, no remote beacons), and a mechanical recipient guard
 ({Pikuri::Thunderbird::ComposeGuard}) runs first: a suspicious *body* fails
 closed; suspicious/non-ASCII/punycode *recipients* are dropped for the human to
-retype; a never-corresponded-with recipient domain (per
-{Pikuri::Thunderbird::Gloda#domains_seen}) is flagged, not blocked; and a body
+retype; a recipient domain the user has never sent mail to (per
+{Pikuri::Thunderbird::Gloda::Contacts#domains_sent_to}) is flagged, not blocked; and a body
 carrying a long base64 *blob* earns a located soft-warn (see
 {Pikuri::Thunderbird::ComposeGuard#body_blob_note}). The launch
 is detached (`setsid --fork`) so closing the agent never kills the user's
@@ -223,11 +223,11 @@ Thunderbird.
 note — but
 they are not a barrier against an *adaptive* injector, who splits the blob with
 whitespace or spells it in prose for free (the same injection payload carries
-the evasion). The sharpest surviving channel is **reply-to-injector**: the
-poisoning message's From-domain is already in Gloda's identities graph (which
-counts received mail, both directions), so a reply to the attacker draws no
-novelty flag. The check is also per-*domain*, so a never-seen address at a
-domain you have mailed before is silent as well.
+the evasion). A reply to the injector is flagged, since only domains the user has
+*sent* to count as known and an attacker can't earn that by writing first. It
+stays silent where the attacker writes from a domain the user has mailed before:
+a compromised contact's account, or a shared provider's domain (`gmail.com`),
+because the check is per-*domain*.
 
 **What each guard really buys is a rung, not a wall.** Every check here
 narrows the *form* the payload may take, never the payload itself, so an
@@ -320,13 +320,13 @@ A complete, pre-decoded search index. Tables that matter:
   `popularity` are 0 for every row and `name` is unreliable (often a bare
   address or junk), so {Pikuri::Thunderbird::Gloda::Contacts#resolve} reads the
   *decoded* `c3author` / `c4recipients` columns instead (name + address
-  together, with a natural per-message frequency). `identities(kind, value)` —
-  where `kind='email'`, `value` the bare address — *is* used, by
-  {Gloda::Contacts#domains_seen} for the recipient-novelty warn. It holds
-  **every author too**, so a domain that only ever wrote *to* the user counts as
-  seen the moment its mail is indexed — an attacker earns "seen" by writing
-  first (shown on the testbed, 2026-11-13; the fix is
-  `design/ideas/compose-guard-sent-only.md` in the repo root).
+  together, with a natural per-message frequency). `identities(kind, value)` is
+  unused too: it holds **every author**, so a domain that only ever wrote *to*
+  the user would count as known the moment its mail is indexed, and an attacker
+  earns that by writing first. {Gloda::Contacts#domains_sent_to}, the
+  recipient-novelty check, reads `c4recipients` of Sent-folder messages instead
+  (on the testbed the look-alike `northwlnd-bank.example` and the attacker's
+  `kettle-co-payments.example` now warn, `lumo-studio.example` doesn't).
 - **A literal `undefined` in the author/recipient text.** Thunderbird 159
   writes `Mira Koskinen <mira@lumo-studio.example> undefined` into
   `c3author` / `c4recipients` for every address but the owner's own as

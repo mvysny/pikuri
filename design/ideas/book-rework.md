@@ -8,9 +8,8 @@ chapters about running code you didn't write to book 2; book 1 now ends on
 
 **To pick up:** capture the outline's scenes on the testbed only (`dev/thunderbird-testbed/build`
 on the dev VM builds the demo mailbox and `~/Documents`); then write `book/secretary.md` from the
-outline below. The compose guard's novelty scene waits on
-[`compose-guard-sent-only.md`](compose-guard-sent-only.md): today a reply to a new sender isn't
-warned.
+outline below. The compose guard now warns on a reply to a new sender (it counts only domains
+Alex has sent to), so its scene is capturable.
 
 ## Approach
 
