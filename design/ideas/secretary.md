@@ -3,7 +3,10 @@
 Status: **first cut built 2026-11-12, reworked 2026-11-13** after the owner's first real run
 (Qdrant default, `--exclude`, indexing progress, prompt routing). Tested on a demo `~/Documents`
 of PDFs, CSV, HTML, Markdown and a 137-page book with a needle: every planted fact found, from
-the right source. Next: more real use, then the chapter. The
+the right source. **Passed the owner's host test 2026-11-13** on real mail and documents
+(a subfolder of ~10,000 files): a restart re-embeds nothing, document answers, a reply drafted
+into Thunderbird's compose window, an event handed to Thunderbird's import, a memory written,
+a note edited, and the memory used after a restart. Next: the chapter. The
 chapter that teaches it is
 [`book-rework.md`](book-rework.md)'s; this file owns the demo.
 
