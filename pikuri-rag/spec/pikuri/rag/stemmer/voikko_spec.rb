@@ -44,7 +44,7 @@ describe Pikuri::Rag::Stemmer::Voikko do
     end
 
     # The query side never splits: "tietokone" searching for "kone" too
-    # would make rag_find tietokone list every note mentioning kone.
+    # would make rag_search_keywords tietokone list every note mentioning kone.
     it 'leaves compounds whole' do
       assert_equal ['tietokone'], stemmer.stems('tietokoneella')
     end

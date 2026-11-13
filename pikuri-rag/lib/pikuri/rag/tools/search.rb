@@ -21,8 +21,8 @@ module Pikuri
       #
       # The keyword leg **ORs** its terms: a twelve-word natural-language
       # question ANDed matches nothing, and bm25's inverse-document-frequency
-      # term already discounts the "what did we discuss" words. (+rag_find+
-      # ANDs, because its promise is a set — see {Find}.)
+      # term already discounts the "what did we discuss" words. (+rag_search_keywords+
+      # ANDs, because its promise is a set — see {SearchKeywords}.)
       #
       # Fusion is reciprocal rank ({RRF_K}), then the optional
       # {Pikuri::VectorDb::Reranker} over the fused candidates, then
@@ -74,14 +74,14 @@ module Pikuri
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).
         DESCRIPTION = <<~DESC
-          Search the indexed document corpus for content relevant to a query, by meaning and by keyword at once.
+          Search the indexed documents by meaning and by keyword at once, and return the few best-ranked passages — a sample, not a complete list.
 
           Usage:
           - Use when the user asks about facts, definitions, or topics that would live in their indexed documents (notes, docs, knowledge base).
           - Phrase the query as a complete question or topic statement; exact names, IDs and rare words in it are matched literally as well, so include them verbatim.
           - Returns up to #{FINAL_K} ranked results with `source` paths, line ranges and text snippets; cite results back using the source path.
           - A snippet is a fragment. To read a result in context, call rag_read with its `source` and the first line of its range as `offset`.
-          - This is a ranked sample, not a complete list. When the user asks for *every* document about something, use rag_find instead.
+          - This is a ranked sample, not a complete list. When the user asks for *every* document about something, use rag_search_keywords instead.
           - If a query returns nothing useful, either the relevant doc isn't in the corpus, or the corpus hasn't been indexed yet — say which you suspect, and offer to run rag_reindex to build the index.
         DESC
 

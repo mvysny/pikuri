@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
     FTS5 keyword index beside the vectors, fused by reciprocal rank.
 
     Four tools under one prefix — +rag_search+ (hybrid top-k, fused,
-    optionally reranked), +rag_find+ (every matching document by
+    optionally reranked), +rag_search_keywords+ (every matching document by
     stemmed token match, with no cutoff), +rag_read+ and
     +rag_reindex+. The keyword index is its own backend
     (+Backend::Fts5+, the only class here that speaks SQL), paired with

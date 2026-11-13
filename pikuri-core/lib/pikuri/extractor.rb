@@ -61,7 +61,7 @@ module Pikuri
   #   included — reproducible only by running the same extractor.
   #
   # Every reader paging through {.extract_paged} numbers lines this way, so
-  # a search hit's +lines a-b+ from +rag_search+ / +rag_find+ /
+  # a search hit's +lines a-b+ from +rag_search+ / +rag_search_keywords+ /
   # +vectordb_search+ is a valid +offset:+ for +rag_read+, +vectordb_read+
   # and the workspace +read+ over the same file.
   #

@@ -61,8 +61,8 @@ describe Pikuri::Rag::Tools::Search do
       assert_equal ['query'], tool.parameters.to_openai[:properties].keys.map(&:to_s)
     end
 
-    it 'points the model at rag_find for the completeness question' do
-      assert_includes tool.description, 'rag_find'
+    it 'points the model at rag_search_keywords for the completeness question' do
+      assert_includes tool.description, 'rag_search_keywords'
     end
 
     it 'carries the corpus legs it was handed' do

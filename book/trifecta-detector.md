@@ -616,7 +616,7 @@ Trifecta: pikuri-briefing — 1 of 3 legs (private); no untrusted/egress leg fou
 
 pikuri-briefing [:private]
   rag_search [:private]
-  rag_find [:private]
+  rag_search_keywords [:private]
   rag_read [:private]
   rag_reindex []
 ```
@@ -629,7 +629,7 @@ Trifecta: pikuri-briefing — 2 of 3 legs (private, untrusted); no egress leg fo
 
 pikuri-briefing [:private, :untrusted_hard]
   rag_search [:private]
-  rag_find [:private]
+  rag_search_keywords [:private]
   rag_read [:private]
   rag_reindex []
   thunderbird_mail_search [:private, :untrusted_hard]

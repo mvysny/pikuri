@@ -47,7 +47,7 @@ module Pikuri
       # converge: the {Pikuri::VectorDb::Watcher}'s boot sweep sees the
       # keyword-less sources as unindexed and +replace_source+s them into both,
       # and +index_if_empty!+ sees +0+ and fills both. Without it, that pairing
-      # boots to a silently empty +rag_find+.
+      # boots to a silently empty +rag_search_keywords+.
       #
       # The same rule repairs a half-written pair: a raise between the two
       # writes leaves one store ahead, the intersection excludes that source,

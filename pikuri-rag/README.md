@@ -61,7 +61,7 @@ Four tools, registered by the extension:
    vector leg, ORs its terms for a bm25-ranked keyword leg, fuses the
    two by reciprocal rank, optionally reranks with a cross-encoder,
    and hands back five `source lines a-b (score=…)` snippets.
-2. **`rag_find`** — the complete listing. ANDs the (stemmed) terms
+2. **`rag_search_keywords`** — the complete listing. ANDs the (stemmed) terms
    *across the whole document* and returns *every* match: `source`,
    matching-chunk count with the line each starts at, byte size. No
    cutoff, no top-k.
@@ -99,7 +99,7 @@ Two reads do not simply delegate, because **"indexed" means both stores
 hold it**: the manifest is the intersection, and `#count` is `0` when
 either store is empty — which is what makes a persistent Qdrant
 collection beside a fresh in-memory keyword index converge on the next
-boot sweep instead of booting to a silently empty `rag_find`.
+boot sweep instead of booting to a silently empty `rag_search_keywords`.
 
 `store:` on the extension is the keyword index's SQLite path,
 `":memory:"` by default. Pair it with the backend: in-memory with

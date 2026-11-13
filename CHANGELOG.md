@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `rag_find` is renamed `rag_search_keywords` (class `Pikuri::Rag::Tools::SearchKeywords`), because *search* and *find* are synonyms and the pair said nothing about how the two differ (`D_rag_gem`); a prompt or transcript naming `rag_find` needs the new name.
+- `rag_search_keywords` answers an empty AND with each word's own document count — `"solar" (3 documents), "array" (2 documents), "wattage" (0 documents)` — so the model retries without the word that emptied the set.
 - **Breaking:** the vector-store supervisors run Qdrant and Chroma with `podman` when it is on `PATH`, else `docker`, so a rootless setup comes out of the box; `Pikuri::VectorDb::Server::DockerContainer` is renamed `Server::Container`, and the image pins are now fully qualified (`docker.io/…`).
 - Add `exclude:` to `Pikuri::VectorDb::Indexer` and both `VectorDb::Extension` and `Rag::Extension`, which keeps whole folders (a library of books, say) out of the walk and the watcher, and `--exclude` on `bin/pikuri-secretary`.
 - `Pikuri::VectorDb::Watcher` now logs a line before its boot scan, numbers each swept file `[i/total]`, and logs the sweep's end with its duration, and the `Indexer` announces a file of 20 or more chunks before embedding it, so a long index is no longer silent.

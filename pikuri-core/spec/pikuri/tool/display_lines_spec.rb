@@ -91,7 +91,7 @@ RSpec.describe 'Pikuri::Tool display lines' do
     end
 
     it 'joins an array argument, rather than dumping it' do
-      find = tool('rag_find') { |p| p.required_string_array :terms, 't' }
+      find = tool('rag_search_keywords') { |p| p.required_string_array :terms, 't' }
 
       assert_equal 'crypto, rotation', find.describe_call('terms' => %w[crypto rotation])
     end

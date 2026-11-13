@@ -4,7 +4,7 @@ require 'spec_helper'
 require 'tmpdir'
 require 'pathname'
 
-describe Pikuri::Rag::Tools::Find do
+describe Pikuri::Rag::Tools::SearchKeywords do
   let(:vectors) { Pikuri::VectorDb::Backend::InMemory.new }
   let(:hybrid) do
     Pikuri::Rag::Backend::Hybrid.new(vectors: vectors,
@@ -46,17 +46,17 @@ describe Pikuri::Rag::Tools::Find do
   end
 
   def result(terms)
-    Pikuri::Rag::Tools::Find.execute(backend: hybrid, root: @root, terms: terms)
+    Pikuri::Rag::Tools::SearchKeywords.execute(backend: hybrid, root: @root, terms: terms)
   end
 
   describe 'as a Pikuri::Tool' do
     let(:tool) do
-      Pikuri::Rag::Tools::Find.new(backend: hybrid, root: @root,
-                                   legs: Pikuri::Tool::TrifectaLegs::NONE)
+      Pikuri::Rag::Tools::SearchKeywords.new(backend: hybrid, root: @root,
+                                             legs: Pikuri::Tool::TrifectaLegs::NONE)
     end
 
-    it 'is named rag_find' do
-      assert_equal 'rag_find', tool.name
+    it 'is named rag_search_keywords' do
+      assert_equal 'rag_search_keywords', tool.name
     end
 
     it 'takes only terms' do
@@ -99,7 +99,7 @@ describe Pikuri::Rag::Tools::Find do
       assert_match(/^acme-2026-07-02\.md — 1 chunk \(line 1\), \d+ B$/, out)
     end
 
-    it "lists only the first #{Pikuri::Rag::Tools::Find::LINES_SHOWN} lines, the count still whole" do
+    it "lists only the first #{Pikuri::Rag::Tools::SearchKeywords::LINES_SHOWN} lines, the count still whole" do
       chunks = [3, 90, 12, 40, 41, 210, 388].each_with_index.map do |line, i|
         chunk("long.md:#{i}", 'long.md', "Acme pricing, part #{i}.", line: line)
       end
@@ -118,6 +118,14 @@ describe Pikuri::Rag::Tools::Find do
     it 'ANDs the terms' do
       populate
       assert_includes execute('Acme initech'), 'No indexed document contains all of'
+    end
+
+    it 'on an empty AND, counts each word on its own so the model sees which one emptied it' do
+      populate
+      assert_includes execute('Acme pricing wattage'),
+                      'No indexed document contains all of: "acme" (2 documents), ' \
+                      '"pricing" (3 documents), "wattage" (0 documents).'
+      assert_includes execute('Acme pricing wattage'), 'rag_search'
     end
 
     # The regression: FTS5's own implicit AND is row-scoped and a row is a
@@ -175,7 +183,7 @@ describe Pikuri::Rag::Tools::Find do
 
     it 'is a no-match line, not an error, when nothing matches' do
       populate
-      assert_includes execute('kubernetes'), 'No indexed document contains all of'
+      assert_equal 'No indexed document contains "kubernetes".', execute('kubernetes')
     end
 
     it 'agrees in number for a single row' do

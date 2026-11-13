@@ -23,7 +23,7 @@ module Pikuri
   # Four tools, split along the two questions a corpus gets asked. *Relevance*
   # is +rag_search+ ({Tools::Search}) — "what did we agree about the migration
   # plan?", answered as top-k chunks with the vector and keyword legs fused.
-  # *Completeness* is +rag_find+ ({Tools::Find}) — "every note mentioning
+  # *Completeness* is +rag_search_keywords+ ({Tools::SearchKeywords}) — "every note mentioning
   # Acme", answered as a listing with no cutoff. +rag_read+ and +rag_reindex+
   # are {Pikuri::VectorDb::Tools::Read} / {Pikuri::VectorDb::Tools::Reindex}
   # under +family: 'rag'+, so this gem adds no code for them.

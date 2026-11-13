@@ -31,7 +31,7 @@ module Pikuri
     # ("invoice #4471" — rare tokens are what embedders rank worst). Those
     # need a keyword index beside the vectors, which is +pikuri-rag+: it
     # decorates whatever +backend:+ you pass here and ships +rag_search+ /
-    # +rag_find+ over the same corpus. The two extensions are **mutually
+    # +rag_search_keywords+ over the same corpus. The two extensions are **mutually
     # exclusive on one agent** — {#configure} refuses a pre-registered
     # +rag_*+ tool, and {Pikuri::Rag::Extension} refuses +vectordb_*+.
     #

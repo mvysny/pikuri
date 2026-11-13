@@ -3,7 +3,7 @@
 module Pikuri
   module Rag
     # Namespace for the two tools this gem adds — {Tools::Search}
-    # (+rag_search+) and {Tools::Find} (+rag_find+) — which split along the
+    # (+rag_search+) and {Tools::SearchKeywords} (+rag_search_keywords+) — which split along the
     # two questions a corpus gets asked: *relevance*, a ranked sample, and
     # *completeness*, the whole set.
     #

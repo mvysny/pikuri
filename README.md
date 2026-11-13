@@ -90,7 +90,7 @@ in:
     recall agent).
   - [`pikuri-rag`](pikuri-rag/README.md) — hybrid retrieval on that
     primitive: a keyword index beside the vectors, so `rag_search`
-    also finds an invoice number and `rag_find` lists *every*
+    also finds an invoice number and `rag_search_keywords` lists *every*
     matching document. Demo: `pikuri-briefing`, which briefs you on
     a customer from your own notes.
   - [`pikuri-thunderbird`](pikuri-thunderbird/README.md) — the

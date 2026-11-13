@@ -313,7 +313,7 @@ agent answered from the fragment plus training data. The workaround on the corpu
 per section so the path stands in for a position, bends every corpus to the retrieval layer.
 
 **Decision.** Every chunk carries `first_line:` / `last_line:` ({Pikuri::VectorDb::Chunk}), both
-`rag_search` legs store them, hits print `lines a-b`, `rag_find` lists first lines, and the paged
+`rag_search` legs store them, hits print `lines a-b`, `rag_search_keywords` lists first lines, and the paged
 readers number their lines the same way, so a range is a ready `offset:`. "Line" is
 {Pikuri::Extractor}'s == Lines: LF only, 1-based, over the *extracted* text, which the `Indexer`
 and the readers both see through the one registry. A program reads positions from
@@ -381,7 +381,7 @@ pikuri targets is known to.
 ## D_ruby_stemming — Why stem in Ruby, Finnish through Voikko, with compounds split only into the index?
 
 **Context.** `D_rag_gem` shipped `porter`, English only, and named the seam for the rest: a
-`stemmer:` duck. Finnish came first, and it inflects and compounds: unstemmed, `rag_find katu`
+`stemmer:` duck. Finnish came first, and it inflects and compounds: unstemmed, `rag_search_keywords katu`
 misses *kadulla*, and *kone* misses *tietokoneella*. Stock FTS5 has no other stemmer, and the
 prebuilt `sqlite3` gem cannot load a tokenizer extension.
 
@@ -393,7 +393,7 @@ not know with itself. {Pikuri::Rag::Stemmer::Voikko} indexes dictionary forms th
 unknown, mostly English and names; 1.08 base forms per word; `porter` over base forms merges 4
 lemma groups of 2 278, one wrongly (*tulos* / *tulo*); 41 000 words/s, so no cache. Compound
 parts are indexed beside the whole lemma but never searched for: *kone* finds *tietokone*, and
-`rag_find tietokone` stays exact. An index records its stemmer's id and schema version, and on a
+`rag_search_keywords tietokone` stays exact. An index records its stemmer's id and schema version, and on a
 mismatch empties itself for `Hybrid`'s both-stores rule to refill.
 
 **Alternatives rejected.**
@@ -405,7 +405,7 @@ mismatch empties itself for `Hybrid`'s both-stores rule to refill.
 - **`WORDBASES` for the parts** gives roots rather than parts (*yritys* → *yrittää*) and drops
   some (*versionhallintajärjestelmää* loses *hallinta*). `Voikko::Analysis#morphemes` cuts by
   `STRUCTURE` instead, and each part is analysed again.
-- **Splitting the query too** would make `rag_find tietokone` list every note mentioning *kone*.
+- **Splitting the query too** would make `rag_search_keywords tietokone` list every note mentioning *kone*.
 - **Raising on a mismatch.** `Rag::Extension.new` opens the store, so the host would not boot and
   the `rag_reindex` the message named would be unreachable. The rebuild instead costs one full
   re-embed per stemmer change.
@@ -1274,7 +1274,7 @@ if a reader can run both readings in one sitting.
   message into one sentence — "they agreed to 10% (acme-2026-08-14.md, and
   their mail of 22 August)" hides that half of it is unvouched.
 - **Let the brief report absence over mail the way it does over notes.**
-  Rejected because the guarantees differ: `rag_find` lists every matching
+  Rejected because the guarantees differ: `rag_search_keywords` lists every matching
   note with no cutoff, while a mail search returns ranked matches up to a cap
   and Gloda never indexes Junk/Trash (`pikuri-thunderbird/design/architecture.md`). The
   search tool is already honest about its own page (it fetches `limit + 1` and
@@ -1423,7 +1423,7 @@ inconsistency.
   this wiring — one main agent with a corpus and a job — so the artifact is
   `prompts/pikuri-briefing.txt`, which per AGENTS.md names no wired tool.
   "The keeper" is welcome there as the identity voice.
-- ***`rag_search` + `rag_find` + `rag_read`, no `grep` / `file_list`.***
+- ***`rag_search` + `rag_search_keywords` + `rag_read`, no `grep` / `file_list`.***
   See below.
 
 **Alternatives rejected.**
@@ -1457,7 +1457,7 @@ inconsistency.
   that owns retrieval*; `file_list` composes only over a flat corpus
   (`Listing` renders an indented tree of bare names, so on a nested corpus
   the model has to reassemble `dir/name`); and it has no stemming. `D_rag_gem`
-  is where the fix went instead, and `rag_find` is what the notes corpus
+  is where the fix went instead, and `rag_search_keywords` is what the notes corpus
   actually wanted.
 - **A `write` tool over the notes folder.** Kept out for a reason
   independent of everything above: once the agent reads mail as well
@@ -1527,7 +1527,7 @@ tokenizer, so the keyword half costs no new dependency.
 consuming only its documented ducks (`Backend`, `Embedder`, `Chunker`,
 `Indexer`, `Watcher`, `Reranker`, `Tools::Read` / `Tools::Reindex` under
 `family: 'rag'`). It ships one `rag_*` tool family — `rag_search` (hybrid
-top-k, fused, optionally reranked), `rag_find` (every matching document by
+top-k, fused, optionally reranked), `rag_search_keywords` (every matching document by
 stemmed token match: `source`, match count, size; no cutoff), `rag_read`,
 `rag_reindex` — and a **`Backend` composed of two stores**: `Backend::Fts5`
 (the FTS5 keyword store, the only class in the gem that speaks SQL) held
@@ -1577,11 +1577,25 @@ on. The two extensions are mutually exclusive on one agent.
   another wrapper" became true rather than aspirational. The `Sharing:`
   postures got sharper too — the lock lives in the store that needs it, and
   `Hybrid` holds no state.
-- **One tool with a `mode:` flag** instead of `rag_search` + `rag_find`.
+- **One tool with a `mode:` flag** instead of `rag_search` + `rag_search_keywords`.
   Rejected: the two make different promises (relevance ordering vs.
   completeness) with different output shapes (snippets vs. a listing), and
   a model choosing between them by flag value is a model reading a
   parameter description instead of a tool name.
+- **Naming the pair `rag_search` + `rag_find`**, as it shipped first.
+  Renamed 2026-11-13 after the owner read a transcript and couldn't tell
+  them apart: *search* and *find* are synonyms, so the names said nothing
+  the descriptions didn't. The specialist is now named by its mechanism,
+  `rag_search_keywords`, and the default keeps the plain `rag_search`, as
+  `web_search` and `vectordb_search` do in their families: a model scanning
+  names picks the plain one unless it needs exact words or every document.
+  Each description's first line carries the promise (a ranked sample vs.
+  the complete set). Rejected on the way: `rag_search_hybrid` (jargon, and
+  it forced the sibling `rag_read` / `rag_reindex` to be told the search
+  tool's name instead of deriving it), `rag_search_ranked` (an output shape
+  beside a mechanism, and the keyword listing is sorted too),
+  `rag_search_embeddings` (the hybrid leg is keywords too) and
+  `rag_find_all` ("all" of what?).
 - **A document-level recall mode on the vector index** — rank documents by
   aggregated chunk score, return every `source`. This was the deferral
   `design/ideas/vectordb-deferrals.md` carried. Rejected because it is honest but
@@ -1591,7 +1605,7 @@ on. The two extensions are mutually exclusive on one agent.
   cutoff-vs-everything becomes boolean match, chunk-to-document aggregation
   becomes `GROUP BY source`, the reranker bypass is automatic, and the
   corpus-shape precondition ("the agent reads them in full") becomes a
-  usage line on `rag_find`.
+  usage line on `rag_search_keywords`.
 - **`grep` + `file_list` from `pikuri-workspace` bolted onto the corpus
   agent.** The briefing wiring worked this through and it composes
   (identical relative paths, no confirmer needed); rejected there because it
@@ -1606,7 +1620,7 @@ on. The two extensions are mutually exclusive on one agent.
 
 - **A keyword index inherits the *chunk* as its unit of truth** from the
   vector pipeline it decorates, so every document-level promise has to be
-  reassembled explicitly. The plan had `rag_find` juxtapose terms into one
+  reassembled explicitly. The plan had `rag_search_keywords` juxtapose terms into one
   FTS5 `MATCH` and `GROUP BY source`, relying on FTS5's implicit AND — but
   that AND is *row*-scoped, and a row is a chunk, so the listing omitted any
   document whose terms landed in different chunks: every note past a couple

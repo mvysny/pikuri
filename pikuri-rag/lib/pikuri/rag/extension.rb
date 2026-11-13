@@ -15,7 +15,7 @@ module Pikuri
     #   end
     #   watcher = Pikuri::VectorDb::Watcher.new(indexer: ext.indexer).start
     #
-    # It registers four tools — +rag_search+, +rag_find+, +rag_read+,
+    # It registers four tools — +rag_search+, +rag_search_keywords+, +rag_read+,
     # +rag_reindex+ — and nothing else. It does *not* index: as with
     # {Pikuri::VectorDb::Extension}, when and whether to populate the corpus is
     # host policy, driven through {#indexer} (an explicit +index_if_empty!+, a
@@ -83,7 +83,7 @@ module Pikuri
       # The four tool names this extension owns, in registration order.
       #
       # @return [Array<String>]
-      TOOL_NAMES = %w[rag_search rag_find rag_read rag_reindex].freeze
+      TOOL_NAMES = %w[rag_search rag_search_keywords rag_read rag_reindex].freeze
 
       # @return [String] the tool-name prefix handed to
       #   {Pikuri::VectorDb::Tools::Read} / {Pikuri::VectorDb::Tools::Reindex},
@@ -176,7 +176,7 @@ module Pikuri
 
         c.add_tool Tools::Search.new(embedder: @embedder, backend: @backend,
                                      reranker: @reranker, legs: @legs)
-        c.add_tool Tools::Find.new(backend: @backend, root: @indexer.root, legs: @legs)
+        c.add_tool Tools::SearchKeywords.new(backend: @backend, root: @indexer.root, legs: @legs)
         c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: @backend, root: @indexer.root,
                                                      legs: @legs, family: FAMILY)
         c.add_tool Pikuri::VectorDb::Tools::Reindex.new(indexer: @indexer, family: FAMILY)

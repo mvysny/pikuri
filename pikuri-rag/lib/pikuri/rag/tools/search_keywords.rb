@@ -3,7 +3,7 @@
 module Pikuri
   module Rag
     module Tools
-      # The LLM-facing +rag_find+ tool — every document matching a term, as a
+      # The LLM-facing +rag_search_keywords+ tool — every document matching a term, as a
       # listing rather than a ranking:
       #
       #   3 documents contain all of: "acme" "pricing". Counts are how many of the document's chunks matched, not occurrences; lines are where each matching chunk starts.
@@ -48,7 +48,7 @@ module Pikuri
       #
       # Sharing: +P_shared_locked+ — {Pikuri::Rag::Backend::Fts5} locks, and
       # the corpus root is immutable.
-      class Find < Pikuri::Tool
+      class SearchKeywords < Pikuri::Tool
         # @return [Integer] first lines listed per row; past it the row ends
         #   in +…+, and the chunk count still says how many matched.
         LINES_SHOWN = 5
@@ -56,7 +56,7 @@ module Pikuri
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).
         DESCRIPTION = <<~DESC
-          List EVERY indexed document containing the given terms. No cutoff, no top-k — the complete set.
+          List EVERY indexed document containing all of the given words. No cutoff, no top-k — the complete set.
 
           Usage:
           - Use when the question is a set rather than a ranking: "every note about Acme", "which documents mention invoice 4471", "all my notes on the migration".
@@ -74,10 +74,10 @@ module Pikuri
         #   relative to it.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's declaration,
         #   as {Search} takes it and for the same reason.
-        # @return [Find]
+        # @return [SearchKeywords]
         def initialize(backend:, root:, legs:)
           super(
-            name: 'rag_find',
+            name: 'rag_search_keywords',
             description: DESCRIPTION,
             parameters: Pikuri::Tool::Parameters.build { |p|
               p.required_string :terms,
@@ -86,7 +86,7 @@ module Pikuri
                                 'question — every term has to match.'
             },
             execute: lambda { |terms:|
-              Find.execute(backend: backend, root: root, terms: terms)
+              SearchKeywords.execute(backend: backend, root: root, terms: terms)
             },
             # As {Search}: a listing of corpus paths and sizes, nothing outbound.
             trifecta_legs: legs
@@ -111,8 +111,7 @@ module Pikuri
           listed = per_word.join(' ')
           matches = backend.find(terms: per_word).sort_by { |m| [-m.first_lines.length, m.source] }
           if matches.empty?
-            return Pikuri::Tool::Result.new(content: "No indexed document contains all of: #{listed}.",
-                                            summary: 'Found 0 documents')
+            return Pikuri::Tool::Result.new(content: miss(backend, per_word), summary: 'Found 0 documents')
           end
 
           subject = matches.length == 1 ? '1 document contains' : "#{matches.length} documents contain"
@@ -124,6 +123,30 @@ module Pikuri
             summary: "Found #{Pikuri::Tool.pluralize(matches.length, 'document')}"
           )
         end
+
+        # The observation for an empty AND: how many documents each word finds
+        # on its own, so the model sees which word emptied the set and retries
+        # without it, rather than guessing:
+        #
+        #   No indexed document contains all of: "solar" (3 documents),
+        #   "array" (2 documents), "wattage" (0 documents). …
+        #
+        # One query per word, paid only on a miss.
+        #
+        # @param backend [#find]
+        # @param per_word [Array<String>] the {Pikuri::Rag::Query.terms}, at
+        #   least one.
+        # @return [String]
+        def self.miss(backend, per_word)
+          return "No indexed document contains #{per_word.first}." if per_word.one?
+
+          counts = per_word.map do |term|
+            "#{term} (#{Pikuri::Tool.pluralize(backend.find(terms: [term]).length, 'document')})"
+          end
+          "No indexed document contains all of: #{counts.join(', ')}. Retry without the words " \
+            "that narrow it to nothing, or use rag_search to search by meaning."
+        end
+        private_class_method :miss
 
         # One listing row: citation, match count with first lines, and the
         # file's current size.

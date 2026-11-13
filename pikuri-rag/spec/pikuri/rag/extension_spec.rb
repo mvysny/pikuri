@@ -43,12 +43,12 @@ describe Pikuri::Rag::Extension do
     end
 
     it 'refuses a pre-registered rag_* tool' do
-      configurator.add_tool Pikuri::Rag::Tools::Find.new(
+      configurator.add_tool Pikuri::Rag::Tools::SearchKeywords.new(
         backend: inner, root: Pathname.new(Dir.tmpdir),
         legs: Pikuri::Tool::TrifectaLegs::NONE
       )
       error = assert_raises(RuntimeError) { build.configure(configurator) }
-      assert_includes error.message, 'rag_find cannot be pre-registered'
+      assert_includes error.message, 'rag_search_keywords cannot be pre-registered'
     end
 
     it 'refuses a pre-registered vectordb_* tool — the two tool sets are exclusive' do
@@ -71,7 +71,7 @@ describe Pikuri::Rag::Extension do
       ext = build(private: true, trusted: true)
       assert ext.private?
       assert ext.trusted?
-      %w[rag_search rag_find rag_read].each do |name|
+      %w[rag_search rag_search_keywords rag_read].each do |name|
         legs = tool_legs(ext, name)
         assert legs.private, "#{name} should carry the private leg"
         assert_equal :none, legs.untrusted

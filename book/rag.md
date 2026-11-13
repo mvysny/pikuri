@@ -72,7 +72,7 @@ Then it fuses the two lists and returns five results. So *"what did we
 agree about pricing?"* still works through meaning, and *"invoice
 4471"* now works through the literal token, from the same tool call.
 
-**`rag_find`** is the *complete* answer, and it has no vector leg at
+**`rag_search_keywords`** is the *complete* answer, and it has no vector leg at
 all. Give it a term and it returns **every** document containing it —
 the `source` path, how many of its chunks matched and the line each
 of them starts at, and the file's size:
@@ -112,11 +112,11 @@ same code, same membership gate, one different string in their name.
 make different promises with different output shapes, and a model
 choosing between them by flag value is a model reading a parameter
 description instead of a tool name. `rag_search` returns ranked
-snippets; `rag_find` returns a complete listing. Those are two tools.
+snippets; `rag_search_keywords` returns a complete listing. Those are two tools.
 
 ### The AND/OR split, which looks like an inconsistency
 
-`rag_search` **OR**s the words in your query. `rag_find` **AND**s
+`rag_search` **OR**s the words in your query. `rag_search_keywords` **AND**s
 them. Same corpus, same index, opposite operator — and both are right.
 
 `rag_search` takes a natural-language question. *"What did we agree
@@ -126,7 +126,7 @@ the ranking — and BM25's inverse-document-frequency term already
 discounts "what", "did", "we" and "about", which appear in every
 document and therefore carry almost no score.
 
-`rag_find` takes terms, and its promise is a *set*. If you ask for
+`rag_search_keywords` takes terms, and its promise is a *set*. If you ask for
 "acme pricing", a set that includes every note saying "pricing" is not
 the set you asked for. So the tool ANDs, and its parameter description
 tells the model to pass one entity or a couple of words rather than a
@@ -263,7 +263,7 @@ correctness invariant rather than tidiness.
 Picture the failure it prevents. You run with Qdrant, so your vectors
 persist across restarts. Your keyword index defaults to in-memory, so
 it doesn't. You restart. The vector store says "I have 4,000 chunks,
-nothing to do"; the keyword index is empty; `rag_find` returns nothing
+nothing to do"; the keyword index is empty; `rag_search_keywords` returns nothing
 for every query, forever, and never says why.
 
 So `Hybrid` answers "what is indexed?" with the **intersection** of the
@@ -296,7 +296,7 @@ text into runs of letters and digits and emits each one as a quoted
 phrase term. `acme OR initech` becomes `"acme" "or" "initech"` — three
 literal words, one of which happens to be spelled "or". The operators
 are never exposed, deliberately: "Acme *or* Initech" is two
-`rag_find` calls, and the model doesn't get a query language to
+`rag_search_keywords` calls, and the model doesn't get a query language to
 misuse. If nothing survives the split — the model passed `???` — the
 tool says "no searchable terms" and the database is never touched.
 
@@ -354,7 +354,7 @@ Trifecta: pikuri-briefing — 1 of 3 legs (private); no untrusted/egress leg fou
 
 pikuri-briefing [:private]
   rag_search [:private]
-  rag_find [:private]
+  rag_search_keywords [:private]
   rag_read [:private]
   rag_reindex []
 ```
