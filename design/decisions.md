@@ -3507,8 +3507,8 @@ shell.
   path grants no capability to abuse.
 - **Accept "if it can add, drop the tool."** The premise is model-specific and
   pikuri's default contradicts it: the book's first conversation runs
-  `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` — a 4-bit-quantized MoE with ~3B active
-  parameters — not a frontier model. And the failure mode was never "can't
+  `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M` — a 4-bit-quantized MoE with ~3B
+  active parameters — not a frontier model. And the failure mode was never "can't
   add"; it's digit-level unreliability on long multiplication and floats, which
   is exactly what a deterministic evaluator fixes. Privacy-first-by-default
   makes this tool *more* load-bearing here than in a cloud-only coding agent,

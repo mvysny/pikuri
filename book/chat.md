@@ -12,22 +12,23 @@ listeners, the Thought → Tool-call → Observation loop — that
 every later chapter builds on.
 
 The defaults — local llama, no tools that could send your data
-out, verified MCPs — are designed to be safe even with real data;
+out — are designed to be safe even with real data;
 [the security chapter](security.md) explains why. If you're uneasy until
 then, just follow along with throwaway prompts. The defaults are
 tuned for the recommended path: pikuri running on your own
 machine, on a project you'd already trust to live there. Within
 that path the built-in safeguards are designed to hold without
-you thinking about them. The security chapter (and its code-track companion,
-[the security-revisited chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/security-revisited.md)) is the heavyweight reading
-for when you want to step outside that path — pulling in
-third-party plugins, pointing pikuri at code you don't already
-trust, or running it unattended.
+you thinking about them. The security chapter is the heavyweight
+reading for when you want to step outside that path — pointing
+pikuri at mail and files strangers wrote, or running it unattended.
+Running code you didn't write, a shell or a plugin, is
+[book 2's](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md)
+subject.
 
 ## Prerequisites
 
 You should already have a checkout and `bundle install` finished,
-per [the prerequisites chapter](prerequisites.md) (its Docker section
+per [the prerequisites chapter](prerequisites.md) (its container section
 can wait until the vector-DB chapter — nothing here needs it). Quick
 verification:
 
@@ -263,8 +264,9 @@ line:
 Dragging a file onto most terminals pastes its path, so type `@` and
 drop the file. A path with spaces gets quotes, `@'/tmp/my shot.png'`,
 which is what the drop pastes anyway. PNG, JPEG, GIF and WebP up to
-5 MB work. A PDF doesn't: it is text, which `pikuri-os` reads itself
-when you name the path.
+5 MB work. A PDF doesn't: it's text rather than a picture, and
+turning a PDF into text is a tool's job, which the vector-DB chapter
+wires.
 
 The model has to be able to see: a `-hf` model on
 `llama-server` downloads its vision projector by itself, but one
@@ -353,8 +355,8 @@ keep several LLM blocks in the file and `#`-comment out the ones
 you're not using — handy when testing against more than one model or
 server. There are deliberately **no
 `--server` / `--model` / API-key command-line flags**: pikuri the
-library never reads keys from the environment (a rogue tool or MCP
-server could otherwise harvest them out of `ENV` — see the project's
+library never reads keys from the environment (a rogue tool could
+otherwise harvest them out of `ENV` — see the project's
 *Environment is not a secret store* rule), so the example scripts keep
 their configuration in a file you own and lock down.
 
@@ -386,23 +388,22 @@ everything stays on your machine. The recognized keys:
 | `llm_server` | all scripts | LLM server base URL; a trailing `/v1` is optional (`https://api.x.ai` and `https://api.x.ai/v1` both work) |
 | `llm_model` | all scripts | chat model identifier |
 | `llm_api_key` | all scripts | API key the server expects — a hosted provider's, or the secret of a local `llama-server --api-key`; omit for a keyless local server |
-| `search` | chat, code, assistant, os | the search block: `brave_key`, `exa_key`, `engines` (below) |
-| `embed_model` | corpus, memory | embedding model |
-| `extraction_model` | memory | mem0 extraction model |
-| `reranker_model`, `reranker_server` | corpus | reranker model / its server |
+| `search` | chat, minions, secretary | the search block: `brave_key`, `exa_key`, `engines` (below) |
+| `embed_model` | corpus, briefing, secretary | embedding model |
+| `reranker_model`, `reranker_server` | corpus, briefing, secretary | reranker model / its server |
 
 What stays on the command line is what changes *per run*: the prompt
-itself, and operational toggles like `--no-sandbox` (the coding-agent chapter) — a
-security switch you'd never want silently persisted in a file.
+itself, and operational toggles like the secretary's
+`--no-search-confirm` — a privacy switch you'd never want silently
+persisted in a file.
 
-Every chat script also takes `--system-prompt FILE`, which swaps the
+Most demo scripts also take `--system-prompt FILE`, which swaps the
 script's own system prompt for the contents of `FILE` — say, a
 `pirate.txt` holding *"You are a pirate. Answer every question in
 pirate speak."* Two things still get appended after yours: the facts
-the script knows about this run (today's date, and for `pikuri-code`
-the project root, your `AGENTS.md` / `CLAUDE.md` and where scratch
-space lives), and the sections each extension adds — the Thunderbird
-mail rules, a list of available skills, and so on. Your prompt changes
+the script knows about this run (today's date, say), and the
+sections each extension adds — the Thunderbird mail rules, the list
+of sub-agents it can hand work to, and so on. Your prompt changes
 what the agent is told, never which tools it holds: the trifecta map
 the script prints is the same with or without it.
 

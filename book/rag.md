@@ -420,11 +420,12 @@ someone "just tries it with a bigger model".
 Two absences are deliberate, and the reasons are more interesting than
 the wiring.
 
-**No memory gem.** The notes folder *is* the durable memory here:
-human-written, human-curated, already distilled. Auto-extracting
-memories from it would summarize a summary. If you want to remember
-something, you write a note. (This is the only place in the book where
-the answer to "should I add `pikuri-memory`?" is a flat no.)
+**No automatic memory.** The notes folder *is* the durable memory
+here: human-written, human-curated, already distilled. A memory that
+quietly extracted facts from it would summarize a summary. If you want
+to remember something, you write a note. (The secretary at the end of
+the book takes the same line one step further: its memory is a note
+too, and it changes only through a diff you approve.)
 
 **No write tool.** Not because writing is dangerous in general, but
 because of what it would become. This agent *can* read your mail — the

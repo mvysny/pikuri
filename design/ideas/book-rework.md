@@ -1,11 +1,11 @@
 # Book 1 rework: one track that ends on the secretary
 
-Status: **the secretary chapter is written** (`book/secretary.md`, 2026-11-13); the rest of the
-book is audited (2026-11-13, below) and not yet reworked. The workshop split (2026-11-12) took
-the chapters about running code you didn't write to book 2; book 1 now ends on
-[the secretary](secretary.md), and several chapters still lean on what moved out.
+Status: **done, 2026-11-13**, bar two loose ends: `Q_tilde` (under *New chapters*) and the
+optional `wire.md` paragraph (under *The sweep*). The workshop split (2026-11-12) took the
+chapters about running code you didn't write to book 2; book 1 now runs as one track ending on
+[the secretary](secretary.md), and its ToC is `book/README.md`.
 
-**To pick up:** the next unchecked step of *The order of work*.
+**To pick up:** settle the two loose ends, then graduate this file.
 
 ## Approach
 
@@ -64,7 +64,7 @@ chapters). Some are legitimate links to book 2.
    is one line pointing at book 2.
 4. ~~**The two new chapters**~~ Both written 2026-11-13: `book/designing-a-tool.md` and
    `book/touching-files.md`.
-5. **The sweep**, below.
+5. ~~**The sweep**~~ Done 2026-11-13, below.
 
 ## New chapters
 
@@ -88,18 +88,8 @@ chapters). Some are legitimate links to book 2.
 
 ## The sweep
 
-- ~~**The default model becomes Ornith-1.5**~~ Done 2026-11-13 (bins, `pikuri-core/README.md`,
-  `chat.md`, `vectordb.md`); `hosting.md`'s thinking passage and `design/decisions.md` keep Qwen3.6,
-  where it is a measurement.
-- `chat.md`, `subagents.md`, `prerequisites.md`, `rag.md`, `vectordb.md` mention memories, mem0,
-  skills, MCP or `pikuri-extractors`; repoint them at the secretary chapter or book 2.
-- `chat.md` may gain one paragraph from book 2's `wire.md`: the messages array is not the prompt
-  (template flattening), with a forward link.
-- `prerequisites.md`: Docker now earns its keep only at the vectordb chapter (Qdrant); check the
-  chapter still says so honestly. And pikuri now prefers Podman when it's installed (rootless and
-  daemonless out of the box), so the chapter leads with `apt install podman` and keeps rootless
-  Docker as the alternative; the secretary needs one of them, since its index lives in Qdrant.
-- **The coda, `apps.md`:** Puri first, as "the secretary with all the bells and whistles", then
-  pikuri-tui and pikuri-web.
-- **`book/README.md`:** drop the "being reshaped" paragraph once this lands; the running order
-  above becomes the ToC.
+Done 2026-11-13: `prerequisites.md` leads with Podman and keeps rootless Docker as the
+alternative; `chat.md`, `subagents.md`, `rag.md`, `vectordb.md` and `hosting.md` no longer lean
+on book-2 chapters (what's left links to book 2 by name); the coda leads with Puri; the ToC's
+"being reshaped" paragraph is gone. Not done, and optional: `chat.md` may gain one paragraph
+from book 2's `wire.md` (the messages array is not the prompt: template flattening).

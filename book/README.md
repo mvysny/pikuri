@@ -20,32 +20,28 @@ local site, or — once gems are published — see
 
 ## How the guide is shaped
 
-A setup chapter, then the base vocabulary in two chapters, then
-recall over your own documents, then the security arc that says why
-none of it can leak them, then the secretary, which holds all three
-legs of the trifecta on purpose and shows what keeps that in bounds.
-Hosting steps outside the single-agent shape, and the coda points at
-the apps built on pikuri.
+A setup chapter, then the base vocabulary in four chapters (a
+conversation, a tool, files, delegation), then recall over your own
+documents, then the security arc that says why none of it can leak
+them, then the secretary, which holds all three legs of the trifecta
+on purpose and shows what keeps that in bounds. Hosting steps outside
+the single-agent shape, and the coda points at the apps built on
+pikuri.
 
-The book is being reshaped around one track that ends on a plain
-command-line personal assistant (mail, calendar, notes, web search),
-with new chapters on designing a tool and on touching files. The
-chapters about running code you didn't write (the shell and its
-sandbox, the OS assistant, the coding agent, MCP, skills, memory,
-language servers) moved to
+Running code you didn't write — a shell and its sandbox, the OS
+assistant, the coding agent, MCP, skills, language servers — is
 [book 2, the workshop](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md).
-Until the rework lands, a few chapters here still point there.
 
 ## Chapters
 
 ### Setup
 
 - **[Prerequisites](prerequisites.md).** One-time machine
-  setup: Ruby + the checkout, and Docker — what a container is
-  in sixty seconds, and why **rootless**: the usual `docker`
-  group shortcut is passwordless root. Safe to skim past until
-  the vector-DB chapter, which is where Docker first earns its
-  keep.
+  setup: Ruby + the checkout, and a container runtime — what a
+  container is in sixty seconds, Podman as the short path, and why
+  Docker only **rootless**: the usual `docker` group shortcut is
+  passwordless root. Safe to skim past until the vector-DB chapter,
+  which is where containers first earn their keep.
 
 ### Base vocabulary
 
@@ -161,14 +157,15 @@ Until the rework lands, a few chapters here still point there.
 
 ### Coda
 
-- **[Apps built on pikuri](apps.md).** The book's coda. An everyday
-  assistant reaches for all three trifecta legs at once, and what it
-  should look like is being worked out by apps, not by this repo:
+- **[Apps built on pikuri](apps.md).** The book's coda. What an
+  everyday assistant should look like beyond the secretary's plain
+  command line is being worked out by apps, not by this repo:
+  [Puri](https://github.com/mvysny/puri), the secretary with all the
+  bells and whistles, then
   [pikuri-tui](https://codeberg.org/mvysny/pikuri-tui)'s terminal
-  shells, [pikuri-web](https://codeberg.org/mvysny/pikuri-web)'s
-  browser chat and [Puri](https://github.com/mvysny/puri), a
-  Siri-style desktop assistant. A piece that proves itself there moves
-  back into a gem.
+  shells and [pikuri-web](https://codeberg.org/mvysny/pikuri-web)'s
+  browser chat. A piece that proves itself there moves back into a
+  gem.
 
 ### Book 2
 

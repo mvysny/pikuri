@@ -49,9 +49,9 @@ handed one user turn, read once, thrown away. No tools (there's
 nothing to call), no listeners (nobody's watching), no history
 worth keeping. "Caption this conversation" is one of these.
 
-pikuri already ships that second shape, and you've met it without
-noticing — `Pikuri::Mcp::Thinker`, which the MCP chapter's
-verifier and synthesizer run their boot passes through:
+The second shape is short enough to show whole. Here it is as
+book 2's `Pikuri::Mcp::Thinker`, which an MCP server's description
+verifier runs its boot passes through:
 
 ```ruby
 def call(prompt)

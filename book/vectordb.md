@@ -11,7 +11,7 @@ rerankers actually work, and which knob to turn when retrieval
 disappoints.
 
 The defaults — local llama, no tools that could send your data
-out, verified MCPs — are designed to be safe even with real data;
+out — are designed to be safe even with real data;
 [the security chapter](security.md) explains why. This chapter is where it
 starts to matter. The whole point of indexing a corpus is to aim
 the agent at data you care about — your notes, your contracts, your
@@ -334,26 +334,13 @@ pikuri-pdf is the *training-wheels* PDF extractor — in-process, pure
 Ruby, nothing to install — and it's the right wiring for this
 chapter's no-egress agent reading a corpus *you* chose. An agent that
 browses the open web flips both assumptions: the documents it parses
-are exactly the bytes an attacker controls. Such a wiring drops
-`pikuri-pdf` and registers `pikuri-extractors` instead, in the same
-registry slot:
-
-```ruby
-require 'pikuri-extractors'
-
-Pikuri::Extractors::DOCUMENTS.register
-```
-
-Every conversion then runs inside a one-shot **networkless docker
-container** (`--network=none --read-only --cap-drop=ALL`, bytes in
-via stdin, Markdown out via stdout, no volume mounts), so a malicious
-PDF exploiting poppler's parser detonates somewhere with no network
-and no filesystem. DOCX, ODT, XLSX, PPTX, EPUB and RTF come along in
-the same registration, and the `--- Page N ---` markers survive the
-swap. What you give up is lazy paging: the container re-converts the
-whole document per `read` window (the trade-off table is in the
-`Extractors::Documents` yardoc). One extractor per format per wiring;
-registering both gems buys nothing.
+are exactly the bytes an attacker controls, and a PDF parser is a big
+attack surface to run in your own process. That wiring wants each
+conversion inside a sandbox with no network and no filesystem, which is
+what
+[book 2's](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md)
+`pikuri-extractors` does, in the same registry slot, with Office formats
+along for the ride.
 
 ## The five pipeline pieces
 
@@ -565,13 +552,13 @@ untrusted: the folder you vouch for should contain only what you vouch
 for. One thing `trusted:` deliberately says nothing about is *parser*
 exposure — a hostile PDF attacking poppler is a code-execution problem
 for the extractor, not an injection problem for the model, and that's
-the extractors gem's job (`pikuri-extractors`, above).
+a sandboxed extractor's job (book 2's `pikuri-extractors`, above).
 
 That "give the agent no dangerous tools" stance is the cheapest
 privilege boundary there is, and it's enough whenever reading the
 corpus is the agent's *whole job*. It stops being enough the moment
-you want one agent that browses the web, runs MCP servers, *and*
-reaches your private corpus — then the corpus has to be quarantined
+you want one agent that browses the web *and* reaches your private
+corpus — then the corpus has to be quarantined
 behind a sub-agent that itself has no egress: the bundled
 `LIBRARIAN` persona, the privilege-separation arc from
 [the sub-agents chapter](subagents.md) applied to retrieval. [The security chapter](security.md) makes the full trifecta argument. Here, with retrieval as the agent's only job, we
@@ -641,24 +628,19 @@ populated index instead of rebuilding it. From then on a `Watcher`
 keeps it in sync incrementally, and a full `vectordb_reindex` is
 only needed after changing the embedder or chunker settings.
 
-`Server::Qdrant.ensure_running` requires `docker` on `PATH` — the
-rootless setup from [the prerequisites chapter](prerequisites.md), which until
-now you could put off, becomes load-bearing here; the
-container image tag is pinned in `Server::Qdrant::IMAGE` — the
-same tag as the Qdrant inside [the memories chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md)'s
-memory stack, by convention, so a host running both holds one
-image on disk. The container is named under a `pikuri-internal-`
+`Server::Qdrant.ensure_running` requires `podman` or `docker` on
+`PATH` (it prefers `podman`) — the container setup from
+[the prerequisites chapter](prerequisites.md), which until now you
+could put off, becomes load-bearing here; the container image tag is
+pinned in `Server::Qdrant::IMAGE`. The container is named under a `pikuri-internal-`
 prefix that pikuri considers fully owned, and is recreated
 transparently if the pinned image is bumped between pikuri
 versions — your data lives in the bind-mounted volume, which is
-yours and is never touched. If `docker` is unavailable, or you'd
-rather manage qdrant yourself (a production cluster, a shared
-docker-compose stack), point
+yours and is never touched. If neither runtime is available, or
+you'd rather manage qdrant yourself (a production cluster, a shared
+compose stack), point
 `Backend::Qdrant.new(host:, port:, collection:)` at it directly
-and skip the supervisor. (One caveat for later: the memories chapter's
-memory stack publishes *its own* Qdrant on the same default host
-port, 6333 — the two are separate instances by design, so if you
-run both at once, give this supervisor a different `port:`.)
+and skip the supervisor.
 
 **Why Qdrant?** [ChromaDB](https://www.trychroma.com) — the
 vector store most RAG tutorials reach for — is equally supported
@@ -667,8 +649,7 @@ either engine answers top-k over a personal-sized corpus in
 single-digit milliseconds. Qdrant gets the recommendation because
 its REST surface has held stable since 2023 (Chroma has one
 breaking API revision on record), its server image is less than
-half the size, and the memories chapter's memory stack already runs it — one
-engine to learn, audit, and trust instead of two. The full
+half the size. The full
 side-by-side survey lives in
 [`pikuri-vectordb/design/architecture.md`](../pikuri-vectordb/design/architecture.md).
 `pgvector` and others would be similarly thin Faraday clients;
@@ -691,13 +672,15 @@ The flags are independent and stack cleanly:
 
 - **`--qdrant`** swaps the in-RAM `Backend::InMemory` for the
   self-managed Qdrant container from the previous section, so the
-  embeddings persist on disk across runs. (Needs `docker` on
-  `PATH`. `--chroma` does the same with the ChromaDB alternative.)
+  embeddings persist on disk across runs. (Needs `podman` or
+  `docker` on `PATH`. `--chroma` does the same with the ChromaDB
+  alternative.)
 - **`--watch`** starts the background `Watcher`: it walks the source
   once on boot and then reindexes individual files as they change,
   so you never run `vectordb_reindex` by hand again.
 
-On the **first** run the two combine like this: docker starts the
+On the **first** run the two combine like this: the container
+runtime starts the
 `pikuri-internal-qdrant` container, the `Watcher` kicks off a
 background sweep of `book/`, and you drop straight to the `>`
 prompt while the index fills in underneath you — a question asked in
@@ -736,10 +719,9 @@ turn into "*every* note about Acme" and "which note has invoice
 #4471". Both are questions pure geometry cannot answer, and the fix
 is a keyword index beside the vectors.
 
-After that comes [memories](https://github.com/mvysny/pikuri-workshop/blob/master/book/memories.md), the other half of recall:
-facts the agent learned across earlier conversations rather than a
-corpus you indexed. The two pair naturally inside one assistant —
-vector search over your notes plus persistent memories about you
-across sessions — but each is introduced on its own first.
+The other half of recall, facts the agent learned across earlier
+conversations rather than a corpus you indexed, comes at the end of
+the book: [the secretary](secretary.md) keeps its memory as a note
+you approve.
 
 → Continue to [Hybrid retrieval: the questions vectors can't answer](rag.md).
