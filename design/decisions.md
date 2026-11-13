@@ -21,6 +21,62 @@ what it already says.
 
 ---
 
+## D_host_resets_cancel — Why does the host reset the `Cancellable`, and not `run_loop`?
+
+**Context.** `Agent#run_loop` used to reset its `Cancellable` first thing, so a cancel left over
+from the last turn couldn't stop the next one. But a host decides a turn has started *before*
+that line runs: it flips its own "running" flag on its own thread, hands the turn to a worker,
+and accepts a cancel from then on. A cancel landing between the two — Return, then Escape at
+once — was accepted by the host and wiped by the reset, and the turn ran to the end, a cold
+prefill and all. Every host had the window (pikuri-tui, pikuri-web, Puri, the `bin/` scripts),
+and Puri's thread at priority −3 lost the cancel every time its spec tried. pikuri had it on its
+own too: a sub-agent shares its parent's token, and the child's `run_loop` cleared a cancel sent
+while the delegation's confirm prompt waited on the human.
+
+**Decision.** `run_loop` never resets; the host calls {Pikuri::Agent::Control::Cancellable#reset!}
+where it decides a turn starts — on its own thread, under whatever lock guards its "running"
+flag, before it hands the turn to a worker. `run_loop` cannot tell a stale cancel from an early
+one; only the code that starts the turn knows where the line falls, and resetting "just before
+`run_loop`" on the worker is the old bug again. `clear_conversation` still resets, being a
+host-triggered boundary itself. `run_loop` also checks the token once the user turn is recorded,
+before any request: the permit can't be the first check, because an unsized server's permits are
+unlimited and skip it, which left a plain non-streaming turn with no cancellation point at all.
+A host that forgets the reset is not silent: after its first cancel, every turn ends at once.
+
+`Agent` stays a synchronous, low-level API with this contract. The rules it puts on a host —
+serialize calls, reset at the turn boundary, route mid-turn messages to the `Interloper`,
+deliver leftovers, switch models between turns — belong in one asynchronous,
+conversation-centric layer that obeys them for every host; that is a feature, so it is
+pikuri-workshop's to build, never core's.
+
+**Alternatives rejected.**
+
+- **Reset at the end of a turn** only moves the race: a cancel landing between `run_loop`'s
+  return and the host marking itself idle would stop the next turn.
+- **An opt-in `run_loop(…, reset_cancellable: true)`** keeps the old default, which is wrong for
+  every host that runs the turn on another thread and for pikuri's own `SubAgentTool`.
+- **`run_loop` creating a fresh `Cancellable`** doesn't fix the race: the host needs the token
+  before the worker reaches `run_loop`, and one born inside `run_loop` is born after the early
+  cancel.
+- **A token per turn, `run_loop(…, cancellable:)`**, one-shot like .NET's `CancellationToken`:
+  six places capture the agent's token at construction and would all have to follow the current
+  turn's — `Tool::ExecuteContext`, the `RequestThrottle`, `SubAgentTool`, and in
+  pikuri-workshop the LSP extension and the MCP synthesizer and verifier. Forgetting a fresh
+  token is no louder than forgetting the reset, so the plumbing buys no safety.
+- **A turn number or a single-use `Turn` handle** that `cancel` must name: each trades the reset
+  for remembering something else, and a sub-agent must run inside its parent's number, which
+  needs a second entry point.
+- **A per-turn context object holding `cancel`, the agent's state and the `Interloper`**: the
+  `Interloper` outlives a turn — an injection made while idle lands at the next turn's start,
+  and pikuri-web starts a turn for injections that arrived after the last tool batch.
+- **An `Agent::Runner` in core that owns the turn queue**, `submit` returning a cancellable
+  future: it fixes the race by construction, but puts thread plumbing and concurrent-ruby into
+  every deployment, the `bin/` scripts included, and keeps the API agent-centric while every host
+  thinks in conversations.
+- **Renaming `reset!` to `arm!`**: "arm" beside "cancel" reads as setting it off.
+
+---
+
 ## D_thunderbird_testbed — How do we test the Thunderbird tools without anyone's real mail?
 
 **Context.** The mail and calendar tools read stores only a running Thunderbird builds: the

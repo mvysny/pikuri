@@ -135,7 +135,7 @@ module Pikuri
         # turn from one sent early for this one. The agent's own boundaries
         # (a mid-loop {Control::Interloper} injection, a sub-agent's turn on
         # the shared token) leave it alone, or they would swallow a pending
-        # cancel.
+        # cancel. +design/decisions.md+ +D_host_resets_cancel+.
         #
         # @return [void]
         def reset!
