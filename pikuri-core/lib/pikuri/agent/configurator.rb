@@ -51,6 +51,11 @@ module Pikuri
       #   cancel during boot propagates.
       attr_reader :cancellable
 
+      # @return [#call, nil] the agent's +around_request:+ hook
+      #   ({Agent#around_request}), for an extension building its own agent
+      #   to pass on.
+      attr_reader :around_request
+
       # @return [Control::Interloper] the agent's mid-loop input queue
       #   ({Agent#interloper}).
       attr_reader :interloper
@@ -85,19 +90,21 @@ module Pikuri
       # @param streaming [Boolean]
       # @param cancellable [Control::Cancellable, nil]
       # @param interloper [Control::Interloper]
+      # @param around_request [#call, nil]
       # @param on_close_sink [Array<Proc>, nil] array {#on_close} appends to.
       #   {Agent#initialize} passes its live +@on_close_handlers+ so a handler
       #   armed via +c.on_close+ is reachable instantly — what lets the
       #   constructor close a half-built agent if a later +configure+ raises.
       #   Defaults to a fresh array (standalone/spec use).
       def initialize(transport:, system_prompt_base:, id:, streaming:,
-                     cancellable:, interloper:,
+                     cancellable:, interloper:, around_request: nil,
                      on_close_sink: nil)
         @transport = transport
         @system_prompt_base = system_prompt_base
         @id = id
         @streaming = streaming
         @cancellable = cancellable
+        @around_request = around_request
         @interloper = interloper
 
         @tools = []

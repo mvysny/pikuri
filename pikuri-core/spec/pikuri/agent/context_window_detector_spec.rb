@@ -80,9 +80,8 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     end
   end
 
-  # The slot count rides the same document as the cap, and is what seeds
-  # {Pikuri::Agent::ServerPermits} — see the /props shape measured on a live
-  # llama.cpp in design/decisions.md D_llm_request_throttle.
+  # The slot count rides the same document as the cap, and is what a host's
+  # request throttle sizes itself from.
   describe 'total_slots' do
     it 'reads the top-level total_slots beside the nested n_ctx' do
       stubs.get(url) do
@@ -106,7 +105,7 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     end
 
     # The two fields are independent both ways: a document with slots but no
-    # usable cap still tells ServerPermits what it needs.
+    # usable cap still carries the slot count.
     it 'keeps total_slots when the cap is missing, warning about the cap alone' do
       stubs.get(url) { [200, {}, JSON.generate('total_slots' => 4)] }
       props = described_class.detect(transport, openai_base: base)

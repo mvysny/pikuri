@@ -200,6 +200,7 @@ module Pikuri
               transport: transport,
               system_prompt: persona.system_prompt,
               cancellable: parent_cancel,
+              around_request: parent.around_request,
               id: sub_id,
               streaming: streaming
             ) do |c|

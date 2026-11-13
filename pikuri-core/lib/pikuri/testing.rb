@@ -69,15 +69,13 @@ module Pikuri
     # @param model [String] model id the fake reports (any string; the fake
     #   server "knows" it)
     # @param context_window [Integer] baked onto the transport as its stated
-    #   cap, so {Agent#context_window_cap} is known from construction. It does
-    #   not skip the +/props+ probe: that still runs on the first turn unless
-    #   {Agent::ServerPermits} already sizes +api_base+, and it dials
-    #   for real, since the scripted adapter serves only the chat. Against the
-    #   default +.invalid+ host it fails fast and degrades to +nil+.
+    #   cap, so {Agent#context_window_cap} is known from construction. With
+    #   +modalities+ also stated, the +/props+ probe is skipped; otherwise it
+    #   dials for real, since the scripted adapter serves only the chat, and
+    #   against the default +.invalid+ host fails fast and degrades to +nil+.
     # @param modalities [Hash{Symbol => Boolean}, nil] baked onto the transport
-    #   as stated, like +context_window+; the default +{}+ refuses nothing and,
-    #   with a sized server, lets the probe be skipped. +nil+ leaves it to the
-    #   probe.
+    #   as stated, like +context_window+; the default +{}+ refuses nothing.
+    #   +nil+ leaves it to the probe.
     # @param api_base [String] the transport's base URL. Never dialed (the
     #   adapter answers), but a host may key display/config off it — pass the
     #   base of the connection this fake impersonates so a UI resolves its name.
@@ -100,7 +98,7 @@ module Pikuri
         provider: :openai,
         assume_model_exists: true,
         # Never dialed (the adapter answers); it is the transport's identity to
-        # a host, and the {Agent::ServerPermits} key a throttling spec sizes.
+        # a host, and the +api_base+ an +around_request+ hook is handed.
         api_base: api_base,
         api_key: 'not-needed',
         context_window: context_window,

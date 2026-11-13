@@ -68,9 +68,8 @@ module Pikuri
     # @!attribute [r] context_window
     #   @return [Integer, nil] explicit context-window cap for this
     #     model-on-server, or +nil+ to defer to {ContextWindowDetector}. Travels
-    #     with the model because the cap *is* per-model-per-server. It overrides
-    #     the probed +n_ctx+ and nothing else — the {Agent::ServerPermits}
-    #     auto-size still happens (+design/decisions.md+ +D_probe_when_unknown+).
+    #     with the model because the cap *is* per-model-per-server. Stated
+    #     together with +modalities+, it spares the +/props+ probe.
     #     Never sent to ruby_llm — pure pikuri metadata read by
     #     {Agent#detect_and_emit_context_cap!}, and the cap-inheritance channel:
     #     a spawned agent gets +parent.transport.with(context_window:

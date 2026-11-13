@@ -75,9 +75,9 @@ module Pikuri
   # Thread-safety is not the only question those N agents raise, though: they
   # usually point at *one* inference server, and N simultaneous completions
   # against a llama.cpp started with +--parallel 1+ queue up inside the server,
-  # where pikuri can neither cancel nor reorder them. {ServerPermits} rations
-  # that — one permit per HTTP request, sized from the server's own slot count,
-  # no per-agent wiring.
+  # where pikuri can neither cancel nor reorder them. The +around_request:+
+  # hook is where a host rations that — one permit per HTTP request, never per
+  # turn (see {#initialize}).
   #
   # Two {Control}s are the sanctioned doors *in* from another thread, which is
   # why they carry locks and the agent does not: {Control::Cancellable} (stop
@@ -198,6 +198,21 @@ module Pikuri
     # @param cancellable [Control::Cancellable, nil] cancellation control,
     #   or +nil+ for none (no way to stop a running turn but killing the
     #   process).
+    # @param around_request [#call, nil] runs around every LLM HTTP request,
+    #   streamed response and retries included — the seam a host throttles
+    #   requests against a small server through:
+    #
+    #     around_request: ->(api_base, cancellable, &request) {
+    #       permits_for(api_base).acquire(cancellable) { request.call }
+    #     }
+    #
+    #   Called with the base URL the connection dials (+nil+ for a fixed-base
+    #   provider such as Anthropic) and the agent's +cancellable+; must return
+    #   the block's value. One request, never a turn: a sub-agent's requests
+    #   run while its parent's turn is still open. Survives a model switch, so
+    #   it keys on +api_base+ per call rather than closing over a server. Not
+    #   inherited by itself — whoever builds a child agent passes
+    #   {#around_request} on, as the +agent+ tool does. +nil+ for none.
     # @param id [String] unique id; empty for the main agent, persona-rooted
     #   for sub-agents (+"researcher 0"+, ...). Distinct from a persona's
     #   +name+ (the value the LLM picks in the +agent+ tool's +name:+ arg).
@@ -217,6 +232,7 @@ module Pikuri
     # @raise [ArgumentError] if +history+ is neither +nil+ nor a {History}.
     def initialize(transport:, system_prompt:,
                    cancellable: nil,
+                   around_request: nil,
                    id: '',
                    streaming: false,
                    history: nil,
@@ -227,6 +243,7 @@ module Pikuri
 
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @cancellable = cancellable
+      @around_request = around_request
       @closed = false
 
       @system_prompt_base = system_prompt
@@ -289,6 +306,10 @@ module Pikuri
     #   +nil+. Extensions read it to propagate cancellation to their own
     #   LLM calls (the +agent+ tool shares it so one Ctrl+C stops the tree).
     attr_reader :cancellable
+
+    # @return [#call, nil] the +around_request:+ hook (see {#initialize}), for
+    #   whoever builds a child agent to pass on.
+    attr_reader :around_request
 
     # The agent's own mid-loop input queue — the door a host uses to reach a
     # running turn from another thread:
@@ -394,8 +415,7 @@ module Pikuri
     # +/props?model=<id>+ loads that model, and a host that switches before
     # its first turn would load one it never talks to. Here the turn's real
     # transport is already applied, so a construct-then-switch costs one probe,
-    # for the model actually used. It runs before the first request, so
-    # {ServerPermits} is sized by the time {RequestThrottle} asks, and the
+    # for the model actually used. It runs before the first request, so the
     # fresh {Event::ContextCap} precedes every {Event::Tokens}. A Ctrl+C
     # during a cold load trips the check right after it. It runs after the
     # {EmptyTurnError} guard, since a turn that sends nothing has nothing to
@@ -485,9 +505,8 @@ module Pikuri
         @listeners.emit(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
       end
       detect_and_emit_context_cap! if @cap_pending
-      # The turn's first cancellation point. The permit can't be it: an
-      # unsized server has unlimited permits, which skip the check, and a
-      # plain non-streaming turn then has no other.
+      # The turn's first cancellation point: a plain non-streaming turn with no
+      # +around_request+ has no other before its request goes out.
       @cancellable&.check!
       dispatch_ext_on_user_message(text.to_s, attachments) unless blank
 
@@ -606,6 +625,7 @@ module Pikuri
         id: @id,
         streaming: @streaming,
         cancellable: @cancellable,
+        around_request: @around_request,
         interloper: @interloper,
         on_close_sink: @on_close_handlers
       )
@@ -646,8 +666,8 @@ module Pikuri
       # which {Pikuri::Tool}'s +== Sharing+ asks for on separate grounds. Turn
       # it on and the fix is ruby_llm's +tool_call.ruby_llm+ instrumenter
       # event, whose payload carries +tool_call+ and +result+ together —
-      # reachable through {RequestThrottle}, which already holds that slot and
-      # passes every non-request event through.
+      # reachable through the +instrumenter+ slot {RequestInstrumenter} already
+      # chains.
       @pending_tool_call = nil
 
       @chat.after_message do |msg|
@@ -771,13 +791,9 @@ module Pikuri
     end
 
     # Resolve the context-window cap and announce it as an
-    # {Event::ContextCap}, seeding {ServerPermits} with the slot count the same
-    # probe reports. The transport's explicit +context_window+ wins over the
-    # probed +n_ctx+, and its +modalities+ over the probed ones, into
-    # {#modalities}; the *slot count* has no such override, so the probe is
-    # skipped only when *all three* answers are already in hand — a stated cap,
-    # stated modalities and a {ServerPermits.sized?} server
-    # (+design/decisions.md+ +D_probe_when_unknown+). The cap rides
+    # {Event::ContextCap}. The transport's explicit +context_window+ wins over
+    # the probed +n_ctx+, and its +modalities+ over the probed ones, into
+    # {#modalities}; the probe is skipped when both are stated. The cap rides
     # {ChatTransport}, so a switch resolves the *new* transport's cap. Called
     # from {#run_loop} once per construction or switch, whatever the probe
     # answered: a failed probe is not retried every turn, which would charge a
@@ -786,26 +802,19 @@ module Pikuri
     # @return [void]
     def detect_and_emit_context_cap!
       @cap_pending = false
-      # Probe the server this transport targets: after a cross-server switch
-      # the chat points at +@transport.api_base+, but the global config still
-      # names the old server — so derive the base from the transport.
-      base = @transport.api_base || RubyLLM.config.openai_api_base
-      props = if @transport.context_window && @transport.modalities && ServerPermits.sized?(base)
+      props = if @transport.context_window && @transport.modalities
                 ContextWindowDetector::Props::NONE
               else
-                ContextWindowDetector.detect(@transport, openai_base: base)
+                # Probe the server this transport targets: after a cross-server
+                # switch the chat points at +@transport.api_base+, but the
+                # global config still names the old server.
+                ContextWindowDetector.detect(@transport,
+                                             openai_base: @transport.api_base || RubyLLM.config.openai_api_base)
               end
       @context_window_cap = @transport.context_window || props.n_ctx
       # +{}+ rather than +nil+ once resolved, whatever the probe said: a
       # sub-agent inherits it as stated, so it does not probe again.
       @modalities = @transport.modalities || props.modalities || {}
-      # A +total_slots: nil+ is seeded too, deliberately: "answered, no slots"
-      # is knowledge, where a failure is not — so a server that was merely
-      # booting is asked again. The probe must stay outside the throttle it
-      # sizes — which it is, by construction: {ContextWindowDetector} uses its
-      # own Faraday, not ruby_llm's connection.
-      answered = props != ContextWindowDetector::Props::NONE
-      ServerPermits.default(base, props.total_slots) if answered
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
     end
 
@@ -872,7 +881,7 @@ module Pikuri
 
     # Build the chat for +transport+ — always through a dedicated
     # +RubyLLM::Context+, never +RubyLLM.chat+, so every chat this agent builds
-    # carries the {RequestThrottle} and any +faraday_adapter+. A no-override
+    # carries the +around_request+ hook and any +faraday_adapter+. A no-override
     # transport gets a plain dup of the global config, which resolves the model
     # exactly as +RubyLLM.chat+ would.
     #
@@ -899,11 +908,10 @@ module Pikuri
     # {Pikuri::Testing.fake_transport} uses to run the real ruby_llm loop
     # against a scripted HTTP backend.
     #
-    # So does the {RequestThrottle}, on the same config's +instrumenter+ slot:
-    # per-transport, global config untouched, and keyed on the base URL the
-    # connection will actually dial — which is why it is resolved *after* the
-    # override assignments above. A transport carrying no +provider+ names no
-    # config slot to read, so it throttles nothing (see {ServerPermits}).
+    # So does the {RequestInstrumenter}, on the same config's +instrumenter+
+    # slot, when the agent has an +around_request+ hook: global config
+    # untouched, and handed the base URL the connection will actually dial —
+    # which is why it is read *after* the override assignments.
     #
     # @param transport [ChatTransport]
     # @return [RubyLLM::Context]
@@ -927,23 +935,26 @@ module Pikuri
         # llama.cpp with +--reasoning-format none+ leaves reasoning inline as
         # +<think>…</think>+; a server sending +reasoning_content+ is untouched.
         c.split_think_tags = true
-        c.instrumenter = RequestThrottle.new(
-          key: permit_key(slug, c), cancellable: @cancellable, chain: c.instrumenter
-        )
+        if @around_request
+          c.instrumenter = RequestInstrumenter.new(
+            hook: @around_request, api_base: dialed_api_base(slug, c),
+            cancellable: @cancellable, chain: c.instrumenter
+          )
+        end
       end
     end
 
-    # The server URL {ServerPermits} rations, read off the context config the
-    # chat is about to use rather than re-derived, so the key can't drift from
-    # the connection.
+    # The base URL the connection dials, read off the context config the chat
+    # is about to use rather than re-derived, so it can't drift from the
+    # connection.
     #
     # @param slug [Symbol, nil] the transport's provider.
     # @param config [RubyLLM::Configuration] this context's config, connection
     #   overrides already applied.
     # @return [String, nil] the base URL, or +nil+ when the provider names no
     #   +_api_base+ slot (a fixed-base provider like Anthropic) or has none
-    #   configured — unlimited, which is the right answer for all of them.
-    def permit_key(slug, config)
+    #   configured.
+    def dialed_api_base(slug, config)
       return nil if slug.nil?
 
       reader = "#{slug}_api_base"

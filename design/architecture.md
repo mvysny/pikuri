@@ -32,10 +32,9 @@ first entry in each shows its shape.
 - `ruby_llm` sits under `Agent` and nowhere else. A connection rides an
   {Pikuri::Agent::ChatTransport} → a per-chat `RubyLLM::Context`, never a process-global
   `RubyLLM.configure`, so N agents in one VM can hold N different models.
-- Three process-global registries are the exceptions to "everything hangs off an agent", each
-  because the resource is genuinely per-process: {Pikuri::Finalizers} (one `at_exit`),
-  {Pikuri::Agent::ServerPermits} (one permit pool per inference *server*), {Pikuri::Paths}
-  (one temp root, reaped at exit).
+- Two process-global registries are the exceptions to "everything hangs off an agent", each
+  because the resource is genuinely per-process: {Pikuri::Finalizers} (one `at_exit`) and
+  {Pikuri::Paths} (one temp root, reaped at exit).
 - Untrusted bytes enter through two chokepoints and nowhere else: {Pikuri::Extractor}'s registry
   for format→text conversion, and {Pikuri::Subprocess.spawn} for anything that runs. Paths that
   reach the model are filtered on the way out ({Pikuri::Workspace::Filesystem#denied?}), which is
@@ -48,8 +47,7 @@ first entry in each shows its shape.
 1. `run_loop` applies a pending model switch, resets `Cancellable`, drains any queued
    `Interloper` message and appends the user turn itself. Then, on the first turn after
    construction or a switch, it has `ContextWindowDetector` probe the server's `/props` unless
-   both its facts are already known, memoizing through the same `ServerPermits` registry that
-   rations requests (`D_deferred_cap_probe`). It runs the extensions' `on_user_message` and only
+   the transport states both the cap and the modalities (`D_deferred_cap_probe`). It runs the extensions' `on_user_message` and only
    then calls `RubyLLM::Chat#complete` — never `#ask`, which bundles append and complete
    atomically and leaves no seam to inject between. ruby_llm owns the iteration from here
    (`D_no_step_limit`).

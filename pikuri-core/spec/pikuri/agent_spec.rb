@@ -136,7 +136,7 @@ RSpec.describe Pikuri::Agent do
   let(:listeners)  { Pikuri::Agent::ListenerList.new([recorder]) }
 
   # +Agent#build_chat+ always builds through a +RubyLLM::Context+ (that is what
-  # carries the per-transport +RequestThrottle+ and +faraday_adapter+), so the
+  # carries the +around_request+ hook and the +faraday_adapter+), so the
   # seam to stub is +Context#chat+, not +RubyLLM.chat+.
   before do
     captured = fake_chat
@@ -614,7 +614,6 @@ RSpec.describe Pikuri::Agent do
 
       after do
         Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect, @original_detect)
-        Pikuri::Agent::ServerPermits.reset!
       end
 
       it 'emits UserTurn before the probe, and the probed ContextCap before Tokens' do
@@ -650,16 +649,14 @@ RSpec.describe Pikuri::Agent do
         assert_equal [], fake_chat.added_messages
       end
 
-      it 'skips the probe only when cap, modalities and slot count are all known' do
+      it 'skips the probe only when both cap and modalities are stated' do
         probes = []
         Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
           probes << :probe
           Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1)
         end
-        base = 'http://llama:8080/v1'
-        Pikuri::Agent::ServerPermits.default(base, 1)
-        stated = Pikuri::Agent::ChatTransport.new(model: 'm', provider: :openai, api_base: base,
-                                                  context_window: 8192)
+        stated = Pikuri::Agent::ChatTransport.new(model: 'm', provider: :openai,
+                                                  api_base: 'http://llama:8080/v1', context_window: 8192)
 
         Pikuri::Agent.new(transport: stated, system_prompt: 's').run_loop(user_message: 'a')
         assert_equal 1, probes.size

@@ -152,71 +152,83 @@ yours:
   tokens will be generated, and the user who pressed stop thirty
   seconds ago will pay for them.
 
-Parked in *your* queue, all three are fixable. That's
-`Pikuri::Agent::ServerPermits`: a permit you must hold to have a
-request in flight, and a request waiting for one is waiting
-somewhere you control.
+Parked in *your* queue, all three are fixable. pikuri doesn't ship
+that queue — a single `bin/` script never needs one, since tools run
+one at a time and sub-agents run inline, so one agent tree sends one
+request at a time. What pikuri ships is the place to hang it:
+`Agent.new(around_request:)`, a callable the agent runs around every
+HTTP request it makes. Here is a whole throttle:
 
 ```ruby
-Permits = Pikuri::Agent::ServerPermits
+# One permit pool per server, shared by every agent in the process.
+class Throttle
+  def initialize(slots) # { 'http://localhost:8080/v1' => 1 }
+    @slots = slots
+    @busy = Hash.new(0)
+    @lock = Mutex.new
+    @freed = ConditionVariable.new
+  end
 
-Permits.limit('http://localhost:8080', 1)       # llama-server --parallel 1
-Permits.limit('https://api.openai.com/v1', nil) # nil = unlimited
+  def call(api_base, cancellable)
+    limit = @slots[api_base]
+    return yield unless limit # a server you didn't size: unlimited
+
+    @lock.synchronize do
+      until @busy[api_base] < limit
+        cancellable&.check!         # Stop reaches a parked request
+        @freed.wait(@lock, 0.1)
+      end
+      @busy[api_base] += 1
+    end
+    begin
+      yield
+    ensure
+      @lock.synchronize { @busy[api_base] -= 1; @freed.broadcast }
+    end
+  end
+end
+
+THROTTLE = Throttle.new('http://localhost:8080/v1' => 1)
+agent = Pikuri::Agent.new(transport: t, system_prompt: p, around_request: THROTTLE)
 ```
+
+The wait is timed rather than a plain `wait` because a cancel is a
+bare flag write — it has to be safe from a signal trap — so nothing
+signals the condition variable when the user presses Stop; the
+waiter has to look.
 
 Two things about the scope, both of which are the point rather than
 an implementation detail.
 
-**The key is the server, not the agent.** One process-wide
-registry, keyed by the normalized base URL. Twenty agents pointing
-at the same URL share its permits; there's deliberately no
-per-agent pool to construct and thread through your host. This is
-the same rule as the web-search rate limiter from the earlier
-chapters — what you're protecting is one inference server's slots,
-and that is not a property of any agent talking to it. A per-agent
-limiter would let twenty agents fire twenty simultaneous requests
-and change nothing about how many arrive.
+**The key is the server, not the agent.** One `THROTTLE` for the
+whole process, and it is handed the base URL each request dials, so
+twenty agents pointing at the same URL share its permits — even
+after one of them switches model to another server. This is the
+same rule as the web-search rate limiter from the earlier chapters:
+what you're protecting is one inference server's slots, and that is
+not a property of any agent talking to it. A limiter per agent
+would let twenty agents fire twenty simultaneous requests and
+change nothing about how many arrive.
 
-**A permit covers one HTTP request, not one turn.** This one is
+**The hook covers one HTTP request, not one turn.** This one is
 load-bearing. A turn is inference *plus* tools, so a turn that
 spends five seconds in `web_search` would hold a slot while the
 server idles. Worse, a whole-turn permit deadlocks the moment a
 parent's tool spawns a sub-agent: the parent holds the only permit
 and waits for a child that's waiting for a permit. Per-request
-avoids both. The permit is taken around ruby_llm's
-`request.ruby_llm` instrumenter event, and it's held for the whole
-streamed response — measured, not assumed, because releasing at the
-first byte would gate nothing at all.
+avoids both. The hook runs around ruby_llm's `request.ruby_llm`
+instrumenter event, and it spans the whole streamed response —
+measured, not assumed, because releasing at the first byte would
+gate nothing at all. The `agent` tool hands its children the
+parent's hook, so the whole tree queues in one line.
 
-Mostly you configure none of this. The `/props` probe pikuri
-already makes to learn the context window also reports
-`total_slots`, and that seeds the permit count, so a default local
-llama.cpp throttles correctly with zero configuration. Anything
-unprobeable — cloud endpoints, providers with a fixed base — stays
-unlimited, which is the right answer there. `limit` is the
-override, and it always wins over what the probe found.
+How many slots does your server have? You don't have to guess: the
+same `/props` document pikuri reads for the context window reports
+it.
 
-Passing an explicit `context_window:` on the transport doesn't
-change any of that, and it's worth knowing why, because the
-tempting shortcut is a bug. The cap is what the probe was built
-for, so stating the cap looks like a reason to skip the probe —
-pikuri did skip it, once. But one `/props` document answers *two*
-questions, and the second one is `total_slots`, which is a property
-of the **server**, not of the model you just sized. Skipping on the
-cap meant that stating a number in the model's column silently gave
-up the server's.
-
-So the probe is skipped only when both answers are already in hand:
-you stated the cap *and* something already sized the server. That
-something is this registry, which doubles as the probe's memo. A
-`limit` call in your boot code means no probe at all. Four agents
-against one llama.cpp probe it once between them rather than four
-times. And a sub-agent probes never — it inherits its parent's
-resolved cap by construction, and the parent's probe left the
-server sized. What's left is the honest cost: a cloud endpoint you
-handed a cap to gets one `/props` request per process, which 404s
-and degrades to "unlimited". Size it with `limit` and even that
-goes away.
+```ruby
+Pikuri::Agent::ContextWindowDetector.detect(transport, openai_base: transport.api_base).total_slots # => 4
+```
 
 Does it matter? Measured against a live llama.cpp router, three
 agents running the same prompt:
@@ -226,19 +238,17 @@ agents running the same prompt:
 | 1 | 21.3 s | 7.1 / 14.2 / 21.3 s |
 | 4 | 9.1 s | all three together |
 
-The server reported `total_slots: 4`, and a zero-configuration
-agent auto-sized to it. The staircase in the first row is what
+The server reported `total_slots: 4`. The staircase in the first row is what
 serialization looks like; the second row is what the hardware could
 do all along. Neither number is the lesson — the lesson is that
 *you* chose which one you got, instead of discovering it inside a
 queue you can't see.
 
-And one honest limitation, because a host author will hit it.
-Permits are FIFO and undifferentiated: a burst of six caption jobs
-will park the next interactive turn behind all six. There is no
-priority lane today. If that bites you, the fix is at your layer —
-don't dispatch housekeeping work while interactive turns are
-pending — not a knob pikuri currently offers.
+And one thing the throttle above doesn't do, because a host author
+will hit it: it is undifferentiated, not even FIFO, so a burst of
+six caption jobs can park the next interactive turn behind all six.
+The hook is yours, so is the priority lane — a ticket queue goes
+exactly where `until` is.
 
 ## Why the connection can't be global
 

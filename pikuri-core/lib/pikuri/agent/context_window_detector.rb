@@ -18,13 +18,12 @@ module Pikuri
     # The only authoritative runtime source is llama.cpp's non-standard +/props+
     # endpoint, reporting the server's *launched* +n_ctx+ (the real window —
     # possibly smaller than the model's max, e.g. +llama-server -c 8192+ on a
-    # 128k model) beside the slot count {ServerPermits} sizes itself from and
-    # the input kinds the model's projector accepts. Every field is +nil+ — an
+    # 128k model) beside its slot count — what a host's request throttle sizes
+    # itself from — and the input kinds the model's projector accepts. Every field is +nil+ — an
     # honest "we don't know" — for anything else.
     #
     # Every call is a live request: nothing here is memoized, and the caller
-    # decides when it has nothing left to learn (+design/decisions.md+
-    # +D_probe_when_unknown+).
+    # decides when it has nothing left to learn.
     #
     # On a router, {.detect} loads the model to answer. {.detect_modalities}
     # is the cheap lookup that never does, for a host that wants
@@ -47,8 +46,7 @@ module Pikuri
     # The *credential* is derived the same way, and for a sharper reason:
     # +llama-server --api-key SECRET+ leaves only +/health+ and the +/models+
     # endpoints public, so an unauthenticated +/props+ is a 401 — and a 401
-    # here costs both facts at once, silently (no cap to budget against, no
-    # slot count to size {ServerPermits} with). The probe therefore sends the
+    # here costs every fact at once, silently. The probe therefore sends the
     # chat's own key as +Authorization: Bearer+; a keyless server ignores a
     # header it was never configured to check.
     #
@@ -77,7 +75,7 @@ module Pikuri
       #   @return [Integer, nil] the server's launched context window.
       # @!attribute [r] total_slots
       #   @return [Integer, nil] how many requests it serves concurrently —
-      #     {ServerPermits}'s default size for this server.
+      #     unread by pikuri itself; a host's request throttle sizes from it.
       # @!attribute [r] modalities
       #   @return [Hash{Symbol => Boolean}, nil] llama.cpp's +modalities+
       #     object as reported, e.g. +{vision: false, video: false, audio:
