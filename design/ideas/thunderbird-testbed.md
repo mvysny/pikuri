@@ -1,7 +1,10 @@
 # A Thunderbird testbed: mail scenes without anyone's real mail
 
-Status: **shaped, not built.** Blocks the secretary chapter's mail transcripts
-([`book-rework.md`](book-rework.md)) and any agent-driven test of the mail tools.
+Status: **the pipeline is built, the content isn't.** `bin/pikuri-demo-mailbox` (or `rake
+demo:build`, `DIR=` for `--dir`) with its code in `book/demo/builder/` guards, writes the
+inputs, indexes through Marionette, verifies the counts and caches the result. It runs on a
+five-message seed (`content.rb`) for now, so the secretary chapter's mail transcripts
+([`book-rework.md`](book-rework.md)) still wait on § The demo content.
 
 ## The problem
 
@@ -78,9 +81,14 @@ The prefs come from Mozilla's own list rather than being hunted down one at a ti
 automated profile off the network. It has the remote-settings one, `services.settings.server =
 "data:,#remote-settings-dummy/v1"`, plus `app.update.disabledForTesting`,
 `network.connectivity-service.enabled`, the safebrowsing, region and extension-update prefs. Its
-`%(server)s` placeholders become a `.invalid` host. Verified, not assumed: a build run under
-`strace -f -e trace=connect` shows only loopback connects (Marionette); an optional
-`--verify-quiet` keeps that check for the next Thunderbird release.
+`%(server)s` placeholders become a `.invalid` host. Verified on the seed build (2026-11-13):
+`strace` can't follow into a snap without root (snap-confine is setuid), so the check is
+Mozilla's own logging — `MOZ_LOG="nsHostResolver:5,nsSocketTransport:5,nsHttp:3"
+MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log bin/pikuri-demo-mailbox --rebuild` — which
+showed no DNS lookup, no HTTP channel, and one socket, Marionette's on loopback. The
+remote-settings error is gone from the log. Re-run it after a Thunderbird upgrade. A build
+lasts seconds, so a fetch on a later timer would slip past it; the reader opening the profile
+in the GUI is the untested case.
 
 ## The build script
 
@@ -98,7 +106,8 @@ automated profile off the network. It has the remote-settings one, `services.set
    - **`--dir ~/pikuri-demo` (reader, host):** `profiles.ini` untouched. Thunderbird runs as
      `thunderbird -profile ~/pikuri-demo --no-remote`, pikuri gets `profile_dir:` — the
      override `Profile.discover` already has. The reader's real profile is never seen.
-   `demo.ics` lives under `~/snap/thunderbird/common/` (the snap can't read dot-dirs in `$HOME`).
+   `demo.ics` lives in the profile itself: the snap reads its own root, and a reader's
+   `--dir` (not hidden — the snap can't read dot-dirs in `$HOME`) carries it along.
 4. **Index.** Run Thunderbird `--headless --marionette` and, over Marionette, reparse every
    mail folder and queue it for Gloda (§ Driving a real Thunderbird). The generator knows it
    wrote N messages and M events: snapshot the Gloda DB every second or two and count `messages`
@@ -107,8 +116,14 @@ automated profile off the network. It has the remote-settings one, `services.set
    Gloda's internals. A slow index only makes the build slower, never wrong: a generous timeout
    (~5 min) with progress (`212/287`), failing loudly with the count reached. If ~300 messages
    turn out slow, suspect Gloda's indexing throttle (tuned for a user at the keyboard) first.
-5. **Cache.** Tar the indexed profile to `Paths.cache`, keyed by Thunderbird's version. Agents
-   restore it in a second; a Thunderbird upgrade rebuilds it.
+5. **Cache.** Tar the indexed profile to `Paths.cache/demo-mailbox/`, keyed by Thunderbird's
+   version *and* a digest of every input: the dates move with `--today`, and Thunderbird
+   writes absolute paths into `prefs.js`, so another day or another `--dir` is another
+   profile. One tarball is kept; `--rebuild` ignores it. Inputs are byte-stable (the `mail`
+   gem's random multipart boundary is replaced by one derived from the Message-ID), so a
+   same-day rerun restores in 0.75 s instead of indexing.
+
+Measured on the seed (5 messages, 3 events): indexed in 3.6 s, 4.8 s end to end.
 
 ## The demo content (`book/demo/`)
 
@@ -174,6 +189,17 @@ section moves to `pikuri-thunderbird/design/architecture.md` beside § Storage l
 - `-profile <dir>` does **not** create or touch `profiles.ini` — `--dir` mode is safe beside a
   real profile.
 - The snap reads its own `~/snap/thunderbird/common/`; profile and `demo.ics` live there.
+- **The snap launcher links its root to an existing `~/.thunderbird`.** Launched while
+  `~/.thunderbird` existed and the snap root didn't, it created
+  `~/snap/thunderbird/common/.thunderbird -> /home/mavi/.thunderbird` (seen on the first build,
+  which wrongly put the profile in the apt root). For a user migrated from the deb that makes
+  both roots one directory, and `Profile.discover` raises "found profiles under two roots" for
+  what is one profile. A pikuri bug, not fixed: compare the roots' `realpath` before calling it
+  two. `Profile`'s spec doesn't cover the root scan.
+- A clean exit **leaves the `lock` symlink behind** (`lock -> <ip>:+<pid>`); the live lock is
+  the one on `.parentlock`. Waiting for `lock` to go cost the first builds 30 s.
+- `marionette.port = 0` in `user.js` makes Marionette pick a free port and write it to
+  `<profile>/MarionetteActivePort`, so a build never collides with another Thunderbird's 2828.
 - Under Xvfb: `xvfb-run -a -s "-screen 0 1600x1000x24" thunderbird --no-remote -profile <dir>`.
   Only needed for screenshots; indexing doesn't need it.
 - Stop it with `pkill -TERM -x thunderbird-bin` — `-x`, because `pkill -f` matches the agent's
@@ -222,10 +248,10 @@ about two seconds and checkpoints its WAL databases on the way out.
 `ffmpeg -f x11grab -video_size 1600x1000 -i :99 -frames:v 1 shot.png` grabs the screen (set
 `DISPLAY` and `XAUTHORITY` from `xvfb-run`'s `/tmp/xvfb-run.*/Xauthority`).
 
-**First-run network:** even with the `user.js` above, Thunderbird contacted Mozilla's remote
-settings service (a `services.settings` error in the log). The quiet prefs still need that
-switched off (`services.settings.server` pointed at nothing, or the matching pref, to be found).
-The crash helper also creates `~/Downloads/thunderbird.tmp/`.
+**First-run network:** with the probe's `user.js`, Thunderbird contacted Mozilla's remote
+settings service (a `services.settings` error in the log); the builder's quiet prefs stop it
+(§ First-run hygiene). The crash helper also creates `~/Downloads/thunderbird.tmp/`; the builder
+sets `MOZ_CRASHREPORTER_DISABLE=1`.
 
 ### What pikuri's readers made of the Thunderbird-built profile
 
@@ -238,7 +264,8 @@ our spec fixtures:
   the identity and the Sent folder), `Calendar#search` on the `ics`-backed `cache.sqlite`.
 - **Gloda writes a literal `undefined` into author and recipient text** —
   `Mira Koskinen <mira@lumo-studio.example> undefined` in `messagesText_content.c3author` /
-  `c4recipients` — for every address except the owner's own. Probably an address-book field
+  `c4recipients` — for every address but the owner's own *as author*: Alex as a recipient gets
+  it too (`Alex Novak <alex@novak.example> undefined`, seed build). Probably an address-book field
   for contacts not in the address book. **Decided: the readers strip it**, whatever the real
   profile shows — the model would echo or interpret it, and it costs tokens per address. Match
   only `> undefined` right after an address's closing `>`, so a person named "Undefined"

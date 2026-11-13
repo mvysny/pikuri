@@ -36,8 +36,11 @@ has no rollback journal.
 
 ## To check before building
 
-- Which stores are WAL? `cache.sqlite` is (the probe saw its `-wal`); Gloda's
-  `global-messages-db.sqlite` — look for a `-wal` on a running Thunderbird.
+- Which stores are WAL? `cache.sqlite` is (the probe saw its `-wal`). Gloda's
+  `global-messages-db.sqlite` is not: `PRAGMA journal_mode` answers `delete` on a profile
+  Thunderbird 159 built (the testbed's, 2026-11-13), so the fix is the calendar's.
+- Reproduce live on the testbed: build it, start Thunderbird on it, add an event over
+  Marionette, and `Calendar#search` must see it before any quit.
 - That SQLite opens a WAL copy without `-shm` from a read-only connection, or whether the
   connection must be read-write (it's our copy either way).
 - A spec: a WAL-mode fixture DB with a committed but uncheckpointed row. Today's code must miss
