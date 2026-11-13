@@ -10,4 +10,4 @@ an ordinary `Pikuri::Agent`, so the loop and the tool contract stay `pikuri-core
 - **Consumed seams.** `agent` is network-dispatching, so it takes a `Workspace::Confirmer` (**Confirmer seam**, `../pikuri-workspace/AGENTS.md`). A child's loop is as unbounded as the parent's, and a permit is held per *request*, never per turn — otherwise the parent deadlocks against the child (root **Request-permit seam**, **The loop is unbounded**).
 - **Persona prompts (`prompts/persona-*.txt`) may name their tools** — the one carve-out from the root's no-tool-names convention, because `tool_names:` + `system_prompt:` are co-located.
 
-Maintenance: the root `AGENTS.md`'s rules; cap 10 KB.
+Maintenance: the root `AGENTS.md`'s rules.

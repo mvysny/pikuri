@@ -8,7 +8,7 @@ code.
 Not here: why (`decisions.md` — cite the `D_`), what upstream does (`research.md` — cite the `R_`),
 one symbol's behaviour (its yardoc), the module map (`../AGENTS.md`), a gem's *internal*
 cross-symbol picture (its own `<gem>/design/architecture.md`). Only the sections with content; the
-first entry in each is the ruler. Cap 12 KB — over it, research or yardoc content has crept in.
+first entry in each shows its shape.
 
 ---
 

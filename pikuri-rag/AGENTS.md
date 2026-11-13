@@ -10,4 +10,4 @@ vector store, indexer and watcher stay `pikuri-vectordb`'s, reused byte-for-byte
 - **Model text never reaches `MATCH`.** Every FTS5 `MATCH` term comes from `Rag::Query` as quoted phrases (a word's stems ORed), so the query mini-language is inert in model text. See {Pikuri::Rag::Query}.
 - **Exclusive with `VectorDb::Extension`** on one agent — the retrieval *system* over the vectordb *primitive*, not a second copy of it.
 
-Maintenance: the root `AGENTS.md`'s rules; cap 10 KB.
+Maintenance: the root `AGENTS.md`'s rules.

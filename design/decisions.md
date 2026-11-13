@@ -13,10 +13,11 @@ the choice: the tool, the library among equals, the CI host, a version bump. Not
 in `design/ideas/`. Not here either: what the code does (the yardoc), what other projects do
 (`research.md`), the shipped defenses (`../SECURITY.md`) — an entry links out rather than
 restating. Cite by slug, `D_<slug>`, never by position; `grep '^## D_' design/decisions.md` is the
-index, and the file is never read wholesale. Entries run newest first, so **the ruler is the
-oldest, at the bottom — `D_per_process_temp`**: later entries trim to its length, never the other
-way round. When you have written one, re-read it against the entry above, check it says nothing
-the yardoc already says, and cut what is left over.
+index, and the file is never read wholesale. Entries run newest first, so the one whose shape
+every later entry copies is the oldest, at the bottom — `D_per_process_temp`. An entry is as long
+as its question needs: every road not taken keeps all of its losing reasons. When you have written
+one, re-read it against the entry above for consistency, and open the yardoc it touches and delete
+what it already says.
 
 ---
 

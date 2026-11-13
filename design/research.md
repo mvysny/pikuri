@@ -7,9 +7,9 @@ starting "we chose" is a `D_`. One claim per bullet, one provenance marker per c
 a design built on it says so). Every **[src]** resolves through `R_sources`, which names the tree
 and the revision each entry was read against; a claim read at a different revision names it
 itself. A claim is earned by its provenance, or by having cost real work to find out. Cite by
-slug, `R_<slug>`, never by position; `grep '^## R_' design/research.md` is the index. The first
-entry is the ruler: later ones trim to its length. When you have written an entry, re-read it
-against the one above and cut what the provenance markers already carry.
+slug, `R_<slug>`, never by position; `grep '^## R_' design/research.md` is the index. When you have
+written an entry, re-read it against the one above for consistency; a marker already says where a
+claim came from, so the prose doesn't repeat it.
 
 Two things in here are deliberately not claims about them, and carry no marker: the **pikuri**
 column of a comparison table, and the **Takeaway** paragraph that closes most entries. They are
