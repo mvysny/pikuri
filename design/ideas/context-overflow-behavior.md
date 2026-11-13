@@ -305,8 +305,8 @@ call that tripped the budget never executed, so rendering a nonexistent
 result invents evidence.
 
 That last rule is where this connects to the open problem below. The
-`load_history!` pointer notes that `History` only *validates* the
-call/result pairing and won't tell you where to cut. `format_evidence`
+`History` pointer notes that nothing in pikuri tells you where the
+call/result pairing allows a cut. `format_evidence`
 is that same constraint solved in the read direction — proof the pairing
 is tractable to walk, just not to slice.
 
@@ -343,15 +343,15 @@ reach for now, and the honest answer is that this never fired.
   already lives.
 - {Pikuri::Agent#clear_conversation} — the existing "start over" path any
   compaction has to stay coherent with.
-- {Pikuri::Agent#load_history!} + {Pikuri::Agent::History} (shipped
-  2026-08-27, the history entries in `../decisions.md`) — **the natural actuator if this note ever
+- {Pikuri::Agent#export_history} + `Agent.new(history:)` (the history
+  entries in `../decisions.md`) — **the natural actuator if this note ever
   chooses summarize-in-place.** "Export, shorten, reload" is exactly the
   shape, and the machinery now exists. What it does *not* answer is the
   policy question that blocks it: a compactor has to slice a conversation
   without splitting an assistant `tool_calls` turn from the `:tool`
-  messages answering it, and `History` only *validates* that pairing —
-  it will happily refuse a badly-sliced result rather than tell you where
-  to cut. Note also that `load_history!` deliberately restores the
+  messages answering it, and nothing in pikuri says where to cut — a
+  cut that strands a result draws a provider 400. Note
+  also that a resume deliberately restores the
   conversation and not the session, which is one concrete answer to this
   note's open "does the workspace's read-record survive a compaction?"
   (today: no).

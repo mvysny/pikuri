@@ -405,10 +405,10 @@ someone switches between two conversations in a sidebar. So a
 conversation has to leave the agent and come back.
 
 It leaves as a `Pikuri::Agent::History` — a typed `Data` value that
-owns both directions of its own serialization, because an exported
-conversation gets written to disk and that makes it a *file
-format*, not a return value. No host reads the chat's message list
-directly.
+`agent.export_history` hands you and `Agent.new(history:)` takes
+back. No host reads the chat's message list directly. Writing it to
+disk is yours: pikuri has no file format, because a deployment that
+never resumes shouldn't carry one.
 
 What you'll actually run into is that this covers the model-facing
 half and only that. Your UI renders the **event stream** —
@@ -426,8 +426,8 @@ That's why `Event` is a plain serializable `Data` with no live
 `Pikuri::Tool` reference on it — pikuri-web ships events over SSE
 to a browser and replays stored ones on reload, and a replayed
 conversation has no tool object to point at. Same reason the
-display strings a tool composes get *persisted* rather than
-recomputed: on reload, the tool that could compose them may not be
+display strings a tool composes ride in the history rather than
+being recomputed: on reload, the tool that could compose them may not be
 wired any more.
 
 The envelope is yours too. Title, timestamps, ordering, which

@@ -2726,17 +2726,18 @@ pikuri-web switches between stored conversations, pikuri-tui wants
 `agent.instance_variable_get(:@chat).messages`. The issue proposed
 `export_history # => [Hash, ...]`.
 
-An exported conversation is *written to disk*. That makes it a **file
-format**, not a return value, and a bag of hashes shaped like whatever
-`RubyLLM::Message#to_h` emitted that week is a format nobody wrote down,
-versioned, or validated.
+**Decision.** A `Data` value — `History(messages:)` with typed leaves
+(`Message`, `ToolCall`, `Thinking`, `Tokens`, `Pikuri::Attachment`) — that
+`Agent#export_history` hands out and `Agent.new(history:)` takes back. The
+class *is* the contract between agent and host; nothing else crosses.
 
-**Decision.** A `Data` value — `History(version:, messages:)` with typed
-leaves — that owns both directions of its own serialization. The class *is*
-the schema; `parse` / `from_h` / `load` are the only doors in and each
-raises rather than returning something half-built. There is deliberately no
-"accepts a String or a Hash or a History" convenience: one way in means one
-place validation could be skipped, i.e. none.
+**pikuri does not serialize it.** A stored conversation is a *file format*:
+a version, validation of untrusted bytes on the way back in, attachment
+files on disk and their confinement to the conversation's folder. None of
+that runs in a deployment that never resumes, so it lives with the hosts
+that do, in pikuri-workshop. The serializer pikuri used to carry
+(`#to_json` / `#save`, `.parse` / `.from_h` / `.load`) is in commit
+`9174dd26f07c`.
 
 **Scope: the model-facing half, and only that.** Both shells render the
 `Agent::Event` stream, not the message list, and that rendering is lossy on
@@ -2748,34 +2749,15 @@ fork". The event log is the *shell's* artifact, because the truncation
 policy is the shell's. Likewise title, timestamps and conversation ordering:
 the shell's envelope wraps ours.
 
-**Versioning is additive-only, and `version:` is expected to stay `1`.**
-Unknown *keys* are ignored so a file from a newer pikuri still loads;
-malformed *known* keys raise; a version above `CURRENT_VERSION` is refused
-outright rather than best-effort loaded. The survey is the evidence: no
-system examined carries a per-record schema version it migrates on —
-opencode's 30 SQL migrations never once rewrite the stored JSON's shape, and
-grok-build reserves `deny_unknown_fields` for tool arguments and wire
-protocols while never applying it to a session type. The earlier plan of
-"one migration function per version bump, kept forever" was over-engineering
-nobody in the field has needed.
-
 **Alternatives rejected.**
 
-- **The issue's `[Hash, ...]`.** A top-level array can never grow a sibling
-  key. An envelope can — which matters because extension state is a live
-  question (below). That alone settled envelope-vs-array.
-- **Building on `RubyLLM::Message#to_h`.** It serializes cleanly since
-  ruby_llm 2.0, but it is ruby_llm's format for its Rails persistence, and
-  it moves when ruby_llm does — 2.0 renamed `model_id` to `model` and every
-  token key. A file one pikuri wrote must load in the next whatever ruby_llm
-  did in between, and pikuri's own per-message fields (`id`, `kind`, the
-  display strings) have no slot in it.
-- **`Marshal` or any binary form.** Unreadable, unhand-editable, and
-  version-fragile across Ruby releases — for artifacts that outlive the
-  process.
-- **Persisting the `Chat` itself.** Drags connection, config, registered
-  tools and callbacks along; ruby_llm already excludes those from
-  `instance_variables` precisely because they do not belong in a dump.
+- **The issue's `[Hash, ...]`.** A shape nobody wrote down, and every host
+  re-derives which keys matter.
+- **Building on `RubyLLM::Message`.** It moves when ruby_llm does — 2.0
+  renamed `model_id` to `model` and every token key — and pikuri's own
+  per-message fields (`id`, `kind`, the display strings) have no slot in it.
+- **Handing out the `Chat` itself.** Drags connection, config, registered
+  tools and callbacks along, and breaks the loop seam.
 - **An `Extension#export_state` / `#load_state` protocol in v1.** Probably
   eventually right, but a much larger surface with no evidence yet about
   which gap bites. PI ships a session model that persists the conversation
@@ -2790,127 +2772,6 @@ whose lifecycle matches the conversation may ride in it; state with a
 different lifecycle must not.** grok-build's folder-trust store is the
 clinching case — a trust decision has to outlive any one session, so it
 lives in a global TOML, not a session file.
-
-## D_history_container — Why is a saved conversation one JSON object rather than JSONL?
-
-**Context.** A chat client writes often and reads rarely, so appending
-rather than rewriting looks like the obvious shape — three of the five
-harnesses surveyed use an append-only JSONL log. The question was whether to
-write JSONL from the start so a later version could simply append.
-
-Measured first, on a whole-file rewrite (`JSON.generate` + temp file +
-atomic rename, mean of ten):
-
-| conversation | file | per turn |
-|---|---|---|
-| 200 messages @ 1.8 KB | 0.39 MB | 1.9 ms |
-| 2000 messages @ 1.8 KB | 3.86 MB | 15.7 ms |
-
-Against a turn that spends seconds on the model, that is 0.05–0.5%. The
-write-often instinct is right about the access pattern and wrong about the
-constant — and 2000 messages is already past where context management forces
-a compaction.
-
-**Decision.** One JSON object per conversation, rewritten wholesale. What
-earns it is not the measurement but the **1:1 property**: `to_json` and
-`parse` are literal inverses, the golden fixture *is* the format, and there
-is no writer/reader layer that can be wrong on its own. Header-plus-records
-makes the file an *encoding* of the value instead of the value.
-
-Deferring is safe because adopting JSONL later is **not a version bump and
-not a migration** — it is a sniff: *if the whole file parses as a single JSON
-object it is the v1 container, otherwise read it as JSONL.* Three lines,
-nothing on disk rewritten, every file ever written still readable. That is
-what makes this reversible rather than a bet.
-
-Whole-file rewrite is also *safer* than append: with temp-file-and-rename the
-file on disk is always a complete valid history, so there is no torn state to
-detect. Append trades that guarantee for O(1) writes.
-
-**Alternatives rejected.**
-
-- **Storing the history as one long line, "so it is trivially JSONL too".**
-  It is valid JSONL, but its record type is *an entire history*. The first
-  append leaves line 1 an envelope holding every message and lines 2..N bare
-  messages — permanently bimodal, two record types for every reader forever,
-  and the one-line-one-record property never holds. It also costs
-  diffability immediately: a single-line blob is one wholly-changed line in
-  `git diff`.
-- **Numbered `1.json` / `2.json` segments rolled at a size threshold.** Each
-  segment is a JSON *array*, so appending means either rewriting it
-  (defeating the purpose) or omitting the closing `]` and repairing on read
-  — which is JSONL reinvented, plus a rotation threshold, a naming scheme,
-  an ordering rule and a which-segment-is-current question that JSONL does
-  not have.
-
-**Consequences.** If append ever becomes real it is JSONL, and the reader
-must tolerate a torn last line (crash mid-append: drop it, keep the rest) —
-PI's pattern, and the reason it needs one. Note also that the append-only log
-the instinct reaches for already exists one layer up: grok-build treats its
-event log as ground truth with the model-facing transcript as a rebuildable
-cache, and pikuri-web plans exactly that split. `History` is the derived
-snapshot, and a derived snapshot wants wholesale rewrite.
-
-## D_history_attachments — Why two attachment encodings in one folder, and why are the files allowed to rot?
-
-**Context.** `Workspace::Read` hands the model images as bytes read
-from a **workspace path** that may later change or vanish. An exported
-conversation therefore has to decide what an attachment *is* on disk.
-
-**Decision.** Two encodings of one in-memory value: `#to_json` inlines
-attachments as base64 for a single self-contained artifact; `#save(dir)`
-writes `history.json` plus content-addressed files under `attachments/`.
-Both load back to the same value — pinned by
-`History.load(dir) == History.parse(json)`, which is what stops them
-drifting into two formats.
-
-**Attachments live in the history's own folder or the history does not
-load.** No sanitizing a bad path into a good one, no escape hatch for a big
-file. A reference is a bare basename, and the check compares the
-**resolved** path — a file sitting in `attachments/` may itself be a symlink
-to `~/.ssh/id_ed25519`, which every textual check passes. `parse` refuses a
-file-backed history outright (a String has no folder to resolve against) and
-names `load` instead of guessing.
-
-**`save` never deletes, and never enumerates the folder.** An attachment the
-history no longer references — after a compaction, say — simply rots there.
-pikuri writes into that folder but does not own everything in it, and
-removing a file a human put there is a worse failure than an orphan. Its
-only read is a `stat` per *referenced* attachment (skip if already present,
-the name being content-addressed), so a folder holding a thousand stale
-files costs nothing per save.
-
-**Alternatives rejected.**
-
-- **A path reference to the original file.** Smallest on disk, and the
-  failure is invisible: the bytes are re-read at load, so a resumed
-  conversation can show the model a *different* image than the transcript
-  says it saw, or `ENOENT`. opencode does this for `@file` text mentions
-  while inlining everything else — which reads as drift rather than design.
-- **Degrading to the metadata note**, dropping the attachment. Cheap, honest,
-  and breaks the round-trip property: a resumed vision conversation is
-  missing the picture it is discussing.
-- **Lazy attachment handles** in a `History` loaded from a folder. Saves
-  memory, reintroduces exactly the path-reference failure (the folder can
-  change or vanish underneath), and breaks `==` and therefore the
-  convergence property above.
-- **Sweeping unreferenced attachments**, or reporting them so a host can.
-  The report was dropped because nothing consumes it, and it was the only
-  reason `save` would scan the directory at all.
-- **A `History`-own attachment type** beside the `Pikuri::Attachment` the
-  rest of pikuri carries. It would be a field-for-field copy with a
-  conversion to maintain, and no safer: a field added to one and not the
-  other is dropped on save just as silently. One type, a yardoc warning that
-  `History` serializes it, and a spec pinning `Pikuri::Attachment.members`
-  instead.
-
-**Consequences.** Orphans accumulate silently and nothing will mention them
-— bounded by what one conversation produced, content-addressed so they can
-never collide. If it ever matters the answer is `rm`, not a feature. And
-attachment bytes are re-tagged binary on construction: the same PNG arrives
-as `UTF-8` from a source file and `ASCII-8BIT` from base64, and two
-differently-tagged copies are not `==` — which would quietly break the one
-property the design rests on.
 
 ## D_history_local_ids — Why does every message get an id pikuri mints and no provider ever sees?
 
@@ -2986,7 +2847,7 @@ and an answer pikuri appends carries ruby_llm's id, which ruby_llm maps back to 
   the UUID ever reads it.
 
 **Consequences.** A server that reuses a call id across turns (`call_0` every time) produces a
-history `History.from_h` refuses as answering one call twice, the same as before 2.2.
+history that answers one call twice, the same as before 2.2.
 
 ## D_history_load_repairs — Why repair a loaded conversation on the way in rather than on the way out?
 
@@ -3004,16 +2865,9 @@ stored record untouched. Telling the model *"you asked, it did not finish"*
 also beats dropping the assistant turn, which would erase that it ever
 decided to call the tool.
 
-**Validation is asymmetric, and an early draft had it self-contradictory** —
-requiring `from_h` to refuse a history where any call went unanswered *and*
-having load repair exactly that case. Both cannot hold: the validator would
-make the crash case the one thing unloadable. What ships:
-
-| | | |
-|---|---|---|
-| result with no call | refuse | unrepairable — the call cannot be invented |
-| one call answered twice | refuse | a live race would dedup; in a *file* it is corruption |
-| call with no result | legal, repaired at load | what a killed process leaves behind |
+**So whatever parses a stored history must accept a call with no result** —
+refusing it would make the crash case the one thing unloadable. A result
+with no call, or one call answered twice, is corruption and fair to refuse.
 
 **A thinking block is dropped when the model changed** — the whole block, and
 at both points identity can change, not just at load. That rode in here as a

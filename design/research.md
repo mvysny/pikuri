@@ -752,8 +752,8 @@ conversation is written to disk and is therefore a *file format*, not a return v
 harness here has already had to answer the same questions. Five systems read at the source:
 **Claude Code** (its own transcripts on the author's machine, ~370 files, CLI
 `2.1.220`–`2.1.247`), **opencode** (`5f5ea53`), **grok-build** (`9684fa3`), **PI** (`1defa15`) and
-**hermes-agent** (`cced6fa`) — revisions in `R_sources`. Pikuri's own answers are the five history
-entries in `design/decisions.md`; this entry is only what the others do.
+**hermes-agent** (`cced6fa`) — revisions in `R_sources`. pikuri itself no longer stores a history
+(`D_history_value_type`); this entry is only what the others do.
 
 | | container | ground truth | tool call ↔ result | attachments | per-msg tokens | schema version |
 | --- | --- | --- | --- | --- | --- | --- |

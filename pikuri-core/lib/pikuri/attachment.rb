@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'digest'
 require 'stringio'
 
 module Pikuri
@@ -16,13 +15,6 @@ module Pikuri
   # String at construction, fetches a URL one, and may read a path again at send
   # time, so a file edited in between reaches the model unchecked. An
   # +Attachment+ is what the model saw, and compares by content.
-  #
-  # == Implementation details
-  #
-  # {Agent::History} serializes every field (+attachment_to_h+ /
-  # +attachment_from_h+). **A new field must be added there too** — one with a
-  # default would otherwise be dropped on save without a sound. The history
-  # spec pins {members} so the omission fails loudly.
   Attachment = Data.define(:mime, :filename, :bytes) do
     # Rebuild one from ruby_llm's type — the way back from a live chat.
     #
@@ -62,26 +54,6 @@ module Pikuri
     # @return [String]
     def withheld_note(reason)
       "[#{filename} not shown: #{reason}]"
-    end
-
-    # Content-addressed filename: the digest prefix makes it unique and
-    # self-verifying, so the same image read twice is stored once and a
-    # tampered file is caught at load.
-    #
-    #   Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: png).stored_name
-    #   # => "3f9a1c8e2b-shot.png"
-    #
-    # @return [String] a bare basename, never a path.
-    def stored_name
-      ext = File.extname(filename.to_s)
-      stem = File.basename(filename.to_s, ext).gsub(/[^A-Za-z0-9._-]+/, '-')
-      stem = 'attachment' if stem.empty?
-      "#{digest[0, 10]}-#{stem}#{ext}"
-    end
-
-    # @return [String] SHA-256 of {#bytes}, hex.
-    def digest
-      Digest::SHA256.hexdigest(bytes)
     end
   end
 end

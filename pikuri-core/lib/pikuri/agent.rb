@@ -33,9 +33,9 @@ module Pikuri
   # and build a new one — from the same wiring code, with fresh extension
   # instances:
   #
+  #   history = agent.export_history
   #   agent.close
-  #   agent = Pikuri::Agent.new(transport: t, system_prompt: p,
-  #                             history: Pikuri::Agent::History.load(dir)) { |c| wire(c) }
+  #   agent = Pikuri::Agent.new(transport: t, system_prompt: p, history: history) { |c| wire(c) }
   #
   # A conversation boundary must not carry state across — not the tools an
   # MCP server registered mid-conversation, not the browser session behind
@@ -205,9 +205,8 @@ module Pikuri
     #   passes a per-chunk block to +Chat#complete+ and normalizes chunks
     #   into {Event::ThinkingDelta}/{Event::AssistantDelta}. Default +false+
     #   (only the +after_message+ bookends fire).
-    # @param history [History, nil] a saved conversation to resume — from
-    #   {#export_history}, {History.parse} or {History.load} — or +nil+ to
-    #   start empty. Restored before {Extension#bind}, so an extension sees it
+    # @param history [History, nil] a conversation to resume, as
+    #   {#export_history} handed it out, or +nil+ to start empty. Restored before {Extension#bind}, so an extension sees it
     #   there via +ctx.agent.export_history+; {Event::HistoryLoaded} follows
     #   the bind sweep. See {#restore_history} for what comes back and what
     #   is repaired on the way in.
@@ -215,8 +214,7 @@ module Pikuri
     #   extensions, and +on_close+ handlers — there are no parallel ctor
     #   kwargs. Optional; without it the agent has none of those.
     # @return [Agent]
-    # @raise [ArgumentError] if +history+ is neither +nil+ nor a {History};
-    #   the parsing doors are where untrusted input belongs.
+    # @raise [ArgumentError] if +history+ is neither +nil+ nor a {History}.
     def initialize(transport:, system_prompt:,
                    cancellable: nil,
                    id: '',
@@ -224,8 +222,7 @@ module Pikuri
                    history: nil,
                    &block)
       unless history.nil? || history.is_a?(History)
-        raise ArgumentError, "expected a Pikuri::Agent::History, got #{history.class} — " \
-                             'use History.parse / History.load to build one from stored bytes'
+        raise ArgumentError, "expected a Pikuri::Agent::History, got #{history.class}"
       end
 
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
@@ -425,7 +422,7 @@ module Pikuri
     # nobody enumerated (+Interrupt+ is no +StandardError+) and it is a no-op
     # on the success path.
     #
-    # Unlike {History#repair_interrupted_tool_calls} — the load path, where a
+    # Unlike {History#repair_interrupted_tool_calls} — the resume path, where a
     # killed process leaves no clue and {History::INTERRUPTED_RESULT} has to be
     # generic — the cause is in hand here and picks the wording.
     #
@@ -508,22 +505,21 @@ module Pikuri
     end
 
     # Snapshot the conversation as a {History} — the round-trip partner of
-    # +Agent.new(history:)+, and the supported way for a host to persist a
-    # conversation without reaching into the underlying chat.
+    # +Agent.new(history:)+, and the only way a conversation leaves the agent;
+    # storing it is the host's.
     #
-    #   agent.export_history.save(dir)          # a folder per conversation
-    #   File.write(f, agent.export_history.to_json)   # or one self-contained file
+    #   history = agent.export_history
     #
     # The system prompt is excluded — the resuming agent assembles its own, so
     # a resumed conversation gets today's, not the one that was current when
-    # it was saved.
+    # it was exported.
     #
     # Attachment bytes are read here, eagerly, so the snapshot still shows
     # what the model saw after the file has changed on disk.
     #
     # A thinking block withheld from the conversation because another model
     # produced it is restored here from the message's metadata, so the record
-    # survives any number of load/save cycles under a switched model.
+    # survives any number of resumes under a switched model.
     #
     # @return [History]
     def export_history
@@ -731,11 +727,10 @@ module Pikuri
     # - A turn produced by a *different* model loses its whole thinking block
     #   — a foreign one lands in a slot the receiving model reads as its own
     #   scratchpad. Withheld from the conversation only; {#export_history}
-    #   still writes it. {#apply_transport!} repeats this for a switch that
+    #   still carries it. {#apply_transport!} repeats this for a switch that
     #   happens later. See +design/decisions.md+ +D_thinking_block_replay+.
     #
-    # @param history [History] already validated by whichever door it came
-    #   through.
+    # @param history [History]
     # @return [Event::HistoryLoaded] for the caller to emit once the agent is
     #   bound — the conversation is in place before any extension sees it.
     def restore_history(history)

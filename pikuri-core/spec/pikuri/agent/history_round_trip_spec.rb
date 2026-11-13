@@ -54,29 +54,8 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     agent&.close
   end
 
-  it 'sends byte-identical requests with and without a save/reload in between' do
+  it 'sends byte-identical requests with and without a resume in between' do
     assert_equal final_body(reload: false), final_body(reload: true)
-  end
-
-  it 'survives the JSON encoding too, not just the in-memory value' do
-    captured = []
-    transport = recording_transport(captured) do |llm|
-      llm.tool_call('calculator', expression: '2 + 2')
-      llm.reply('The answer is 4.')
-      llm.reply('Yes, still 4.')
-    end
-    agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent') do |c|
-      c.add_tool Pikuri::Tool::CALCULATOR
-    end
-    agent.run_loop(user_message: 'What is 2 + 2?')
-    agent = resume(agent, Pikuri::Agent::History.parse(agent.export_history.to_json)) do |c|
-      c.add_tool Pikuri::Tool::CALCULATOR
-    end
-    agent.run_loop(user_message: 'Are you sure?')
-
-    assert_equal final_body(reload: false), captured.last
-  ensure
-    agent&.close
   end
 
   describe 'a user-attached image' do
@@ -113,22 +92,10 @@ RSpec.describe 'Pikuri::Agent history round trip' do
 
     it 'sends no text part on an attachment-only turn, before and after a reload' do
       plain = bodies(text: nil)
-      reloaded = bodies(text: nil) { |a| resume(a, Pikuri::Agent::History.parse(a.export_history.to_json)) }
+      reloaded = bodies(text: nil) { |a| resume(a, a.export_history) }
 
       assert_equal ['image_url'], user_content(plain.first).map { |p| p['type'] }
       assert_equal plain.last, reloaded.last
-    end
-
-    it 'sends byte-identical requests after a save to disk and a load back' do
-      Dir.mktmpdir do |dir|
-        plain = bodies(text: "What's in it?")
-        reloaded = bodies(text: "What's in it?") do |a|
-          a.export_history.save(dir)
-          resume(a, Pikuri::Agent::History.load(dir))
-        end
-
-        assert_equal plain.last, reloaded.last
-      end
     end
   end
 
@@ -182,7 +149,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       refute replayed_assistant(captured).key?('reasoning_content')
     end
 
-    it 'keeps a withheld block in the record, so save/load cycles do not erode it' do
+    it 'keeps a withheld block in the record, so resumes do not erode it' do
       transport = recording_transport([]) { |llm| llm.reply('ok') }
       agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', history: history_from('some-other-model'))
 
@@ -257,8 +224,6 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       call = history.messages[1].tool_calls.first
       assert_equal 'calculator', call.name
       assert_equal call.id, history.messages[2].tool_call_id
-      # And the pairing survives the format's own validator.
-      assert_equal history, Pikuri::Agent::History.parse(history.to_json)
     end
 
     it 'keeps the display strings, which nothing could recompute on reload' do
@@ -271,9 +236,9 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       assert_equal '4', history.messages[2].summary
     end
 
-    it 'round-trips the display strings through the JSON and back out again' do
+    it 'carries the display strings through a resume and back out again' do
       agent.run_loop(user_message: 'What is 2 + 2?')
-      resumed = resume(agent, Pikuri::Agent::History.parse(agent.export_history.to_json))
+      resumed = resume(agent, agent.export_history)
       again = resumed.export_history
 
       assert_equal 'Calculator', again.messages[1].tool_calls.first.display_name
@@ -281,22 +246,6 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       assert_equal '4', again.messages[2].summary
     ensure
       resumed&.close
-    end
-
-    it 'loads a pre-summary file with nils rather than refusing it' do
-      agent.run_loop(user_message: 'What is 2 + 2?')
-      raw = agent.export_history.to_h
-      raw['messages'].each do |m|
-        m.delete('summary')
-        (m['tool_calls'] || []).each { |c| c.delete('display_name') && c.delete('argument') }
-      end
-
-      old = Pikuri::Agent::History.from_h(raw)
-
-      assert_nil old.messages[1].tool_calls.first.display_name
-      assert_nil old.messages[2].summary
-      # And an absent string is simply absent again on the way out.
-      refute_includes old.to_h['messages'][2].keys, 'summary'
     end
 
     it 'mints a stable id per message: exporting twice does not renumber' do
@@ -347,9 +296,9 @@ RSpec.describe 'Pikuri::Agent history round trip' do
                                  ])
     end
 
-    it 'refuses anything but a History, naming the parsing doors' do
+    it 'refuses anything but a History' do
       e = assert_raises(ArgumentError) { build(history: [{ 'role' => 'user' }]) }
-      assert_match(/History\.parse/, e.message)
+      assert_match(/expected a Pikuri::Agent::History/, e.message)
     end
 
     it 'restores exactly the conversation it was given' do

@@ -57,7 +57,7 @@ docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it
 - **Nothing pikuri appends mid-conversation is ever `role: :system`** — a mid-conversation `:system` message fails silently. See {Pikuri::Agent#append_reference_block}, `D_reference_text_as_user_turn`.
 - **Display-line seam.** The **tool** composes its three display strings at `execute` time — never the model, and never a renderer, which only styles, caps and defangs them. See {Pikuri::Tool}'s `== Display lines`, `D_tool_summary_lines`.
 - **One tool return type.** `Tool#execute` answers a `Tool::Result`, always; the attachment case surfaces only inside `Tool#to_ruby_llm_tool`. See `D_tool_always_returns_result`.
-- **History seam.** A conversation leaves the agent only as an `Agent::History`; no host reads `@chat.messages`. See `D_history_local_ids`, `D_history_attachments`, `D_history_load_repairs`.
+- **History seam.** A conversation leaves the agent only as an `Agent::History`, an in-memory value pikuri never serializes; no host reads `@chat.messages`. See `D_history_value_type`, `D_history_local_ids`, `D_history_load_repairs`.
 - **A turn never leaves a tool call unanswered.** An `ensure` on `run_loop` answers every call stranded by an unwinding batch — repair the damage, don't prevent it. See `D_unwound_batch_repair`.
 - **The loop is unbounded — don't re-add a cap.** Nothing limits tool calls per turn, at any depth; if a runaway ever appears, reach for a repetition detector. See `D_no_step_limit`.
 - **Every tool declares `trifecta_legs`**, a persona holds at most two, and a new tool or persona is placed on the map — pikuri never sanitizes tool output. See {Pikuri::Trifecta}, `D_egress_axis_shape`.

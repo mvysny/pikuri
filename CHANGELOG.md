@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Agent::History` is in-memory only: `#to_json`, `#to_h`, `#save`, `.parse`, `.from_h`, `.load`, `History::Error`, `#version` and `Attachment#stored_name` are gone, since storing a conversation is the host's job and moves to pikuri-workshop; hand `agent.export_history` straight to `Agent.new(history:)`.
 - **Breaking:** `Agent.new` takes no `interloper:`; every agent builds its own `Control::Interloper`, reached as `Agent#interloper`, so a queued mid-turn message can't leak into the next conversation's agent. Read `agent.interloper` (or `c.interloper` inside the block) where you held your own.
 - **Breaking:** an `Agent` is one conversation: `clear_conversation`, `load_history!`, `Extension#on_conversation_reset`, `Event::Reset` and `Workspace#clear_reads` are gone, and a conversation resumes through `Agent.new(history:)` (`D_agent_is_one_conversation`). To clear or switch, close the agent and build a new one with fresh extension instances.
 - Add `pikuri-workspace/bin/pikuri-files`, a demo agent working in one folder with the six file tools, every change shown as a diff before it lands; walk-through in `book/touching-files.md`.
