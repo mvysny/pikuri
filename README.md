@@ -49,8 +49,8 @@ one-time setup lives in
 
 Pikuri itself is now installed in dev mode. To actually have a
 conversation you also need a model running. The shortest route —
-install `llama.cpp` and start `llama-server` with the default Qwen
-model — is the first thing the guide walks through:
+install `llama.cpp` and start `llama-server` with the default model,
+Ornith-1.5, — is the first thing the guide walks through:
 
 → **[book/chat.md](book/chat.md)** — your first
 conversation, from a fresh checkout to a working assistant.

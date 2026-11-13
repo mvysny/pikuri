@@ -47,7 +47,7 @@ end
 
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
-    model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
+    model: 'ornith-ai/Ornith-1.5-35B-A3B-GGUF',
     provider: :openai,
     assume_model_exists: true
   ),

@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** every demo binary's default model is now `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`, the same size as the Qwen3.6-35B-A3B it replaces and newer; an `llm_model:` line in `~/.pikuri-examples-config.yaml` still overrides it.
+- Fix `bin/pikuri-minions` crashing at boot on the removed `Pikuri::Tool::WEB_SEARCH`; it builds its search tool from the config, as `pikuri-chat` does.
 - Fix the trifecta detector grading a node loud when one egress tool skipped review and another reached the attacker: loud now needs one tool that is both (`Pikuri::Tool::TrifectaLegs#egress_open`), and such a node's map shows both shapes, `[:egress_reviewed, :egress_vouched]` (`D_egress_axis_shape`).
 - Fix the compose guard's novelty warning never firing on a reply to a new sender: only a domain you have *sent* mail to counts as known (`Gloda::Contacts#domains_sent_to`, renamed from `domains_seen`), since an attacker earned "seen" by writing first.
 - Fix the Thunderbird calendar tools missing an event added while Thunderbird runs: `Pikuri::Thunderbird::DatabaseSnapshot` now copies a store's `-wal` too and notices a commit that only reached it.

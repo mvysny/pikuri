@@ -89,7 +89,7 @@ The two extras the chapter relies on:
 2. **Reranker** — a cross-encoder. The demo defaults to
    `bge-reranker-v2-m3` (~300 MB quantized).
 
-(The third — chat — is the Qwen3.6-35B you pulled in the first-conversation chapter.)
+(The third — chat — is the Ornith-1.5 you pulled in the first-conversation chapter.)
 
 We'll create a config file for llama-server with all the models;
 llama-server will pull them automatically in the background.
@@ -108,13 +108,13 @@ cosine-similarity calculation, or a single scalar relevance score
 the next token. Quantization noise rotates the vector or shifts
 the score, and you feel it as worse retrieval. The size cost of
 the upgrade is negligible: ~150 MB and ~600 MB at Q8_0
-respectively, against the 20 GB of the chat model.
+respectively, against the 22 GB of the chat model.
 
 Now let's configure the models. Embedders need
 `--embeddings` to switch the server into pooled-output mode, and
 rerankers need `--reranking` to enable the `/v1/rerank` endpoint.
 Neither of these is something you want to pass on the router
-command line, because it would apply to Qwen3.6 as well and
+command line, because it would apply to Ornith-1.5 as well and
 either disable chat completion or make it return embedding
 vectors instead of text. The fix is a per-model preset file:
 
@@ -137,9 +137,9 @@ ctx-size    = 8192
 batch-size  = 2048
 ubatch-size = 2048
 
-[unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M]
+[ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M]
 jinja       = 1
-hf-repo     = unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+hf-repo     = ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M
 ctx-size    = 65536
 temp        = 0.6
 top-p       = 0.95
@@ -177,15 +177,13 @@ typical). If you change the chunker to larger windows, bump both
 values up to match — llama.cpp will refuse, not truncate, when
 an input exceeds `batch-size`.
 
-**Why the `temp` / `top-p` / `top-k` lines on Qwen3.6.** pikuri
+**Why the `temp` / `top-p` / `top-k` lines on Ornith-1.5.** pikuri
 sends no sampling parameters with its requests, so the server
 decides how adventurous the model's word choice is. These are the
-Qwen3 family's recommended thinking-mode values. The unsloth GGUF
-already carries them in its metadata, and llama.cpp uses them as
-defaults, so today the lines change nothing. They put the values in
-one place you can see and tweak, and they still apply if you swap in
-a GGUF that doesn't carry them. A value a client does send in its
-request still wins over the preset.
+values Ornith's model card recommends for general tasks. Here they
+sit in one place you can see and tweak, whatever the GGUF carries in
+its own metadata. A value a client does send in its request still
+wins over the preset.
 
 Restart the router pointing at the presets:
 

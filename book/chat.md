@@ -69,16 +69,17 @@ only needs the `llama-server` binary.
 ## 2. Pull the model
 
 The model `pikuri-chat` is wired for is
-`unsloth/Qwen3.6-35B-A3B-GGUF` — a mixture-of-experts model from
-the Qwen series, quantized by the folks at Unsloth so it fits on
-regular hardware. (Why *mixture-of-experts* is the property that
+`ornith-ai/Ornith-1.5-35B-A3B-GGUF` — a mixture-of-experts model
+from the Ornith team, built on the Qwen3.5 architecture: about 35B
+parameters, of which about 3B work on each token, and at the
+quantization below a 21.7 GB file that fits on regular hardware. (Why *mixture-of-experts* is the property that
 makes local-first practical — and what to swap in on bigger or
 smaller machines — is explained at the end of step 3.) `llama-server` itself is the download tool: run
 it once pointing at the Hugging Face repo, and the GGUF lands in
 `~/.cache/llama.cpp/`:
 
 ```sh
-llama-server -hf unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+llama-server -hf ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M
 ```
 
 The `:Q4_K_M` suffix picks the Q4_K_M quantization (good
@@ -101,8 +102,9 @@ llama-server --jinja
 What the flags do — these are now defaults inherited by every
 model the router loads, not flags for a single model:
 
-- `--jinja` — enable Jinja chat templates. The Qwen3 series needs
-  this for correct tool-call formatting.
+- `--jinja` — enable Jinja chat templates. Ornith-1.5, like the
+  Qwen models it's built on, needs this for correct tool-call
+  formatting.
 
 The router keeps up to `--models-max` models resident
 simultaneously (default: 4) and only unloads the
@@ -171,7 +173,7 @@ line in step 2 (and one `llm_model:` line in the config — see
   CPU, GPU, and RAM** — they're good at this.
 - **Same 32 GB budget, tuned for agents:**
   [GLM-4.7-Flash](https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF)
-  (30B-A3B) trades some of Qwen's general knowledge for stronger
+  (30B-A3B) trades some of Ornith's general knowledge for stronger
   tool-calling — and driving tools in a loop is most of what a
   pikuri agent does. Same memory budget, so trying it is free:
   `llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M`.
@@ -361,7 +363,7 @@ Create it, and restrict its permissions since it holds secrets:
 ```sh
 cat > ~/.pikuri-examples-config.yaml <<'YAML'
 llm_server: http://localhost:8080
-llm_model: unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+llm_model: ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M
 
 # A second model, parked. Uncomment these (and comment the two
 # lines above) to switch — no need to retype anything.

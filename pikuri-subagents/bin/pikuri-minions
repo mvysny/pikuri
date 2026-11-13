@@ -28,7 +28,7 @@ examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 
 server = examples_config['llm_server'] || 'http://localhost:8080'
-model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+model = examples_config['llm_model'] || 'ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'
 streaming = false
 
 custom_prompt = nil
@@ -96,7 +96,7 @@ agent = Pikuri::Agent.new(
   # gets delegated. Pikuri::SubAgent::Extension populates the
   # `<available_agents>` block in the system prompt and wires the
   # `agent` tool for fan-out delegation.
-  c.add_tool Pikuri::Tool::WEB_SEARCH
+  c.add_tool Pikuri::Web::Search.from_h(examples_config['search'])
   c.add_tool Pikuri::Web::SCRAPE
   c.add_tool Pikuri::Web::FETCH
   c.add_tool Pikuri::Tool::CALCULATOR
