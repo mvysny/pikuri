@@ -40,11 +40,13 @@ contrast. (`Q_running_example` if this is ever reopened.)
 
 The assistant/code split collapses into one track. Tentative order: setup, chat, **designing a
 tool** (new), **touching files** (new), sub-agents, vectordb, rag, security, measuring the
-trifecta, hosting, **the secretary** (new), then the coda ("go run Puri").
+trifecta, **the secretary** (new), hosting, then the coda ("go run Puri").
 
-`Q_climax_position`: where the secretary chapter sits relative to hosting. It may read best
-right after measuring the trifecta, since that's the chapter it pays off, with hosting moved
-after it or into the coda's neighbourhood.
+**The secretary follows measuring the trifecta directly** (agreed 2026-11-13). Its chapter is a
+diff against the `briefing --with-mail` the reader just ran there, and its boot map is that
+chapter's second worked example in all but name. Hosting depends only on sub-agents, so it moves
+after the climax: it is for whoever builds their own host, and its concrete case, pikuri-web,
+leads into the coda. The secretary stays the book's last binary.
 
 ## New chapters
 
@@ -131,10 +133,13 @@ secretary's, not four per-step flags that would exist only for the chapter.
 
 ## Chapters to rebuild
 
-- **`trifecta-detector.md`** (17 mentions of `pikuri-code` / Bubblewrap / MCP / mem0 / skills).
-  Its worked examples ran `pikuri-code`'s boot verdicts; rebuild them on the secretary, which fits
-  the chapter better (three legs present, each graded weak), with `pikuri-briefing`'s one-legged
-  agent as the contrast.
+- **`trifecta-detector.md`** (mentions of `pikuri-code` / Bubblewrap / MCP / mem0 / skills).
+  Its "one binary, three verdicts" example (`pikuri-code`) is gone, a book-2 example
+  (2026-11-13). The briefing flag is now its only worked example, and it should not grow a
+  secretary one: the secretary's map is read once, in its own chapter, which follows next, so
+  this chapter ends on a forward link ("three legs, each weakened"). Still to replace: the loud
+  advisory in "Reading the advisory" (`[TRIFECTA: HARD] pikuri-code`), now the chapter's only loud
+  reading, and the `pikuri-code` cites before it.
 - **`security.md`** (29 mentions). It cites `code.md` and Bubblewrap throughout and MCP eighteen
   times, and its strongest case for "cuts built into the structure beat filters" was the kernel
   namespace. The replacement is search-never-fetch; MCP shrinks to "the instant trifecta", with a

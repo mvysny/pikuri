@@ -104,10 +104,9 @@ Until the rework lands, a few chapters here still point there.
   loud/soft/silent, the structural test for whether a human gate
   counts (**does the human see the bytes, or a proxy for them?**),
   how legs propagate across a delegation, and how to tag a tool you
-  write yourself. Two worked examples: one binary with three
-  verdicts on two declarations, and one flag that adds a leg without
-  moving the verdict — where everything that changed for the human
-  sits outside what the detector grades.
+  write yourself. The worked example: one flag that adds a leg
+  without moving the verdict — where everything that changed for the
+  human sits outside what the detector grades.
 
 ### Hosting
 

@@ -502,104 +502,12 @@ propagation — was rejected: it puts a provenance conditional back
 into the boundary relabel, and per-node evaluation catches every
 alarm it would have caught while attributing it correctly.
 
-## One binary, three verdicts
-
-The clearest way to feel the whole model is `pikuri-code`, whose
-verdict moves on **two declarations** and nothing else. Here is
-the real output, in order.
-
-One thing to be straight about before you try to reproduce it.
-`bin/pikuri-code` **asks you the private question at startup** — on
-a TTY, every session, remembered nowhere — so the first two
-readings below are the ones you actually get, depending on how you
-answer. A question rather than a flag on purpose: a forgotten flag
-fails *silent*, and silent is the reading you least want over a
-repo full of secrets.
-
-`trusted:` it does **not** expose, and that gap is deliberate too.
-The flag covers everything the workspace can *read*, and this
-binary's read set is wider than your project — it carries the
-toolchain paths (`/usr`, `~/.gem`, `~/.cargo/registry`, …) so the
-model can grep a dependency's source. Vouching for your own repo is
-a reasonable claim; vouching for every gem and crate you have ever
-downloaded is not, and a flag that quietly bundled the second into
-the first would be a lie you can type. So the last two readings are
-what *your* host gets when it scopes its workspace and declares
-them.
-
-**A public checkout — answer no.** Genuine untrusted content,
-genuine egress, no private leg. Two legs, silent (tools elided;
-the real map lists all of them, plus the `file_miner` and
-`git_repo_researcher` personas):
-
-```
-Trifecta: pikuri-code — 2 of 3 legs (untrusted, egress); no private leg found.
-
-pikuri-code [:untrusted_hard, :egress]
-  read [:untrusted_hard]
-  grep [:untrusted_hard]
-  glob [:untrusted_hard]
-  edit []
-  ...
-  bash [:untrusted_hard, :egress]
-  ...
-  researcher [gate: unreviewed] [:untrusted_hard, :egress]
-    web_search [:untrusted_hard, :egress_vouched]
-    web_scrape [:untrusted_hard, :egress]
-    fetch [:untrusted_hard, :egress]
-```
-
-**Your real work repo — answer yes.** Now loud, and this is the
-only loud reading anywhere in the book:
-
-```
-pikuri-code [:private, :untrusted_hard, :egress]
-  read [:private, :untrusted_hard]
-  ...
-  bash [:private, :untrusted_hard, :egress]
-```
-
-Read that map against a plausible belief: *the web tools live on
-the sub-agent, so the parent can't egress.* The map says
-otherwise — `bash` carries `:egress` directly, because Bubblewrap
-keeps `--share-net` (a coding agent that can't reach its package
-registry is barely a coding agent). Quarantining the web tools
-bought **context hygiene, not an egress break.** This is exactly
-the kind of belief the detector exists to check, and it's why
-egress is read from the sandbox's actual posture rather than from
-which tools are nominally "network tools".
-
-**A repo you vouch for** — `private: true, trusted: true`, which
-takes a host that scopes its own workspace. Soft:
-
-```
-pikuri-code [:private, :untrusted_weakened, :egress]
-  read [:private]
-  grep [:private]
-  ...
-  researcher [gate: unreviewed] [:untrusted_hard, :egress]
-```
-
-The file tools drop their untrusted leg, so the only untrusted
-content reaching the parent comes via the sub-agents — weakened by
-the boundary. Still assembled, still warned, one notch down.
-
-Three verdicts, one binary, two declarations. And a fourth reading
-that shows they aren't independent of the rest of the wiring: take
-that same trusted repo with the sandbox off and it goes **loud
-again**. The `trusted:` declaration vouches for what the
-*workspace* can reach; an unsandboxed bash reads `~/Downloads`
-regardless, so the claim stops being honest and the untrusted leg
-comes back hard. All four readings are pinned in
-`pikuri-code/spec/pikuri/code/dry_run_spec.rb`, so a wiring change
-that moves a verdict fails the build.
-
 ## One flag, one extra leg, and the same verdict
 
-`pikuri-code` moved its verdict on two declarations, and every
-reading had egress present. So the model's other half is still
-untaught: what the **untrusted leg means on its own**, arriving at
-an agent that did not have it. For that you want the briefing agent
+The clearest way to feel the model is to watch one leg arrive at an
+agent that did not have it: what the **untrusted leg means on its
+own**, and how much of that the map can say. For that you want the
+briefing agent
 from the [hybrid-retrieval chapter](rag.md) — the book's only
 one-legged wiring — and its flag:
 
