@@ -62,12 +62,15 @@ chapters). Some are legitimate links to book 2.
    the kit, the decision procedure and the five attacks are book-1 ones (scraped page, a
    downloaded file, a search query, stored injection, a phishing reply); code you didn't write
    is one line pointing at book 2.
-4. **The two new chapters**, below.
+4. **The two new chapters**, below. Designing a tool is written (2026-11-13,
+   `book/designing-a-tool.md`); touching files is next.
 5. **The sweep**, below.
 
 ## New chapters
 
-- **Designing a tool, on `calculator`** (replaces `tasks.md`, which went to book 2). Demo:
+- ~~**Designing a tool, on `calculator`**~~ Written 2026-11-13. Its transcript (`pikuri-chat`, the
+  Helsinki–Barcelona distance) shows the model writing assignments, reading `unexpected character
+  "="`, and recovering with one expression. (Replaced `tasks.md`, which went to book 2). Demo:
   `pikuri-chat`, which already wires it; `chat.md` already introduces it. The lessons are in its
   decision entries: the tool speaks a grammar the model already knows ("be a superset of Python,
   never a subset", `D_calculator_functions`), watching transcripts settles a design (the model

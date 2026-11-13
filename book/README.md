@@ -55,6 +55,15 @@ Until the rework lands, a few chapters here still point there.
   listeners, the Thought → Tool-call → Observation loop. The
   bundled tools and the privacy posture of each search
   provider.
+- **[Designing a tool: the calculator](designing-a-tool.md).**
+  Writing a tool, on the smallest one in pikuri. The four fields a
+  tool is made of and who reads each; why a calculator earns its
+  place where "bash exists" is true of other harnesses but not this
+  one; speaking a grammar the model already knows ("be a superset
+  of Python, never a subset"); errors and descriptions written for
+  the model; naming a tool by what makes it different; the status
+  line the tool owns; and declaring trifecta legs on a tool that
+  holds none. Every rule traced to the transcript that settled it.
 - **[Sub-agents](subagents.md).** One new concept on top of
   the last chapter: delegation. The `Persona` record, the
   `SubAgent::Extension`, the configure/bind dance. Demo via

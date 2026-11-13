@@ -515,13 +515,12 @@ tier is ~2k queries/month with no second engine to absorb the
 overflow: when it's exhausted, `web_search` returns an error instead
 of quietly asking someone else.
 
-## Next chapter — sub-agents
+## Next chapter — designing a tool
 
-You now have a working chat agent with a handful of tools. The next
-concept on top is **delegation**: letting the model spawn a
-sub-agent with a narrow toolset and a focused system prompt, then
-absorb only its summary back into the parent conversation. It's
-the smallest extension you can wire onto an agent, and the demo
-binary (`pikuri-minions`) makes the fan-out concrete.
+You now have a working chat agent with a handful of tools, all of
+them written by somebody else. The next chapter writes one: what the
+model reads in a tool, what it gets back when it calls one wrong, and
+what a tool tells pikuri about itself, all on the smallest tool there
+is, the `calculator` you just watched the model call.
 
-→ Continue to [sub-agents](subagents.md).
+→ Continue to [Designing a tool](designing-a-tool.md).
