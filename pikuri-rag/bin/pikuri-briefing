@@ -114,7 +114,7 @@ parser = OptionParser.new do |opts|
           'untrusted leg: the agent goes from 1 of 3 to 2 of 3 legs, and the private ' \
           'pool becomes your whole mailbox. Fails if mail cannot be wired') { with_mail = true }
   opts.on('--qdrant',
-          'Persist the index in a self-managed Qdrant container (requires docker) ' \
+          'Persist the index in a self-managed Qdrant container (requires podman or docker) ' \
           'plus a keyword index under the pikuri cache, so a corpus indexed once ' \
           'stays indexed across runs') { use_qdrant = true }
   opts.on('--finnish',
@@ -147,7 +147,7 @@ unless File.directory?(source)
   exit 2
 end
 
-# Before the vector server starts, so a missing dictionary costs no docker
+# Before the vector server starts, so a missing dictionary costs no podman/docker
 # container. Both errors name the apt packages to install.
 begin
   voikko = Voikko.new(language: 'fi') if finnish
@@ -227,7 +227,7 @@ begin
   vector_backend = vector_server.client(collection: collection)
 rescue StandardError => e
   warn "Could not start #{server_class.name.split('::').last}: #{e.message}"
-  warn 'Is docker installed and running? Drop --qdrant to use the in-memory backend.' if use_qdrant
+  warn 'Is podman or docker installed and working? Drop --qdrant to use the in-memory backend.' if use_qdrant
   exit 1
 end
 
@@ -375,7 +375,7 @@ rescue Interrupt
 ensure
   # Teardown in reverse of open order: stop the indexing daemon first
   # (halt writes), release the agent, close the keyword index and the
-  # dictionary it stems with, then the vector server (a docker supervisor
+  # dictionary it stems with, then the vector server (a podman/docker supervisor
   # removes its container).
   watcher&.close
   agent.close

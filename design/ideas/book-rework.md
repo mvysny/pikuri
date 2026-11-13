@@ -85,7 +85,9 @@ after it or into the coda's neighbourhood.
 - `chat.md` may gain one paragraph from book 2's `wire.md`: the messages array is not the prompt
   (template flattening), with a forward link.
 - `prerequisites.md`: Docker now earns its keep only at the vectordb chapter (Qdrant); check the
-  chapter still says so honestly.
+  chapter still says so honestly. And pikuri now prefers Podman when it's installed (rootless and
+  daemonless out of the box), so the chapter leads with `apt install podman` and keeps rootless
+  Docker as the alternative; the secretary needs one of them, since its index lives in Qdrant.
 - **The coda, `apps.md`:** Puri first, as "the secretary with all the bells and whistles", then
   pikuri-tui and pikuri-web.
 - **`book/README.md`:** drop the "being reshaped" paragraph once this lands; the running order

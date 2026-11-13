@@ -80,8 +80,8 @@ parser = OptionParser.new do |opts|
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
   opts.on('--private', 'Declare the corpus as holding sensitive data (adds the private trifecta leg to the printed map)') { corpus_private = true }
   opts.on('--trusted', 'Declare every source in the corpus as your own, reviewed in the form the model reads it (drops the untrusted leg) — read Extension#trusted? before using this on your own folder') { corpus_trusted = true }
-  opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires docker) instead of in-RAM InMemory — the recommended persistent backend') { use_qdrant = true }
-  opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires docker) instead of in-RAM InMemory') { use_chroma = true }
+  opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires podman or docker) instead of in-RAM InMemory — the recommended persistent backend') { use_qdrant = true }
+  opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires podman or docker) instead of in-RAM InMemory') { use_chroma = true }
   opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
                                   '(extensions still append their own sections).') do |v|
     custom_prompt = File.read(v).rstrip
@@ -164,7 +164,7 @@ embedder = Pikuri::VectorDb::Embedder.new(
 # Backend choice, via the uniform Server protocol: pick a supervisor,
 # ensure it's running, open a client on it. InMemory (default) is the
 # null supervisor — RAM-only stores, re-indexed from scratch every run.
-# --qdrant / --chroma instead spin up a self-managed docker container
+# --qdrant / --chroma instead spin up a self-managed podman/docker container
 # (routed through Pikuri::Subprocess, teardown registered with
 # Pikuri::Finalizers) and persist the embeddings to disk — so a corpus
 # you index once stays indexed across runs. Qdrant is the recommended
@@ -189,7 +189,7 @@ begin
   backend = server.client(collection: collection)
 rescue StandardError => e
   warn "Could not start #{server_class.name.split('::').last}: #{e.message}"
-  warn "Is docker installed and running? Drop #{engine_flag} to use the in-memory backend." if engine_flag
+  warn "Is podman or docker installed and working? Drop #{engine_flag} to use the in-memory backend." if engine_flag
   exit 1
 end
 
@@ -312,7 +312,7 @@ rescue Interrupt
 ensure
   # Teardown in reverse of open order: stop the indexing daemon first
   # (halt writes), release the agent's resources, then close the server
-  # (a docker supervisor removes its container; the InMemory null
+  # (a podman/docker supervisor removes its container; the InMemory null
   # supervisor drops the stores). Pikuri::Finalizers backstops the
   # docker case on an unclean exit — same LIFO order.
   watcher&.close

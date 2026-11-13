@@ -18,7 +18,7 @@ module Pikuri
       # collection:)+ against an existing deployment (this class is purely the
       # HTTP client); or **let pikuri manage it** —
       # {Server::Chroma.ensure_running}'s +#client(collection:)+ returns a
-      # +Chroma+ pointed at a supervised container. Docker lifecycle and HTTP
+      # +Chroma+ pointed at a supervised container. Podman/docker lifecycle and HTTP
       # wire protocol share nothing, so each is its own class.
       #
       # v2 endpoints used: +collections+ (get-or-create), +.../upsert+,

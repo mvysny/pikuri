@@ -64,19 +64,35 @@ module Pikuri
       #   directory recursively). Tilde-expanded.
       # @param embedder [#embed] +embed(Array<String>) -> Array<Array<Float>>+.
       # @param chunker [#chunk] +chunk(String) -> Array<Chunker::Piece>+.
+      # @param exclude [Array<String, Pathname>] folders or files under
+      #   {#root} that are never indexed, relative to it or absolute — a
+      #   library of books inside +~/Documents+, say, which would cost hours
+      #   of embedding and crowd every search. Matched by whole path
+      #   components, so +Books+ skips +Books/x.pdf+ but not +Bookshelf.md+.
       # @return [Indexer]
+      # @raise [ArgumentError] if an +exclude+ entry lies outside {#root}: it
+      #   could never match, and a skip rule that silently does nothing is
+      #   exactly the one nobody notices.
       #
       # A *single* source, not an array: with multiple roots two files both
       # named +cooking.md+ would derive identical relative +source+ values,
       # hence identical +"source:ordinal"+ ids, and {Backend#upsert}'s
       # replace-by-id would silently let the second overwrite the first.
       # Multi-source is deferred — see +design/ideas/vectordb-deferrals.md+.
-      def initialize(backend:, source:, embedder:, chunker:)
+      def initialize(backend:, source:, embedder:, chunker:, exclude: [])
         @backend  = backend
         @source   = Pathname.new(source).expand_path
         @embedder = embedder
         @chunker  = chunker
+        @exclude  = exclude.map { |e| exclusion(e) }
       end
+
+      # Files with at least this many chunks announce themselves before
+      # embedding, not only after: a book is one embedding call that can run
+      # for a minute, and without the line the log goes quiet for exactly
+      # that minute.
+      # @return [Integer]
+      ANNOUNCE_CHUNKS = 20
 
       # @return [Pathname] the configured source, tilde-expanded (a file or a
       #   directory tree). The {Watcher} reads this to decide what to watch.
@@ -89,6 +105,21 @@ module Pikuri
       # @return [Pathname]
       def root
         @source.directory? ? @source : @source.parent
+      end
+
+      # Whether +path+ falls under one of the +exclude:+ entries — shared by
+      # the walk and the {Watcher}, so a live event can't index what the walk
+      # skips. Pure path math, so it works on a removed path too.
+      #
+      # @param path [String, Pathname] an absolute path.
+      # @return [Boolean]
+      def excluded?(path)
+        return false if @exclude.empty?
+
+        parts = Pathname.new(path).expand_path.relative_path_from(root).each_filename.to_a
+        @exclude.any? { |ex| parts.first(ex.size) == ex }
+      rescue ArgumentError
+        false
       end
 
       # Walk every source, index every reachable non-denylisted
@@ -152,33 +183,38 @@ module Pikuri
       #
       # @param path [String, Pathname] the file; need not exist (vanished ⇒
       #   removal).
+      # @param progress [String, nil] a prefix for this file's log lines,
+      #   e.g. +"[12/340] "+ — the {Watcher}'s boot-sweep position.
       # @return [Integer] chunks now stored (0 if removed).
       # @raise [RuntimeError] if the embedder or backend fails — the {Watcher}
       #   logs it and moves on.
-      def reindex_file!(path)
+      def reindex_file!(path, progress: nil)
         path   = Pathname.new(path).expand_path
         source = relative_source(path)
 
         pieces = begin
           pieces_for(path)
         rescue ArgumentError, Errno::ENOENT, RuntimeError => e
-          LOGGER.info("reindex #{source}: unindexable (#{e.message}); removing from index")
+          LOGGER.info("#{progress}reindex #{source}: unindexable (#{e.message}); removing from index")
           @backend.delete_by_source(source)
           return 0
         end
 
         if pieces.empty?
-          LOGGER.info("reindex #{source}: no indexable text; removing from index")
+          LOGGER.info("#{progress}reindex #{source}: no indexable text; removing from index")
           @backend.delete_by_source(source)
           return 0
         end
 
+        if pieces.length >= ANNOUNCE_CHUNKS
+          LOGGER.info("#{progress}reindex #{source}: embedding #{pieces.length} chunk(s)…")
+        end
         # embed_and_build is *outside* the rescue: an embedder outage
         # raises straight out, before replace_source touches the
         # backend, so the prior chunks survive (embed-before-delete).
         chunks, vectors = embed_and_build(source: source, path: path, pieces: pieces)
         @backend.replace_source(source: source, chunks: chunks, vectors: vectors)
-        LOGGER.info("reindex #{source}: #{chunks.length} chunk(s)")
+        LOGGER.info("#{progress}reindex #{source}: #{chunks.length} chunk(s)")
         chunks.length
       end
 
@@ -237,8 +273,9 @@ module Pikuri
         end
       end
 
-      # Depth-first walk of +root+, applying {DENYLIST} and the dotfile skip
-      # rule, sorted by basename for deterministic order.
+      # Depth-first walk of +root+, applying {DENYLIST}, the dotfile skip rule
+      # and +exclude:+, sorted by basename for deterministic order. An excluded
+      # folder is never descended, so a big library costs no stat calls.
       #
       # Symlinks are skipped outright (the +#symlink?+ check uses +lstat+, so it
       # fires before the link is followed) — a deliberate strict policy, not the
@@ -255,6 +292,7 @@ module Pikuri
             next if name.start_with?('.')
             next if DENYLIST.include?(name)
             next if entry.symlink?
+            next if excluded?(entry)
 
             if entry.directory?
               walk.call(entry)
@@ -293,6 +331,21 @@ module Pikuri
         @backend.upsert(chunks: chunks, vectors: vectors)
         LOGGER.info("[#{i}/#{total}] #{source}: #{chunks.length} chunk(s)")
         chunks.length
+      end
+
+      # Normalize one +exclude:+ entry to its path components under {#root}.
+      #
+      # @param entry [String, Pathname] relative to {#root}, or absolute.
+      # @return [Array<String>]
+      # @raise [ArgumentError] if it lies outside {#root}.
+      def exclusion(entry)
+        rel = Pathname.new(entry).expand_path(root).relative_path_from(root)
+        parts = rel.each_filename.to_a
+        if parts.empty? || parts.first == '..'
+          raise ArgumentError, "exclude #{entry.to_s.inspect} is not inside #{root}"
+        end
+
+        parts
       end
 
       # The relative path used as {Chunk#source} — the file's path

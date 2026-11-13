@@ -6,30 +6,30 @@ require 'pathname'
 module Pikuri
   module VectorDb
     module Server
-      # Supervisor for a self-managed Qdrant docker container — pairs with
+      # Supervisor for a self-managed Qdrant podman/docker container — pairs with
       # {Backend::Qdrant} exactly as {Server::Chroma} pairs with
       # {Backend::Chroma} (this class owns the *process*; {#client} returns a
       # backend pre-pointed at it). Carries only the engine's *identity* and
-      # composes a {DockerContainer} for the docker work + shared rationale.
+      # composes a {Container} for the podman/docker work + shared rationale.
       #
       # *Port 6333 caveat:* +pikuri-memory+'s +Mem0Server+ compose stack also
       # publishes its own internal Qdrant on host 6333 (separate instance by
       # design — see +design/architecture.md+), so running both at the defaults collides —
       # pass a different +port:+ here when the mem0 stack is up.
       class Qdrant
-        # @return [String] pinned qdrant docker image; bump it to upgrade
+        # @return [String] pinned, fully qualified qdrant image; bump it to upgrade
         #   ({#ensure_running!} recreates the container on next boot, data dir
         #   untouched). **Kept in lockstep with pikuri-workshop's
         #   +Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE+** so a host
         #   running both stacks holds one image; a spec over there fails when
         #   they drift, since only the workshop may see this gem.
-        IMAGE = 'qdrant/qdrant:v1.12.4'
+        IMAGE = 'docker.io/qdrant/qdrant:v1.12.4'
 
         # @return [String] container name; +"pikuri-internal-"+ namespace squat
-        #   (see {DockerContainer}).
+        #   (see {Container}).
         CONTAINER_NAME = 'pikuri-internal-qdrant'
 
-        # @return [String] docker label (same as {Server::Chroma::LABEL}).
+        # @return [String] container label (same as {Server::Chroma::LABEL}).
         LABEL = 'pikuri.internal=true'
 
         # @return [String] the +-v+ target {#default_data_dir} bind-mounts onto
@@ -78,7 +78,7 @@ module Pikuri
                        connection: nil)
           @data_dir = Pathname.new(data_dir || default_data_dir).expand_path
           @port = port
-          @container = DockerContainer.new(
+          @container = Container.new(
             name: CONTAINER_NAME, image: IMAGE, label: LABEL,
             host_port: port, container_port: 6333,
             volume: "#{@data_dir}:#{CONTAINER_PERSIST_DIR}",
@@ -113,13 +113,13 @@ module Pikuri
         end
 
         # Idempotent: ensure a fresh container is running and healthy
-        # (see {DockerContainer#ensure_running!} for the
+        # (see {Container#ensure_running!} for the
         # reuse-or-recreate algorithm), then register {#close} with
         # {Pikuri::Finalizers} — once — so the container is removed
         # at process exit.
         #
         # @return [void]
-        # @raise [RuntimeError] on missing docker, any docker
+        # @raise [RuntimeError] on missing podman and docker, any podman/docker
         #   command failure, or healthcheck timeout.
         def ensure_running!
           FileUtils.mkdir_p(@data_dir)
@@ -130,7 +130,7 @@ module Pikuri
 
         # Remove the supervised container, leaving the bind-mounted {#data_dir}
         # (the corpus survives). Best-effort and idempotent — see
-        # {DockerContainer#close}.
+        # {Container#close}.
         #
         # @return [void]
         def close

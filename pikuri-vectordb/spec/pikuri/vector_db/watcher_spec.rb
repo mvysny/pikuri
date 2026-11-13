@@ -11,17 +11,21 @@ describe Pikuri::VectorDb::Watcher do
   # A recording stand-in for {Indexer}: exposes #root / #source and
   # records the per-file calls the Watcher makes, per the project's
   # define_singleton_method stubbing convention (no rspec-mocks).
-  def fake_indexer(source: root, plan: { reindex: [], remove: [] }, reindex_raises: nil)
+  def fake_indexer(source: root, plan: { reindex: [], remove: [] }, reindex_raises: nil, excluded: [])
     the_root = root # capture as a local; bare `root` would resolve to obj.root and recurse
     calls = []
+    prefixes = []
     obj = Object.new
     obj.define_singleton_method(:root)    { Pathname.new(the_root) }
     obj.define_singleton_method(:source)  { Pathname.new(source) }
     obj.define_singleton_method(:reconcile_plan) { plan }
-    obj.define_singleton_method(:reindex_file!) do |p|
+    obj.define_singleton_method(:excluded?) { |p| excluded.any? { |ex| p.to_s.start_with?(ex) } }
+    obj.define_singleton_method(:reindex_file!) do |p, progress: nil|
       calls << [:reindex, p.to_s]
+      prefixes << progress
       raise reindex_raises if reindex_raises
     end
+    obj.define_singleton_method(:prefixes) { prefixes }
     obj.define_singleton_method(:remove_file!) { |p| calls << [:remove, p.to_s] }
     obj.define_singleton_method(:calls) { calls }
     obj
@@ -85,6 +89,16 @@ describe Pikuri::VectorDb::Watcher do
       w.drain!
 
       assert_equal [], idx.calls
+    end
+
+    it 'ignores paths the indexer excludes' do
+      idx = fake_indexer(excluded: [under('Books')])
+      w = described_class.new(indexer: idx)
+
+      w.process_event([under('Books/novel.pdf'), under('notes.md')], [], [])
+      w.drain!
+
+      assert_equal [[:reindex, under('notes.md')]], idx.calls
     end
 
     it 'indexes a nested non-denylisted file' do
@@ -181,6 +195,19 @@ describe Pikuri::VectorDb::Watcher do
         [:reindex, root.join('a.md').to_s],
         [:remove,  root.join('gone.md').to_s]
       ], idx.calls
+    end
+
+    it 'numbers the sweep\'s files and leaves live events unnumbered' do
+      plan = { reindex: [root.join('a.md'), root.join('b.md')], remove: [] }
+      idx = fake_indexer(plan: plan)
+      w = described_class.new(indexer: idx)
+
+      w.send(:enqueue_plan)
+      w.drain!
+      w.process_event([under('c.md')], [], [])
+      w.drain!
+
+      assert_equal ['[1/2] ', '[2/2] ', nil], idx.prefixes
     end
 
     it 'logs and survives a reconcile sweep that raises' do

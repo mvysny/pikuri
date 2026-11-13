@@ -40,8 +40,10 @@ bundle install
 ```
 
 From the vector-DB chapter onward, the guide also runs local
-infrastructure (the vector store) in Docker — set up **rootless**,
-not via the `docker` group, which is passwordless root. The
+infrastructure (the vector store) in Podman or Docker. Podman runs
+**rootless** out of the box and pikuri prefers it when installed;
+Docker must be set up rootless, not via the `docker` group, which is
+passwordless root. The
 one-time setup lives in
 [book/prerequisites.md](book/prerequisites.md).
 

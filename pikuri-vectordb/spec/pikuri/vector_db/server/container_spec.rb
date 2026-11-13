@@ -7,13 +7,13 @@ require 'faraday'
 # healthcheck polling, loud boot / quiet teardown — is tested here
 # once, against arbitrary engine parameters. The Server::Chroma /
 # Server::Qdrant specs only cover their engine-specific wiring.
-describe Pikuri::VectorDb::Server::DockerContainer do
-  include_context 'docker stub'
+describe Pikuri::VectorDb::Server::Container do
+  include_context 'container stub'
 
   HEADERS = { 'Content-Type' => 'application/json' }.freeze
 
   def build_container(**overrides)
-    Pikuri::VectorDb::Server::DockerContainer.new(
+    Pikuri::VectorDb::Server::Container.new(
       name: 'pikuri-internal-test',
       image: 'example/engine:1.2.3',
       label: 'pikuri.internal=true',
@@ -111,7 +111,7 @@ describe Pikuri::VectorDb::Server::DockerContainer do
       planned_results.replace([:enoent])
 
       err = assert_raises(RuntimeError) { build_container.ensure_running! }
-      assert_match(/`docker` not found on PATH/, err.message)
+      assert_match(/neither `podman` nor `docker` found on PATH/, err.message)
     end
 
     it 'raises with the docker output when `docker run` fails' do

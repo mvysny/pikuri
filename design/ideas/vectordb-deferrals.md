@@ -76,8 +76,14 @@ Only the deferrals stay here.
   primitive?" question is moot for now. Revisit only if consolidating
   the two stores onto one backend ever becomes worth it; not a v1 goal.
 - **Configurable ignore rules.** `Indexer::DENYLIST` ships a fixed
-  set (`.git`, `node_modules`, dot-files); `.gitignore`-shaped
-  user-configurable skip rules defer until someone asks.
+  set (`.git`, `node_modules`, dot-files), and `exclude:` takes whole
+  folders (the secretary's books); `.gitignore`-shaped patterns defer
+  until someone asks.
+- **Remembering unindexable files.** A file that yields no text
+  (`.docx`, an image) is never stored, so every boot sweep reads it as
+  new and tries again, an INFO line each. Harmless on a small tree; on a
+  real `~/Documents` with hundreds of Office files it's noise and parse
+  time on every start. A skip manifest keyed by hash would fix both.
 - **Multi-source indexing.** `Extension.new(source:)` takes a single
   file-or-directory root in v1; `Indexer` walks one root. Indexing
   several disjoint roots into one collection (the user's notes dir +

@@ -1,8 +1,9 @@
 # The secretary: book 1's climax demo
 
-Status: **first cut built 2026-11-12**: `bin/pikuri-secretary`, `prompts/pikuri-secretary.txt`,
-smoke-tested on a scratch folder (rag answer with date arithmetic, a confirmed `SECRETARY.md`
-write, a confirmed search). Next: run it on real mail and `~/Documents`, then the chapter. The
+Status: **first cut built 2026-11-12, reworked 2026-11-13** after the owner's first real run
+(Qdrant default, `--exclude`, indexing progress, prompt routing). Tested on a demo `~/Documents`
+of PDFs, CSV, HTML, Markdown and a 137-page book with a needle: every planted fact found, from
+the right source. Next: more real use, then the chapter. The
 chapter that teaches it is
 [`book-rework.md`](book-rework.md)'s; this file owns the demo.
 
@@ -136,10 +137,18 @@ best tool set, not the smallest, and count on local models improving: if Siri's 
 dense model routes among this many, Ornith-1.5 and Qwen3.6-35B-A3B should too. To be tested,
 not assumed; the chapter reports what the test showed.
 
-**The index starts in memory, with Qdrant one flag away**, exactly as `pikuri-briefing` does it:
-in-memory vectors and keyword index by default (nothing to set up, re-embedded on every start),
-and `--qdrant` for a persistent index. The vectordb and rag chapters already teach both, so the
-secretary's chapter only points at them.
+**The index lives in Qdrant by default, `--in-memory` to opt out** (agreed 2026-11-13, reversing
+the briefing-style in-memory default). Measured on the owner's real `~/Documents` (11,685 files,
+many books): minutes of silence, then the GPU at 100% for what would be hours. On a 137-page PDF,
+extraction took 8.5 s (CPU) and embedding its 242 chunks 36 s (GPU), about 7 chunks/s; a
+thousand books is half a day, and in memory every start pays it again while the chat model
+queues behind the embedder on the same llama-server. So the secretary needs podman or docker, and the
+chapter says so. Whether ~3,400 tokens/s is the embedder's real ceiling or the server's batching
+flags is unchecked.
+
+**`--exclude` keeps folders out** (agreed 2026-11-13): books cost most of the embedding and crowd
+every search, and a secretary has no use for them. Whole folders, not patterns; validated at boot,
+since a typo would silently exclude nothing.
 
 ## What has to land upstream first
 
@@ -171,14 +180,18 @@ All agreed 2026-11-12.
   Comes free with the copy.
 - **`SECRETARY.md` is indexed like any note** (was `Q_memory_vs_rag`). A search hit duplicating
   the prompt is harmless; an exclusion would be a knob.
-- **First embed: measure it** on a real `~/Documents` (was `Q_first_embed`). If it's minutes, the
-  chapter says "add `--qdrant` once the first run works"; the default stays in-memory, like
-  briefing's.
+- **First embed: measured** (was `Q_first_embed`): hours, hence Qdrant by default and
+  `--exclude`, above.
 - **A REPL that also takes an initial message** (was `Q_cli_shape`), like `pikuri-thunderbird`.
 
 ## Open questions
 
-- `Q_two_readers`: the notes folder has two read tools. Edit only touches a file read through
+- `Q_office_formats`: `.doc`/`.docx`/`.odt` are unreadable (the Docker office extractors are
+  book 2's), and a real `~/Documents` is full of them. Accept it and say so in the chapter, or is a
+  pure-Ruby `.docx`/`.odt` reader (both are zipped XML) a `pikuri-pdf`-sized gem worth having?
+- `Q_two_readers`: the notes folder has two read tools. Seen once (2026-11-13): the model tried
+  `read` on a document outside the notes folder, got the out-of-workspace error, and switched to
+  `rag_read` — it recovers, at one wasted call. Edit only touches a file read through
   workspace `read` (the read-before-edit gate), so `read` is wired beside `rag_read` over the same
   notes; `Workspace::Extension` was skipped because its grep, glob and file_list would duplicate
   the rag tools too. 17 tools in all. Does the model pick the right reader before an edit, or

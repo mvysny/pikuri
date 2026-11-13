@@ -6,7 +6,7 @@ require 'minitest/assertions'
 
 require 'pikuri-vectordb'
 
-require_relative 'support/docker_stub'
+require_relative 'support/container_stub'
 
 # Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output. Specs that exercise logging

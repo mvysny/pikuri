@@ -7,9 +7,9 @@ require 'tmpdir'
 
 # Engine-specific wiring only — the generic container lifecycle
 # (reuse-or-recreate, healthcheck polling, close semantics) is
-# covered once in the Server::DockerContainer spec.
+# covered once in the Server::Container spec.
 describe Pikuri::VectorDb::Server::Chroma do
-  include_context 'docker stub'
+  include_context 'container stub'
 
   JSON_HEADERS = { 'Content-Type' => 'application/json' }.freeze
 

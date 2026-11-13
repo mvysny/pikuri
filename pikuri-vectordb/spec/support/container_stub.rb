@@ -3,7 +3,7 @@
 require 'faraday'
 
 # Shared stubbing for specs exercising the docker-shaped supervisors
-# (Server::DockerContainer and the engine supervisors composing it).
+# (Server::Container and the engine supervisors composing it).
 #
 # Stubs the subprocess seam: captures every docker invocation in
 # +docker_calls+, returns +planned_results+ in FIFO order. Each
@@ -11,7 +11,7 @@ require 'faraday'
 # +:enoent+ raises +Errno::ENOENT+ to simulate `docker` missing.
 # Also provides +heartbeat_conn+, a Faraday test connection for the
 # healthcheck poll, with expectations stubbed on +heartbeat_stubs+.
-RSpec.shared_context 'docker stub' do
+RSpec.shared_context 'container stub' do
   let(:docker_calls) { [] }
   let(:planned_results) { [] }
 
@@ -44,6 +44,11 @@ RSpec.shared_context 'docker stub' do
       end
     end
 
+    # Pin the CLI so argv assertions hold on a host with podman installed.
+    container = Pikuri::VectorDb::Server::Container
+    container.singleton_class.send(:alias_method, :__orig_runtime, :runtime)
+    container.define_singleton_method(:runtime) { 'docker' }
+
     Pikuri::Subprocess.singleton_class.send(:alias_method, :__orig_spawn, :spawn)
     Pikuri::Subprocess.define_singleton_method(:spawn) do |*argv, **_kw|
       calls_ref << argv
@@ -56,6 +61,9 @@ RSpec.shared_context 'docker stub' do
   end
 
   after do
+    container = Pikuri::VectorDb::Server::Container
+    container.singleton_class.send(:alias_method, :runtime, :__orig_runtime)
+    container.singleton_class.send(:remove_method, :__orig_runtime)
     Pikuri::Subprocess.singleton_class.send(:alias_method, :spawn, :__orig_spawn)
     Pikuri::Subprocess.singleton_class.send(:remove_method, :__orig_spawn)
   end

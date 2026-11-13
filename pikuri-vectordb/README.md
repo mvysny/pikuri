@@ -84,13 +84,14 @@ one-line change:
   wiring.
 
 Each persistent engine pairs with a `Server::*` supervisor that
-runs it as a self-managed docker container: pinned image, a
+runs it as a self-managed podman/docker container (podman when it's
+installed): pinned image, a
 container name pikuri owns (`pikuri-internal-qdrant` /
 `pikuri-internal-chroma`), data bind-mounted under
 `~/.cache/pikuri/` so the corpus survives container recreation.
 
 ```ruby
-# Supervised container (needs docker on PATH):
+# Supervised container (needs podman or docker on PATH):
 backend = Pikuri::VectorDb::Server::Qdrant.ensure_running.client(
   collection: 'my-docs'
 )

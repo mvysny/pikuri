@@ -141,10 +141,12 @@ module Pikuri
       # @param trusted [Boolean] every source in this corpus is
       #   yours, reviewed as the model reads it; see {#trusted?}
       #   for the three clauses you are signing.
+      # @param exclude [Array<String, Pathname>] folders under +source+ never
+      #   indexed; see {Indexer#initialize}.
       # @return [Extension]
       def initialize(backend:, source:,
                      embedder: nil, reranker: nil, chunker: nil,
-                     private: false, trusted: false)
+                     private: false, trusted: false, exclude: [])
         @backend  = backend
         @embedder = embedder || Embedder.new
         @reranker = reranker
@@ -156,7 +158,8 @@ module Pikuri
           backend:  @backend,
           source:   source,
           embedder: @embedder,
-          chunker:  @chunker
+          chunker:  @chunker,
+          exclude:  exclude
         )
       end
 

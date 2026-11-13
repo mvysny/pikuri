@@ -133,11 +133,13 @@ module Pikuri
       #   +":memory:"+ (the default). See "Which store to pair with which
       #   backend".
       # @param stemmer [#stems, #index_stems, #id] see "Stemming".
+      # @param exclude [Array<String, Pathname>] folders under +source+ never
+      #   indexed; see {Pikuri::VectorDb::Indexer#initialize}.
       # @return [Extension]
       def initialize(backend:, source:,
                      embedder: nil, reranker: nil, chunker: nil,
                      private: false, trusted: false,
-                     store: Backend::Fts5::MEMORY_STORE, stemmer: Stemmer::Identity)
+                     store: Backend::Fts5::MEMORY_STORE, stemmer: Stemmer::Identity, exclude: [])
         @backend  = Backend::Hybrid.new(vectors: backend,
                                         keywords: Backend::Fts5.new(store: store, stemmer: stemmer))
         @embedder = embedder || Pikuri::VectorDb::Embedder.new
@@ -150,7 +152,8 @@ module Pikuri
           backend:  @backend,
           source:   source,
           embedder: @embedder,
-          chunker:  @chunker
+          chunker:  @chunker,
+          exclude:  exclude
         )
       end
 

@@ -35,10 +35,10 @@ describe Pikuri::VectorDb::Indexer do
     path
   end
 
-  def build_indexer(source: root.to_s)
+  def build_indexer(source: root.to_s, exclude: [])
     Pikuri::VectorDb::Indexer.new(
       backend: backend, source: source,
-      embedder: fake_embedder, chunker: fake_chunker
+      embedder: fake_embedder, chunker: fake_chunker, exclude: exclude
     )
   end
 
@@ -114,6 +114,21 @@ describe Pikuri::VectorDb::Indexer do
       total = build_indexer.index_all!
 
       assert_equal 1, total
+    end
+
+    it 'skips excluded folders, matched by whole path components' do
+      write('Books/novel.txt', 'should not')
+      write('Library/Books/deep.txt', 'should not')
+      write('Bookshelf.md', 'kept')
+
+      total = build_indexer(exclude: ['Books', root.join('Library/Books').to_s]).index_all!
+
+      assert_equal 1, total
+    end
+
+    it 'refuses an exclude outside the source root' do
+      assert_raises(ArgumentError) { build_indexer(exclude: ['../elsewhere']) }
+      assert_raises(ArgumentError) { build_indexer(exclude: ['/somewhere/else']) }
     end
 
     it 'skips a symlinked file and never descends a symlinked directory' do

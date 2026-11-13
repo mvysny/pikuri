@@ -102,6 +102,12 @@ module Pikuri
         @single_file = @source != @watch_dir
 
         @pending  = {} # path (String) → :reindex / :remove
+        # The boot sweep's paths not yet processed, and its size — only for
+        # the +[i/total]+ log prefix. A live event for a swept path consumes
+        # its slot, so the count still ends at total.
+        @sweep_left  = {}
+        @sweep_total = 0
+        @sweep_started = nil
         @monitor  = Monitor.new
         @cond     = @monitor.new_cond
         @closing  = false
@@ -222,16 +228,49 @@ module Pikuri
       # Compute the boot reconcile plan and enqueue it. Failures
       # (backend unreachable, etc.) are logged, not raised — a failed
       # sweep must not take the worker down; live events still flow.
+      #
+      # The plan hashes every file before it returns, which on a big tree is
+      # a long silence — hence the line before it.
       def enqueue_plan
+        LOGGER.info("reconcile: scanning #{@watch_dir}…")
         plan = @indexer.reconcile_plan
-        plan[:reindex].each { |path| enqueue(:reindex, path) }
-        plan[:remove].each  { |path| enqueue(:remove, path) }
+        @monitor.synchronize do
+          (plan[:reindex] + plan[:remove]).each { |path| @sweep_left[path.to_s] = true }
+          @sweep_total = @sweep_left.size
+          @sweep_started = Time.now
+        end
         LOGGER.info(
           "reconcile: #{plan[:reindex].size} file(s) to (re)index, " \
           "#{plan[:remove].size} to remove"
         )
+        plan[:reindex].each { |path| enqueue(:reindex, path) }
+        plan[:remove].each  { |path| enqueue(:remove, path) }
       rescue StandardError => e
         LOGGER.warn("reconcile sweep failed: #{e.class}: #{e.message}")
+      end
+
+      # The +"[i/total] "+ log prefix for a boot-sweep path, consuming its
+      # slot; +nil+ for a live event outside the sweep.
+      #
+      # @param path [String]
+      # @return [String, nil]
+      def sweep_progress(path)
+        @monitor.synchronize do
+          next nil unless @sweep_left.delete(path)
+
+          "[#{@sweep_total - @sweep_left.size}/#{@sweep_total}] "
+        end
+      end
+
+      # Log the sweep's end once its last file has been processed, not merely
+      # picked up — else the line lands before the last file's own.
+      #
+      # @param progress [String, nil] the prefix {#sweep_progress} returned.
+      # @return [void]
+      def log_sweep_done(progress)
+        return unless progress == "[#{@sweep_total}/#{@sweep_total}] "
+
+        LOGGER.info(format('reconcile: done, %d file(s) in %.0fs', @sweep_total, Time.now - @sweep_started))
       end
 
       # Record an intent for a path, collapsing any prior intent for
@@ -265,17 +304,20 @@ module Pikuri
       # file can't kill the worker; the file is picked up again on its
       # next change or the next boot sweep.
       def process(path, intent)
+        progress = sweep_progress(path)
         case intent
-        when :reindex then @indexer.reindex_file!(path)
+        when :reindex then @indexer.reindex_file!(path, progress: progress)
         when :remove  then @indexer.remove_file!(path)
         end
       rescue StandardError => e
         LOGGER.warn("watch #{intent} #{path} failed: #{e.class}: #{e.message}")
+      ensure
+        log_sweep_done(progress)
       end
 
       # Should a changed path be acted on? For a directory source:
-      # the path is under {Indexer#root} and no path component is a
-      # dot-entry or in {Indexer::DENYLIST}. For a single-file source:
+      # the path is under {Indexer#root}, not {Indexer#excluded?}, and no
+      # path component is a dot-entry or in {Indexer::DENYLIST}. For a single-file source:
       # the path is exactly that file (the listener watches the
       # parent dir, so siblings must be filtered out). Works on
       # removed paths too — it's pure path math, no +stat+.
@@ -285,6 +327,7 @@ module Pikuri
 
         rel = path.relative_path_from(@watch_dir)
         return false if rel.to_s.start_with?('..')
+        return false if @indexer.excluded?(path)
 
         rel.each_filename.none? do |part|
           part.start_with?('.') || Indexer::DENYLIST.include?(part)

@@ -6,32 +6,32 @@ require 'pathname'
 module Pikuri
   module VectorDb
     module Server
-      # Supervisor for a self-managed Chroma docker container. Owns the
+      # Supervisor for a self-managed Chroma podman/docker container. Owns the
       # *process*; {Backend::Chroma} owns the HTTP client, and {#client} returns
       # one pre-pointed at the running container. Hosts that manage Chroma
       # elsewhere wire {Backend::Chroma.new(host:, port:)} directly and never
       # touch this class.
       #
       # This class carries Chroma's *identity* (image pin, name, persist +
-      # heartbeat paths) and hands it to a composed {DockerContainer}, which does
-      # the docker work and documents the shared rationale. What stays here:
+      # heartbeat paths) and hands it to a composed {Container}, which does
+      # the podman/docker work and documents the shared rationale. What stays here:
       # {#default_data_dir}, the {Backend::Chroma} factory, and the
       # {Pikuri::Finalizers} registration (the supervisor is the host-facing
       # ownership boundary, so it registers, not the helper).
       class Chroma
-        # @return [String] pinned chroma docker image. Bumping this
+        # @return [String] pinned, fully qualified chroma image. Bumping this
         #   constant is how the codebase upgrades the chroma
         #   version: {#ensure_running!} recreates the container from
         #   scratch on the next boot, so it comes up on the new pin
         #   automatically (the bind-mounted corpus is untouched).
-        IMAGE = 'chromadb/chroma:1.5.9'
+        IMAGE = 'docker.io/chromadb/chroma:1.5.9'
 
         # @return [String] container name; the +"pikuri-internal-"+ prefix is
-        #   the namespace pikuri squats — see {DockerContainer}.
+        #   the namespace pikuri squats — see {Container}.
         CONTAINER_NAME = 'pikuri-internal-chroma'
 
-        # @return [String] docker label set on every container this class
-        #   creates (for +docker ps --filter+ enumeration).
+        # @return [String] container label set on every container this class
+        #   creates (for +podman ps --filter+ / +docker ps --filter+ enumeration).
         LABEL = 'pikuri.internal=true'
 
         # @return [String] path inside the container where chroma
@@ -83,7 +83,7 @@ module Pikuri
                        connection: nil)
           @data_dir = Pathname.new(data_dir || default_data_dir).expand_path
           @port = port
-          @container = DockerContainer.new(
+          @container = Container.new(
             name: CONTAINER_NAME, image: IMAGE, label: LABEL,
             host_port: port, container_port: 8000,
             volume: "#{@data_dir}:#{CONTAINER_PERSIST_DIR}",
@@ -118,13 +118,13 @@ module Pikuri
         end
 
         # Idempotent: ensure a fresh container is running and healthy
-        # (see {DockerContainer#ensure_running!} for the
+        # (see {Container#ensure_running!} for the
         # reuse-or-recreate algorithm), then register {#close} with
         # {Pikuri::Finalizers} — once — so the container is removed
         # at process exit.
         #
         # @return [void]
-        # @raise [RuntimeError] on missing docker, any docker
+        # @raise [RuntimeError] on missing podman and docker, any podman/docker
         #   command failure, or healthcheck timeout.
         def ensure_running!
           FileUtils.mkdir_p(@data_dir)
@@ -135,7 +135,7 @@ module Pikuri
 
         # Remove the supervised container, leaving the bind-mounted {#data_dir}
         # (the corpus survives). Best-effort and idempotent — see
-        # {DockerContainer#close}.
+        # {Container#close}.
         #
         # @return [void]
         def close

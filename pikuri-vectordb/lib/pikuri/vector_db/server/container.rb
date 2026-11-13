@@ -5,12 +5,21 @@ require 'faraday'
 module Pikuri
   module VectorDb
     module Server
-      # Lifecycle engine for one named, disposable docker container with
-      # persistent bind-mounted data — the shared machinery {Server::Qdrant} and
+      # Lifecycle engine for one named, disposable podman/docker container with persistent
+      # bind-mounted data — the shared machinery {Server::Qdrant} and
       # {Server::Chroma} compose. The supervisor carries the engine's identity
       # (image pin, name, persist/heartbeat paths) as constructor parameters;
-      # this class does the docker work: create/recreate/remove, publish the
+      # this class does the podman/docker work: create/recreate/remove, publish the
       # port, heartbeat-poll until ready.
+      #
+      # == Podman or docker
+      #
+      # {.runtime} picks +podman+ when it is on +PATH+, else +docker+. Podman
+      # first because it runs rootless and daemonless by default, which is the
+      # posture the book asks docker users to set up by hand (the +docker+
+      # group is passwordless root). Every command below is one both CLIs
+      # accept verbatim; image pins are fully qualified (+docker.io/...+)
+      # because podman refuses a short name it can't resolve unambiguously.
       #
       # == Namespace squat: pikuri-internal-*
       #
@@ -30,27 +39,45 @@ module Pikuri
       # previous run / crash / concurrent pikuri — is removed and recreated
       # rather than adopted: a fresh container on the pinned image against the
       # persistent volume is always a clean start with no image tag to
-      # reconcile. {#close} +docker rm -f+s it. The single-named-container
+      # reconcile. {#close} +rm -f+s it. The single-named-container
       # convention assumes one active pikuri at a time.
       #
-      # Docker shell-outs route through {Pikuri::Subprocess.spawn} per the
+      # Podman/docker shell-outs route through {Pikuri::Subprocess.spawn} per the
       # subprocess seam — this class is *not* the seam's exception (that's
       # +pikuri-mcp+'s +ClientWrapper+, which owns a long-lived stdio pipe). The
       # port publish is built +-p 127.0.0.1:<host>:<container>+, never the docker
       # default (which binds every interface and would expose the corpus to the
       # LAN) — centralized here as the single privacy enforcement point. Errors
-      # are loud at boot (docker missing, +run+ non-zero, healthcheck timeout →
+      # are loud at boot (no container CLI, +run+ non-zero, healthcheck timeout →
       # +RuntimeError+ — internal caller, bug territory) and quiet at teardown
       # ({#close} best-effort, logs instead of raising).
-      class DockerContainer
+      class Container
         LOGGER = Pikuri.logger_for('VectorDb::Server')
+
+        # The CLI this process drives, chosen once: +podman+ if on
+        # +PATH+, else +docker+ (which may be missing too — the first command
+        # then raises naming both). See "Podman or docker".
+        #
+        # @return [String] +"podman"+ or +"docker"+
+        def self.runtime
+          @runtime ||= %w[podman docker].find { |bin| on_path?(bin) } || 'docker'
+        end
+
+        # @param bin [String]
+        # @return [Boolean]
+        def self.on_path?(bin)
+          ENV.fetch('PATH', '').split(File::PATH_SEPARATOR).any? do |dir|
+            File.executable?(File.join(dir, bin))
+          end
+        end
+        private_class_method :on_path?
 
         # @param name [String] container name, e.g.
         #   +"pikuri-internal-qdrant"+ — see "Namespace squat" in the
         #   class header.
-        # @param image [String] pinned docker image, e.g.
-        #   +"qdrant/qdrant:v1.12.4"+.
-        # @param label [String] docker label set on the container,
+        # @param image [String] pinned, fully qualified image, e.g.
+        #   +"docker.io/qdrant/qdrant:v1.12.4"+.
+        # @param label [String] label set on the container,
         #   e.g. +"pikuri.internal=true"+.
         # @param host_port [Integer] host port to publish, bound to
         #   127.0.0.1 only.
@@ -67,7 +94,7 @@ module Pikuri
         #   +health_path+ before giving up.
         # @param connection [Faraday::Connection, nil] DI hook for
         #   tests. Production callers leave it +nil+.
-        # @return [DockerContainer]
+        # @return [Container]
         def initialize(name:, image:, label:, host_port:, container_port:,
                        volume:, health_path:, healthcheck_timeout:,
                        connection: nil)
@@ -98,7 +125,7 @@ module Pikuri
         # "Ephemeral container, persistent data".
         #
         # @return [void]
-        # @raise [RuntimeError] on missing docker, any docker command failure,
+        # @raise [RuntimeError] on a missing container CLI, any command failure,
         #   or healthcheck timeout.
         def ensure_running!
           state = container_state
@@ -114,7 +141,7 @@ module Pikuri
           wait_for_healthy!
         end
 
-        # Remove the container (+docker rm -f+), leaving the
+        # Remove the container (+rm -f+), leaving the
         # bind-mounted host volume — the data survives. Best-effort
         # and idempotent: a no-op if this instance never started a
         # container or has already closed, and a non-zero +rm+ is
@@ -125,11 +152,11 @@ module Pikuri
           return if @closed || !@owns_container
 
           @closed = true
-          result = docker('rm', '-f', @name)
+          result = cli('rm', '-f', @name)
           return if result.status.success?
 
           LOGGER.warn(
-            "docker rm -f #{@name} failed " \
+            "#{self.class.runtime} rm -f #{@name} failed " \
             "(exit #{result.status.exitstatus}): #{result.output.strip}"
           )
         end
@@ -137,13 +164,13 @@ module Pikuri
         private
 
         # Inspect the container by name. Returns one of +:missing+ /
-        # +:stopped+ / +:running+. +docker inspect+ exits non-zero
+        # +:stopped+ / +:running+. +inspect+ exits non-zero
         # when the container doesn't exist. The image tag is *not*
         # consulted: a wrong-image container falls into the same
         # remove-and-recreate path as any other non-owned container
         # (see {#ensure_running!}), so there is nothing to branch on.
         def container_state
-          result = docker('inspect', '--format', '{{.State.Running}}', @name)
+          result = cli('inspect', '--format', '{{.State.Running}}', @name)
           return :missing unless result.status.success?
 
           result.output.strip == 'true' ? :running : :stopped
@@ -151,10 +178,10 @@ module Pikuri
 
         def run_container!
           LOGGER.info(
-            "starting #{@name} (#{@image}) on 127.0.0.1:#{@host_port}, " \
+            "starting #{@name} (#{@image}) with #{self.class.runtime} on 127.0.0.1:#{@host_port}, " \
             "volume: #{@volume}"
           )
-          result = docker(
+          result = cli(
             'run', '-d',
             '--name', @name,
             '--label', @label,
@@ -164,15 +191,15 @@ module Pikuri
           )
           return if result.status.success?
 
-          raise "#{@name}: docker run failed " \
+          raise "#{@name}: #{self.class.runtime} run failed " \
                 "(exit #{result.status.exitstatus}): #{result.output.strip}"
         end
 
         def remove_container!
-          result = docker('rm', '-f', @name)
+          result = cli('rm', '-f', @name)
           return if result.status.success?
 
-          raise "#{@name}: docker rm -f failed " \
+          raise "#{@name}: #{self.class.runtime} rm -f failed " \
                 "(exit #{result.status.exitstatus}): #{result.output.strip}"
         end
 
@@ -210,14 +237,14 @@ module Pikuri
           end
         end
 
-        # Single chokepoint for every +docker+ invocation. Routes
+        # Single chokepoint for every container-CLI invocation. Routes
         # through {Pikuri::Subprocess.spawn} per the subprocess
         # seam; rescues +Errno::ENOENT+ to surface a clearer
-        # message when docker isn't installed.
-        def docker(*argv)
-          Pikuri::Subprocess.spawn('docker', *argv, chdir: '/').wait
+        # message when neither CLI is installed.
+        def cli(*argv)
+          Pikuri::Subprocess.spawn(self.class.runtime, *argv, chdir: '/').wait
         rescue Errno::ENOENT
-          raise "#{@name}: `docker` not found on PATH. Install docker, " \
+          raise "#{@name}: neither `podman` nor `docker` found on PATH. Install one, " \
                 'or point the engine Backend at a server you run yourself ' \
                 '(e.g. Backend::Qdrant.new(host:, port:, collection:)).'
         end

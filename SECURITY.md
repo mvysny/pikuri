@@ -62,7 +62,7 @@ running their intended code.
   The children pikuri starts are fixed programs (`rg` behind `grep` /
   `glob`, `diff` and `git config` for the file tools, `cp` for
   Thunderbird's database snapshot, Thunderbird itself for a compose
-  window, `docker` for the vector store), never one the model chose.
+  window, `podman` or `docker` for the vector store), never one the model chose.
   The tools that do run a stranger's code live
   in pikuri-workshop, each in a cage.
 

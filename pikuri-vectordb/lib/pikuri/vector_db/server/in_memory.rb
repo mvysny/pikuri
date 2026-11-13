@@ -7,8 +7,8 @@ module Pikuri
     module Server
       # The null supervisor — the in-process implementation of the Server
       # protocol ({.ensure_running} / {#client} / {#close}) that {Qdrant} and
-      # {Chroma} implement over docker. No container, no process: it owns the
-      # {Backend::InMemory} stores' *lifetime* the way the docker supervisors own
+      # {Chroma} implement over podman/docker. No container, no process: it owns the
+      # {Backend::InMemory} stores' *lifetime* the way the podman/docker supervisors own
       # a *container*, which is what lets +bin/pikuri-corpus+ pick a Server
       # class, call +ensure_running.client(...)+, and close it identically for
       # all three engines.
@@ -17,7 +17,7 @@ module Pikuri
       # → same store, so the {Watcher} and agent share one index), guarded by a
       # +Monitor+ so clients mint from any thread. {#close} empties every store
       # and clears the registry — outstanding clients keep working but go
-      # *empty*, mirroring the docker servers removing the container under the
+      # *empty*, mirroring the podman/docker servers removing the container under the
       # client's feet (degraded and visible, never silently stale). {#ensure_running!}
       # is a no-op and deliberately does NOT register with {Pikuri::Finalizers} —
       # process exit reclaims RAM, so a no-op teardown would be ceremony.
@@ -53,7 +53,7 @@ module Pikuri
         # @param collection [String] collection name.
         # @return [Backend::InMemory]
         # @raise [ArgumentError] on empty +collection+ (same
-        #   contract as the docker servers' backends).
+        #   contract as the podman/docker servers' backends).
         def client(collection:)
           raise ArgumentError, 'collection must be non-empty' if collection.nil? || collection.to_s.empty?
 
