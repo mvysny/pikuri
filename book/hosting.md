@@ -112,19 +112,20 @@ and they're the ones that carry locks while the agent doesn't:
   button. Flip the flag from any thread; the agent notices at its
   next checkpoint and unwinds.
 - `Control::Interloper` — queue a message for an agent that's
-  already running. The user typing again mid-turn. Delivered at the
-  end of a tool batch, the only point where conversation state is
-  consistent.
+  already running. The user typing again mid-turn. Every agent
+  builds its own, `agent.interloper`, so a queue never outlives its
+  conversation. Delivered at the end of a tool batch, the only point
+  where conversation state is consistent.
 
 Every other method needs the host's own serialization. If you want
 to inspect a running conversation, you don't reach into the agent —
 you read the event stream it's already emitting, which we get to at
 the end of the chapter.
 
-The `bin/` demos wire neither control, and that's exactly the
+The `bin/` demos use neither control, and that's exactly the
 "simple on purpose" caveat: their stdin is synchronous, so there's
 no other thread to inject from. A host running the agent on a
-worker wires an `Interloper` in with no other changes.
+worker injects through `agent.interloper` with no other changes.
 
 ## One server, N agents
 

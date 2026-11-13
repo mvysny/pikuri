@@ -171,8 +171,7 @@ RSpec.describe Pikuri::Agent do
     it 'wires exactly one callback per chat-event channel — the Agent is the sole emitter' do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 's',
-                        cancellable: Pikuri::Agent::Control::Cancellable.new,
-                        interloper: Pikuri::Agent::Control::Interloper.new) do |c|
+                        cancellable: Pikuri::Agent::Control::Cancellable.new) do |c|
         c.add_listener recorder
       end
 
@@ -724,12 +723,11 @@ RSpec.describe Pikuri::Agent do
     end
 
     describe 'turn-start interloper drain + bare turns' do
-      let(:interloper) { Pikuri::Agent::Control::Interloper.new }
       let!(:agent) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's',
-                          interloper: interloper) { |c| c.add_listener recorder }
+                          system_prompt: 's') { |c| c.add_listener recorder }
       end
+      let(:interloper) { agent.interloper }
 
       it 'delivers a pending :system injection before the user message, then completes' do
         interloper.inject_system_message('<skill>load</skill>')
@@ -994,7 +992,8 @@ RSpec.describe Pikuri::Agent do
   end
 
   describe 'interloper drain once a tool batch is complete' do
-    let(:interloper) { Pikuri::Agent::Control::Interloper.new }
+    # The queue of the agent the example built last.
+    def interloper = @agent.interloper
 
     # ruby_llm fires +after_message+ once per appended message; the drain rides
     # the tool-result one, never +after_tool_result+ (which fires *before* the
@@ -1002,9 +1001,8 @@ RSpec.describe Pikuri::Agent do
     let(:tool_result_message) { Struct.new(:role, :tool_call_id).new(:tool, 'call_1') }
 
     it 'drains the queue and appends each item as a user-role message + Event::UserTurn(mid_loop: true)' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's',
-                        interloper: interloper) { |c| c.add_listener recorder }
+      @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                 system_prompt: 's') { |c| c.add_listener recorder }
       interloper.inject_user_message('first')
       interloper.inject_user_message('second')
 
@@ -1030,8 +1028,8 @@ RSpec.describe Pikuri::Agent do
       let(:png) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
 
       def drain_one(modalities, text, attachments)
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: modalities),
-                          system_prompt: 's', interloper: interloper) { |c| c.add_listener recorder }
+        @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: modalities),
+                                   system_prompt: 's') { |c| c.add_listener recorder }
         interloper.inject_user_message(text, attachments: attachments)
         fake_chat.fire(:after_message, tool_result_message)
         recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::UserTurn) && e.mid_loop }
@@ -1068,8 +1066,8 @@ RSpec.describe Pikuri::Agent do
 
           define_method(:on_user_message) { |_ctx, content, attachments| calls << [content, attachments] && nil }
         end.new
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: { vision: false }),
-                          system_prompt: 's', interloper: interloper) { |c| c.add_extension ext }
+        @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: { vision: false }),
+                                   system_prompt: 's') { |c| c.add_extension ext }
         interloper.inject_user_message(attachments: [png])
         fake_chat.fire(:after_message, tool_result_message)
 
@@ -1079,15 +1077,15 @@ RSpec.describe Pikuri::Agent do
 
     # Untracked, a drained message got a fresh id minted on every export.
     it 'gives a drained message a stable History id' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', interloper: interloper)
+      agent = @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                         system_prompt: 's')
       interloper.inject_user_message('mid-loop')
       fake_chat.fire(:after_message, tool_result_message)
 
       assert_equal agent.export_history.messages.map(&:id), agent.export_history.messages.map(&:id)
     end
 
-    it 'is a no-op when interloper: is nil (default)' do
+    it 'is a no-op when nothing was injected' do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 's') { |c| c.add_listener recorder }
 
@@ -1097,9 +1095,8 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'drains exactly once per fire — subsequent fires with an empty queue are no-ops' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's',
-                        interloper: interloper) { |c| c.add_listener recorder }
+      @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                 system_prompt: 's') { |c| c.add_listener recorder }
       interloper.inject_user_message('only once')
 
       3.times { fake_chat.fire(:after_message, tool_result_message) }
@@ -1110,9 +1107,8 @@ RSpec.describe Pikuri::Agent do
     # The regression this drain point exists for: an assistant message carrying
     # tool_calls and the tool messages answering it are one unit on the wire.
     it 'does not drain on the assistant message that opened the batch' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's',
-                        interloper: interloper) { |c| c.add_listener recorder }
+      @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                 system_prompt: 's') { |c| c.add_listener recorder }
       interloper.inject_system_message('reference text')
 
       opener = Struct.new(:role, :tool_calls, :content, :thinking, :tokens, :model)
@@ -1225,12 +1221,10 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'fires on mid-loop interlopers too, appending the reference block after the :user message' do
-      interloper = Pikuri::Agent::Control::Interloper.new
       ext = recording_extension_class.new(block: '<memory-context>mid</memory-context>')
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's',
-                        interloper: interloper) { |c| c.add_extension ext }
-      interloper.inject_user_message('interloped question')
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') { |c| c.add_extension ext }
+      agent.interloper.inject_user_message('interloped question')
 
       fake_chat.fire(:after_message, Struct.new(:role, :tool_call_id).new(:tool, 'call_1'))
 

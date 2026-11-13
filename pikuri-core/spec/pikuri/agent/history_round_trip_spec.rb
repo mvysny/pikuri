@@ -319,10 +319,9 @@ RSpec.describe 'Pikuri::Agent history round trip' do
 
   describe 'kinds' do
     it 'marks an injected reference block, distinguishing it from a typed turn' do
-      interloper = Pikuri::Agent::Control::Interloper.new
       transport = Pikuri::Testing.fake_transport { |llm| llm.reply('ok') }
-      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', interloper: interloper)
-      interloper.inject_system_message('recalled memory')
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+      agent.interloper.inject_system_message('recalled memory')
 
       agent.run_loop(user_message: 'hello')
 

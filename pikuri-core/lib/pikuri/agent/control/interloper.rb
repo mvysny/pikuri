@@ -3,10 +3,13 @@
 module Pikuri
   class Agent
     module Control
-      # Mid-loop host→agent injection queue. A host (TUI, web client)
-      # constructs an +Interloper+, passes it to {Agent#initialize} via
-      # +interloper:+, and enqueues from any thread while the agent runs. The
-      # +Agent+ drains it once the running tool batch is answered — the only
+      # Mid-loop host→agent injection queue. Every {Agent} builds its own; a
+      # host (TUI, web client) reaches it as {Agent#interloper} and enqueues
+      # from any thread while the agent runs:
+      #
+      #   agent.interloper.inject_user_message('also check the tests')
+      #
+      # The +Agent+ drains it once the running tool batch is answered — the only
       # point in ruby_llm's loop where conversation state is consistent — and
       # the next round-trip reacts to what was injected.
       #
@@ -28,9 +31,8 @@ module Pikuri
       # envelope, not in role. +:system+ names the *role the text plays*, and
       # {Agent#append_reference_block} says why the wire role can't match it.
       #
-      # Groundwork for downstream TUI/web hosts: the bundled +bin/pikuri-*+ do
-      # not wire one (stdin is synchronous). A host running the agent on a
-      # worker thread wires one in with no other changes.
+      # Only a host running the agent on a worker thread has anyone to inject;
+      # the bundled +bin/pikuri-*+ read stdin synchronously and leave it empty.
       #
       # == Delivery boundary
       #
@@ -61,8 +63,7 @@ module Pikuri
       # == Sub-agent semantics
       #
       # Sub-agents are private to the parent; the host has no handle to them,
-      # so the +agent+ tool omits the kwarg, leaving a child's +interloper+
-      # +nil+. Contrast {Control::Cancellable}, shared by reference so the
+      # so a child's queue stays empty. Contrast {Control::Cancellable}, shared by reference so the
       # parent's stop propagates to the whole tree — cancellation is global,
       # injection is directed at the main agent.
       #

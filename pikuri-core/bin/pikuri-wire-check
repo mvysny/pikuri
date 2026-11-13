@@ -109,11 +109,9 @@ def capture_request_bodies(captured, model)
     context_window: 8192, faraday_adapter: tap
   )
 
-  interloper = Pikuri::Agent::Control::Interloper.new
   agent = Pikuri::Agent.new(
     transport: transport,
-    system_prompt: "You are a wire-check fixture. #{MARKERS.keys[0]}",
-    interloper: interloper
+    system_prompt: "You are a wire-check fixture. #{MARKERS.keys[0]}"
   ) do |c|
     c.add_tool Pikuri::Tool::CALCULATOR
     # Enqueue mid-turn, the way a path-activation listener does. The drain lands
@@ -131,10 +129,10 @@ def capture_request_bodies(captured, model)
       define_method(:on_event) do |event|
         @interloper.inject_system_message(MARKERS.keys[4]) if event.is_a?(Pikuri::Agent::Event::ToolCall)
       end
-    end.new(interloper))
+    end.new(c.interloper))
   end
 
-  interloper.inject_system_message(MARKERS.keys[2])
+  agent.interloper.inject_system_message(MARKERS.keys[2])
   agent.run_loop(user_message: "What is 1 + 1? #{MARKERS.keys[1]}")
   agent.close
 end

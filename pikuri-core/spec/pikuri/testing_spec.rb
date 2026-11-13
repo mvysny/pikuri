@@ -201,13 +201,11 @@ RSpec.describe Pikuri::Testing do
 
     it 'keeps an injected reference block out of a tool call/result pair, as a wrapped :user turn' do
       captured = []
-      interloper = Pikuri::Agent::Control::Interloper.new
       transport = recording_transport(captured) do |llm|
         llm.tool_call('calculator', expression: '2 + 2')
         llm.reply('The answer is 4.')
       end
-      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent',
-                                interloper: interloper) do |c|
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent') do |c|
         c.add_tool Pikuri::Tool::CALCULATOR
         # Enqueue from inside the turn, the way a path-activation listener does.
         c.add_listener(Class.new(Pikuri::Agent::Listener::Base) do
@@ -215,7 +213,7 @@ RSpec.describe Pikuri::Testing do
           define_method(:on_event) do |event|
             @interloper.inject_system_message('reference text') if event.is_a?(Pikuri::Agent::Event::ToolCall)
           end
-        end.new(interloper))
+        end.new(c.interloper))
       end
 
       agent.run_loop(user_message: 'What is 2 + 2?')

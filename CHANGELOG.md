@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Agent.new` takes no `interloper:`; every agent builds its own `Control::Interloper`, reached as `Agent#interloper`, so a queued mid-turn message can't leak into the next conversation's agent. Read `agent.interloper` (or `c.interloper` inside the block) where you held your own.
 - **Breaking:** an `Agent` is one conversation: `clear_conversation`, `load_history!`, `Extension#on_conversation_reset`, `Event::Reset` and `Workspace#clear_reads` are gone, and a conversation resumes through `Agent.new(history:)` (`D_agent_is_one_conversation`). To clear or switch, close the agent and build a new one with fresh extension instances.
 - Add `pikuri-workspace/bin/pikuri-files`, a demo agent working in one folder with the six file tools, every change shown as a diff before it lands; walk-through in `book/touching-files.md`.
 - **Breaking:** every demo binary's default model is now `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`, the same size as the Qwen3.6-35B-A3B it replaces and newer; an `llm_model:` line in `~/.pikuri-examples-config.yaml` still overrides it.

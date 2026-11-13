@@ -228,8 +228,9 @@ A sub-agent isn't a clone of its parent. The split:
   in `persona.tool_names`. Same *instances* the parent uses, so
   any workspace/confirmer wiring already on those tools comes
   along.
-- **`interloper`** — `nil`. Sub-agents can't accept mid-loop user
-  input; they're driven by the parent.
+- **`interloper`** — the child's own, and it stays empty. Sub-agents
+  can't accept mid-loop user input: nothing outside the parent holds
+  the child, so nothing can inject.
 
 **Not inherited at all:**
 

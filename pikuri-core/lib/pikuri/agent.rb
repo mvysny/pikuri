@@ -198,9 +198,6 @@ module Pikuri
     # @param cancellable [Control::Cancellable, nil] cancellation control,
     #   or +nil+ for none (no way to stop a running turn but killing the
     #   process).
-    # @param interloper [Control::Interloper, nil] mid-loop user-input queue
-    #   drained once each tool batch is answered (each item becomes an
-    #   {Event::UserTurn} with +mid_loop: true+), or +nil+ for none.
     # @param id [String] unique id; empty for the main agent, persona-rooted
     #   for sub-agents (+"researcher 0"+, ...). Distinct from a persona's
     #   +name+ (the value the LLM picks in the +agent+ tool's +name:+ arg).
@@ -221,7 +218,7 @@ module Pikuri
     # @raise [ArgumentError] if +history+ is neither +nil+ nor a {History};
     #   the parsing doors are where untrusted input belongs.
     def initialize(transport:, system_prompt:,
-                   cancellable: nil, interloper: nil,
+                   cancellable: nil,
                    id: '',
                    streaming: false,
                    history: nil,
@@ -237,7 +234,9 @@ module Pikuri
 
       @system_prompt_base = system_prompt
       @system_prompt = system_prompt
-      @interloper = interloper
+      # Built here, never passed in: a queue handed from one agent to the
+      # next would carry a stale mid-turn message into the new conversation.
+      @interloper = Control::Interloper.new
       @id = id
       @streaming = streaming
       @on_close_handlers = []
@@ -294,8 +293,14 @@ module Pikuri
     #   LLM calls (the +agent+ tool shares it so one Ctrl+C stops the tree).
     attr_reader :cancellable
 
-    # @return [Control::Interloper, nil] the mid-loop user-input control, or
-    #   +nil+.
+    # The agent's own mid-loop input queue — the door a host uses to reach a
+    # running turn from another thread:
+    #
+    #   agent.interloper.inject_user_message('also check the tests')   # lands after this tool batch
+    #
+    # Drained at turn start and once each tool batch is answered.
+    #
+    # @return [Control::Interloper]
     attr_reader :interloper
 
     # @return [String] this agent's id — empty for the main agent,
@@ -450,7 +455,7 @@ module Pikuri
       # first complete, so a freshly-scheduled block lands this turn rather
       # than only after the next tool batch — ordered ahead of the user
       # message appended below.
-      drain_interloper if @interloper
+      drain_interloper
 
       text = user_message.to_s.strip.empty? ? nil : user_message
       blank = text.nil? && attachments.empty?
@@ -654,7 +659,7 @@ module Pikuri
         summary = @pending_tool_call[:summary] if msg.role == :tool && @pending_tool_call
         track_message(msg, summary: summary)
         emit_after_message(msg)
-        drain_interloper if @interloper && tool_batch_complete?(msg)
+        drain_interloper if tool_batch_complete?(msg)
       end
       @chat.before_tool_call do |tc|
         tool = pikuri_tool_for(tc.name)

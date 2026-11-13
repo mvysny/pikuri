@@ -51,8 +51,8 @@ module Pikuri
       #   cancel during boot propagates.
       attr_reader :cancellable
 
-      # @return [Control::Interloper, nil] mid-loop user-input queue
-      #   passed to the Agent ctor, or +nil+.
+      # @return [Control::Interloper] the agent's mid-loop input queue
+      #   ({Agent#interloper}).
       attr_reader :interloper
 
       # @return [Array<Tool>] tools added via {#add_tool}, in declaration order;
@@ -84,7 +84,7 @@ module Pikuri
       # @param id [String]
       # @param streaming [Boolean]
       # @param cancellable [Control::Cancellable, nil]
-      # @param interloper [Control::Interloper, nil]
+      # @param interloper [Control::Interloper]
       # @param on_close_sink [Array<Proc>, nil] array {#on_close} appends to.
       #   {Agent#initialize} passes its live +@on_close_handlers+ so a handler
       #   armed via +c.on_close+ is reachable instantly — what lets the
