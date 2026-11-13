@@ -22,8 +22,13 @@ snap/apt profile root then finds demo data or nothing, never real mail.
 1. **The book's transcripts.** Every scene the secretary chapter quotes (a reply drafted, an
    invitation turned into an event, an injection attempt, the compose guard's novel-domain warning)
    runs on demo mail.
-2. **A reader reproducing the chapter.** The same mailbox, built by the reader in a few steps,
-   beside their real profile and without touching it.
+2. **A reader reproducing the chapter's scenes.** The same mailbox, built by the reader in a few
+   steps, beside their real profile and without touching it. This is the side path: the
+   chapter's main path points the secretary at the reader's *real* mail (auto-discovery, no
+   setup) — read-only, a local model by default, the only way out a human-gated hand-off. The
+   VM-only-demo rule above is about *our* logs and transcripts, not a reader's own machine. The
+   demo is for the scenes real mail can't stage on demand (the injection mail, the look-alike
+   domain). The caveat the chapter states is a hosted provider: wire one and your mail goes to it.
 3. **Agents testing the mail tools on the VM**, headless, with no human driving a GUI.
 4. **The hand-offs.** `thunderbird_mail_compose` and `thunderbird_calendar_create` launch
    `thunderbird`; on a VM with no display something has to stand in for the window.
@@ -67,13 +72,25 @@ Telemetry and data reporting off, add-on update checks off, the account wizard a
 provisioner suppressed, start page off, the year-end donation tab marked seen, default-client
 check off. Privacy first applies to the testbed too: a first run phones nowhere.
 
+The prefs come from Mozilla's own list rather than being hunted down one at a time: Marionette's
+`RecommendedPreferences.sys.mjs`, shipped inside Thunderbird's `omni.ja`
+(`chrome/remote/content/shared/`; read locally, nothing downloaded), is curated to keep an
+automated profile off the network. It has the remote-settings one, `services.settings.server =
+"data:,#remote-settings-dummy/v1"`, plus `app.update.disabledForTesting`,
+`network.connectivity-service.enabled`, the safebrowsing, region and extension-update prefs. Its
+`%(server)s` placeholders become a `.invalid` host. Verified, not assumed: a build run under
+`strace -f -e trace=connect` shows only loopback connects (Marionette); an optional
+`--verify-quiet` keeps that check for the next Thunderbird release.
+
 ## The build script
 
 `rake demo:build` (or a `bin/` script it calls) does, in order:
 
 1. **Guard.** Every demo profile carries a marker file, `.pikuri-demo`. If either root (snap
    `~/snap/thunderbird/common/.thunderbird`, apt `~/.thunderbird`) holds a profile *without* the
-   marker, stop and print the paths. Never delete, never offer to.
+   marker, stop and print the paths. Never delete, never offer to. In `--dir` mode the same
+   goes for the target: an existing non-empty dir without the marker stops the build, so a
+   mistyped path never overwrites something that isn't a demo.
 2. **Generate** the mbox files, `demo.ics` and the demo `~/Documents` from `book/demo/`.
 3. **Create the profile**, in one of two modes:
    - **VM (default):** registered in `profiles.ini` as `Default=1`, so pikuri's auto-discovery
@@ -87,7 +104,9 @@ check off. Privacy first applies to the testbed too: a first run phones nowhere.
    wrote N messages and M events: snapshot the Gloda DB every second or two and count `messages`
    rows until N, then quit through Marionette — a clean quit checkpoints `cache.sqlite`'s WAL,
    so the M events are then countable too. Done-detection by expected count, not by guessing at
-   Gloda's internals.
+   Gloda's internals. A slow index only makes the build slower, never wrong: a generous timeout
+   (~5 min) with progress (`212/287`), failing loudly with the count reached. If ~300 messages
+   turn out slow, suspect Gloda's indexing throttle (tuned for a user at the keyboard) first.
 5. **Cache.** Tar the indexed profile to `Paths.cache`, keyed by Thunderbird's version. Agents
    restore it in a second; a Thunderbird upgrade rebuilds it.
 
@@ -220,24 +239,24 @@ our spec fixtures:
 - **Gloda writes a literal `undefined` into author and recipient text** —
   `Mira Koskinen <mira@lumo-studio.example> undefined` in `messagesText_content.c3author` /
   `c4recipients` — for every address except the owner's own. Probably an address-book field
-  for contacts not in the address book. pikuri hands it to the model as is. Check whether the
-  owner's real profile shows it too, then decide whether the readers strip it.
+  for contacts not in the address book. **Decided: the readers strip it**, whatever the real
+  profile shows — the model would echo or interpret it, and it costs tokens per address. Match
+  only `> undefined` right after an address's closing `>`, so a person named "Undefined"
+  survives; the `from:`/`to:` LIKE filters are unaffected. The real-profile check only decides
+  the yardoc's wording ("Thunderbird 159 writes…" vs "Gloda writes…"), and it is a count, no
+  mail content: `SELECT count(*) FROM messagesText_content WHERE c3author LIKE '%> undefined%'`
+  on the owner's host.
 - **Gloda drops the `Re:`** from the reply subjects in the FTS text — Thunderbird behaviour,
   worth knowing when a scene searches by subject.
 - **A freshly synced calendar event sits in `cache.sqlite-wal`**, invisible to
   `DatabaseSnapshot`'s main-file-only copy until a checkpoint (it showed up after the clean
   quit). The yardoc's "Thunderbird checkpoints aggressively" holds for a busy DB, not for a
   handful of new rows on a running Thunderbird. For the testbed the clean quit fixes it; for a
-  live user, an event they just added may not be visible yet — a separate question.
+  live user it is a reader bug, owned by [`thunderbird-wal-snapshot.md`](thunderbird-wal-snapshot.md).
 - `DTSTART` without `TZID` came out as `floating` — the demo `.ics` should carry a `TZID`.
 
 ## Open questions
 
-- `Q_index_time`: how long do ~300 messages with attachments take? (Five took two seconds.)
-- `Q_undefined_author`: the literal `undefined` in Gloda's author text — Thunderbird 159 only,
-  or the real profile too? Strip in the readers?
-- `Q_wal_snapshot`: should `DatabaseSnapshot` also copy the `-wal` file (a consistent snapshot of
-  a WAL DB needs both), or is checkpoint lag acceptable? Not the testbed's problem; file it.
-- `Q_remote_settings`: which pref stops the remote-settings fetch on first run.
-- `Q_reader_path` (leaning): the chapter's path is `--dir` mode beside the reader's real
-  profile; pointing the secretary at real mail stays an aside with the warning that it is real.
+None blocking. Two numbers to record when v1 is built: the index time for the full mailbox
+(five messages took two seconds; § The build script, step 4), and the `undefined` count on the
+owner's real profile (§ What pikuri's readers made of it).
