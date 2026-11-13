@@ -80,6 +80,7 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 def run_turn(agent, line)
   message, attachments = ChatAttachments.split(line)
   ChatAttachments.announce(attachments)
+  agent.cancellable&.reset!
   prev_trap = trap('INT') { agent.cancellable&.cancel! }
   agent.run_loop(user_message: message, attachments: attachments)
 rescue ChatAttachments::Error, Pikuri::Agent::UnsupportedAttachmentError => e

@@ -94,6 +94,29 @@ RSpec.describe 'Agent request throttling' do
     agents&.each(&:close)
   end
 
+  # Return, then Escape: a cancel sent before run_loop costs no prefill. The
+  # server is unsized here, so no permit is taken — the permit's own check
+  # never runs, and run_loop's has to catch it.
+  it 'ends a turn cancelled before run_loop before any request is served' do
+    gate = counting_gate_class.new
+    cancel = Pikuri::Agent::Control::Cancellable.new
+    built = Pikuri::Agent.new(transport: transport(gate: gate), system_prompt: 'test agent',
+                              cancellable: cancel)
+
+    cancel.cancel!
+    assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+      built.run_loop(user_message: 'wrong question')
+    end
+    assert_equal 0, gate.peak
+
+    # The scripted reply is still unserved: the next armed turn gets it.
+    cancel.reset!
+    built.run_loop(user_message: 'right question')
+    assert_equal 'done', built.last_assistant_content
+  ensure
+    built&.close
+  end
+
   # The invariant a later "why not acquire once per turn?" tidy-up would break:
   # a permit is scoped to one HTTP request precisely so a parent holds nothing
   # while its tool runs, and the sub-agent that tool spawns can get a permit of

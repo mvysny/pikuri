@@ -247,6 +247,7 @@ rag_ext = Pikuri::Rag::Extension.new(
 
 # Run one agent turn, trapping SIGINT only for the duration of the turn.
 def run_turn(agent, message)
+  agent.cancellable&.reset!
   prev_trap = trap('INT') { agent.cancellable&.cancel! }
   agent.run_loop(user_message: message)
 rescue Pikuri::Agent::Control::Cancellable::Cancelled

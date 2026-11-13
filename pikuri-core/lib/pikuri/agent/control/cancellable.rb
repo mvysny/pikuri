@@ -10,6 +10,17 @@ module Pikuri
       # {Agent#run_loop} catches, emits as {Event::Cancelled}, and re-raises so
       # the REPL returns control to the user.
       #
+      # The host resets it each time it starts a turn, on its own thread, before
+      # it hands the turn to a worker:
+      #
+      #   cancellable.reset!
+      #   Thread.new { agent.run_loop(user_message: message) }
+      #   # Escape, any time from here on: cancellable.cancel!
+      #
+      # A cancel sent before the worker reaches {Agent#run_loop} then still
+      # ends that turn. A host that forgets {#reset!} sees every turn after the
+      # first cancel end at once.
+      #
       # == Cancellation boundary
       #
       # The +Agent+ calls {#check!} from +before_tool_call+ — between an LLM
@@ -118,11 +129,13 @@ module Pikuri
           end
         end
 
-        # Reset the flag to armed. Called by {Agent} at each turn start so a
-        # stale cancel doesn't poison the next turn. Mid-loop
-        # {Control::Interloper} injections deliberately do *not* reset —
-        # otherwise cancel-then-inject would lose the cancel (the injection
-        # resets the flag before the next +before_tool_call+ reads it).
+        # Clear the flag for a new turn. The host calls it where it decides a
+        # turn starts, under whatever guards its "running" state — never the
+        # agent: {Agent#run_loop} can't tell a cancel left over from the last
+        # turn from one sent early for this one. The agent's own boundaries
+        # (a mid-loop {Control::Interloper} injection, a sub-agent's turn on
+        # the shared token) leave it alone, or they would swallow a pending
+        # cancel.
         #
         # @return [void]
         def reset!

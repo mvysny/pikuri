@@ -21,6 +21,8 @@ march on.
 
 - Add `pikuri-workspace/bin/pikuri-files`, a demo agent working in one folder with the six file tools, every change shown as a diff before it lands; walk-through in `book/touching-files.md`.
 - **Breaking:** every demo binary's default model is now `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`, the same size as the Qwen3.6-35B-A3B it replaces and newer; an `llm_model:` line in `~/.pikuri-examples-config.yaml` still overrides it.
+- **Breaking:** a host now calls `Agent::Control::Cancellable#reset!` where it starts a turn, on its own thread, before handing the turn to a worker. Without it, every turn after a cancel ends at once.
+- Fix a cancel sent before the turn's thread reaches `Agent#run_loop`, or while a sub-agent is being built, being lost: `run_loop` no longer resets the `Cancellable`, and checks it before its first request.
 - Fix `bin/pikuri-minions` crashing at boot on the removed `Pikuri::Tool::WEB_SEARCH`; it builds its search tool from the config, as `pikuri-chat` does.
 - Fix the trifecta detector grading a node loud when one egress tool skipped review and another reached the attacker: loud now needs one tool that is both (`Pikuri::Tool::TrifectaLegs#egress_open`), and such a node's map shows both shapes, `[:egress_reviewed, :egress_vouched]` (`D_egress_axis_shape`).
 - Fix the compose guard's novelty warning never firing on a reply to a new sender: only a domain you have *sent* mail to counts as known (`Gloda::Contacts#domains_sent_to`, renamed from `domains_seen`), since an attacker earned "seen" by writing first.

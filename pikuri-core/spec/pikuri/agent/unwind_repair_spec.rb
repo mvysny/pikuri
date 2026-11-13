@@ -92,6 +92,7 @@ RSpec.describe 'Pikuri::Agent unwound tool batch' do
     assert_equal ['ran a', Pikuri::Agent::CANCELLED_RESULT, Pikuri::Agent::CANCELLED_SKIPPED_RESULT],
                  answers(agent)
 
+    cancellable.reset!
     agent.run_loop(user_message: 'and now?')
     assert_batch_answered(captured.last)
   ensure

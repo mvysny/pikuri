@@ -60,6 +60,7 @@ system_prompt = Pikuri.prompts(:'pikuri-files', :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 def run_turn(agent, message)
+  agent.cancellable&.reset!
   prev_trap = trap('INT') { agent.cancellable&.cancel! }
   agent.run_loop(user_message: message)
 rescue Pikuri::Agent::Control::Cancellable::Cancelled

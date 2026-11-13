@@ -20,8 +20,8 @@ module Pikuri
   #    more. New sinks are added as listeners without touching {Agent}.
   # 2. **Controls** ({Control::Cancellable}, {Control::Interloper}) —
   #    host-facing signal holders the +Agent+ reads at fixed boundaries:
-  #    +check!+ on every +before_tool_call+, +reset!+ at turn start,
-  #    +drain!+ once each tool batch is answered.
+  #    +check!+ on every +before_tool_call+, +drain!+ once each tool batch
+  #    is answered. Resetting the cancel flag per turn is the host's job.
   #
   # "What fires when" is one grep for +@listeners.emit+ (loop narration)
   # plus the capability calls in {ExtensionContext} (domain events).
@@ -37,8 +37,9 @@ module Pikuri
   # == Cancellation rescue
   #
   # When +cancellable:+ trips during +Chat#ask+, {#run_loop} emits an
-  # {Event::Cancelled} and re-raises. {Control::Cancellable#reset!} at each
-  # turn start lets the same instance take a fresh turn afterwards.
+  # {Event::Cancelled} and re-raises. The host calls
+  # {Control::Cancellable#reset!} before each turn so the same instance takes a
+  # fresh turn afterwards; {#run_loop} itself never clears the flag.
   #
   # == Threading
   #
@@ -327,10 +328,9 @@ module Pikuri
     # emits an {Event::UserTurn} (+mid_loop: false+) and appends it; with
     # neither, runs a *bare* turn against whatever the conversation + drained injections
     # already hold — the case a host uses after loading a skill on its own
-    # initiative, so the agent reacts to it. Resets the cancellation control,
-    # drains any pending {Control::Interloper} injections, then +complete+s the
-    # chat. Output is the listeners' job; subsequent calls build on the same
-    # history.
+    # initiative, so the agent reacts to it. Drains any pending
+    # {Control::Interloper} injections, then +complete+s the chat. Output is
+    # the listeners' job; subsequent calls build on the same history.
     #
     #   agent.run_loop(user_message: "what's wrong here?",
     #                  attachments: [Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: png)])
@@ -346,7 +346,10 @@ module Pikuri
     # drained injection is itself one.
     #
     # Cancellation trips are handled per the class header's "Cancellation
-    # rescue".
+    # rescue". A cancel sent before this call — the host already counts the
+    # turn as running, its worker hasn't got here yet — ends the turn once the
+    # user message is recorded, before any request: the message stays in the
+    # history, unanswered, as after a cancel during the prefill.
     #
     # == Switching models mid-conversation
     #
@@ -368,9 +371,8 @@ module Pikuri
     # transport is already applied, so a construct-then-switch costs one probe,
     # for the model actually used. It runs before the first request, so
     # {ServerPermits} is sized by the time {RequestThrottle} asks, and the
-    # fresh {Event::ContextCap} precedes every {Event::Tokens}. It runs after
-    # the cancellation reset, so a Ctrl+C during a cold load is not wiped —
-    # the turn's next cancellation point raises it — and after the
+    # fresh {Event::ContextCap} precedes every {Event::Tokens}. A Ctrl+C
+    # during a cold load trips the check right after it. It runs after the
     # {EmptyTurnError} guard, since a turn that sends nothing has nothing to
     # budget. It runs after the {Event::UserTurn}, too: the probe waits out a
     # cold model load, and a host that renders its transcript from +UserTurn+
@@ -420,7 +422,6 @@ module Pikuri
       end
 
       apply_transport!(transport) if transport
-      @cancellable&.reset!
 
       # Deliver host-scheduled injections (e.g. a UI-loaded skill) before the
       # first complete, so a freshly-scheduled block lands this turn rather
@@ -459,6 +460,10 @@ module Pikuri
         @listeners.emit(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
       end
       detect_and_emit_context_cap! if @cap_pending
+      # The turn's first cancellation point. The permit can't be it: an
+      # unsized server has unlimited permits, which skip the check, and a
+      # plain non-streaming turn then has no other.
+      @cancellable&.check!
       dispatch_ext_on_user_message(text.to_s, attachments) unless blank
 
       if @streaming

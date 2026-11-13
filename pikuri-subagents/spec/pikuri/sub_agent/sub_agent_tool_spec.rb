@@ -588,6 +588,28 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       ->(_r) { Pikuri::Workspace::Confirmer::Redirected.new(message: message) }
     end
 
+    # The confirm prompt sits between the parent's tool-call check and the
+    # child's turn, so it is where a cancel most often lands in that window.
+    # The child shares the token; its turn must not clear the parent's cancel.
+    it 'keeps a cancel sent while the delegation awaits confirmation' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      cancel_then_approve = lambda do |r|
+        cancel.cancel!
+        Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: r.detail)
+      end
+      tool = described_class.new(
+        build_parent(cancellable: cancel), personas: { 'researcher' => simple_persona },
+                                           confirmer: confirmer_class.new(decision: cancel_then_approve)
+      )
+
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        tool.run('name' => 'researcher', 'task' => 'look up X')
+      end
+      assert cancel.cancelled?, "the child's turn swallowed the parent's cancel"
+      refute @fake_chats.last.asks.any? || @fake_chats.last.messages.any? { |m| m.role == :assistant },
+             'the child must not complete'
+    end
+
     it 'confirms the task before dispatch, marking it editable and showing it as the detail' do
       confirmer = confirmer_class.new(decision: approve_as_is)
       tool = described_class.new(

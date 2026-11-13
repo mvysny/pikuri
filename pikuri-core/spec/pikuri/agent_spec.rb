@@ -679,23 +679,6 @@ RSpec.describe Pikuri::Agent do
       end
     end
 
-    it 'resets the cancellable at the turn boundary so a stale flag does not poison the next turn' do
-      cancel = Pikuri::Agent::Control::Cancellable.new
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                cancellable: cancel) { |c| c.add_listener recorder }
-
-      # Pre-set the flag (e.g. left over from a prior rescue path).
-      cancel.cancel!
-      assert cancel.cancelled?
-
-      # run_loop calls reset! at the turn boundary before forwarding to
-      # chat.ask, so the stale flag is cleared.
-      agent.run_loop(user_message: 'turn')
-
-      refute cancel.cancelled?
-    end
-
     describe 'blank input against a :system-only conversation is provider-split' do
       # A blank message with nothing but :system messages to complete against
       # (a fresh chat, or a skill-only bare-load) can't run on a provider that
@@ -1396,11 +1379,33 @@ RSpec.describe Pikuri::Agent do
         @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
       end
 
-      # run_loop calls cancel.reset! at the turn boundary, so a stale
-      # cancel from turn 1 doesn't poison turn 2.
+      # The host resets at its turn boundary, so turn 1's cancel doesn't
+      # poison turn 2.
+      cancel.reset!
       assert_nil agent.run_loop(user_message: 'turn 2')
       refute cancel.cancelled?
       assert_equal 'normal answer', agent.last_assistant_content
+    end
+
+    # The early cancel: the host already counts the turn as running, the
+    # worker hasn't reached run_loop yet.
+    it 'ends a turn cancelled before run_loop without completing, keeping the message' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      agent = Pikuri::Agent.new(
+        transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+        system_prompt: 's',
+        cancellable: cancel
+      ) { |c| c.add_listener recorder }
+
+      cancel.cancel!
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        agent.run_loop(user_message: 'wrong question')
+      end
+
+      assert_nil fake_chat.completes
+      assert cancel.cancelled?
+      assert_equal 'wrong question', agent.export_history.messages.last.content
+      assert recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::Cancelled) }
     end
   end
 
