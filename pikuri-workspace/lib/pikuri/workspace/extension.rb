@@ -41,8 +41,8 @@ module Pikuri
     # files]+ is 30 bytes against 24 KB expanded. Measurements and the rejected
     # ladder live in +design/decisions.md+ +D_directory_listing+.
     #
-    # Re-taken whenever the prompt is re-assembled, so +clear_conversation+
-    # refreshes it and nothing else does.
+    # Taken once per agent, so a "/clear" — a new agent — refreshes it and
+    # nothing else does.
     #
     # == Read-only gate
     #
@@ -137,19 +137,6 @@ module Pikuri
                             confirmer: @confirm_all_writes ? @confirmer : nil)
         c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer,
                              read_only: @read_only, confirm_all_writes: @confirm_all_writes)
-        nil
-      end
-
-      # Clear the shared read-record when the host clears the conversation, so
-      # the read-before-edit gate forgets what the discarded conversation read —
-      # else an {Edit} right after "/clear" could touch a file the model can no
-      # longer see. The {Filesystem}'s policy is untouched; only the read-ledger
-      # resets.
-      #
-      # @param ctx [Pikuri::Agent::ExtensionContext] unused; protocol signature.
-      # @return [void]
-      def on_conversation_reset(_ctx)
-        @workspace.clear_reads
         nil
       end
 

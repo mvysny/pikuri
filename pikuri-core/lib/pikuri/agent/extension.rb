@@ -6,11 +6,15 @@ module Pikuri
     # (system-prompt sections, tools, lifecycle hooks) onto an {Agent}.
     # Added via {Configurator#add_extension} inside the +Agent.new+ block;
     # the Agent then drives a fixed hook set: {#configure} during the block
-    # (gets the {Configurator}), {#bind} once fully constructed,
-    # {#on_user_message} per user turn, {#on_conversation_reset} per
-    # {Agent#clear_conversation} (these three get the runtime
-    # {ExtensionContext}), and {#system_prompt_snippets} whenever the prompt
-    # is (re)assembled (no argument — reads state set in +configure+).
+    # (gets the {Configurator}), {#bind} once fully constructed and
+    # {#on_user_message} per user turn (these two get the runtime
+    # {ExtensionContext}), and {#system_prompt_snippets} once, when the prompt
+    # is assembled (no argument — reads state set in +configure+).
+    #
+    # An instance serves one agent, which is one conversation: build a fresh
+    # one for every +Agent.new+, so per-conversation state is plain instance
+    # state and nothing has to reset it. A resource that legitimately outlives
+    # the conversation is built by the host and passed in.
     #
     # Mix this module in to inherit no-op defaults for every hook, and
     # override what you need. Not including it also works *if the class
@@ -54,6 +58,10 @@ module Pikuri
       # * per-agent +on_close+ via {ExtensionContext#on_close}
       # * stash +ctx+ if the extension's tools act on this agent later
       #
+      # A resumed conversation is already in place here
+      # (+ctx.agent.export_history+), so an extension can rebuild what the
+      # transcript implies — the tools it had registered mid-conversation.
+      #
       # @param ctx [ExtensionContext] capability facade for the live agent
       # @return [void]
       def bind(ctx); end
@@ -81,45 +89,21 @@ module Pikuri
       #   after the user message, or +nil+ to inject nothing
       def on_user_message(ctx, content, attachments); end
 
-      # Optional hook fired by {Agent#clear_conversation} (a "/clear").
-      # Override to drop *conversation-scoped* state; default no-op, so an
-      # extension holding only process/infrastructure state opts out by not
-      # defining it.
-      #
-      # That distinction is the point: reset state that only makes sense
-      # within one conversation (+Pikuri::Tasks::Extension+ clears its list,
-      # the workspace clears its read-record); leave infrastructure alone
-      # (MCP subprocesses, a docker-backed server, the memory recorder's
-      # queue — a clear is not a quit).
-      #
-      # Do *not* touch the system prompt here — that refreshes automatically
-      # via {#system_prompt_snippets}, which the clear re-pulls. This hook is
-      # only for imperative state the prompt machinery can't express. An
-      # extension owning a domain event should emit it here so UI listeners
-      # see the reset (Tasks fires +Tasks::ListChanged+ with an empty list),
-      # synchronously after the Agent's {Event::Reset}.
-      #
-      # @param ctx [ExtensionContext] the live agent being cleared (same
-      #   instance +bind+ received)
-      # @return [void]
-      def on_conversation_reset(ctx); end
-
       # This extension's system-prompt contributions, as text sections.
       # Default none (+[]+); override to contribute one or more.
       #
-      # Pull, not push: the {Agent} assembles its prompt by concatenating the
-      # base with what every extension returns here — at construction and
-      # again on every {Agent#clear_conversation}. So a section computed from
-      # live state (a resident memory persona, +MACHINE.md+ from disk) is
-      # *recomputed* on clear and stays current; a static section returns the
-      # same constant.
+      # Pull, not push: the {Agent} assembles its prompt once, at
+      # construction, by concatenating the base with what every extension
+      # returns here. A section computed from live state (a resident memory
+      # persona, +MACHINE.md+ from disk) is therefore as of the conversation's
+      # start, and a "/clear" — a new agent — takes it again.
       #
       # No argument: read instance state populated in {#configure} (which runs
       # first). Producing that state (starting servers, probing a model)
-      # belongs in +configure+; this only *reads* it, so it stays cheap enough
-      # for every clear (memoize an expensive one-shot at its source —
-      # +Pikuri::Os::SystemInfo#prompt_section+). Sections are joined by the
-      # Agent (blank/nil dropped), in registration order.
+      # belongs in +configure+; this only *reads* it (memoize an expensive
+      # one-shot at its source — +Pikuri::Os::SystemInfo#prompt_section+).
+      # Sections are joined by the Agent (blank/nil dropped), in registration
+      # order.
       #
       # @return [Array<String>] zero or more prompt sections; +[]+ for none
       def system_prompt_snippets = []

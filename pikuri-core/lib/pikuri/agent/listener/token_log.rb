@@ -8,8 +8,8 @@ module Pikuri
       # growth before the provider raises
       # +RubyLLM::ContextLengthExceededError+. Consumes {Event::Tokens} (one
       # line each), {Event::ContextCap} (caches the cap, refreshed on a model
-      # switch), and {Event::Reset} (zero the snapshot, see {#reset_snapshot});
-      # every other variant is a no-op.
+      # switch), and {Event::HistoryLoaded} (seed the snapshot, see
+      # {#seed_snapshot}); every other variant is a no-op.
       #
       # == Log line shape
       #
@@ -117,8 +117,6 @@ module Pikuri
             log_tokens(tokens)
           in Event::ContextCap(cap:)
             @context_window_cap = cap
-          in Event::Reset
-            reset_snapshot
           in Event::HistoryLoaded(tokens:)
             seed_snapshot(tokens)
           else
@@ -135,23 +133,8 @@ module Pikuri
 
         private
 
-        # Zero the running snapshot on {Event::Reset} (host cleared the
-        # conversation): message counter, running size, and status line reset;
-        # the cap stays (a property of the unchanged model). The blanked line
-        # is pushed to {#on_status_line} so a footer clears at once.
-        #
-        # @return [void]
-        def reset_snapshot
-          @msg = 0
-          @context_window_size = 0
-          @status_line = ''
-          @on_status_line&.call(@id, @status_line)
-          nil
-        end
-
         # Restore the running size from a conversation just loaded off disk
-        # ({Event::HistoryLoaded}), which always arrives right after the
-        # {Event::Reset} that zeroed it. Without this the footer reads +0.0k+
+        # ({Event::HistoryLoaded}). Without this the footer reads +0.0k+
         # against 40k of restored history until the next reply corrects it.
         #
         # The message counter deliberately stays at zero: it counts replies

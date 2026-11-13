@@ -21,6 +21,55 @@ what it already says.
 
 ---
 
+## D_agent_is_one_conversation — Why does a host build a new `Agent` per conversation rather than clear one or load another into it?
+
+**Context.** An `Agent` used to outlive its conversation: `clear_conversation` emptied it for a
+"/clear", and `load_history!` swapped a saved conversation in. Both reset what they knew about —
+messages, controls, the system prompt, and each extension's `on_conversation_reset` — and missed
+what an extension had grown since `bind`. MCP's `mcp_connect` registers a server's tools on the
+chat mid-conversation, so after a clear they were still offered, and a loaded conversation saw
+tools it never connected while missing the ones it had. ruby_llm *can* drop tools
+(`Chat#with_tools(nil)`), so the gap was bookkeeping: every registration would have to say which
+lifetime it has, and every reset rebuild the set.
+
+Then the bigger hole: a tool's *server* holds state too. A conversation that logged Playwright
+MCP into a site leaves a browser that is logged in; the next conversation on the same agent
+inherits it — your bank session, offered to a conversation that may be reading an attacker's
+page. pikuri cannot know what state a foreign server holds (the same reason MCP's legs are
+`TrifectaLegs::ASSUMED`), so it must assume every one is stateful, and a conversation boundary
+must start fresh connections. A clear that reuses the agent would have to restart them all, and
+so would every other resource an extension owns whose state a conversation can touch.
+
+**Decision.** One `Agent` is one conversation. A host starts a new one — "/clear", switching,
+resuming — by closing the old agent and building a new one, resuming through
+`Agent.new(history:)`. There is no `clear_conversation`, no `load_history!`, no
+`Extension#on_conversation_reset` and no `Event::Reset`. Per-conversation state is then plain
+instance state on objects built for that agent: an extension instance serves one agent, and
+`close` tears down what it started. An extension that needs to know what the restored
+conversation did reads it in `bind`, where it is already in place
+(`ctx.agent.export_history`) — MCP re-registers the tools of servers the transcript connected,
+from its cached schemas, with no call to the server. Reconnecting does not restore what those
+servers held; see `D_history_load_repairs`.
+
+The price is building an agent per conversation, which is cheap for everything pikuri ships:
+tools are instances or constants, the prompt is re-assembled, the `/props` probe repeats on the
+first turn. What is not cheap — MCP's spawn, handshake and verifier call per server — is
+pikuri-workshop's to restructure, since an MCP connection may not cross conversations anyway.
+pikuri-webui already worked this way (a factory per conversation, history loaded once at mint),
+which is where the shape came from.
+
+**Alternatives rejected.**
+
+- **Conversation-scoped tool registration** (`ExtensionContext#add_conversation_tool`, dropped on
+  a clear): fixes the tool list and leaves the server state shared, which is the part that leaks
+  secrets.
+- **An `Extension#on_history_loaded(ctx, history)` hook** on a reused agent, letting MCP replay
+  its connects: the same leak, plus one more protocol method.
+- **Keeping `clear_conversation` beside re-creation**: two ways to start over, and the reset path
+  needs every extension's reset hook kept correct forever — the bookkeeping this removes.
+
+---
+
 ## D_host_resets_cancel — Why does the host reset the `Cancellable`, and not `run_loop`?
 
 **Context.** `Agent#run_loop` used to reset its `Cancellable` first thing, so a cancel left over
@@ -37,8 +86,7 @@ while the delegation's confirm prompt waited on the human.
 where it decides a turn starts — on its own thread, under whatever lock guards its "running"
 flag, before it hands the turn to a worker. `run_loop` cannot tell a stale cancel from an early
 one; only the code that starts the turn knows where the line falls, and resetting "just before
-`run_loop`" on the worker is the old bug again. `clear_conversation` still resets, being a
-host-triggered boundary itself. `run_loop` also checks the token once the user turn is recorded,
+`run_loop`" on the worker is the old bug again. `run_loop` also checks the token once the user turn is recorded,
 before any request: the permit can't be the first check, because an unsized server's permits are
 unlimited and skip it, which left a plain non-streaming turn with no cancellation point at all.
 A host that forgets the reset is not silent: after its first cancel, every turn ends at once.
@@ -577,7 +625,7 @@ probe; it stays after it so that every `ContextCap` comes before any
 **Alternatives rejected.**
 
 - **Hosts build the agent lazily.** Both hosts need the agent before the first
-  turn — `load_history!`, `/clear`, extension binding — so each would have to
+  turn — a resumed conversation, extension binding — so each would have to
   stand in for it on every one of those paths, twice over, and pikuri-chat,
   pikuri-code and the rest would keep probing eagerly.
 - **A public "resolve the cap now" method** for a host that wants the cap shown
@@ -587,7 +635,7 @@ probe; it stays after it so that every `ContextCap` comes before any
 **Consequences.**
 
 - **A capless transport shows no cap until the first turn** — a status line
-  reads `ctx 12k`, not `12k/16k`, after a `load_history!`. A stated cap still
+  reads `ctx 12k`, not `12k/16k`, on a resumed conversation. A stated cap still
   shows at once.
 - **The first turn carries the probe's latency** — on a router, the cold load
   the chat request would otherwise have paid.
@@ -2108,8 +2156,8 @@ the reasoning (encrypted) and the text is a lossy summary that is empty by
 default, while on llama.cpp the text is the substance and no signature exists.
 "This turn's reasoning" is the only thing that means the same on every backend.
 
-**The scrub runs at both points model identity can change** — `load_history!`
-and `apply_transport!`. Load time provably cannot cover a mid-session switch,
+**The scrub runs at both points model identity can change** — restoring a
+`history:` and `apply_transport!`. Load time provably cannot cover a mid-session switch,
 which is the more damaging case: `Chat#with_model` preserves history, so today
 the foreign reasoning is replayed on that turn and every turn after it. This
 costs no request-build hook and does not touch the loop seam: `with_model` has
@@ -2949,7 +2997,7 @@ calls unanswered, and replaying that is a hard 400 on OpenAI and Anthropic
 alike.
 
 **Decision.** Export faithfully — including a dangling batch — and repair at
-`load_history!`, synthesizing an `INTERRUPTED_RESULT` observation for every
+load (`Agent.new(history:)`), synthesizing an `INTERRUPTED_RESULT` observation for every
 call that never got one. This is the one thing all five surveyed harnesses
 agree on: every one of them repairs when building the request and leaves the
 stored record untouched. Telling the model *"you asked, it did not finish"*
@@ -2978,6 +3026,20 @@ risk is the model retrying a tool it can see in its own context, and ruby_llm
 already answers that with an observation naming the tools that *are*
 available, so the model self-corrects. A load-time warning would duplicate a
 recovery that fires only when needed and says more.
+
+**What a recorded call did to the world is not restored, and cannot be.** A
+call told Playwright MCP to open a page, added to a task list, read a file
+before editing it; a load brings back the record of the call, not the state
+it left in the server, the extension or the disk. Only replaying the calls
+could, and replay repeats their effects — the mail goes out twice — so it is
+out. Nor is this a load problem to fix elsewhere: a resumed conversation
+gets fresh connections by design (`D_agent_is_one_conversation`), an MCP
+server respawned after a crash forgets mid-conversation, and files and web
+pages move on while a conversation sits on disk. So the model never gets to
+assume outside state persisted; it learns from the next result — the
+snapshot shows a blank page — and redoes the step. The damage is bounded to
+tools holding state across calls, and costs a wasted call or one made on a
+stale belief.
 
 **Alternatives rejected.**
 
@@ -3920,8 +3982,8 @@ Rejected, all of them consequences of wanting a second level:
   cheaper answer to staleness. It is the more expensive one: a snippet is a
   stable prefix, while a re-injected `kind: :system` item appends a message
   every time, growing history and busting the prompt cache. Drift is bounded
-  without any mechanism — `Agent#assemble_system_prompt` re-pulls snippets on
-  `clear_conversation`, so the snapshot re-takes itself on `/clear`.
+  without any mechanism — a `/clear` builds a new agent
+  (`D_agent_is_one_conversation`), which takes a new snapshot.
 
 **Consequences.**
 

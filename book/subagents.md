@@ -167,10 +167,10 @@ the ones it needs:
   contributions to the system prompt as an array of strings.
   `SubAgent::Extension` returns the `<available_agents>` block here.
   The agent *assembles* the full prompt from its base plus every
-  extension's snippets, both at construction and again on
-  `clear_conversation` — so a snippet read from live state (a folder
-  listing, a notes file) refreshes when the conversation is cleared
-  instead of freezing at boot.
+  extension's snippets once, at construction — and since a cleared
+  conversation is a new agent, a snippet read from live state (a folder
+  listing, a notes file) refreshes on every "/clear" instead of freezing
+  at boot.
 - **`bind(ctx)`** — agent-keyed setup. Runs once the agent is
   fully constructed, with the agent's
   `Pikuri::Agent::ExtensionContext` — the capability facade for

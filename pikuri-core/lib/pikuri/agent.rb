@@ -26,6 +26,21 @@ module Pikuri
   # "What fires when" is one grep for +@listeners.emit+ (loop narration)
   # plus the capability calls in {ExtensionContext} (domain events).
   #
+  # == One agent, one conversation
+  #
+  # An agent lives exactly as long as its conversation; nothing clears it or
+  # loads another conversation into it. To start over or to resume, close it
+  # and build a new one — from the same wiring code, with fresh extension
+  # instances:
+  #
+  #   agent.close
+  #   agent = Pikuri::Agent.new(transport: t, system_prompt: p,
+  #                             history: Pikuri::Agent::History.load(dir)) { |c| wire(c) }
+  #
+  # A conversation boundary must not carry state across — not the tools an
+  # MCP server registered mid-conversation, not the browser session behind
+  # them. See +design/decisions.md+ +D_agent_is_one_conversation+.
+  #
   # == The loop is unbounded
   #
   # Nothing here caps how many tool calls a turn may make. A turn ends when
@@ -179,8 +194,7 @@ module Pikuri
     #   +RubyLLM.config.default_model+.
     # @param system_prompt [String] base system message; the chat sees
     #   this plus every extension's {Extension#system_prompt_snippets},
-    #   assembled by {#assemble_system_prompt} at construction and on each
-    #   {#clear_conversation}.
+    #   assembled once by {#assemble_system_prompt}.
     # @param cancellable [Control::Cancellable, nil] cancellation control,
     #   or +nil+ for none (no way to stop a running turn but killing the
     #   process).
@@ -194,23 +208,33 @@ module Pikuri
     #   passes a per-chunk block to +Chat#complete+ and normalizes chunks
     #   into {Event::ThinkingDelta}/{Event::AssistantDelta}. Default +false+
     #   (only the +after_message+ bookends fire).
+    # @param history [History, nil] a saved conversation to resume — from
+    #   {#export_history}, {History.parse} or {History.load} — or +nil+ to
+    #   start empty. Restored before {Extension#bind}, so an extension sees it
+    #   there via +ctx.agent.export_history+; {Event::HistoryLoaded} follows
+    #   the bind sweep. See {#restore_history} for what comes back and what
+    #   is repaired on the way in.
     # @yield [Configurator] the sole path for adding tools, listeners,
     #   extensions, and +on_close+ handlers — there are no parallel ctor
     #   kwargs. Optional; without it the agent has none of those.
     # @return [Agent]
+    # @raise [ArgumentError] if +history+ is neither +nil+ nor a {History};
+    #   the parsing doors are where untrusted input belongs.
     def initialize(transport:, system_prompt:,
                    cancellable: nil, interloper: nil,
                    id: '',
                    streaming: false,
+                   history: nil,
                    &block)
+      unless history.nil? || history.is_a?(History)
+        raise ArgumentError, "expected a Pikuri::Agent::History, got #{history.class} — " \
+                             'use History.parse / History.load to build one from stored bytes'
+      end
+
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @cancellable = cancellable
       @closed = false
 
-      # Kept separate from the assembled +@system_prompt+ so
-      # {#assemble_system_prompt} can recompute (base + extensions'
-      # snippets) from scratch at construction and on each
-      # {#clear_conversation}, refreshing dynamic sections.
       @system_prompt_base = system_prompt
       @system_prompt = system_prompt
       @interloper = interloper
@@ -219,6 +243,7 @@ module Pikuri
       @on_close_handlers = []
       # Stashed for {#run_configure}, the failure-prone build phase.
       @block = block
+      @history = history
 
       # Register *before* the build phase so a mid-construction raise is
       # recoverable: extensions arm cleanup via +c.on_close+ (straight into
@@ -261,9 +286,7 @@ module Pikuri
 
     # @return [String] system prompt actually sent — the base
     #   +system_prompt:+ plus every extension's
-    #   {Extension#system_prompt_snippets}, re-assembled on
-    #   {#clear_conversation} (so a dynamic section may differ from its
-    #   construction value). Not inherited by sub-agents.
+    #   {Extension#system_prompt_snippets}. Not inherited by sub-agents.
     attr_reader :system_prompt
 
     # @return [Control::Cancellable, nil] the cancellation control, or
@@ -479,48 +502,16 @@ module Pikuri
       repair_dangling_tool_calls!($!)
     end
 
-    # Return the agent to a fresh-conversation state without tearing down
-    # its wiring — the host "/clear". Unlike {#close} (which fires the
-    # teardown handlers), everything stays alive; nothing is re-probed or
-    # re-connected. Resets, in order:
-    #
-    # 1. Chat history (+Chat#messages = []+, which also drops every injected
-    #    reference block), then re-applies a freshly **re-assembled** prompt —
-    #    {#assemble_system_prompt} re-pulls every extension's snippets, so
-    #    dynamic sections refresh (a resident memory persona, a re-read
-    #    +MACHINE.md+). Callbacks and tool registrations on the reused +@chat+
-    #    are untouched.
-    # 2. Controls — cancellation reset, interloper queue drained (stale
-    #    mid-loop input must not leak forward).
-    # 3. Listeners — a single {Event::Reset} so they reset display state.
-    # 4. Extension state — {Extension#on_conversation_reset} on each.
-    #
-    # Model/transport are left as-is (a clear is not a model switch). Runs on
-    # the agent's own thread; not designed to race an in-flight {#run_loop}.
-    #
-    # @return [void]
-    def clear_conversation
-      @chat.messages = []
-      @message_meta.clear
-      @system_prompt = assemble_system_prompt
-      @chat.with_instructions(@system_prompt)
-      @cancellable&.reset!
-      @interloper&.drain!
-      @listeners.emit(Event::Reset.new)
-      @extensions.each { |ext| ext.on_conversation_reset(@extension_context) }
-      nil
-    end
-
     # Snapshot the conversation as a {History} — the round-trip partner of
-    # {#load_history!}, and the supported way for a host to persist a
+    # +Agent.new(history:)+, and the supported way for a host to persist a
     # conversation without reaching into the underlying chat.
     #
     #   agent.export_history.save(dir)          # a folder per conversation
     #   File.write(f, agent.export_history.to_json)   # or one self-contained file
     #
-    # The system prompt is excluded — {#load_history!} re-assembles it, so a
-    # resumed conversation gets today's, not the one that was current when it
-    # was saved.
+    # The system prompt is excluded — the resuming agent assembles its own, so
+    # a resumed conversation gets today's, not the one that was current when
+    # it was saved.
     #
     # Attachment bytes are read here, eagerly, so the snapshot still shows
     # what the model saw after the file has changed on disk.
@@ -540,71 +531,6 @@ module Pikuri
         meta[:thinking] ? exported_msg.with(thinking: meta[:thinking]) : exported_msg
       end
       History.new(messages: exported)
-    end
-
-    # Replace the conversation with a saved one, keeping every bit of wiring
-    # — tools, listeners, extensions, model — in place.
-    #
-    #   agent.load_history!(History.load(dir))
-    #
-    # Runs {#clear_conversation} first, so controls reset and extensions see
-    # {Extension#on_conversation_reset} exactly as they would on a host
-    # "/clear"; the system prompt is re-assembled from current state. Then
-    # emits {Event::HistoryLoaded} — {Event::Reset} alone would tell listeners
-    # the conversation is empty, which it no longer is.
-    #
-    # Safe to call repeatedly on a long-lived agent: switching conversations
-    # in a shell is exactly this, once per switch, and nothing survives across
-    # one. Like the rest of {Agent}, it must not race a running {#run_loop}.
-    #
-    # == What is restored, and what is not
-    #
-    # Messages, tool calls and their results, thinking, attachments, per-message
-    # usage. **Not** state living outside the conversation: a workspace's
-    # read-before-edit marks, promoted skills, a task list. A resumed
-    # conversation whose transcript says a file was read will still be asked
-    # to read it again before editing — which is right, since the file may
-    # have changed while the conversation sat on disk.
-    #
-    # Two repairs happen on the way in, each because a stored conversation
-    # can describe something a provider will not accept or a model would
-    # misread:
-    #
-    # - A tool call whose result never arrived gets a synthesized one
-    #   ({History#repair_interrupted_tool_calls}).
-    # - A turn produced by a *different* model loses its whole thinking block
-    #   — a foreign one lands in a slot the receiving model reads as its own
-    #   scratchpad. Withheld from the conversation only; {#export_history}
-    #   still writes it. {#apply_transport!} repeats this for a switch that
-    #   happens later. See +design/decisions.md+ +D_thinking_block_replay+.
-    #
-    # @param history [History] from {#export_history}, {History.parse} or
-    #   {History.load} — already validated by whichever door it came through.
-    # @return [Integer] how many messages were restored.
-    # @raise [ArgumentError] if given anything but a {History}; the parsing
-    #   doors are where untrusted input belongs.
-    def load_history!(history)
-      unless history.is_a?(History)
-        raise ArgumentError, "expected a Pikuri::Agent::History, got #{history.class} — " \
-                             'use History.parse / History.load to build one from stored bytes'
-      end
-
-      clear_conversation
-      current_model = @chat.model&.id
-      repaired = history.repair_interrupted_tool_calls
-      repaired.messages.each do |m|
-        keep = keep_thinking?(m.thinking, m.model_id, current_model)
-        track_message(@chat.add_message(m.to_ruby_llm(keep_thinking: keep)),
-                      kind: m.kind, id: m.id, thinking: (m.thinking unless keep),
-                      summary: m.summary, tool_calls: restored_tool_call_lines(m))
-      end
-
-      last = repaired.messages.reverse.find { |m| m.role == 'assistant' && m.tokens }
-      @listeners.emit(Event::HistoryLoaded.new(
-                        messages: repaired.messages.size,
-                        tokens: last && Event::Tokens.new(**last.tokens.to_h, model_id: last.model_id)
-                      ))
-      repaired.messages.size
     end
 
     # Release agent-owned resources: fire every handler registered via
@@ -690,7 +616,7 @@ module Pikuri
       @listeners = ListenerList.new(configurator.listeners)
       @extensions = configurator.extensions.dup
       # Assemble now that every extension's +configure+ has run (their
-      # snippets read populated state); re-runs on {#clear_conversation}.
+      # snippets read populated state).
       @system_prompt = assemble_system_prompt
 
       @chat = build_chat(@transport)
@@ -763,6 +689,8 @@ module Pikuri
       @cap_pending = true
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
 
+      loaded = restore_history(@history) if @history
+
       # The runtime capability facade — the ONLY object granting
       # emission / raw-tool / close-handler capabilities; the Agent exposes
       # no public path to them. Handed to every extension's #bind /
@@ -776,17 +704,58 @@ module Pikuri
       # fully wired (dynamic tools, close hooks, domain-event wiring). See
       # {Extension} for #configure vs #bind.
       @extensions.each { |ext| ext.bind(@extension_context) }
+      @listeners.emit(loaded) if loaded
+    end
+
+    # Put a saved conversation into the freshly built chat. Restored:
+    # messages, tool calls and their results, thinking, attachments,
+    # per-message usage. **Not** state living outside the conversation — a
+    # workspace's read-before-edit marks, promoted skills, a task list, what an
+    # MCP server held: a resumed conversation whose transcript says a file was
+    # read is still asked to read it again before editing, which is right,
+    # since the file may have changed while the conversation sat on disk.
+    # Nothing replays the recorded calls; see +design/decisions.md+
+    # +D_history_load_repairs+.
+    #
+    # Two repairs happen on the way in, each because a stored conversation
+    # can describe something a provider will not accept or a model would
+    # misread:
+    #
+    # - A tool call whose result never arrived gets a synthesized one
+    #   ({History#repair_interrupted_tool_calls}).
+    # - A turn produced by a *different* model loses its whole thinking block
+    #   — a foreign one lands in a slot the receiving model reads as its own
+    #   scratchpad. Withheld from the conversation only; {#export_history}
+    #   still writes it. {#apply_transport!} repeats this for a switch that
+    #   happens later. See +design/decisions.md+ +D_thinking_block_replay+.
+    #
+    # @param history [History] already validated by whichever door it came
+    #   through.
+    # @return [Event::HistoryLoaded] for the caller to emit once the agent is
+    #   bound — the conversation is in place before any extension sees it.
+    def restore_history(history)
+      current_model = @chat.model&.id
+      repaired = history.repair_interrupted_tool_calls
+      repaired.messages.each do |m|
+        keep = keep_thinking?(m.thinking, m.model_id, current_model)
+        track_message(@chat.add_message(m.to_ruby_llm(keep_thinking: keep)),
+                      kind: m.kind, id: m.id, thinking: (m.thinking unless keep),
+                      summary: m.summary, tool_calls: restored_tool_call_lines(m))
+      end
+
+      last = repaired.messages.reverse.find { |m| m.role == 'assistant' && m.tokens }
+      Event::HistoryLoaded.new(
+        messages: repaired.messages.size,
+        tokens: last && Event::Tokens.new(**last.tokens.to_h, model_id: last.model_id)
+      )
     end
 
     # Build the full prompt: base plus every extension's
     # {Extension#system_prompt_snippets}, in registration order, joined by
     # blank lines. Blank/nil sections drop (an extension contributing
-    # nothing leaves no stray separator). Pure function of the base + the
-    # extensions' current state, so it serves both construction and
-    # {#clear_conversation} (the latter refreshing dynamic sections).
+    # nothing leaves no stray separator). Runs once, at construction.
     #
-    # Those two call sites are the whole list, and that is a *price* rather
-    # than a missing feature: a stable prefix is free after turn one
+    # That one call site is a *price* rather than a missing feature: a stable prefix is free after turn one
     # (llama.cpp slot prefix-reuse, Anthropic's prompt cache), where amending
     # one invalidates every cached token after the change point and
     # re-prefills. Hence there is no amend-the-prompt seam — mid-conversation
@@ -870,7 +839,7 @@ module Pikuri
     #
     # Because the history is kept, every turn in it is now potentially from
     # another model, so {#strip_foreign_thinking!} runs before the event —
-    # {#load_history!}'s repair only covers a conversation that arrives stale.
+    # {#restore_history}'s repair only covers a conversation that arrives stale.
     #
     # == Cross-server switches
     #
@@ -1182,7 +1151,7 @@ module Pikuri
     # live conversation, parking it in +@message_meta+ so {#export_history}
     # still writes it.
     #
-    # {#load_history!} covers a conversation that arrives stale; this covers
+    # {#restore_history} covers a conversation that arrives stale; this covers
     # one that goes stale under a running agent, which +Chat#with_model+ leaves
     # untouched. +RubyLLM::Message+ has no thinking writer, so a stripped turn
     # is a rebuilt object and its metadata is re-keyed onto the replacement.

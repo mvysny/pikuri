@@ -167,18 +167,10 @@ module Pikuri
       module Transient
       end
 
-      # The conversation was cleared by {Agent#clear_conversation}: history
-      # is back to the system prompt, controls are reset, and each
-      # extension's {Extension#on_conversation_reset} has run. Emitted
-      # once, *before* the extension sweep, so pure-consumer listeners can
-      # reset display state; extension-owned state is signalled by the
-      # extensions' own domain events, not here. No payload.
-      Reset = Data.define
-
-      # A saved conversation was restored by {Agent#load_history!}. Always
-      # follows a {Reset}, which is the part that clears display state — this
-      # one says the conversation is *not* empty after all, and carries what a
-      # listener needs to stop lying about it.
+      # The agent was built with a saved conversation (+Agent.new(history:)+)
+      # rather than an empty one. Emitted once, at the end of construction,
+      # and carries what a listener needs to stop reporting an empty
+      # conversation.
       #
       # +tokens+ is the last assistant message's usage as recorded when the
       # conversation was exported, so a running context readout can pick up

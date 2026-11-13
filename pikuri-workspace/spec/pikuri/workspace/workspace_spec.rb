@@ -51,20 +51,6 @@ RSpec.describe Pikuri::Workspace::Workspace do
     end
   end
 
-  describe '#clear_reads' do
-    it 'forgets every previously-read path' do
-      a = workspace.resolve_for_read('a.rb')
-      b = workspace.resolve_for_read('b.rb')
-      workspace.mark_read(a)
-      workspace.mark_read(b)
-
-      workspace.clear_reads
-
-      refute workspace.read?(a)
-      refute workspace.read?(b)
-    end
-  end
-
   describe 'read-record isolation' do
     it 'does not share its record with another workspace over the same filesystem' do
       other = described_class.new(filesystem: filesystem)

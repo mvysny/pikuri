@@ -37,8 +37,8 @@ module Pikuri
     # owns its own record, so a read in one (a sub-agent's temp clone) never
     # satisfies an edit in another.
     #
-    # Sharing: +P_one_agent+ — the read record is one conversation's, and
-    # {#clear_reads} is tied to that conversation's reset. Two agents on one
+    # Sharing: +P_one_agent+ — the read record is one conversation's, and an
+    # agent is one conversation (+D_agent_is_one_conversation+). Two agents on one
     # composite would satisfy each other's read-before-edit gate: agent B could
     # {Edit} a file only agent A had read, which is the gate failing open.
     # {Filesystem} underneath is immutable policy and shares freely; give each
@@ -73,17 +73,6 @@ module Pikuri
       # @return [Boolean] whether +resolved+ has been read this session.
       def read?(resolved)
         @read.include?(relativize(resolved))
-      end
-
-      # Forget every path read so far, returning the read-before-edit gate to
-      # empty. Called by {Extension#on_conversation_reset}: a cleared
-      # conversation has seen nothing, so the next {Edit}/overwrite-{Write} needs
-      # a fresh {Read}, like a brand-new agent.
-      #
-      # @return [void]
-      def clear_reads
-        @read.clear
-        nil
       end
 
       # The error text for a path that doesn't exist, naming the root that

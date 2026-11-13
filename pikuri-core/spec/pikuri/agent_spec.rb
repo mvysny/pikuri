@@ -86,13 +86,6 @@ RSpec.describe Pikuri::Agent do
         @messages.last
       end
 
-      # Mirrors +RubyLLM::Chat#messages=+ (replaces the in-memory log).
-      # +#clear_conversation+ calls it with +[]+, then re-applies the system
-      # prompt via +#with_instructions+.
-      def messages=(list)
-        @messages = list.to_a
-      end
-
       def ask(message, &block)
         @asks << message
         @stream_block = block
@@ -1618,109 +1611,5 @@ RSpec.describe Pikuri::Agent do
       assert_equal [:outer], order
     end
 
-  end
-
-  describe '#clear_conversation' do
-    def build_agent(cancellable: nil, interloper: nil, &block)
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 'base prompt',
-                        cancellable: cancellable,
-                        interloper: interloper, &block)
-    end
-
-    it 'clears the chat history and re-applies the system prompt' do
-      agent = build_agent { |c| c.add_listener recorder }
-      fake_chat.add_assistant('hello')
-      refute_empty fake_chat.messages
-
-      agent.clear_conversation
-
-      assert_empty fake_chat.messages
-      assert_equal 'base prompt', fake_chat.instructions
-    end
-
-    it 're-assembles the prompt on clear, refreshing dynamic extension snippets' do
-      # An extension whose snippet changes between pulls — stands in for
-      # a resident memory persona / MACHINE.md that gained content during
-      # the conversation that's now being cleared.
-      ext_class = Class.new do
-        include Pikuri::Agent::Extension
-        def initialize = @n = 0
-        def system_prompt_snippets
-          @n += 1
-          ["pull ##{@n}"]
-        end
-      end
-
-      agent = build_agent { |c| c.add_extension(ext_class.new); c.add_listener recorder }
-      # Construction did the first pull.
-      assert_equal "base prompt\n\npull #1", fake_chat.instructions
-
-      agent.clear_conversation
-
-      # Clear re-pulled — the refreshed value is now in the system prompt.
-      assert_equal "base prompt\n\npull #2", fake_chat.instructions
-      assert_equal "base prompt\n\npull #2", agent.system_prompt
-    end
-
-    it 'emits exactly one Event::Reset to the listener stream' do
-      agent = build_agent { |c| c.add_listener recorder }
-
-      agent.clear_conversation
-
-      resets = recorder.events.select { |e| e.is_a?(Pikuri::Agent::Event::Reset) }
-      assert_equal 1, resets.size
-    end
-
-    it 'resets the controls and drains the interloper queue' do
-      cancellable = Pikuri::Agent::Control::Cancellable.new
-      interloper = Pikuri::Agent::Control::Interloper.new
-      agent = build_agent(cancellable: cancellable,
-                          interloper: interloper) { |c| c.add_listener recorder }
-
-      cancellable.cancel!
-      interloper.inject_user_message('stale mid-loop input')
-
-      agent.clear_conversation
-
-      # A drained interloper has nothing left to hand the next turn.
-      assert_empty interloper.drain!
-      # cancellable#reset! cleared the flag — check! no longer raises.
-      cancellable.check!
-    end
-
-    it 'fires on_conversation_reset on every extension with the live ExtensionContext' do
-      seen = []
-      ext_class = Class.new do
-        include Pikuri::Agent::Extension
-        define_method(:bind) { |ctx| @bound = ctx }
-        define_method(:on_conversation_reset) { |ctx| seen << ctx }
-        define_method(:bound) { @bound }
-      end
-      ext = ext_class.new
-      agent = build_agent { |c| c.add_extension(ext) }
-
-      agent.clear_conversation
-
-      assert_equal 1, seen.size
-      # Same ExtensionContext instance handed to #bind.
-      assert_same ext.bound, seen.first
-    end
-
-    it 'zeroes the TokenLog snapshot via Event::Reset' do
-      token_log = Pikuri::Agent::Listener::TokenLog.new
-      agent = build_agent { |c| c.add_listener token_log }
-      # Drive a token reading so the snapshot is non-zero.
-      token_log.on_event(Pikuri::Agent::Event::Tokens.new(
-                           input: 1234, output: 0, cached: nil,
-                           cache_creation: nil, thinking: nil, model_id: 'm'
-                         ))
-      refute_equal 0, token_log.context_window_size
-
-      agent.clear_conversation
-
-      assert_equal 0, token_log.context_window_size
-      assert_equal '', token_log.status_line
-    end
   end
 end

@@ -3,8 +3,8 @@
 require 'json'
 require 'pikuri/testing' # opt-in scaffolding, not loaded by pikuri-core boot
 
-# The claim {Pikuri::Agent#load_history!} has to earn: reloading an exported
-# conversation produces *no observable change to the model*. Asserted where it
+# The claim +Agent.new(history:)+ has to earn: resuming an exported
+# conversation on a fresh agent produces *no observable change to the model*. Asserted where it
 # actually matters — the bytes on the wire — using the fake transport, so the
 # whole property is pinned offline.
 RSpec.describe 'Pikuri::Agent history round trip' do
@@ -26,6 +26,14 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     )
   end
 
+  # Close +agent+ and resume its conversation on a new one over the same
+  # transport — the only way a host resumes (D_agent_is_one_conversation).
+  # The scripted replies are shared by the transport, so the script runs on.
+  def resume(agent, history, &wiring)
+    agent.close
+    Pikuri::Agent.new(transport: agent.transport, system_prompt: 'test agent', history: history, &wiring)
+  end
+
   # Runs a tool-using conversation, then one more turn, and returns the request
   # body of that final turn — the thing the model actually sees.
   def final_body(reload:)
@@ -39,7 +47,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       c.add_tool Pikuri::Tool::CALCULATOR
     end
     agent.run_loop(user_message: 'What is 2 + 2?')
-    agent.load_history!(agent.export_history) if reload
+    agent = resume(agent, agent.export_history) { |c| c.add_tool Pikuri::Tool::CALCULATOR } if reload
     agent.run_loop(user_message: 'Are you sure?')
     captured.last
   ensure
@@ -61,7 +69,9 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       c.add_tool Pikuri::Tool::CALCULATOR
     end
     agent.run_loop(user_message: 'What is 2 + 2?')
-    agent.load_history!(Pikuri::Agent::History.parse(agent.export_history.to_json))
+    agent = resume(agent, Pikuri::Agent::History.parse(agent.export_history.to_json)) do |c|
+      c.add_tool Pikuri::Tool::CALCULATOR
+    end
     agent.run_loop(user_message: 'Are you sure?')
 
     assert_equal final_body(reload: false), captured.last
@@ -73,8 +83,9 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     let(:png) { (+"\x89PNG\r\n\x1a\n").b + ('pixels' * 8).b }
     let(:image) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: png) }
 
-    # Each turn's request body, after an optional reload between the turns.
-    # +text+ is the first turn's text; +nil+ makes it attachment-only.
+    # Each turn's request body, after an optional reload between the turns —
+    # the block takes the agent and answers the one to carry on with. +text+
+    # is the first turn's text; +nil+ makes it attachment-only.
     def bodies(text:, &reload)
       captured = []
       transport = recording_transport(captured) do |llm|
@@ -83,7 +94,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       end
       agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
       agent.run_loop(user_message: text, attachments: [image])
-      reload&.call(agent)
+      agent = reload.call(agent) if reload
       agent.run_loop(user_message: 'Are you sure?')
       captured
     ensure
@@ -102,7 +113,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
 
     it 'sends no text part on an attachment-only turn, before and after a reload' do
       plain = bodies(text: nil)
-      reloaded = bodies(text: nil) { |a| a.load_history!(Pikuri::Agent::History.parse(a.export_history.to_json)) }
+      reloaded = bodies(text: nil) { |a| resume(a, Pikuri::Agent::History.parse(a.export_history.to_json)) }
 
       assert_equal ['image_url'], user_content(plain.first).map { |p| p['type'] }
       assert_equal plain.last, reloaded.last
@@ -113,7 +124,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
         plain = bodies(text: "What's in it?")
         reloaded = bodies(text: "What's in it?") do |a|
           a.export_history.save(dir)
-          a.load_history!(Pikuri::Agent::History.load(dir))
+          resume(a, Pikuri::Agent::History.load(dir))
         end
 
         assert_equal plain.last, reloaded.last
@@ -144,8 +155,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     it 'withholds a foreign turn\'s thinking from the wire' do
       captured = []
       transport = recording_transport(captured) { |llm| llm.reply('ok') }
-      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
-      agent.load_history!(history_from('some-other-model'))
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', history: history_from('some-other-model'))
       agent.run_loop(user_message: 'and?')
 
       msg = replayed_assistant(captured)
@@ -157,8 +167,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     it "replays the same model's own thinking, since attribution still holds" do
       captured = []
       transport = recording_transport(captured) { |llm| llm.reply('ok') }
-      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
-      agent.load_history!(history_from('fake-model'))
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', history: history_from('fake-model'))
       agent.run_loop(user_message: 'and?')
 
       assert_equal 'private reasoning', replayed_assistant(captured)['reasoning_content']
@@ -167,8 +176,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     it 'treats unrecorded provenance as foreign rather than assuming a match' do
       captured = []
       transport = recording_transport(captured) { |llm| llm.reply('ok') }
-      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
-      agent.load_history!(history_from(nil))
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', history: history_from(nil))
       agent.run_loop(user_message: 'and?')
 
       refute replayed_assistant(captured).key?('reasoning_content')
@@ -176,14 +184,13 @@ RSpec.describe 'Pikuri::Agent history round trip' do
 
     it 'keeps a withheld block in the record, so save/load cycles do not erode it' do
       transport = recording_transport([]) { |llm| llm.reply('ok') }
-      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
-      agent.load_history!(history_from('some-other-model'))
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent', history: history_from('some-other-model'))
 
       2.times do
         exported = agent.export_history.messages.find { |m| m.role == 'assistant' }
         assert_equal 'private reasoning', exported.thinking.text
         assert_equal 'SIG', exported.thinking.signature
-        agent.load_history!(agent.export_history)
+        agent = resume(agent, agent.export_history)
       end
     ensure
       agent&.close
@@ -192,8 +199,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     it 'strips thinking on a switch mid-conversation, which load time cannot cover' do
       captured = []
       first = recording_transport(captured) { |llm| llm.reply('ok') }
-      agent = Pikuri::Agent.new(transport: first, system_prompt: 'test agent')
-      agent.load_history!(history_from('fake-model'))
+      agent = Pikuri::Agent.new(transport: first, system_prompt: 'test agent', history: history_from('fake-model'))
       agent.run_loop(user_message: 'and?')
       assert_equal 'private reasoning', replayed_assistant(captured)['reasoning_content'],
                    'precondition: its own model replays it'
@@ -212,8 +218,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     it 'keeps message ids stable when a switch rebuilds the message' do
       captured = []
       agent = Pikuri::Agent.new(transport: recording_transport(captured) { |llm| llm.reply('ok') },
-                                system_prompt: 'test agent')
-      agent.load_history!(history_from('fake-model'))
+                                system_prompt: 'test agent', history: history_from('fake-model'))
       before = agent.export_history.messages.map(&:id)
 
       second = recording_transport(captured, model: 'other-fake-model') { |llm| llm.reply('ok') }
@@ -268,14 +273,14 @@ RSpec.describe 'Pikuri::Agent history round trip' do
 
     it 'round-trips the display strings through the JSON and back out again' do
       agent.run_loop(user_message: 'What is 2 + 2?')
-      reloaded = Pikuri::Agent::History.parse(agent.export_history.to_json)
-
-      agent.load_history!(reloaded)
-      again = agent.export_history
+      resumed = resume(agent, Pikuri::Agent::History.parse(agent.export_history.to_json))
+      again = resumed.export_history
 
       assert_equal 'Calculator', again.messages[1].tool_calls.first.display_name
       assert_equal '2 + 2', again.messages[1].tool_calls.first.argument
       assert_equal '4', again.messages[2].summary
+    ensure
+      resumed&.close
     end
 
     it 'loads a pre-summary file with nils rather than refusing it' do
@@ -304,9 +309,11 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       agent.run_loop(user_message: 'What is 2 + 2?')
       before = agent.export_history
 
-      agent.load_history!(before)
+      resumed = resume(agent, before)
 
-      assert_equal before.messages.map(&:id), agent.export_history.messages.map(&:id)
+      assert_equal before.messages.map(&:id), resumed.export_history.messages.map(&:id)
+    ensure
+      resumed&.close
     end
   end
 
@@ -327,27 +334,27 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     end
   end
 
-  describe 'load_history!' do
-    let(:agent) do
-      transport = Pikuri::Testing.fake_transport { |llm| llm.reply('ok') }
-      Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+  describe 'resuming with history:' do
+    def build(history:, &wiring)
+      @agent = Pikuri::Agent.new(transport: Pikuri::Testing.fake_transport { |llm| llm.reply('ok') },
+                                 system_prompt: 'test agent', history: history, &wiring)
     end
 
-    after { agent.close }
+    after { @agent&.close }
+
+    def one_message
+      Pikuri::Agent::History.new(messages: [
+                                   Pikuri::Agent::History::Message.new(id: 'm1', role: 'user', content: 'hi')
+                                 ])
+    end
 
     it 'refuses anything but a History, naming the parsing doors' do
-      e = assert_raises(ArgumentError) { agent.load_history!([{ 'role' => 'user' }]) }
+      e = assert_raises(ArgumentError) { build(history: [{ 'role' => 'user' }]) }
       assert_match(/History\.parse/, e.message)
     end
 
-    it 'is idempotent across repeated calls, as a conversation switcher needs' do
-      history = Pikuri::Agent::History.new(messages: [
-                                             Pikuri::Agent::History::Message.new(id: 'm1', role: 'user',
-                                                                                 content: 'hi')
-                                           ])
-
-      3.times { assert_equal 1, agent.load_history!(history) }
-      assert_equal history, agent.export_history
+    it 'restores exactly the conversation it was given' do
+      assert_equal one_message, build(history: one_message).export_history
     end
 
     it 'repairs an interrupted tool call on the way in' do
@@ -360,42 +367,58 @@ RSpec.describe 'Pikuri::Agent history round trip' do
                                              )
                                            ])
 
-      assert_equal 2, agent.load_history!(history)
-      restored = agent.export_history
+      restored = build(history: history).export_history
+      assert_equal 2, restored.messages.size
       assert_equal 'c1', restored.messages.last.tool_call_id
       assert_equal Pikuri::Agent::History::INTERRUPTED_RESULT, restored.messages.last.content
     end
 
-    it 'emits Reset then HistoryLoaded, so a listener stops reporting an empty conversation' do
+    it 'has the conversation in place by bind, so an extension can rebuild what it implies' do
+      seen = nil
+      ext = Class.new do
+        include Pikuri::Agent::Extension
+        define_method(:bind) { |ctx| seen = ctx.agent.export_history }
+      end.new
+
+      build(history: one_message) { |c| c.add_extension(ext) }
+
+      assert_equal one_message, seen
+    end
+
+    it 'emits HistoryLoaded once, so a listener stops reporting an empty conversation' do
       events = []
-      transport = Pikuri::Testing.fake_transport { |llm| llm.reply('ok') }
       listener = Class.new(Pikuri::Agent::Listener::Base) do
         define_method(:initialize) { |sink| @sink = sink }
         define_method(:on_event) { |e| @sink << e }
       end.new(events)
-      loaded = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent') do |c|
-        c.add_listener(listener)
-      end
 
-      loaded.load_history!(Pikuri::Agent::History.new(messages: [
-                                                        Pikuri::Agent::History::Message.new(
-                                                          id: 'm1', role: 'assistant', content: 'hi',
-                                                          model_id: 'fake-model',
-                                                          tokens: Pikuri::Agent::History::Tokens.new(
-                                                            input: 900, output: 100, cached: 20,
-                                                            cache_creation: nil, thinking: nil
-                                                          )
-                                                        )
-                                                      ]))
+      build(history: Pikuri::Agent::History.new(messages: [
+                                                  Pikuri::Agent::History::Message.new(
+                                                    id: 'm1', role: 'assistant', content: 'hi',
+                                                    model_id: 'fake-model',
+                                                    tokens: Pikuri::Agent::History::Tokens.new(
+                                                      input: 900, output: 100, cached: 20,
+                                                      cache_creation: nil, thinking: nil
+                                                    )
+                                                  )
+                                                ])) { |c| c.add_listener(listener) }
 
-      kinds = events.map(&:class)
-      assert_equal [Pikuri::Agent::Event::Reset, Pikuri::Agent::Event::HistoryLoaded],
-                   kinds.select { |k| [Pikuri::Agent::Event::Reset, Pikuri::Agent::Event::HistoryLoaded].include?(k) }
-      history_loaded = events.find { |e| e.is_a?(Pikuri::Agent::Event::HistoryLoaded) }
-      assert_equal 1, history_loaded.messages
-      assert_equal 900, history_loaded.tokens.input
-    ensure
-      loaded&.close
+      loaded = events.grep(Pikuri::Agent::Event::HistoryLoaded)
+      assert_equal 1, loaded.size
+      assert_equal 1, loaded.first.messages
+      assert_equal 900, loaded.first.tokens.input
+    end
+
+    it 'emits no HistoryLoaded for a fresh conversation' do
+      events = []
+      listener = Class.new(Pikuri::Agent::Listener::Base) do
+        define_method(:initialize) { |sink| @sink = sink }
+        define_method(:on_event) { |e| @sink << e }
+      end.new(events)
+
+      build(history: nil) { |c| c.add_listener(listener) }
+
+      assert_empty events.grep(Pikuri::Agent::Event::HistoryLoaded)
     end
   end
 
@@ -403,7 +426,6 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     it 'reseeds the context readout from a restored history instead of showing zero' do
       log = Pikuri::Agent::Listener::TokenLog.new
       log.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
-      log.on_event(Pikuri::Agent::Event::Reset.new)
       assert_equal 'TokenLog(ctx=0.0k/32.0k)', log.to_s
 
       log.on_event(Pikuri::Agent::Event::HistoryLoaded.new(

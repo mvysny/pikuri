@@ -124,8 +124,6 @@ module Pikuri
             println(indent(Rainbow("⇄ model: #{from.model} → #{to.model}").magenta))
           in Event::Cancelled
             println(indent(Rainbow('! cancelled').red))
-          in Event::Reset
-            println(indent(Rainbow('— context cleared —').color(85, 85, 85)))
           in Event::UserTurn | Event::Tokens | Event::ContextCap
             # Silent: UserTurn echoes just-typed input; Tokens/ContextCap are
             # TokenLog's. (Non-streaming deltas no-op in their branches above.)

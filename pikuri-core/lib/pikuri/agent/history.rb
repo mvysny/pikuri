@@ -8,21 +8,21 @@ require 'securerandom'
 module Pikuri
   class Agent
     # A conversation, as a value — what {Agent#export_history} hands out and
-    # {Agent#load_history!} takes back. Two encodings, one in-memory value:
+    # +Agent.new(history:)+ resumes. Two encodings, one in-memory value:
     #
     #   json = agent.export_history.to_json        # self-contained, base64 inside
-    #   agent.load_history!(History.parse(json))
+    #   Agent.new(transport: t, system_prompt: p, history: History.parse(json))
     #
     #   dir = agent.export_history.save('/tmp/conv')  # dir/history.json + attachments/
-    #   agent.load_history!(History.load(dir))
+    #   Agent.new(transport: t, system_prompt: p, history: History.load(dir))
     #
     # Both round-trip to the same value, which is the property that keeps them
     # from drifting into two formats:
     #
     #   History.load(dir) == History.parse(json)   # => true
     #
-    # The system prompt is *not* here — {Agent#clear_conversation} re-assembles
-    # it from every extension on load, so a resumed conversation gets today's
+    # The system prompt is *not* here — the resuming agent assembles its own
+    # from every extension, so a resumed conversation gets today's
     # prompt (a re-read +MACHINE.md+, a fresh memory persona) rather than
     # yesterday's.
     #
@@ -470,7 +470,7 @@ module Pikuri
         #
         # The mirror case — a call with *no* result — is deliberately legal
         # here: that is what a process killed mid-batch leaves behind, and
-        # {Agent#load_history!} repairs it by synthesizing an interrupted
+        # +Agent.new(history:)+ repairs it by synthesizing an interrupted
         # result. Refusing it would make the crash case the one thing that
         # cannot be loaded.
         def check_tool_pairing!(messages)
