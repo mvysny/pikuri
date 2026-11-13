@@ -30,6 +30,13 @@ module Pikuri
     # +:no_egress+ at the bottom and the constructor keeps them coherent, so the
     # leg is present on both or on neither ({#egress?} is the canonical read).
     #
+    # Unioned, the two axes are each a +max+, which can describe a tool nobody
+    # wired: that vouched query beside that reviewed send max out to unreviewed
+    # *and* attacker-reachable. Egress is a sink, so bytes leave through one tool
+    # and only that tool's own pair decides whether an unreviewed leak reaches a
+    # reader. {#egress_open} carries that per-source fact through the union;
+    # with the two maxes it pins down exactly which egress shapes a node holds.
+    #
     # Immutable.
     #
     # @!attribute [r] private
@@ -58,7 +65,15 @@ module Pikuri
     #     choose the destination, that destination does not republish, and the
     #     request is not attacker-readable in flight or at rest. Unverifiable by
     #     the framework: like +private+, it is a declaration it inherits.
-    class TrifectaLegs < Data.define(:private, :untrusted, :egress_payload_review, :egress_destination)
+    # @!attribute [r] egress_open
+    #   Answers: does one single source send unreviewed bytes to a destination
+    #   the attacker can reach? The full-strength egress the loud verdict needs.
+    #
+    #   @return [Boolean] derived for a declaration; after a {#|} it can be
+    #     +false+ while the two axes read +:unreviewed+ / +:attacker_reachable+,
+    #     because different tools hold the two.
+    class TrifectaLegs < Data.define(:private, :untrusted, :egress_payload_review, :egress_destination,
+                                     :egress_open)
       # Danger order, least to most: +max+ is union at a node, +min+ is the cap
       # through a delegation channel.
       #
@@ -77,11 +92,14 @@ module Pikuri
       # @param egress_destination [Symbol, nil] one of {EGRESS_DESTINATION_ORDER};
       #   omit to derive — +:no_egress+ without a leg, else the pessimistic
       #   +:attacker_reachable+, so silence never buys the softer grade.
-      # @raise [ArgumentError] on a level outside its lattice, or on the two
-      #   egress axes disagreeing about whether the leg exists at all — a typo'd
-      #   level would otherwise read as a missing leg, the one failure mode this
-      #   detector exists to refuse.
-      def initialize(private:, untrusted:, egress_payload_review:, egress_destination: nil)
+      # @param egress_open [Boolean, nil] omit to derive from the two axes; only
+      #   {#|} and +with+ pass it.
+      # @raise [ArgumentError] on a level outside its lattice, on the two egress
+      #   axes disagreeing about whether the leg exists at all — a typo'd level
+      #   would otherwise read as a missing leg, the one failure mode this
+      #   detector exists to refuse — or on +egress_open+ claimed where the axes
+      #   say no source could be.
+      def initialize(private:, untrusted:, egress_payload_review:, egress_destination: nil, egress_open: nil)
         egress_destination ||= egress_payload_review == :no_egress ? :no_egress : :attacker_reachable
         check!(untrusted, UNTRUSTED_ORDER, 'untrusted')
         check!(egress_payload_review, EGRESS_REVIEW_ORDER, 'egress review')
@@ -90,29 +108,35 @@ module Pikuri
           raise ArgumentError, 'egress axes disagree on whether the leg exists: ' \
                                "#{egress_payload_review.inspect} / #{egress_destination.inspect}"
         end
+        could_be_open = egress_payload_review == :unreviewed && egress_destination == :attacker_reachable
+        egress_open = could_be_open if egress_open.nil?
+        raise ArgumentError, 'egress_open needs an unreviewed, attacker-reachable leg' if egress_open && !could_be_open
 
         super(private: private, untrusted: untrusted, egress_payload_review: egress_payload_review,
-              egress_destination: egress_destination)
+              egress_destination: egress_destination, egress_open: egress_open)
       end
 
-      # Union: the strongest value on each axis wins.
+      # Union: the strongest value on each axis wins, and the node is open if
+      # either side is.
       #
       #   read_legs | bash_legs   # what an agent holding both ends up with
+      #
+      #   search = new(private: false, untrusted: :hard,
+      #                egress_payload_review: :unreviewed, egress_destination: :tool_vouched)
+      #   compose = new(private: false, untrusted: :none, egress_payload_review: :human_reviewed)
+      #   (search | compose).egress_open   # => false: neither tool leaks unreviewed to a reader
       #
       # @param other [TrifectaLegs]
       # @return [TrifectaLegs]
       def |(other)
-        # Per-axis, so web_search (unreviewed, vouched) beside a compose tool
-        # (reviewed, attacker-reachable) scores a cell neither occupies. Pairing
-        # them up instead would be data flow, which this detector refuses to
-        # model; over-warning is the declared bias.
         TrifectaLegs.new(
           private: private || other.private,
           untrusted: [untrusted, other.untrusted].max_by { UNTRUSTED_ORDER.index(_1) },
           egress_payload_review: [egress_payload_review, other.egress_payload_review]
             .max_by { EGRESS_REVIEW_ORDER.index(_1) },
           egress_destination: [egress_destination, other.egress_destination]
-            .max_by { EGRESS_DESTINATION_ORDER.index(_1) }
+            .max_by { EGRESS_DESTINATION_ORDER.index(_1) },
+          egress_open: egress_open || other.egress_open
         )
       end
 
@@ -150,7 +174,8 @@ module Pikuri
       # precondition and this method is the mechanical +min+.
       #
       # {#egress_destination} is deliberately untouched: a gate bounds *what*
-      # leaves and *who saw it*, never who can read it back.
+      # leaves and *who saw it*, never who can read it back. {#egress_open}
+      # closes below +:unreviewed+, since every source is then reviewed.
       #
       # @param channel_level [Symbol] one of {EGRESS_REVIEW_ORDER}
       # @return [TrifectaLegs] with the leg gone entirely when the channel
@@ -159,9 +184,10 @@ module Pikuri
       def cap_payload_review(channel_level)
         check!(channel_level, EGRESS_REVIEW_ORDER, 'egress review')
         capped = [egress_payload_review, channel_level].min_by { EGRESS_REVIEW_ORDER.index(_1) }
-        return with(egress_payload_review: capped) unless capped == :no_egress
+        return with(egress_payload_review: :no_egress, egress_destination: :no_egress, egress_open: false) if
+          capped == :no_egress
 
-        with(egress_payload_review: :no_egress, egress_destination: :no_egress)
+        with(egress_payload_review: capped, egress_open: egress_open && capped == :unreviewed)
       end
 
       # Symbols naming the legs actually present, in the vocabulary the docs and
@@ -177,20 +203,25 @@ module Pikuri
         tags = []
         tags << :private if private
         tags << :"untrusted_#{untrusted}" unless untrusted == :none
-        tags << egress_tag if egress?
+        tags.concat(egress_tags) if egress?
         tags
       end
 
       private
 
-      # @return [Symbol] +:egress+ at full strength, with +_reviewed+ /
+      # @return [Array<Symbol>] +:egress+ at full strength, with +_reviewed+ /
       #   +_vouched+ appended per attenuated axis, so the four cells name
-      #   themselves without a lookup table
-      def egress_tag
+      #   themselves without a lookup table; two tags when the axes max out
+      #   from different tools, since no single tag describes that node
+      def egress_tags
+        if !egress_open && egress_payload_review == :unreviewed && egress_destination == :attacker_reachable
+          return %i[egress_reviewed egress_vouched]
+        end
+
         parts = ['egress']
         parts << 'reviewed' if egress_payload_review == :human_reviewed
         parts << 'vouched' if egress_destination == :tool_vouched
-        parts.join('_').to_sym
+        [parts.join('_').to_sym]
       end
 
       # @raise [ArgumentError] unless +value+ is a level of the +order+ lattice

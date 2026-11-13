@@ -4145,9 +4145,12 @@ repeatedly mistaken for rungs of one scale.
 **Decision.** The egress leg is **two orthogonal axes**, both carrying
 `:no_egress` at the bottom and kept coherent by the constructor:
 `egress_payload_review` (`:human_reviewed` / `:unreviewed`) and
-`egress_destination` (`:tool_vouched` / `:attacker_reachable`). The verdict
-grid becomes eight exhaustive clauses; exactly one cell moved, and no
-shipped wiring's verdict changed.
+`egress_destination` (`:tool_vouched` / `:attacker_reachable`). **Loud needs
+one tool that is both** unreviewed and attacker-reachable (with hard
+untrusted and private): egress is a sink, so bytes leave through one tool, and
+only that tool's own pair decides whether an unreviewed leak reaches a reader.
+`TrifectaLegs#egress_open` carries that per-tool fact through a node's union
+and is cleared when a reviewed delegation channel caps it.
 
 **Alternatives rejected.**
 
@@ -4192,6 +4195,17 @@ shipped wiring's verdict changed.
   `Data`, `nil`-handling at ~10 read sites and churn at every declaration
   site. The invariant is three lines in a constructor; that was the cheaper
   trade.
+- **Grading the node on each axis's max.** The first cut: `|` took the max
+  per axis and the verdict read the resulting pair, on the grounds that
+  pairing tools up "would be data flow". It isn't — whether *one tool* skips
+  review and reaches the attacker is capability presence. Reversed
+  2026-11-13 when the secretary booted loud with `--no-search-confirm`:
+  vouched `web_search` (unreviewed) beside a compose hand-off (reviewed,
+  free recipient) maxed out to a tool nobody wired. No exfiltration fits
+  that pair: the query reaches only the engine; results flow *in*; compose
+  shows the human its bytes, and stego the model could hide there it can
+  write without searching. The per-axis max had over-warned on every mixed
+  node, and over-warning by construction gets an advisory muted.
 - **Shipping a `SEARCHER` persona alongside the axis.** The plan of record
   bundled them ("all three together or none") on the grounds that the tag
   alone is decoration. Rejected: that conflates two reachabilities. The
@@ -4208,16 +4222,16 @@ shipped wiring's verdict changed.
   exactly as `private:` is inherited from the user; only `untrusted` is
   determined. The vocabulary says which is which, and the book says the tag
   is worth precisely the care that went into declaring it.
-- **A vouched destination survives only as the sole egress leg.** No special
-  case: `max` at a node hardens it the moment one attacker-reachable tool
-  joins. The advisory for that cell says so, so a soft verdict does not read
-  as settled.
-- **A soft cell no shipped wiring reaches.** Every persona holding
-  `web_search` also holds `fetch`. A host reaches it by giving an agent that
-  holds private data a page-text search and `web_read_cached` instead
-  (`D_page_text_by_handle`); hand-built nodes test it, and the unplaced-level
-  tripwire in `Report#verdict` was re-pointed at a hypothetical fourth level
-  so it survives its own graduation.
+- **A vouched destination is soft only while no unreviewed, reachable tool
+  sits beside it.** `fetch` next to `web_search` makes the node loud — through
+  `fetch`, which is loud on its own. The advisory for the vouched cell says
+  so, so a soft verdict does not read as settled.
+- **A mixed node shows both shapes.** The two maxes plus `egress_open`
+  determine exactly which egress shapes a node holds, so the map tags the
+  secretary without its search confirm `[:egress_reviewed, :egress_vouched]`
+  rather than `:egress`. `bin/pikuri-secretary --no-search-confirm` is the
+  shipped wiring in the soft-by-vouched cell; with the confirm, every way out
+  is reviewed.
 - **The delegation cap applies to one axis.** A gate bounds what leaves and
   who saw it, never who can read it back, so `#cap_payload_review` leaves the
   destination alone — the name says the scope.

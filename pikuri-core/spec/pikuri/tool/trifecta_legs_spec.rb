@@ -36,6 +36,20 @@ RSpec.describe Pikuri::Tool::TrifectaLegs do
       end
     end
 
+    it 'derives egress_open only for an unreviewed, attacker-reachable leg' do
+      assert legs(egress_payload_review: :unreviewed).egress_open
+      refute legs(egress_payload_review: :human_reviewed).egress_open
+      refute legs(egress_payload_review: :unreviewed, egress_destination: :tool_vouched).egress_open
+      refute legs.egress_open
+    end
+
+    it 'rejects egress_open where the axes say no tool could be open' do
+      assert_raises(ArgumentError) do
+        described_class.new(private: false, untrusted: :none, egress_payload_review: :human_reviewed,
+                            egress_open: true)
+      end
+    end
+
     it 'ships NONE with no legs at all' do
       assert_equal legs, described_class::NONE
     end
@@ -57,12 +71,17 @@ RSpec.describe Pikuri::Tool::TrifectaLegs do
       assert_equal legs(private: true, untrusted: :hard, egress_payload_review: :human_reviewed), a | b
     end
 
-    it 'lets an attacker-reachable destination absorb a vouched one' do
-      # The sole-leg guard, mechanically: one readable sink hardens the node.
+    it 'maxes each axis but stays closed when no one tool is unreviewed and reachable' do
       vouched = legs(egress_payload_review: :unreviewed, egress_destination: :tool_vouched)
       reachable = legs(egress_payload_review: :human_reviewed, egress_destination: :attacker_reachable)
-      assert_equal :attacker_reachable, (vouched | reachable).egress_destination
-      assert_equal :unreviewed, (vouched | reachable).egress_payload_review
+      union = vouched | reachable
+      assert_equal :attacker_reachable, union.egress_destination
+      assert_equal :unreviewed, union.egress_payload_review
+      refute union.egress_open
+    end
+
+    it 'stays open once either side is' do
+      assert (legs(egress_payload_review: :human_reviewed) | legs(egress_payload_review: :unreviewed)).egress_open
     end
 
     it 'lets a hard untrusted absorb a weakened one' do
@@ -138,6 +157,11 @@ RSpec.describe Pikuri::Tool::TrifectaLegs do
       assert_equal :tool_vouched, capped.egress_destination
     end
 
+    it 'closes an open leg behind a reviewed channel' do
+      refute legs(egress_payload_review: :unreviewed).cap_payload_review(:human_reviewed).egress_open
+      assert legs(egress_payload_review: :unreviewed).cap_payload_review(:unreviewed).egress_open
+    end
+
     it 'rejects a channel level outside the lattice' do
       assert_raises(ArgumentError) { legs(egress_payload_review: :unreviewed).cap_payload_review(:gated) }
     end
@@ -164,6 +188,12 @@ RSpec.describe Pikuri::Tool::TrifectaLegs do
     it 'names the doubly-attenuated cell from both axes' do
       assert_equal [:egress_reviewed_vouched],
                    legs(egress_payload_review: :human_reviewed, egress_destination: :tool_vouched).to_tags
+    end
+
+    it 'names both shapes when the axes max out from different tools' do
+      mixed = legs(egress_payload_review: :unreviewed, egress_destination: :tool_vouched) |
+              legs(egress_payload_review: :human_reviewed)
+      assert_equal %i[egress_reviewed egress_vouched], mixed.to_tags
     end
 
     it 'renders a weakened untrusted leg at its level' do

@@ -67,13 +67,42 @@ RSpec.describe Pikuri::Trifecta do
       # the one that let :tool_vouched land as a deliberate decision rather than
       # a silent absorption. Stands in for a legs record from a future lattice,
       # which TrifectaLegs' own constructor would (correctly) refuse to build.
-      unplaced = Data.define(:private, :untrusted, :egress_payload_review, :egress_destination) do
+      unplaced = Data.define(:private, :untrusted, :egress_open) do
         def egress? = true
-      end.new(private: true, untrusted: :hard, egress_payload_review: :unreviewed,
-              egress_destination: :user_vouched)
+      end.new(private: true, untrusted: :half_trusted, egress_open: true)
       report = Pikuri::Trifecta::Report.new(label: 'x', legs: unplaced, tool_legs: {},
                                             children: [], channel_egress: nil)
       assert_raises(NoMatchingPatternError) { report.verdict }
+    end
+  end
+
+  describe 'Report#verdict — egress is graded per tool' do
+    let(:read) { legs(private: true, untrusted: :hard) }
+    let(:search) { legs(untrusted: :hard, egress_payload_review: :unreviewed, egress_destination: :tool_vouched) }
+    let(:compose) { legs(egress_payload_review: :human_reviewed) }
+    let(:fetch) { legs(untrusted: :hard, egress_payload_review: :unreviewed) }
+
+    it 'stays soft when one tool is unreviewed and another attacker-reachable, but none is both' do
+      # Egress is a sink: bytes leave through one tool, so the vouched search
+      # can't reach the attacker and the reviewed compose shows the human the bytes.
+      report = described_class.walk(node('agent', { 'read' => read, 'web_search' => search,
+                                                    'compose' => compose }))
+      assert_equal :soft, report.verdict
+      assert_equal %i[private untrusted_hard egress_reviewed egress_vouched], report.legs.to_tags
+    end
+
+    it 'goes loud the moment one tool is both unreviewed and attacker-reachable' do
+      report = described_class.walk(node('agent', { 'read' => read, 'web_search' => search,
+                                                    'compose' => compose, 'fetch' => fetch }))
+      assert_equal :loud, report.verdict
+      assert_equal %i[private untrusted_hard egress], report.legs.to_tags
+    end
+
+    it 'closes an open child behind a reviewed delegation channel' do
+      child = node('RESEARCHER', { 'fetch' => fetch }, channel_egress: :human_reviewed)
+      report = described_class.walk(node('parent', { 'read' => read }, children: [child]))
+      refute report.legs.egress_open
+      assert_equal :soft, report.verdict
     end
   end
 

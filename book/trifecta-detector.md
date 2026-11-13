@@ -295,15 +295,20 @@ fires at all):
 | **unreviewed** | **loud** | soft |
 | **human_reviewed** | **soft** | soft |
 
-— and one qualifier on the loud cell: it also needs the
-destination to be `attacker_reachable`. An agent whose only way
-out is a vouched destination is **soft** even at full strength on
-the other two axes, because bytes leave but nobody can read them
-back.
+— and one qualifier on the loud cell: the unreviewed bytes must
+also reach a destination the attacker can read, *through the same
+tool*. An agent whose only unreviewed way out is a vouched
+destination is **soft** even at full strength on the other two
+axes, because bytes leave but nobody can read them back. And the
+egress leg is graded tool by tool, not axis by axis: a vouched
+search beside a reviewed compose window is soft, though the agent
+holds one unreviewed tool and one attacker-reachable one. Bytes
+leave through one tool, so only that tool's own pair decides.
 
 Or in one sentence: **loud** iff all three legs are at full
-strength *and* what leaves can be read back; **soft** iff all
-three are present at any strength; **silent** otherwise.
+strength *and* one tool sends unreviewed bytes the attacker can
+read back; **soft** iff all three are present at any strength;
+**silent** otherwise.
 
 Note what the grid refuses to do. It is monotone in every axis,
 and there is no cell for "two legs but they're scary".
@@ -392,13 +397,17 @@ caller cannot choose the destination, that destination does not
 republish what it receives, and the request is not
 attacker-readable in flight or at rest.
 
-**It only holds while it is the sole egress leg.** Add one
-attacker-reachable tool beside it and `max` hardens the whole
-node — which is not a special case but the union rule doing its
-job, since results that depend on the secret become a targeting
-stage the moment anything readable exists. The advisory for this
-cell says so out loud rather than letting a soft verdict read as
-settled.
+**It holds until something beside it is unreviewed *and*
+attacker-reachable.** Put `fetch` next to it and the agent is
+loud, through `fetch`, which is loud on its own. A *reviewed*
+attacker-reachable tool beside it changes nothing: the query
+still reaches only the engine, and a compose window still shows
+you its bytes. Try to build an exfiltration out of the pair and
+each attempt lands on one tool: the secret in a query has no
+reader, the search results flow *in*, and whatever the model
+hides in a mail it could hide without searching. The advisory
+for this cell names what would re-harden it, rather than letting
+a soft verdict read as settled.
 
 **Keep the two egress questions apart.** Payload visibility grades
 what the *human* saw; the destination grades what the *attacker*
@@ -413,6 +422,11 @@ four egress tags rather than one scale:
 :egress_vouched            it can only reach a destination the author vouched for
 :egress_reviewed_vouched   both
 ```
+
+An agent can hold two of them at once. A vouched search beside a
+compose window reads `[:egress_reviewed, :egress_vouched]` on its
+agent line, because no single tag describes that agent: one way
+out skips review, the other reaches anyone, and neither does both.
 
 One last thing worth saying plainly, because it changes how much
 the tag is worth: **`:tool_vouched` is a claim, not a measurement.**
@@ -692,14 +706,16 @@ a table keyed on tool name.
 Three things are deliberately absent, so you know where the map
 goes quiet:
 
-- **A soft verdict no shipped wiring reaches.** The destination
+- **No persona in the soft-by-vouched cell.** The destination
   axis exists and `web_search` declares it, so you can *see* the
   distinction on any map. But every persona holding `web_search`
-  also holds `fetch`, so `max` hardens the node and the
-  soft-by-vouched-destination cell never fires here. They hold it
-  for a reason you can watch: give a model snippets alone and it
-  loops, narrowing its query again and again to learn one fact.
-  The fix is a reader that makes no request — `web_search` built
+  also holds `fetch`, and that node is loud through `fetch`. They
+  hold it for a reason: given snippets alone, a model can loop,
+  narrowing its query again and again to learn one fact. One
+  shipped binary sits in the cell anyway: the secretary, the book's
+  last, whose search returns snippets only, and which lands there
+  when you turn its search confirm off. Another way in is a reader
+  that makes no request — `web_search` built
   with `page_text: true` brings each result's text back from the
   engine's index, and `web_read_cached` returns it by handle. Put
   that pair on an agent that also holds `read`, and the map drops
@@ -713,7 +729,7 @@ goes quiet:
   ```
 
   Swap `web_read_cached` for `web_scrape` and the same node is
-  loud. No bundled binary wires it yet, and no persona ships for
+  loud. No bundled binary wires that pair, and no persona ships for
   it: behind a sub-agent boundary the parent is soft either way,
   because delegation already weakens the untrusted leg. Naming an
   axis you can see is worth it; inventing a persona so a verdict

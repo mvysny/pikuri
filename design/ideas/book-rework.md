@@ -104,9 +104,11 @@ demo it teaches is [`secretary.md`](secretary.md)'s. A diff against `pikuri-brie
 7. **Step three: search, never fetch.** `egress_vouched`: a query can carry a secret out, but
    no attacker can read it back. Snippets only, so nothing else leaves. The confirm, honestly:
    it moves no verdict and stops no attacker; it's there because the model will put your mail
-   into a query unprompted, and the engine keeps it. The first shipped wiring to land in the
-   soft-by-vouched-destination cell. Whether snippets alone make it loop (the trifecta chapter
-   says models do; report what the secretary did).
+   into a query unprompted, and the engine keeps it. With `--no-search-confirm` it is the
+   soft-by-vouched-destination cell's one shipped wiring, and the map shows why it's still
+   soft beside compose: two tags, `[:egress_reviewed, :egress_vouched]`, since no one tool
+   both skips review and reaches the attacker. Whether snippets alone make it loop: one
+   query answered the tax question, no loop (the trifecta chapter says models can).
 8. **Step four: a corpus you didn't write.** `~/Documents` is `trusted: false` where briefing's
    notes were vouched for: downloads, statements, other people's files. What it reads (PDF,
    text, HTML, CSV) and what it can't (Office; book 2's extractors).
@@ -120,8 +122,7 @@ demo it teaches is [`secretary.md`](secretary.md)'s. A diff against `pikuri-brie
     machine itself (book 2's OS assistant), Office formats, fetch, sub-agents.
 12. **What's next:** the coda, Puri as this with the bells and whistles.
 
-Ripples: the trifecta chapter's "The edges" first bullet ("no shipped wiring reaches" the
-soft-by-vouched cell) becomes false and points here instead. The naming story (`rag_find` →
+The naming story (`rag_find` →
 `rag_search_keywords`, the per-word miss count) belongs to the designing-a-tool chapter, not
 this one.
 
@@ -130,13 +131,12 @@ this one.
 - *The map:* `soft`, with `untrusted_hard` and the node's egress `egress_reviewed`. Only
   the egress leg is weakened (`trusted: false` makes untrusted hard; private is binary), so
   the title's "each one weakened" is false.
-- *The search confirm moves the verdict.* `--no-search-confirm` boots `HARD`: the node's axes
-  are each a max, so search's `unreviewed` and compose's `attacker_reachable` combine
-  into a loud node though no one tool is both. The outline's step 7 ("moves no verdict"),
-  `secretary.md`'s "`:soft` either way", the binary's header, and the ripple about the
-  soft-by-vouched cell are all wrong as the detector stands. `Q_axis_max`: is per-axis
-  max right here, or should a node be loud only when one egress tool is both unreviewed
-  and attacker-reachable?
+- *The search confirm moved the verdict,* until the detector was fixed (2026-11-13,
+  `D_egress_axis_shape`): `--no-search-confirm` booted `HARD`, because the node maxed each
+  egress axis and search's `unreviewed` met compose's `attacker_reachable`. Loud now needs
+  one tool that is both, so it boots `soft`, tagged `[:egress_reviewed, :egress_vouched]`,
+  the soft-by-vouched cell's one shipped wiring. Step 7 can show both maps; the
+  trifecta chapter's edges already point here.
 - *Prompt fixes:* the dentist note is found (documents first); the sauna answer comes from
   the kept guide, labelled a shop's page, with no web search; the invoice is checked with
   the calculator. **The offered reminder recurs** ("Want me to add a reminder?") despite

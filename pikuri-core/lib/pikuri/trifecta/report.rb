@@ -52,10 +52,12 @@ module Pikuri
 
       # How dangerous *this node* is — the tree's verdict is {#tree_verdict}.
       #
-      # +:loud+ needs all three legs at full strength; +:soft+ is any complete
-      # trifecta whose untrusted or egress leg is attenuated; +:silent+ is a
-      # missing leg. Absence of a warning is not evidence of safety: this
-      # reasons about capability presence, not data flow.
+      # +:loud+ needs all three legs at full strength — hard untrusted, and one
+      # tool sending unreviewed bytes where the attacker can read them
+      # ({Pikuri::Tool::TrifectaLegs#egress_open}); +:soft+ is any other
+      # complete trifecta; +:silent+ is a missing leg. Absence of a warning is
+      # not evidence of safety: this reasons about capability presence, not
+      # data flow.
       #
       # @return [Symbol] +:silent+, +:soft+ or +:loud+
       # @raise [NoMatchingPatternError] if a lattice level exists that this grid
@@ -63,15 +65,11 @@ module Pikuri
       def verdict
         return :silent unless legs.private && legs.untrusted != :none && legs.egress?
 
-        case [legs.untrusted, legs.egress_payload_review, legs.egress_destination]
-        in [:hard,     :unreviewed,      :attacker_reachable] then :loud
-        in [:hard,     :unreviewed,      :tool_vouched]       then :soft
-        in [:hard,     :human_reviewed,  :attacker_reachable] then :soft
-        in [:hard,     :human_reviewed,  :tool_vouched]       then :soft
-        in [:weakened, :unreviewed,      :attacker_reachable] then :soft
-        in [:weakened, :unreviewed,      :tool_vouched]       then :soft
-        in [:weakened, :human_reviewed,  :attacker_reachable] then :soft
-        in [:weakened, :human_reviewed,  :tool_vouched]       then :soft
+        case [legs.untrusted, legs.egress_open]
+        in [:hard,     true]  then :loud
+        in [:hard,     false] then :soft
+        in [:weakened, true]  then :soft
+        in [:weakened, false] then :soft
         end
       end
 
@@ -204,24 +202,24 @@ module Pikuri
       # @param legs [Pikuri::Tool::TrifectaLegs]
       # @return [String]
       def advice(legs)
-        # A vouched destination is fragile in a way the other attenuations are
-        # not: it survives only while it is the *sole* egress leg, since the
-        # union hardens the whole node the moment one attacker-reachable tool
-        # joins it. Say so, rather than let the soft verdict read as settled.
-        if legs.egress_destination == :tool_vouched
-          return 'sever egress outright — bytes still leave, they merely reach a destination the ' \
-                 'attacker cannot read back, and one attacker-reachable tool re-hardens this node'
+        # An unreviewed leak to a vouched destination is fragile in a way the
+        # other attenuations are not: it is soft only while no tool beside it
+        # both skips review and reaches the attacker. Say so, rather than let
+        # the soft verdict read as settled.
+        if !legs.egress_open && (legs.egress_payload_review == :unreviewed || legs.egress_destination == :tool_vouched)
+          return 'sever egress outright — bytes still leave, they merely reach a destination the attacker ' \
+                 'cannot read back, and one unreviewed attacker-reachable tool re-hardens this node'
         end
 
-        case [legs.untrusted, legs.egress_payload_review]
-        in [:hard, :unreviewed]
+        case [legs.untrusted, legs.egress_open]
+        in [:hard, true]
           'sever egress (a network-off sandbox), or privilege-separate the step that reads untrusted content'
-        in [:hard, _]
+        in [:hard, false]
           'privilege-separate the step that reads untrusted content, or declare the workspace trusted ' \
             'if you vouch for every byte it can reach'
-        in [:weakened, :unreviewed]
+        in [:weakened, true]
           'sever egress — the untrusted leg is already attenuated by delegation'
-        in [:weakened, _]
+        in [:weakened, false]
           'both legs are already attenuated; narrow what counts as private, or drop a leg outright'
         end
       end
