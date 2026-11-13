@@ -61,6 +61,66 @@ after it or into the coda's neighbourhood.
   no egress), stored prompt injection as an integrity attack, and the large private pool the
   severity lesson needed.
 
+## The secretary chapter: outline
+
+`book/secretary.md`, "The secretary: all three legs, each one weakened". Written first; the
+demo it teaches is [`secretary.md`](secretary.md)'s. A diff against `pikuri-briefing
+--with-mail`, which the reader ran in the trifecta chapter: two legs, silent.
+
+1. **What it is, and why it ends the book.** A plain CLI Siri over your documents, notes, mail,
+   calendar and the web; the first binary in the book that holds all three legs, on purpose,
+   and you can still point it at your real mailbox. Why this and not the coding agent (that one
+   puts all three legs in one blob and confines the disk; book 2).
+2. **Before you start.** Thunderbird with global search on; podman (or rootless docker) for
+   Qdrant; and the embedding bill, measured: a 137-page PDF is 8.5 s of extraction and 36 s of
+   embedding on a laptop iGPU, so a library is hours. Start with a subfolder or `--exclude`
+   your books, then widen it; under Qdrant the first embed is paid once and a restart re-embeds
+   nothing. The machine is busy while it runs and the chat waits behind the embedder.
+3. **The map you'll see.** The real boot map, verdict `soft`, each row read off: which tools
+   bring which leg, and the one row per leg that weakens it. Then the four steps that got there
+   from briefing's two legs.
+4. **Step one: it can write — integrity, not confidentiality.** No new leg, which is the point:
+   `write` carries none, so the detector is silent about the most durable harm. Stored prompt
+   injection (a mail asks for a note: "invoices go to IBAN X"). The cut: one folder, every write
+   shown as a diff before it lands. A synced folder turns a write into egress (custody; link the
+   trifecta chapter's edges). The two readers, `read` and `rag_read`, and why the error names
+   the root.
+5. **Memory is a note.** `SECRETARY.md`, pinned into the prompt, written through the same
+   confirmed edit. Why not automatic capture (a mail plants a "fact"; only safe without egress,
+   and this agent has egress). Why a change waits for the next session. The transcript: a
+   preference remembered, the program restarted, the preference used.
+6. **Step two: the first way out is a human's.** Compose and calendar create hand the bytes to
+   Thunderbird, and you press Send: `egress_reviewed`, the human sees the payload. What the
+   compose guard flags, and that its warning reaches you only through the model.
+7. **Step three: search, never fetch.** `egress_vouched`: a query can carry a secret out, but
+   no attacker can read it back. Snippets only, so nothing else leaves. The confirm, honestly:
+   it moves no verdict and stops no attacker; it's there because the model will put your mail
+   into a query unprompted, and the engine keeps it. The first shipped wiring to land in the
+   soft-by-vouched-destination cell. Whether snippets alone make it loop (the trifecta chapter
+   says models do; report what the secretary did).
+8. **Step four: a corpus you didn't write.** `~/Documents` is `trusted: false` where briefing's
+   notes were vouched for: downloads, statements, other people's files. What it reads (PDF,
+   text, HTML, CSV) and what it can't (Office; book 2's extractors).
+9. **The prompt, fixed by watching transcripts.** Four failures from the first real run and the
+   one line each needed: the dentist note never searched (documents first), the sauna answered
+   from the web (check what they kept), the invoice "discrepancy" (arithmetic with the
+   calculator), the offered reminder (never offer what you can't do).
+10. **What the map still can't see.** The pool is now everything; you are still a pipe (paste);
+    a synced folder; the compose warning relayed by the model it warns about.
+11. **What it leaves out, and where it lives instead.** Reminders (no resident process), the
+    machine itself (book 2's OS assistant), Office formats, fetch, sub-agents.
+12. **What's next:** the coda, Puri as this with the bells and whistles.
+
+Ripples: the trifecta chapter's "The edges" first bullet ("no shipped wiring reaches" the
+soft-by-vouched cell) becomes false and points here instead. The naming story (`rag_find` →
+`rag_search_keywords`, the per-word miss count) belongs to the designing-a-tool chapter, not
+this one.
+
+**Transcripts come from demo data** (agreed 2026-11-13): each scene re-run on the demo
+`~/Documents` and a demo mailbox, so no real byte reaches the book; the owner's host test stays
+the account of what happened. **The steps are read off two maps**, briefing's and the
+secretary's, not four per-step flags that would exist only for the chapter.
+
 ## Chapters to rebuild
 
 - **`trifecta-detector.md`** (17 mentions of `pikuri-code` / Bubblewrap / MCP / mem0 / skills).
