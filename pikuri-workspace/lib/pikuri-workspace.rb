@@ -13,7 +13,10 @@ require 'pikuri-core'
 # Zeitwerk infers +Pikuri+ from pikuri-core and auto-vivifies
 # +Pikuri::Workspace+ as a module from the +pikuri/workspace/+
 # directory, so individual files like +lib/pikuri/workspace/read.rb+
-# autoload as +Pikuri::Workspace::Read+.
+# autoload as +Pikuri::Workspace::Read+. Its +prompts/+ joins
+# +Pikuri::PROMPT_DIRS+ for +bin/pikuri-files+'s prompt.
+Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
+
 module Pikuri
   module Workspace
     LOADER = Zeitwerk::Loader.new

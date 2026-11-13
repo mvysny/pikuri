@@ -13,9 +13,15 @@ Self-contained "operate on a directory tree" toolkit:
   (stdin/stdout). `Terminal` is written for pikuri's own single-threaded
   demo scripts — a real app implements this seam itself and reads
   `Terminal` as the worked example.
-- Five file tools: `Pikuri::Workspace::Read`,
+- Six file tools: `Pikuri::Workspace::Read`,
   `Pikuri::Workspace::Write`, `Pikuri::Workspace::Edit`,
-  `Pikuri::Workspace::Grep`, `Pikuri::Workspace::Glob`.
+  `Pikuri::Workspace::Search::Grep`, `Pikuri::Workspace::Search::Glob`,
+  `Pikuri::Workspace::FileList`, wired together by
+  `Pikuri::Workspace::Extension`.
+
+Demo binary: `bin/pikuri-files`, an agent working in one folder that
+shows you every change as a diff before it lands. Walk-through: the
+[touching-files chapter](../book/touching-files.md).
 
 No shell execution — `Pikuri::Code::Bash` ships in
 [`pikuri-code`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-code/README.md) on top of these.

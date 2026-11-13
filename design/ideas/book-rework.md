@@ -62,8 +62,8 @@ chapters). Some are legitimate links to book 2.
    the kit, the decision procedure and the five attacks are book-1 ones (scraped page, a
    downloaded file, a search query, stored injection, a phishing reply); code you didn't write
    is one line pointing at book 2.
-4. **The two new chapters**, below. Designing a tool is written (2026-11-13,
-   `book/designing-a-tool.md`); touching files is next.
+4. ~~**The two new chapters**~~ Both written 2026-11-13: `book/designing-a-tool.md` and
+   `book/touching-files.md`.
 5. **The sweep**, below.
 
 ## New chapters
@@ -80,13 +80,11 @@ chapters). Some are legitimate links to book 2.
   legs on a tool that holds none. The naming story (`rag_find` → `rag_search_keywords`, the
   per-word miss count) belongs here too. What went to book 2 with `tasks.md` is the
   stateful-tool half: id-addressed changes, status in the verb's name, per-agent state.
-- **Touching files: the workspace and the confirmer.** `os-assistant.md` and `code.md` used to
-  introduce `Workspace`, the file tools and `Confirmer`, and both left. Book 1 still leans on
-  them: sub-agents confirm their task prompts, the secretary confirms every write and search, and
-  the security chapter's "does the human see the bytes" test is about confirmers. It goes before
-  sub-agents, since their task prompt and `FILE_MINER` use it. `Q_files_demo`: which demo? An
-  agent rooted in a folder with read, write and edit, every write confirmed. Lean: a
-  `--workspace DIR` flag on `pikuri-chat`, not a new binary.
+- ~~**Touching files: the workspace and the confirmer.**~~ Written 2026-11-13. Its demo is a new
+  `pikuri-workspace/bin/pikuri-files`, not a flag on `pikuri-chat`, which stays the book's
+  simplest program (owner, 2026-11-13). Seen in its transcript: a model passing `~/.bashrc` gets
+  *not found* (relative to the folder) rather than *outside the workspace*, since `~` isn't
+  expanded; `Q_tilde`: should the workspace expand a leading `~/` so the refusal names itself?
 
 ## The sweep
 

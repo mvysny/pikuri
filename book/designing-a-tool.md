@@ -355,9 +355,9 @@ A calculator is the easy case: one argument, one answer, no memory.
 A tool that *changes* something adds questions this one never
 faces — how the model refers to the thing it changed, how a change
 is shown to you before it lands. Stateful tools, a task list above
-all, are [book 2's](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md);
-book 1's next tool that changes something is a file, behind a human
-who approves the diff. [Sub-agents](subagents.md) then hand a whole
-job to another agent with tools of its own.
+all, are [book 2's](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md).
+Book 1's tools that change something change files, and
+[Touching files](touching-files.md) is about where they can reach
+and what you see before a change lands.
 
-→ Continue to [Sub-agents](subagents.md).
+→ Continue to [Touching files](touching-files.md).

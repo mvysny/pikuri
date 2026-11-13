@@ -64,6 +64,13 @@ Until the rework lands, a few chapters here still point there.
   the model; naming a tool by what makes it different; the status
   line the tool owns; and declaring trifecta legs on a tool that
   holds none. Every rule traced to the transcript that settled it.
+- **[Touching files: the workspace and the confirmer](touching-files.md).**
+  Tools that change things on your disk, and the two pieces that keep
+  that in bounds: the *workspace*, one folder the file tools can't see
+  out of, and the *confirmer*, which shows you every change as a diff
+  before it lands. Read before edit, approve / reject / redirect, why a
+  diff and not a question, and how much to confirm. Demo via
+  `pikuri-files`.
 - **[Sub-agents](subagents.md).** One new concept on top of
   the last chapter: delegation. The `Persona` record, the
   `SubAgent::Extension`, the configure/bind dance. Demo via

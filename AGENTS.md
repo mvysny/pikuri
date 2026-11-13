@@ -73,7 +73,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, the bundled `calculator`, `bin/pikuri-chat`.
 - `pikuri-pdf` — in-process pure-Ruby PDF → text for the registry. The docker-free PDF arm; pikuri-workshop's pikuri-extractors is the other.
 - `pikuri-web` — the tools that reach the internet: `web_search` and its engines, `web_scrape`, `fetch`, `web_read_cached`, the URL caches, and the HTML extractor it registers on require.
-- `pikuri-workspace` — `Filesystem` / `Confirmer` seams, the file tools, the `ReadOnly` gate. Rules: `pikuri-workspace/AGENTS.md`
+- `pikuri-workspace` — `Filesystem` / `Confirmer` seams, the file tools, the `ReadOnly` gate, `bin/pikuri-files`. Rules: `pikuri-workspace/AGENTS.md`
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: read-only inbound tools, human-gated outbound hand-offs. Rules: `pikuri-thunderbird/AGENTS.md`
 - `pikuri-subagents` — the `agent` tool, the `Persona` record, the bundled personas, `bin/pikuri-minions`. Rules: `pikuri-subagents/AGENTS.md`
 - `pikuri-vectordb` — the retrieval *primitive*: topical vector search over a local corpus + `bin/pikuri-corpus`.

@@ -1,0 +1,121 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev / demo entry point — runs from a source checkout only; no gem installs
+# it.
+#
+# An agent that works in one folder: it lists, searches, reads, edits and
+# writes the files there, and nothing outside it resolves. Every change is
+# shown to you as a diff before it lands, and you approve, edit or decline
+# it. There is no network tool, so nothing the model reads can leave the
+# machine. Walk-through: the touching-files chapter of the book.
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+
+require 'bundler/setup'
+require 'optparse'
+require 'yaml'
+require 'reline' # line editing + history for the interactive prompt
+
+require 'pikuri-core'
+require 'pikuri-workspace'
+
+# Example-only config shared by every demo; see pikuri-chat for the why.
+examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
+examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
+
+server  = examples_config['llm_server'] || 'http://localhost:8080'
+model   = examples_config['llm_model'] || 'ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'
+folder  = Dir.pwd
+private = false
+
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-files [options] [initial message...]'
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('--dir DIR', 'The folder the agent works in (default: the current directory)') { |v| folder = v }
+  opts.on('--private', 'Declare the folder as holding sensitive data (adds the private leg to the printed map)') do
+    private = true
+  end
+  opts.on('-h', '--help', 'Print this help and exit') do
+    puts opts
+    exit
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn e.message
+  warn parser
+  exit 2
+end
+
+begin
+  filesystem = Pikuri::Workspace::Filesystem.new(project_root: File.expand_path(folder), private: private)
+rescue Errno::ENOENT, Pikuri::Workspace::Filesystem::Error => e
+  abort "Can't work in #{folder}: #{e.message}"
+end
+
+system_prompt = Pikuri.prompts(:'pikuri-files', :'agent-loop')
+system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
+
+def run_turn(agent, message)
+  prev_trap = trap('INT') { agent.cancellable&.cancel! }
+  agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener; nothing else to do.
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
+end
+
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(
+    server: server,
+    model: model,
+    api_key: examples_config.fetch('llm_api_key', 'not-needed')
+  ),
+  system_prompt: system_prompt,
+  cancellable: Pikuri::Agent::Control::Cancellable.new
+) do |c|
+  c.add_listener Pikuri::Agent::Listener::Terminal.new
+  c.add_listener Pikuri::Agent::Listener::TokenLog.new
+  # The six file tools, sharing one workspace so `edit` can tell which files
+  # the model has read. confirm_all_writes: every write and edit asks first,
+  # with a diff, not only the ones that overwrite.
+  c.add_extension Pikuri::Workspace::Extension.new(
+    filesystem: filesystem,
+    confirmer: Pikuri::Workspace::Confirmer::Terminal.new,
+    confirm_all_writes: true
+  )
+end
+
+begin
+  # The trifecta map, printed unconditionally: half the lesson.
+  puts agent.trifecta.render
+  puts
+  puts "Pikuri Files: working in #{filesystem.project_root}. Every change is shown to you first."
+  puts 'Press Ctrl+C or Ctrl+D to quit.'
+
+  run_turn(agent, ARGV.join(' ')) unless ARGV.empty?
+
+  loop do
+    line = Reline.readline('> ', true)
+    break if line.nil? # Ctrl+D / EOF on empty line
+
+    message = line.chomp
+    next if message.strip.empty?
+
+    run_turn(agent, message)
+  end
+rescue Interrupt
+  # Ctrl+C — fall through to clean exit
+ensure
+  agent.close
+end
+
+puts
+puts 'Goodbye'

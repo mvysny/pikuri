@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `pikuri-workspace/bin/pikuri-files`, a demo agent working in one folder with the six file tools, every change shown as a diff before it lands; walk-through in `book/touching-files.md`.
 - **Breaking:** every demo binary's default model is now `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`, the same size as the Qwen3.6-35B-A3B it replaces and newer; an `llm_model:` line in `~/.pikuri-examples-config.yaml` still overrides it.
 - Fix `bin/pikuri-minions` crashing at boot on the removed `Pikuri::Tool::WEB_SEARCH`; it builds its search tool from the config, as `pikuri-chat` does.
 - Fix the trifecta detector grading a node loud when one egress tool skipped review and another reached the attacker: loud now needs one tool that is both (`Pikuri::Tool::TrifectaLegs#egress_open`), and such a node's map shows both shapes, `[:egress_reviewed, :egress_vouched]` (`D_egress_axis_shape`).
