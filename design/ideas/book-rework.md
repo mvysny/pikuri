@@ -1,15 +1,16 @@
 # Book 1 rework: one track that ends on the secretary
 
-Status: **shape agreed; the secretary chapter outlined, no prose yet. Paused 2026-11-13** on
-mail transcripts: they need a demo Thunderbird profile, see
-[`thunderbird-testbed.md`](thunderbird-testbed.md). The workshop split (2026-11-12) took the
+Status: **shape agreed; the secretary chapter outlined, no prose yet.** Its transcripts run on
+the Thunderbird testbed, `dev/thunderbird-testbed/` (`D_thunderbird_testbed`), built
+2026-11-13. The workshop split (2026-11-12) took the
 chapters about running code you didn't write to book 2; book 1 now ends on
 [the secretary](secretary.md), and several chapters still lean on what moved out.
 
-**To pick up:** settle the testbed; build the demo mailbox (and put the demo `~/Documents` in the
-repo beside it); capture the outline's scenes on demo data only — the non-mail ones (boot map,
-notes, memory, the search confirm, the four prompt fixes, briefing's map for comparison) can
-be captured on the VM today; then write `book/secretary.md` from the outline below.
+**To pick up:** capture the outline's scenes on the testbed only (`dev/thunderbird-testbed/build`
+on the dev VM builds the demo mailbox and `~/Documents`); then write `book/secretary.md` from the
+outline below. The compose guard's novelty scene waits on
+[`compose-guard-sent-only.md`](compose-guard-sent-only.md): today a reply to a new sender isn't
+warned.
 
 ## Approach
 

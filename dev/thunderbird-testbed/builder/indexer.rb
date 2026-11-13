@@ -54,13 +54,6 @@ module Pikuri
         })().then(resolve, (e) => resolve({ error: String(e) }));
       JS
 
-      # Asks Thunderbird to quit once the reply is on its way. A clean quit
-      # checkpoints the WAL databases.
-      QUIT_JS = <<~JS
-        const resolve = arguments[arguments.length - 1];
-        resolve(true);
-        Services.tm.dispatchToMainThread(() => Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit));
-      JS
 
       # Gloda keeps a row per referenced-but-absent message too (a "ghost",
       # +folderID+ null), so only real ones count.
@@ -86,47 +79,20 @@ module Pikuri
       # @raise [RuntimeError] when the index stalls or a count is off.
       def run!
         started = Time.now
-        @pid = launch
-        marionette = Marionette.connect(port: active_port)
-        folders = marionette.execute_async(REPARSE_JS, timeout: 120)
+        session = Session.start(profile_dir: @profile_dir, log: @log)
+        folders = session.execute(REPARSE_JS, timeout: 120)
         raise "reparse failed: #{folders['error']}" if folders.is_a?(Hash)
 
         wait_for_messages
         elapsed = Time.now - started
-        marionette.execute_async(QUIT_JS)
-        marionette.close
-        wait_for_exit
+        session.quit
         verify_closed_stores
         elapsed
       ensure
-        kill_leftover
+        session&.kill
       end
 
       private
-
-      # @return [Integer] pid of the +thunderbird+ launcher.
-      def launch
-        File.delete(port_file) if File.exist?(port_file)
-        env = { 'MOZ_REMOTE_ALLOW_SYSTEM_ACCESS' => '1', 'MOZ_CRASHREPORTER_DISABLE' => '1' }
-        Process.spawn(env, 'thunderbird', '--headless', '--marionette', '--no-remote',
-                      '-profile', @profile_dir,
-                      in: File::NULL, out: @log, err: %i[child out], pgroup: true)
-      end
-
-      # @return [String] where Marionette writes the port it picked.
-      def port_file = File.join(@profile_dir, 'MarionetteActivePort')
-
-      # @return [Integer] the port Marionette listens on.
-      def active_port
-        deadline = Time.now + 60
-        until File.size?(port_file)
-          raise "Thunderbird wrote no #{port_file} in 60s; see #{@log}" if Time.now > deadline
-          raise "Thunderbird exited early; see #{@log}" if exited?
-
-          sleep 0.25
-        end
-        Integer(File.read(port_file).strip)
-      end
 
       # Counts a copy of the Gloda DB until it holds every message.
       #
@@ -172,25 +138,6 @@ module Pikuri
         nil
       end
 
-      # @return [void]
-      def wait_for_exit
-        deadline = Time.now + 30
-        sleep 0.25 until exited? || Time.now > deadline
-        raise "Thunderbird didn't quit in 30s; see #{@log}" unless exited?
-      end
-
-      # @return [Boolean]
-      def exited?
-        return true if @pid.nil?
-        return false unless Process.wait(@pid, Process::WNOHANG)
-
-        @pid = nil
-        true
-      rescue Errno::ECHILD
-        @pid = nil
-        true
-      end
-
       # After the clean quit both stores are checkpointed and closed.
       #
       # @return [void]
@@ -200,17 +147,6 @@ module Pikuri
 
         events = count_copy(File.join(@profile_dir, 'calendar-data', 'cache.sqlite'), EVENTS_SQL)
         raise "after quit the calendar holds #{events.inspect} events, expected #{@events}" unless events == @events
-      end
-
-      # @return [void]
-      def kill_leftover
-        return if exited?
-
-        Process.kill('TERM', -@pid)
-        sleep 1
-        Process.kill('KILL', -@pid) unless exited?
-      rescue Errno::ESRCH
-        nil
       end
     end
   end

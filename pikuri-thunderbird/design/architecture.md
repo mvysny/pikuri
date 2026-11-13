@@ -269,9 +269,10 @@ is the shared evidence base, and the ground truth a v2 builder will need.
 
 Caveat: all of this is one real install (snap; Gmail + iCloud IMAP; CalDAV
 calendars); the attachment facts were re-probed on it at Thunderbird 157
-(2026-10), against the Gmail account. The code is otherwise tested only against synthetic fixtures built
-to this schema — a first run against a real profile is still the true smoke
-test.
+(2026-10), against the Gmail account. The specs run against synthetic fixtures
+built to this schema; the testbed (§ below) adds a profile a real Thunderbird
+159 built — but a POP3 one, so the `ImapMail/` path and on-demand IMAP
+attachments are still checked only on that one install.
 
 ### Profile & install roots
 
@@ -283,7 +284,16 @@ test.
   **apt** `~/.thunderbird/` (recalled). Flatpak
   (`~/.var/app/org.mozilla.Thunderbird/…`) is out of scope.
 - `.parentlock` at the profile root is Thunderbird's running-instance lock — a
-  cheap "is TB open?" probe.
+  cheap "is TB open?" probe. The `lock` symlink beside it (`lock ->
+  <ip>:+<pid>`) **outlives a clean exit**, so its presence proves nothing.
+- `thunderbird -profile <dir>` runs on any directory and neither creates nor
+  touches `profiles.ini`.
+- **The snap launcher links its root to an existing `~/.thunderbird`.** Started
+  while `~/.thunderbird` existed and the snap root didn't, snap 159 created
+  `~/snap/thunderbird/common/.thunderbird -> ~/.thunderbird`. For a user
+  migrated from the deb, both roots are then one directory, and § Discovery's
+  two-roots check raises on what is one profile — a bug, owned by
+  `design/ideas/thunderbird-roots-symlink.md` in the repo root.
 
 ### Mail: the Gloda index (`global-messages-db.sqlite`) — the v1 source
 
@@ -308,7 +318,22 @@ A complete, pre-decoded search index. Tables that matter:
   *decoded* `c3author` / `c4recipients` columns instead (name + address
   together, with a natural per-message frequency). `identities(kind, value)` —
   where `kind='email'`, `value` the bare address — *is* used, by
-  {Gloda::Contacts#domains_seen} for the recipient-novelty warn.
+  {Gloda::Contacts#domains_seen} for the recipient-novelty warn. It holds
+  **every author too**, so a domain that only ever wrote *to* the user counts as
+  seen the moment its mail is indexed — an attacker earns "seen" by writing
+  first (shown on the testbed, 2026-11-13; the fix is
+  `design/ideas/compose-guard-sent-only.md` in the repo root).
+- **A literal `undefined` in the author/recipient text.** Thunderbird 159
+  writes `Mira Koskinen <mira@lumo-studio.example> undefined` into
+  `c3author` / `c4recipients` for every address but the owner's own as
+  author (the owner as a recipient gets it too), probably an address-book
+  field for a contact that isn't in the address book. The readers pass it on
+  today; stripping it is `design/ideas/gloda-undefined-author.md`.
+- **The FTS subject drops `Re:`** — a reply's `c1subject` is the bare subject,
+  so a search by subject can't tell a thread's replies from its opener.
+- A `messages` row with a null `folderID` is a **ghost**: Gloda's placeholder
+  for a message a thread references but the store doesn't hold. Counting real
+  messages means `WHERE folderID IS NOT NULL`.
 - **`attributeDefinitions` / `messageAttributes`** — extensible per-message
   attributes; ids seen: 57 `tag`, 58 `star`, 59 `read`, 60 `repliedTo`,
   61 `forwarded`. (Relevant to churn — see the change counter below.) Ids are
@@ -426,7 +451,9 @@ calendar tools register regardless and self-explain the empty state.
   (cross-zone events). Valid forms, all meaningful: Olson names
   (`Europe/Helsinki` dominant), literal **`floating`** (wall-clock; every
   all-day event uses it), **`UTC`**, rare fixed-offset **`GMT+0300`**. Default
-  defensively even though no null was observed.
+  defensively even though no null was observed. An imported `DTSTART` without
+  a `TZID` is stored `floating`; an Olson `TZID` with no `VTIMEZONE` block is
+  resolved by name (Thunderbird 159).
 - `flags` = calStorageCalendar's `CAL_ITEM_FLAG` bitfield (verify against
   comm-central at v2 impl): 2=attendees, 4=properties, **8=all-day**,
   16=recurrence, 32=exceptions, 64=attachments, 128=relations, 256=alarms,
@@ -455,12 +482,14 @@ Thunderbird opens its DBs with `locking_mode=EXCLUSIVE`, so a plain
 `-readonly` open fails *"database is locked (5)"* while it runs — **even for
 WAL stores** (the calendar DBs are WAL, and WAL readers are still shut out).
 `immutable=1` is the universal lock-bypass; for a WAL store it reads
-as-of-last-checkpoint (Thunderbird checkpoints aggressively — right after the
-62 MB sync the `-wal` held ~1 MB and `immutable=1` saw all 5414 events). This
-is why {Pikuri::Thunderbird::DatabaseSnapshot} works against a *copy*, not the live
-file. (WAL caveat for calendar freshness: a WAL DB's change counter bumps only
-on checkpoint, so calendar staleness should eventually pair the counter with
-`-wal` size+mtime — deferred; v1 uses the counter.)
+as-of-last-checkpoint. Right after the 62 MB sync the `-wal` held ~1 MB and
+`immutable=1` saw all 5414 events — but that is a busy DB. **A handful of new
+rows stays in the `-wal` until Thunderbird quits** (testbed, Thunderbird 159: an
+event added live sat in a 2.3 MB `-wal`, invisible to `Calendar#search`, and
+appeared after the clean quit's checkpoint). This is why
+{Pikuri::Thunderbird::DatabaseSnapshot} works against a *copy*, not the live
+file; that it copies only the main file is a bug, owned by
+`design/ideas/thunderbird-wal-snapshot.md` in the repo root.
 
 ### Platform confinement (snap `home` interface)
 
@@ -508,6 +537,11 @@ can't be shared on snap.
 Both are the human-gated hand-off shape the no-send seam requires: pikuri
 opens a window, the human reviews and commits.
 
+Re-confirmed on Thunderbird 159 under Xvfb (testbed, 2026-11-13):
+{Pikuri::Thunderbird::Launcher}'s `setsid --fork thunderbird mailto:…` remoted into the running instance and
+opened a compose window with From, To, Subject and the multi-line body intact;
+an `.ics` path opened the import wizard. No second instance started.
+
 ### Files never touched
 
 The guarantee is an **allowlist, not a blocklist**: the backends open only
@@ -527,3 +561,80 @@ Firefox/Thunderbird profile layout, not probe-confirmed and not exhaustive**
 (verify against a real profile if it ever matters — but it doesn't, given the
 allowlist). Browser/telemetry cruft (`places.sqlite`, `cookies.sqlite`,
 `favicons.sqlite`, `storage/`, `datareporting/`, …) is likewise untouched.
+
+## The testbed: a real Thunderbird with no real mail (dev only)
+
+`dev/thunderbird-testbed/` (in the repo root) builds the profile this gem is tested against on
+the dev VM, and drives a running Thunderbird for live tests. Why it exists and why it is shaped
+so: `D_thunderbird_testbed`. The scripts' headers say how to run them; this is the picture
+across them.
+
+**We write the inputs, Thunderbird writes its stores.** The builder writes only what
+Thunderbird reads as input — `user.js`, mbox files, an `.ics` — and a real headless Thunderbird
+builds `prefs.js`, the `.msf` summaries, Gloda and `calendar-data/cache.sqlite` from them. The
+account is a POP3 one that never connects (`alex@novak.example`), not Local Folders: Local
+Folders has no identity, so Gloda would have no "me", no Sent folder and no correspondence
+graph. Every domain is RFC 2606-reserved, so a Send clicked by mistake fails.
+
+**The demo world** is one facts file (`facts.yml`) that the scene mail (`mail.yml`), the
+calendar and the demo `~/Documents` (`documents/`) all read, every date an offset from the build
+day; seeded noise (`builder/noise.rb`) gives search something to rank past. `mail.yml`'s comments
+say which scene each message serves.
+
+**Driving Thunderbird: Marionette.** Release Thunderbird ships Marionette, Mozilla's remote
+protocol, and in *chrome context* — Mozilla's word for the application's own privileged JS — a
+script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
+
+- It needs `--marionette` and the env var `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`; on 159 the
+  `--remote-allow-system-access` flag alone isn't enough. `marionette.port = 0` makes it pick a
+  free port and write it to `<profile>/MarionetteActivePort`.
+- The wire is length-prefixed JSON over TCP (`len:[0, id, "Name", {params}]`, reply
+  `len:[1, id, error, result]`); `builder/marionette.rb` is the whole client. One WebDriver
+  session at a time, so a client must `DeleteSession` before the next can connect.
+- **A dropped mbox is never picked up on its own:** with mail checks off nothing opens a
+  folder, so no `.msf` appears and Gloda's sweep skips it (four minutes, zero rows). The index
+  step reparses each folder (`getDatabaseWithReparse`, which throws
+  `NS_ERROR_NOT_INITIALIZED` to mean "reparse started") and then queues it
+  (`GlodaMsgIndexer.indexFolder(folder, {force: true})`); `indexFolder` alone indexes
+  nothing. Done is detected by count, not by Gloda's internals: the builder knows it wrote N
+  messages and counts a copy of the Gloda DB until it holds N.
+- A clean quit is a script that resolves and then dispatches
+  `Services.startup.quit(eAttemptQuit)`: about two seconds, the WAL stores checkpointed, and
+  open compose windows discarded without a prompt.
+- A process starts as `thunderbird` and renames itself `thunderbird-bin` once the launcher
+  execs the real binary; a lookup checks both names (`pgrep -x` matches the 15-character name).
+  Never `pkill -f thunderbird`: it matches the agent's own shell, whose command line holds the
+  word.
+- `MOZ_CRASHREPORTER_DISABLE=1`, or the crash helper creates `~/Downloads/thunderbird.tmp/`.
+
+**Hand-offs on a headless machine.** A session started with `--display` runs on its own Xvfb
+and accepts remote commands, so `DISPLAY=:N` on the agent's side makes a real hand-off land in
+it (§ Hand-off mechanics). `js/compose-windows.js` reads the open compose windows back as
+Thunderbird parsed them; `session screenshot` grabs the screen (`ffmpeg -f x11grab`). There is
+no window manager, so windows stack; clicking goes through Marionette, not the screen.
+
+**A quiet first run.** `user.js` carries the network prefs from Marionette's own
+`RecommendedPreferences.sys.mjs` (inside Thunderbird's `omni.ja`, under
+`chrome/remote/content/shared/`), among them `services.settings.server =
+"data:,#remote-settings-dummy/v1"`, which stops the remote-settings fetch a plain first run
+makes. `strace` can't follow into a snap without root (snap-confine is setuid), so the check is
+Mozilla's logging: `MOZ_LOG="nsHostResolver:5,nsSocketTransport:5,nsHttp:3"
+MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log dev/thunderbird-testbed/build --rebuild` showed no
+DNS lookup and no HTTP channel, only Marionette's loopback socket (2026-11-13, 159). Re-run it
+after a Thunderbird upgrade; a fetch on a later timer would slip past a build that lasts seconds.
+
+**Byte-stable inputs, so the cache hits.** The indexed profile is tarred under
+`Paths.cache/thunderbird-testbed/`, keyed by Thunderbird's version and a digest of every input.
+That needs inputs that repeat: the `mail` gem's random multipart boundaries are replaced by ones
+derived from the Message-ID, zips get fixed times, and LibreOffice output (which stamps a fresh
+date and ID into every PDF) is cached by source digest. Measured on 159: 183 messages index in
+~7 s, a build takes 10 s, a cached one 2 s.
+
+**The guard.** Every demo directory carries a `.pikuri-demo` marker. The build refuses while
+either root holds an unmarked profile, while `~/Documents` is non-empty and unmarked, or while
+Thunderbird runs; it never deletes anything unmarked and never stops a Thunderbird it didn't
+start.
+
+**Not covered:** IMAP. The account is POP3, so `MessageStore`'s `ImapMail/` path (where
+`messageKey` is the UID) and attachments IMAP fetches on demand are untested here; a second
+account against a local dovecot is `design/ideas/thunderbird-testbed-imap.md`.

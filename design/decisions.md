@@ -21,6 +21,40 @@ what it already says.
 
 ---
 
+## D_thunderbird_testbed — How do we test the Thunderbird tools without anyone's real mail?
+
+**Context.** The mail and calendar tools read stores only a running Thunderbird builds: the
+Gloda index, the mbox files, the calendar's SQLite. Until 2026-11-13 the only populated profile
+on the dev VM was the owner's real one, and testing the secretary against it put real mail into
+session logs and transcripts — a medical appointment reminder among them. That profile was
+deleted from the VM the same day.
+
+**Decision.** A dev-only testbed, `dev/thunderbird-testbed/`, on a machine with no Thunderbird
+data of its own. We write only Thunderbird's *inputs* (`user.js`, mbox, `.ics`), and a real
+headless Thunderbird builds its own stores from them, so pikuri is tested against what
+Thunderbird really writes. The demo profile is Thunderbird's only, default profile, so
+auto-discovery and the hand-offs run for real. It serves whoever develops pikuri — capturing the
+book's transcripts, agents testing the tools — and nobody else: a reader runs pikuri on their own
+mail. How it works: `pikuri-thunderbird/design/architecture.md` § The testbed.
+
+**Alternatives rejected.**
+
+- **Synthesize the stores ourselves.** It would test pikuri against pikuri's own reading of the
+  schema. The first Thunderbird-built profile showed what fixtures hide: a literal `undefined`
+  in Gloda's author text, `Re:` dropped from subjects, ghost rows, inbound-only senders counted as
+  correspondents. The specs keep their small fixtures for unit tests.
+- **A hand-built profile copied around.** Not reproducible, and it drifts. Its good half, a
+  ready profile in seconds, is the build's own cached tarball.
+- **A demo beside a real profile (`--dir`).** Built and dropped the same day. The testbed has no
+  user with a real profile, and its hand-offs would open in the real Thunderbird, because
+  `Launcher` runs plain `thunderbird <arg>`.
+- **A demo mailbox for the book's readers.** Their transcripts wouldn't match ours anyway (the
+  model doesn't answer twice the same), a reader can stage the injection by mailing themselves,
+  and "rehearse on fake mail first" undercuts the chapter's case that real mail is safe here.
+- **A stub `thunderbird` that logs what a hand-off would open.** Reading the compose window
+  back from a real Thunderbird over Marionette tests what Thunderbird parsed, not what pikuri
+  meant to send.
+
 ## D_no_metagem — Why is there no `gem install pikuri` that brings in every gem?
 
 **Context.** Until 2026-11 the `pikuri` metagem depended on every sibling, and

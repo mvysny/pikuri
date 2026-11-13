@@ -68,9 +68,19 @@ module Pikuri
         result['value']
       end
 
+      # Ends the WebDriver session and disconnects. Marionette serves one
+      # session at a time, so the next client can connect only after this.
+      #
       # @return [void]
       def close
-        @socket.close unless @socket.closed?
+        return if @socket.closed?
+
+        begin
+          command('WebDriver:DeleteSession', {})
+        rescue Error, IOError, SystemCallError
+          nil # Thunderbird may already be quitting
+        end
+        @socket.close
       end
 
       private
