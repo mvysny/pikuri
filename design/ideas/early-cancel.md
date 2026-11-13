@@ -88,12 +88,13 @@ between `run_loop` returning and the host going idle) is ignored, and the next r
 
 ## Open: an API a host can't get wrong
 
-Fix 1's weak spot is that a host has to remember the reset, and in the right place. To
-brainstorm next.
+Fix 1's weak spot is that a host has to remember the reset, and in the right place. A turn
+number or a `Turn` handle only trades the reset for remembering something else. The direction
+taken: the agent owns its turn queue, so the turn boundary and the reset move into pikuri —
+`agent-runner.md`.
 
 ## Done when
 
-- The open question is settled (or dropped) and the implementation committed in pikuri,
-  pikuri-workshop, pikuri-tui, pikuri-web and Puri.
+- `agent-runner.md` lands, which removes the host resets.
 - The lasting nuggets move out: the "only the host knows the turn boundary" rule and the
   turned-down alternatives into a `D_` entry, then this file is deleted.
