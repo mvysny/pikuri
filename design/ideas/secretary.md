@@ -8,7 +8,7 @@ the right source. **Passed the owner's host test 2026-11-13** on real mail and d
 into Thunderbird's compose window, an event handed to Thunderbird's import, a memory written,
 a note edited, and the memory used after a restart. **Its chapter, `book/secretary.md`, is
 written** (2026-11-13), from transcripts captured on the Thunderbird testbed,
-`dev/thunderbird-testbed/` (`D_thunderbird_testbed`). What's left here is the open questions
+`pikuri-thunderbird/dev/testbed/` with `dev/demo-home/` (`D_thunderbird_testbed`). What's left here is the open questions
 below; [`book-rework.md`](book-rework.md) owns the book, this file owns the demo.
 
 ## What it is

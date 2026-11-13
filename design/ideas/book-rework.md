@@ -21,7 +21,7 @@ ones.
 and one trifecta shape. (`Q_running_example` if this is ever reopened.)
 
 **Transcripts come from demo data** (agreed 2026-11-13), never a real mailbox or folder. A
-scene runs on the testbed only: `dev/thunderbird-testbed/build`, then `session start
+scene runs on the testbed only: `pikuri-thunderbird/dev/testbed/build`, then `session start
 --display`, and the binary with `DISPLAY` set to the session's.
 
 ## The running order

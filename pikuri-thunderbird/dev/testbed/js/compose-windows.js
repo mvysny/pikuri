@@ -1,6 +1,6 @@
 // The open compose windows, as Thunderbird parsed them: what a
 // thunderbird_mail_compose hand-off put in front of the human.
-//   dev/thunderbird-testbed/session js dev/thunderbird-testbed/js/compose-windows.js
+//   pikuri-thunderbird/dev/testbed/session js pikuri-thunderbird/dev/testbed/js/compose-windows.js
 // Resolves with [{to, cc, bcc, subject, body}], body as plain text.
 const resolve = arguments[arguments.length - 1];
 const windows = [];

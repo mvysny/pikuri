@@ -13,8 +13,9 @@ module Pikuri
     end
 
     # Everything the demo profile is built from, for one build day: the
-    # mailbox (the scenes of +mail.yml+ plus {Noise}), the calendar, and the
-    # demo +~/Documents+ the mail's attachments are taken from.
+    # mailbox (the scenes of +mail.yml+ plus {Noise}) and the calendar, over
+    # the demo home's facts, and the demo home's documents the mail's
+    # attachments are taken from.
     class Content
       # @return [Documents]
       attr_reader :documents

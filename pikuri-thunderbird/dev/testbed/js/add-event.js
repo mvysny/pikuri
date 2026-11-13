@@ -1,6 +1,6 @@
 // Adds an event to the demo calendar while Thunderbird runs: the calendar
 // change pikuri must see live (it lands in cache.sqlite's WAL first).
-//   dev/thunderbird-testbed/session js dev/thunderbird-testbed/js/add-event.js
+//   pikuri-thunderbird/dev/testbed/session js pikuri-thunderbird/dev/testbed/js/add-event.js
 // Edit the id, title and times for another event. It stays in the demo
 // calendar until the next build restores it.
 const resolve = arguments[arguments.length - 1];

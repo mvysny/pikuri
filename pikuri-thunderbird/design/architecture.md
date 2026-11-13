@@ -494,7 +494,7 @@ appeared after the clean quit's checkpoint). So an `immutable=1` read misses
 it, and {Pikuri::Thunderbird::DatabaseSnapshot} copies the `-wal` beside the
 main file and opens the copy normally. With `locking_mode=EXCLUSIVE` there is
 no `-shm` to copy; SQLite rebuilds it from the WAL, even on a read-only open.
-Live check: `dev/thunderbird-testbed/js/add-event.js` during a session, then
+Live check: `dev/testbed/js/add-event.js` during a session, then
 `Calendar#search` for "Live event".
 
 ### Platform confinement (snap `home` interface)
@@ -570,8 +570,7 @@ allowlist). Browser/telemetry cruft (`places.sqlite`, `cookies.sqlite`,
 
 ## The testbed: a real Thunderbird with no real mail (dev only)
 
-`dev/thunderbird-testbed/` (in the repo root) builds the profile this gem is tested against on
-the dev VM, and drives a running Thunderbird for live tests. Why it exists and why it is shaped
+`dev/testbed/` builds the profile this gem is tested against on the dev VM, and drives a running Thunderbird for live tests. Why it exists and why it is shaped
 so: `D_thunderbird_testbed`. The scripts' headers say how to run them; this is the picture
 across them.
 
@@ -582,10 +581,13 @@ account is a POP3 one that never connects (`alex@novak.example`), not Local Fold
 Folders has no identity, so Gloda would have no "me", no Sent folder and no correspondence
 graph. Every domain is RFC 2606-reserved, so a Send clicked by mistake fails.
 
-**The demo world** is one facts file (`facts.yml`) that the scene mail (`mail.yml`), the
-calendar and the demo `~/Documents` (`documents/`) all read, every date an offset from the build
-day; seeded noise (`builder/noise.rb`) gives search something to rank past. `mail.yml`'s comments
-say which scene each message serves.
+**The demo world** is the repo root's `dev/demo-home/`: one facts file (`facts.yml`) and the
+demo `~/Documents` (`documents/`) rendered from it. The testbed reads both — the scene mail
+(`mail.yml`) and the calendar from the same facts, the mail's attachments from those documents —
+so its `build` writes `~/Documents` too, with the same `--today`; every date is an offset from
+the build day. The dependency runs one way: the demo home knows nothing of Thunderbird. Seeded
+noise (`builder/noise.rb`) gives search something to rank past. `mail.yml`'s comments say which
+scene each message serves.
 
 **Driving Thunderbird: Marionette.** Release Thunderbird ships Marionette, Mozilla's remote
 protocol, and in *chrome context* — Mozilla's word for the application's own privileged JS — a
@@ -625,7 +627,7 @@ no window manager, so windows stack; clicking goes through Marionette, not the s
 "data:,#remote-settings-dummy/v1"`, which stops the remote-settings fetch a plain first run
 makes. `strace` can't follow into a snap without root (snap-confine is setuid), so the check is
 Mozilla's logging: `MOZ_LOG="nsHostResolver:5,nsSocketTransport:5,nsHttp:3"
-MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log dev/thunderbird-testbed/build --rebuild` showed no
+MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log dev/testbed/build --rebuild` showed no
 DNS lookup and no HTTP channel, only Marionette's loopback socket (2026-11-13, 159). Re-run it
 after a Thunderbird upgrade; a fetch on a later timer would slip past a build that lasts seconds.
 
@@ -633,13 +635,14 @@ after a Thunderbird upgrade; a fetch on a later timer would slip past a build th
 `Paths.cache/thunderbird-testbed/`, keyed by Thunderbird's version and a digest of every input.
 That needs inputs that repeat: the `mail` gem's random multipart boundaries are replaced by ones
 derived from the Message-ID, zips get fixed times, and LibreOffice output (which stamps a fresh
-date and ID into every PDF) is cached by source digest. Measured on 159: 183 messages index in
+date and ID into every PDF) is cached by source digest, under `Paths.cache/demo-home/` so the
+demo home's own build reuses it. Measured on 159: 183 messages index in
 ~7 s, a build takes 10 s, a cached one 2 s.
 
 **The guard.** Every demo directory carries a `.pikuri-demo` marker. The build refuses while
-either root holds an unmarked profile, while `~/Documents` is non-empty and unmarked, or while
-Thunderbird runs; it never deletes anything unmarked and never stops a Thunderbird it didn't
-start.
+either root holds an unmarked profile, or while Thunderbird runs, and checks the demo home's
+own guard (`~/Documents` non-empty and unmarked) before writing anything; it never deletes
+anything unmarked and never stops a Thunderbird it didn't start.
 
 **Not covered:** IMAP. The account is POP3, so `MessageStore`'s `ImapMail/` path (where
 `messageKey` is the UID) and attachments IMAP fetches on demand are untested here; a second

@@ -32,9 +32,6 @@ module Pikuri
         @log = log
       end
 
-      # The demo documents are written every time; only the indexed profile
-      # is cached.
-      #
       # @param rebuild [Boolean] ignore a cached tarball.
       # @return [Float, nil] seconds the index took; +nil+ when restored
       #   from the cache.
@@ -44,7 +41,6 @@ module Pikuri
         inputs = self.inputs
         tarball = File.join(@cache_dir, "#{key(inputs)}.tar")
         @target.prepare!
-        @content.documents.write(@target.documents_dir)
         if !rebuild && File.file?(tarball)
           run('tar', '-xf', tarball, '-C', @target.profile_dir)
           return nil

@@ -231,7 +231,7 @@ per-context model looks like a hole (checked 2026-08-28):
 - The killed-fetch-whitelist reason — the `github.com` /
   `raw.githubusercontent` / gist / paste example — as the concrete
   illustration of "attacker-readable ≠ malicious operator." Likely in
-  `security.md` / `security-revisited.md`.
+  `security.md` / pikuri-workshop's `book/security-revisited.md`.
 - The Bounded→Sealed choice moment, including the "Google already
   knows — check your history" framing.
 - Named, teachable concepts: *taint*, *Sealed / Bounded / Off*,
