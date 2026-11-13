@@ -22,8 +22,10 @@ local site, or — once gems are published — see
 
 A setup chapter, then the base vocabulary in two chapters, then
 recall over your own documents, then the security arc that says why
-none of it can leak them. Hosting steps outside the single-agent
-shape, and the coda points at the apps built on pikuri.
+none of it can leak them, then the secretary, which holds all three
+legs of the trifecta on purpose and shows what keeps that in bounds.
+Hosting steps outside the single-agent shape, and the coda points at
+the apps built on pikuri.
 
 The book is being reshaped around one track that ends on a plain
 command-line personal assistant (mail, calendar, notes, web search),
@@ -107,6 +109,19 @@ Until the rework lands, a few chapters here still point there.
   write yourself. The worked example: one flag that adds a leg
   without moving the verdict — where everything that changed for the
   human sits outside what the detector grades.
+
+### The secretary
+
+- **[The secretary: all three legs, on purpose](secretary.md).** The
+  book's last binary, `pikuri-secretary`: a command-line personal
+  assistant over your documents, notes, mail, calendar and the web,
+  and the first agent here to hold every trifecta leg. Read as a diff
+  against briefing with mail: note writes confined to one folder and
+  shown as a diff (integrity, and stored prompt injection), memory as
+  a note you approve, mail and events handed to Thunderbird for you to
+  send, and search that never fetches. Its map reads soft, and the
+  chapter says why from the map alone, then what the map still can't
+  see.
 
 ### Hosting
 

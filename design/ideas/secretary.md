@@ -6,11 +6,10 @@ of PDFs, CSV, HTML, Markdown and a 137-page book with a needle: every planted fa
 the right source. **Passed the owner's host test 2026-11-13** on real mail and documents
 (a subfolder of ~10,000 files): a restart re-embeds nothing, document answers, a reply drafted
 into Thunderbird's compose window, an event handed to Thunderbird's import, a memory written,
-a note edited, and the memory used after a restart. Next: the chapter, outlined in
-`book-rework.md`. Its transcripts run on the Thunderbird testbed, `dev/thunderbird-testbed/`
-(`D_thunderbird_testbed`), which also builds the demo `~/Documents`. The
-chapter that teaches it is
-[`book-rework.md`](book-rework.md)'s; this file owns the demo.
+a note edited, and the memory used after a restart. **Its chapter, `book/secretary.md`, is
+written** (2026-11-13), from transcripts captured on the Thunderbird testbed,
+`dev/thunderbird-testbed/` (`D_thunderbird_testbed`). What's left here is the open questions
+below; [`book-rework.md`](book-rework.md) owns the book, this file owns the demo.
 
 ## What it is
 

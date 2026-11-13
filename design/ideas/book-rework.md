@@ -1,15 +1,14 @@
 # Book 1 rework: one track that ends on the secretary
 
-Status: **shape agreed; the secretary chapter outlined, no prose yet.** Its transcripts run on
-the Thunderbird testbed, `dev/thunderbird-testbed/` (`D_thunderbird_testbed`), built
-2026-11-13. The workshop split (2026-11-12) took the
-chapters about running code you didn't write to book 2; book 1 now ends on
-[the secretary](secretary.md), and several chapters still lean on what moved out.
+Status: **the secretary chapter is written** (`book/secretary.md`, 2026-11-13, titled "all
+three legs, on purpose", since only egress is weakened), from scenes captured on the
+Thunderbird testbed, `dev/thunderbird-testbed/` (`D_thunderbird_testbed`). The workshop split
+(2026-11-12) took the chapters about running code you didn't write to book 2; book 1 now ends
+on [the secretary](secretary.md), and several chapters still lean on what moved out.
 
-**To pick up:** capture the outline's scenes on the testbed only (`dev/thunderbird-testbed/build`
-on the dev VM builds the demo mailbox and `~/Documents`); then write `book/secretary.md` from the
-outline below. The compose guard now warns on a reply to a new sender (it counts only domains
-Alex has sent to), so its scene is capturable.
+**To pick up:** the rest of `trifecta-detector.md`'s rebuild (below), then `security.md`. A
+re-capture of any scene runs on the testbed only: `dev/thunderbird-testbed/build`, then
+`session start --display`, and `bin/pikuri-secretary` with `DISPLAY` set to the session's.
 
 ## Approach
 
@@ -21,8 +20,8 @@ also changes the design (gate fatigue, what the model does with snippets only).
 
 **Then write backwards from the climax:**
 
-1. the secretary chapter, since it decides what earlier chapters must set up;
-2. `trifecta-detector.md`, rebuilt on the secretary;
+1. ~~the secretary chapter~~ written 2026-11-13;
+2. `trifecta-detector.md`, the rest of its rebuild (below);
 3. `security.md`, rewritten;
 4. the two new chapters, designing a tool and touching files;
 5. a sweep of the rest.

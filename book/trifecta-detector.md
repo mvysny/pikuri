@@ -765,6 +765,11 @@ evidence, never as a certificate.
 
 ## What's next
 
-[Hosting many agents at once](hosting.md) steps outside the
-single-agent shape every binary so far has had: what changes when N
-agents share one process and one llama.cpp.
+Briefing with mail had two legs and stayed silent. [The
+secretary](secretary.md) holds all three on purpose, a personal
+assistant over your documents, mail, calendar and the web, and its
+map reads soft: untrusted at full strength, private everywhere, and
+every way out either shown to you before it leaves or aimed where no
+attacker can read it.
+
+→ Continue to [The secretary](secretary.md).
