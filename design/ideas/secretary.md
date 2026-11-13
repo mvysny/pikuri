@@ -191,7 +191,9 @@ All agreed 2026-11-12.
   pure-Ruby `.docx`/`.odt` reader (both are zipped XML) a `pikuri-pdf`-sized gem worth having?
 - `Q_two_readers`: the notes folder has two read tools. Seen once (2026-11-13): the model tried
   `read` on a document outside the notes folder, got the out-of-workspace error, and switched to
-  `rag_read` — it recovers, at one wasted call. Edit only touches a file read through
+  `rag_read` — it recovers, at one wasted call. Seen again: `read(xyz/spec.txt)` with a path that
+  `rag_read` takes relative to `~/Documents`; the error now names the notes root, so the model can
+  see the mismatch. Edit only touches a file read through
   workspace `read` (the read-before-edit gate), so `read` is wired beside `rag_read` over the same
   notes; `Workspace::Extension` was skipped because its grep, glob and file_list would duplicate
   the rag tools too. 17 tools in all. Does the model pick the right reader before an edit, or

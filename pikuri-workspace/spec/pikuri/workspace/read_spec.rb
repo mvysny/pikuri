@@ -156,7 +156,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'refuses missing files' do
       result = described_class.read(workspace: workspace, path: 'nope.txt', offset: 1, limit: 2000).to_s
 
-      assert_equal 'Error: file not found: nope.txt', result
+      assert_equal "Error: file not found: nope.txt (relative paths resolve against #{root})", result
     end
 
     it 'refuses binary files (null byte in sample)' do

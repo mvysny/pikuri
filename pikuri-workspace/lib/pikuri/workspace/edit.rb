@@ -170,7 +170,7 @@ module Pikuri
         return Tool::Result.error("occurrence must be 1 or greater, got #{occurrence}.") if occurrence && occurrence < 1
 
         resolved = workspace.resolve_for_write(path)
-        return Tool::Result.error("file not found: #{path}") unless resolved.exist?
+        return Tool::Result.error(workspace.not_found(path)) unless resolved.exist?
         return Tool::Result.error("#{path} is a directory") if resolved.directory?
 
         return Tool::Result.error("cannot edit binary file: #{path}") if Pikuri::FileType.binary?(resolved)

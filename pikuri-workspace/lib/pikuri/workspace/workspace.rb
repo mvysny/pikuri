@@ -86,6 +86,20 @@ module Pikuri
         nil
       end
 
+      # The error text for a path that doesn't exist, naming the root that
+      # relative paths resolve against. A model holding a path from another
+      # tool — a corpus citation relative to some other folder, say — can't
+      # otherwise tell why it missed, and this shows it what to prepend:
+      #
+      #   workspace.not_found('xyz/spec.txt')
+      #   # => "file not found: xyz/spec.txt (relative paths resolve against /home/alice/Notes)"
+      #
+      # @param path [String] the path as the model gave it.
+      # @return [String]
+      def not_found(path)
+        "file not found: #{path} (relative paths resolve against #{project_root})"
+      end
+
       private
 
       # Absolute resolved path → workspace-relative key. Both are post-realpath

@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- `read` and `edit` now name the workspace root when a file isn't found — `file not found: xyz/spec.txt (relative paths resolve against /home/alice/Notes)` — so a model holding a path relative to another folder sees why it missed.
 - **Breaking:** `rag_find` is renamed `rag_search_keywords` (class `Pikuri::Rag::Tools::SearchKeywords`), because *search* and *find* are synonyms and the pair said nothing about how the two differ (`D_rag_gem`); a prompt or transcript naming `rag_find` needs the new name.
 - `rag_search_keywords` answers an empty AND with each word's own document count — `"solar" (3 documents), "array" (2 documents), "wattage" (0 documents)` — so the model retries without the word that emptied the set.
 - **Breaking:** the vector-store supervisors run Qdrant and Chroma with `podman` when it is on `PATH`, else `docker`, so a rootless setup comes out of the box; `Pikuri::VectorDb::Server::DockerContainer` is renamed `Server::Container`, and the image pins are now fully qualified (`docker.io/…`).

@@ -168,7 +168,7 @@ module Pikuri
         return Tool::Result.error("limit must be >= 1, got #{limit}")   if limit < 1
 
         resolved = workspace.resolve_for_read(path)
-        return Tool::Result.error("file not found: #{path}") unless resolved.exist?
+        return Tool::Result.error(workspace.not_found(path)) unless resolved.exist?
         if resolved.directory?
           return Tool::Result.error(directory_refusal(workspace: workspace, path: path, resolved: resolved))
         end

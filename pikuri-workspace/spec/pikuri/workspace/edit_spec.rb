@@ -317,7 +317,7 @@ RSpec.describe Pikuri::Workspace::Edit do
                                     old_string: 'a', new_string: 'b',
                                     replace_all: false).to_s
 
-      assert_equal 'Error: file not found: nope.txt', result
+      assert_equal "Error: file not found: nope.txt (relative paths resolve against #{root})", result
     end
 
     it 'rejects directories' do
