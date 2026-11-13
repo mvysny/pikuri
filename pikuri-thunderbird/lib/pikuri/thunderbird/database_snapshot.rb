@@ -11,26 +11,44 @@ module Pikuri
     # +cp --reflink=auto+; every actual query runs against the copy we own.
     #
     #   snap = DatabaseSnapshot.new(source: profile.gloda_path, dir: cache_dir)
-    #   snap.refresh          # (re)copies iff the source generation moved
-    #   run_query_against(snap.path)
-    #   snap.generation       # the source change-counter this copy is as-of
+    #   unless db && snap.current?
+    #     db&.close           # before refresh overwrites the copy under it
+    #     snap.refresh        # (re)copies iff the source generation moved
+    #     db = SQLite3::Database.new(snap.path)
+    #   end
+    #
+    # Open the copy normally, never +?immutable=1+: for a WAL store the copy
+    # is the main file *plus* its +-wal+, and only a normal open applies the
+    # WAL. Opening read-only is fine; SQLite builds the +-shm+ in our dir.
     #
     # == Why bracketed
     #
     # A reflink clone is atomic w.r.t. concurrent writes, but *file
     # atomicity ≠ DB consistency*: a clone taken mid-transaction faithfully
-    # photographs a torn DB. So each copy is bracketed — read the change
-    # counter (header bytes 24–27) and check +-journal+ absence *before and
-    # after* the copy; a copy counts as settled only when the counter didn't
-    # move and no rollback journal was present at either edge. Otherwise the
-    # copy is discarded and retried after a short backoff.
+    # photographs a torn DB. So each copy is bracketed — read the source
+    # {.generation} and check +-journal+ absence *before and after* the copy;
+    # a copy counts as settled only when the generation didn't move and no
+    # rollback journal was present at either edge. Otherwise the copy is
+    # discarded and retried after a short backoff.
     #
-    # The validated change counter doubles as the *generation* stamp: a
-    # caller checks freshness by comparing {.change_counter} of the live
-    # source against {#generation}, and {#refresh} re-copies only when they
+    # The generation doubles as the freshness stamp: {#current?} compares the
+    # live one against the copy's, and {#refresh} re-copies only when they
     # differ. One signal drives both consistency and freshness.
     #
     # == Implementation details
+    #
+    # The generation is the header change counter *plus* the WAL's salt and
+    # size. In WAL mode SQLite bumps the counter only on a checkpoint, and
+    # Thunderbird can leave a few new rows in the +-wal+ until it quits, so
+    # the counter alone would call a stale copy current.
+    #
+    # The WAL is copied *after* the main file. A checkpoint between the two
+    # leaves frames already in main, and re-applying them is idempotent; a
+    # torn WAL tail fails its frame checksum, so SQLite stops at the last
+    # whole commit. The one unsafe case — a WAL restart between the copies,
+    # new frames over the old main — changes the salt, which the bracket
+    # catches. Our dir's +-wal+/+-shm+ are deleted before each copy: a stale
+    # WAL would be replayed over the new main.
     #
     # On-disk rather than an +:memory:+ load: the page cache keeps idle RAM ≈ 0
     # for a multi-hundred-MB Gloda, which a memory copy would pin for the life
@@ -42,37 +60,46 @@ module Pikuri
     # the source (so reflink's copy-on-write extent share is available;
     # +--reflink=auto+ degrades to a full copy elsewhere). It is
     # {Pikuri::Finalizers}-reaped, so a normal exit removes it; a crash can
-    # strand it (re-derivable data). Only the main DB file is copied — for a
-    # WAL store that yields an as-of-last-checkpoint view (Thunderbird
-    # checkpoints aggressively), which callers open with +?immutable=1+.
+    # strand it (re-derivable data).
     class DatabaseSnapshot
       LOGGER = Pikuri.logger_for('Thunderbird::DatabaseSnapshot')
 
       # Raised when a settled copy can't be taken within the attempt budget
-      # (Thunderbird mid-sync, counter won't sit still). Recoverable — the
+      # (Thunderbird mid-sync, generation won't sit still). Recoverable — the
       # calling tool degrades to a stale snapshot or an +"Error: …"+.
       class TornError < StandardError; end
 
       # @return [String] absolute path of the snapshot copy.
       attr_reader :path
 
-      # @return [Integer, nil] the source change-counter this copy reflects;
-      #   +nil+ before the first successful {#refresh}.
-      attr_reader :generation
-
-      # SQLite's file change counter: 4 big-endian bytes at header offset 24,
-      # bumped only when the DB is unlocked after a modification (so a read
-      # never moves it — a file-format guarantee). +nil+ if the file is too
-      # short to have a header yet.
+      # The source's change stamp: any commit moves it, a read never does.
+      #
+      #   DatabaseSnapshot.generation('cache.sqlite')
+      #   # => [412, "\xC2$\x93\x16ig\x84\xA0", 2_400_312]   # WAL store
+      #   # => [87, nil, nil]                               # no -wal
       #
       # @param db_path [String]
-      # @return [Integer, nil]
-      def self.change_counter(db_path)
-        header = File.binread(db_path, 4, 24)
-        header && header.bytesize == 4 ? header.unpack1('N') : nil
+      # @return [Array(Integer, String, Integer), nil] the header change
+      #   counter (bytes 24–27), the +-wal+ salt (its header bytes 16–23) and
+      #   the +-wal+ size; each WAL part is +nil+ without a +-wal+. +nil+
+      #   overall when the file has no header yet.
+      def self.generation(db_path)
+        counter = read_bytes(db_path, 24, 4)&.unpack1('N')
+        return nil unless counter
+
+        wal = "#{db_path}-wal"
+        [counter, read_bytes(wal, 16, 8), File.size?(wal)].freeze
+      end
+
+      # @return [String, nil] exactly +length+ bytes, or +nil+ if the file is
+      #   missing or too short.
+      def self.read_bytes(path, offset, length)
+        bytes = File.binread(path, length, offset)
+        bytes if bytes&.bytesize == length
       rescue Errno::ENOENT, EOFError
         nil
       end
+      private_class_method :read_bytes
 
       # @param source [String] path to the live Thunderbird DB.
       # @param dir [String] private dir to hold the copy (created 0700 if
@@ -88,16 +115,22 @@ module Pikuri
         Pikuri::Finalizers.register { FileUtils.rm_rf(@dir) }
       end
 
-      # (Re)take the snapshot iff the live source generation differs from the
-      # copy we hold — a no-op (returning +false+) when already current.
+      # @return [Boolean] whether the copy exists and the source hasn't
+      #   changed since it was taken.
+      def current?
+        !@generation.nil? && File.file?(@path) && self.class.generation(@source) == @generation
+      end
+
+      # (Re)take the snapshot unless {#current?} — a no-op returning +false+
+      # then. Close any connection to {#path} first: the copy is overwritten
+      # in place.
       #
       # @param attempts [Integer] bracket retries before giving up.
       # @param backoff [Float] seconds between retries.
       # @return [Boolean] +true+ if a fresh copy was taken this call.
       # @raise [TornError] if no settled copy could be taken.
       def refresh(attempts: 6, backoff: 0.08)
-        live = self.class.change_counter(@source)
-        return false if @generation && live == @generation && File.file?(@path)
+        return false if current?
 
         copy_bracketed(attempts, backoff)
         true
@@ -110,47 +143,44 @@ module Pikuri
       def copy_bracketed(attempts, backoff)
         detail = nil
         attempts.times do
-          before_counter = self.class.change_counter(@source)
-          before_journal = journal?(@source)
-          copy_file!
-          after_counter = self.class.change_counter(@source)
-          after_journal = journal?(@source)
+          before = self.class.generation(@source)
+          before_journal = journal?
+          copy_error = copy_files
+          after = self.class.generation(@source)
+          after_journal = journal?
 
-          if settled?(before_counter, after_counter, before_journal, after_journal)
-            @generation = after_counter
+          if copy_error.nil? && !before.nil? && before == after && !before_journal && !after_journal
+            @generation = after
             return
           end
 
-          detail = "counter #{before_counter}->#{after_counter}, " \
-                   "journal #{before_journal}/#{after_journal}"
+          detail = copy_error || "generation #{before.inspect}->#{after.inspect}, " \
+                                 "journal #{before_journal}/#{after_journal}"
           sleep(backoff)
         end
         raise TornError, "no settled snapshot of #{@source} after #{attempts} tries (#{detail})"
       end
 
-      # Settled iff the counter is present and unchanged across the copy and
-      # no rollback journal existed at either edge.
-      #
-      # @return [Boolean]
-      def settled?(before_counter, after_counter, before_journal, after_journal)
-        !before_counter.nil? && before_counter == after_counter &&
-          !before_journal && !after_journal
-      end
-
       # @return [Boolean] whether a +<source>-journal+ (write in flight) exists.
-      def journal?(db_path) = File.exist?("#{db_path}-journal")
+      def journal? = File.exist?("#{@source}-journal")
+
+      # Copy the main file, then its +-wal+ if one exists.
+      #
+      # @return [String, nil] +cp+'s complaint, or +nil+ on success.
+      def copy_files
+        FileUtils.rm_f(["#{@path}-wal", "#{@path}-shm"])
+        error = cp(@source, @path)
+        wal = "#{@source}-wal"
+        error ||= cp(wal, "#{@path}-wal") if File.exist?(wal)
+        error
+      end
 
       # reflink-when-possible copy through the Subprocess chokepoint.
       #
-      # @return [void]
-      # @raise [TornError] if +cp+ fails.
-      def copy_file!
-        result = Pikuri::Subprocess.spawn(
-          'cp', '--reflink=auto', '-f', @source, @path, chdir: '/'
-        ).wait
-        return if result.status.success?
-
-        raise TornError, "cp failed copying #{@source}: #{result.output.strip}"
+      # @return [String, nil] +cp+'s complaint, or +nil+ on success.
+      def cp(from, to)
+        result = Pikuri::Subprocess.spawn('cp', '--reflink=auto', '-f', from, to, chdir: '/').wait
+        result.status.success? ? nil : "cp failed copying #{from}: #{result.output.strip}"
       end
     end
   end

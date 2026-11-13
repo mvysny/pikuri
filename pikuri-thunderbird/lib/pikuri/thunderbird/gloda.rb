@@ -31,10 +31,10 @@ module Pikuri
     #
     # == Freshness & consistency (one signal)
     #
-    # Each {#with_fresh_db} first compares the live Gloda change counter against
-    # the generation the current copy+index were built from; if it moved, a
-    # fresh {DatabaseSnapshot} is taken and the FTS5 index rebuilt (~1 s). Between
-    # changes it's a 4-byte read and a no-op. The counter bumps on any Gloda
+    # Each {#with_fresh_db} first asks whether the {DatabaseSnapshot} the
+    # copy+index were built from is still current; if not, a fresh one is
+    # taken and the FTS5 index rebuilt (~1 s). Between changes it's a header
+    # read and a no-op. The generation moves on any Gloda
     # write — including read/star/tag flips during triage — so a rebuild can
     # fire mid-conversation (desirable: the views then see new mail). See
     # {DatabaseSnapshot}.
@@ -71,7 +71,6 @@ module Pikuri
         @source = gloda_path
         @snapshot = DatabaseSnapshot.new(source: gloda_path, dir: cache_dir)
         @db = nil
-        @indexed_generation = nil
         @lock = Mutex.new
       end
 
@@ -124,13 +123,11 @@ module Pikuri
       #
       # @return [void]
       def ensure_fresh
-        live = DatabaseSnapshot.change_counter(@source)
-        return if @db && @indexed_generation && live == @indexed_generation
+        return if @db && @snapshot.current?
 
         close! # release the fd before cp overwrites the copy in place
         @snapshot.refresh
         open_and_index
-        @indexed_generation = @snapshot.generation
       end
 
       # Open the fresh snapshot copy read-write and build an external-content

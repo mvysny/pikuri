@@ -91,16 +91,20 @@ Thunderbird holds its SQLite DBs open with `locking_mode=EXCLUSIVE`, so a
 plain read fails "database is locked" while it runs, and a lock-bypassing
 `immutable=1` read of the live file risks a torn read. pikuri never queries
 the live file. Instead {Pikuri::Thunderbird::DatabaseSnapshot} takes a **bracketed
-`cp --reflink=auto`**: it reads the SQLite change counter (header bytes
-24–27) and checks for a rollback `-journal` before and after the copy, and
-accepts the copy only if the counter didn't move and no journal was present
-at either edge (otherwise it discards and retries). Reflink makes the copy a
-near-free metadata-only extent share on a copy-on-write filesystem.
+`cp --reflink=auto`** of the main file, then its `-wal` if there is one. It
+reads the *generation* (the SQLite change counter at header bytes 24–27, plus
+the `-wal`'s salt and size) and checks for a rollback `-journal` before and
+after the copy, and accepts the copy only if the generation didn't move and
+no journal was present at either edge (otherwise it discards and retries).
+The copy is opened normally, so SQLite applies the copied WAL. Reflink makes
+the copy a near-free metadata-only extent share on a copy-on-write
+filesystem.
 
-The validated change counter doubles as a freshness stamp: each query
-compares the live counter against it and re-copies (and, for mail, rebuilds
-the FTS5 index) only when it moved. One signal drives both consistency and
-freshness.
+The validated generation doubles as a freshness stamp: each query compares
+the live one against it and re-copies (and, for mail, rebuilds the FTS5
+index) only when it moved. One signal drives both consistency and freshness.
+The WAL parts are why it is not the counter alone: a WAL store bumps the
+counter only on a checkpoint.
 
 **Mail search index.** Gloda's own full-text index (`messagesText`) is an
 fts3 virtual table behind Mozilla's custom `mozporter` tokenizer, which the
@@ -486,10 +490,12 @@ as-of-last-checkpoint. Right after the 62 MB sync the `-wal` held ~1 MB and
 `immutable=1` saw all 5414 events — but that is a busy DB. **A handful of new
 rows stays in the `-wal` until Thunderbird quits** (testbed, Thunderbird 159: an
 event added live sat in a 2.3 MB `-wal`, invisible to `Calendar#search`, and
-appeared after the clean quit's checkpoint). This is why
-{Pikuri::Thunderbird::DatabaseSnapshot} works against a *copy*, not the live
-file; that it copies only the main file is a bug, owned by
-`design/ideas/thunderbird-wal-snapshot.md` in the repo root.
+appeared after the clean quit's checkpoint). So an `immutable=1` read misses
+it, and {Pikuri::Thunderbird::DatabaseSnapshot} copies the `-wal` beside the
+main file and opens the copy normally. With `locking_mode=EXCLUSIVE` there is
+no `-shm` to copy; SQLite rebuilds it from the WAL, even on a read-only open.
+Live check: `dev/thunderbird-testbed/js/add-event.js` during a session, then
+`Calendar#search` for "Live event".
 
 ### Platform confinement (snap `home` interface)
 

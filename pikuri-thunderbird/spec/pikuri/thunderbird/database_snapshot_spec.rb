@@ -23,34 +23,54 @@ describe Pikuri::Thunderbird::DatabaseSnapshot do
     db.close
   end
 
-  it 'reads a plausible change counter from a real DB header' do
+  # A WAL store held open the way Thunderbird holds one: row 1 checkpointed
+  # into the main file, row 2 committed but still only in +-wal+. The
+  # connection stays open, since closing it would checkpoint.
+  def open_wal_db(dir)
+    db = SQLite3::Database.new(File.join(dir, 'cache.sqlite'))
+    db.execute('PRAGMA locking_mode=EXCLUSIVE')
+    db.execute('PRAGMA journal_mode=WAL')
+    db.execute('PRAGMA wal_autocheckpoint=0')
+    db.execute('CREATE TABLE t(x)')
+    db.execute('INSERT INTO t VALUES (1)')
+    db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    db.execute('INSERT INTO t VALUES (2)')
+    db
+  end
+
+  # The rows of +t+ as a normal read-only open of the copy sees them.
+  def rows(snap)
+    copy = SQLite3::Database.new(snap.path, flags: SQLite3::Constants::Open::READONLY)
+    copy.execute('SELECT x FROM t ORDER BY x').flatten
+  ensure
+    copy&.close
+  end
+
+  it 'reads the change counter, with no WAL parts for a rollback-journal DB' do
     Dir.mktmpdir do |dir|
-      counter = DatabaseSnapshot.change_counter(make_db(dir))
+      counter, salt, size = DatabaseSnapshot.generation(make_db(dir))
       assert_kind_of Integer, counter
-      assert counter >= 0
+      assert_nil salt
+      assert_nil size
     end
   end
 
-  it 'returns nil change_counter for a missing/short file' do
+  it 'returns a nil generation for a missing/short file' do
     Dir.mktmpdir do |dir|
-      assert_nil DatabaseSnapshot.change_counter(File.join(dir, 'nope.sqlite'))
+      assert_nil DatabaseSnapshot.generation(File.join(dir, 'nope.sqlite'))
       short = File.join(dir, 'short')
       File.write(short, 'x')
-      assert_nil DatabaseSnapshot.change_counter(short)
+      assert_nil DatabaseSnapshot.generation(short)
     end
   end
 
-  it 'takes a settled copy and stamps its generation' do
+  it 'takes a usable copy' do
     Dir.mktmpdir do |dir|
-      src = make_db(dir)
-      snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
+      snap = DatabaseSnapshot.new(source: make_db(dir), dir: File.join(dir, 'cache'))
+      refute snap.current?, 'no copy yet'
       assert snap.refresh, 'first refresh takes a copy'
-      assert File.file?(snap.path), 'copy exists'
-      assert_equal DatabaseSnapshot.change_counter(src), snap.generation
-      # the copy is a usable DB
-      copy = SQLite3::Database.new("file:#{snap.path}?immutable=1", flags: SQLite3::Constants::Open::READONLY)
-      assert_equal [[1]], copy.execute('SELECT x FROM t')
-      copy.close
+      assert snap.current?
+      assert_equal [1], rows(snap)
     end
   end
 
@@ -59,12 +79,61 @@ describe Pikuri::Thunderbird::DatabaseSnapshot do
       src = make_db(dir)
       snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
       snap.refresh
-      gen1 = snap.generation
       refute snap.refresh, 'unchanged source → no re-copy'
 
       bump(src)
+      refute snap.current?
       assert snap.refresh, 'changed source → re-copy'
-      refute_equal gen1, snap.generation
+      assert_equal [1, 2], rows(snap)
+    end
+  end
+
+  it 'sees a commit that sits only in the WAL' do
+    Dir.mktmpdir do |dir|
+      live = open_wal_db(dir)
+      snap = DatabaseSnapshot.new(source: File.join(dir, 'cache.sqlite'), dir: File.join(dir, 'cache'))
+      snap.refresh
+      assert_equal [1, 2], rows(snap)
+    ensure
+      live&.close
+    end
+  end
+
+  it 'goes stale on a WAL-only commit' do
+    Dir.mktmpdir do |dir|
+      live = open_wal_db(dir)
+      src = File.join(dir, 'cache.sqlite')
+      snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
+      snap.refresh
+      counter = DatabaseSnapshot.generation(src).first
+
+      live.execute('INSERT INTO t VALUES (3)')
+      assert_equal counter, DatabaseSnapshot.generation(src).first, 'the header counter alone misses it'
+      refute snap.current?
+      assert snap.refresh
+      assert_equal [1, 2, 3], rows(snap)
+    ensure
+      live&.close
+    end
+  end
+
+  it 'drops its old WAL copy once the source has checkpointed' do
+    Dir.mktmpdir do |dir|
+      live = open_wal_db(dir)
+      src = File.join(dir, 'cache.sqlite')
+      snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
+      snap.refresh
+      rows(snap) # a read-only open leaves the copy's -wal and -shm behind
+
+      live.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+      live.close
+      live = nil
+      refute File.exist?("#{src}-wal"), 'closing the source checkpointed and removed its WAL'
+      assert snap.refresh
+      refute File.exist?("#{snap.path}-wal")
+      assert_equal [1, 2], rows(snap)
+    ensure
+      live&.close
     end
   end
 

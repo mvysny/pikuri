@@ -17,9 +17,8 @@ module Pikuri
     #   cal.search(query: 'standup', limit: 10)
     #   cal.read(event_id: hit[:event_id])
     #
-    # Like {Gloda}, every query runs against {DatabaseSnapshot} copies (opened
-    # +?immutable=1+, so a WAL store reads as-of-last-checkpoint), refreshed
-    # when the source generation moves.
+    # Like {Gloda}, every query runs against {DatabaseSnapshot} copies,
+    # refreshed when the source generation moves.
     #
     # == Time & all-day encoding
     #
@@ -63,7 +62,6 @@ module Pikuri
           [src, DatabaseSnapshot.new(source: src, dir: File.join(cache_dir, File.basename(src, '.sqlite')))]
         end
         @conns = {}
-        @generations = {}
         @lock = Mutex.new
       end
 
@@ -179,14 +177,11 @@ module Pikuri
       # @return [void]
       def ensure_fresh
         @snapshots.each do |src, snap|
-          live = DatabaseSnapshot.change_counter(src)
-          next if @conns[src] && @generations[src] && live == @generations[src]
+          next if @conns[src] && snap.current?
 
-          @conns[src]&.close
+          @conns.delete(src)&.close
           snap.refresh
-          @conns[src] = SQLite3::Database.new("file:#{snap.path}?immutable=1",
-                                              flags: SQLite3::Constants::Open::READONLY | SQLite3::Constants::Open::URI)
-          @generations[src] = snap.generation
+          @conns[src] = SQLite3::Database.new(snap.path, flags: SQLite3::Constants::Open::READONLY)
         end
       end
 
