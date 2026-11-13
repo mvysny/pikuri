@@ -1,0 +1,11 @@
+<html><head><meta charset="utf-8"><title>Vuokrankorotusilmoitus</title></head><body>
+<h1>Vuokrankorotusilmoitus / Notice of rent increase</h1>
+<p>Vuokranantaja / Landlord: Aino Virtanen<br>
+Vuokralainen / Tenant: <%= f.owner.name %><br>
+Huoneisto / Premises: <%= f.owner.address %></p>
+<p>Vuokra nousee 1.1.<%= f.today.year + 1 %> alkaen <%= f.lease.rent %> eurosta <%= f.lease.new_rent %> euroon kuukaudessa.
+Eräpäivä on edelleen kuukauden <%= f.lease.rent_day %>. päivä.</p>
+<p>From 1 January <%= f.today.year + 1 %> the monthly rent rises from EUR <%= f.lease.rent %> to EUR <%= f.lease.new_rent %>.
+It stays due on the <%= f.lease.rent_day %>th day of each month.</p>
+<p>Helsingissä <%= f.date(-8).strftime('%-d.%-m.%Y') %><br>Aino Virtanen</p>
+</body></html>

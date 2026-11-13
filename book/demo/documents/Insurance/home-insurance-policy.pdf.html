@@ -1,0 +1,9 @@
+<html><head><meta charset="utf-8"><title>Home Insurance Policy <%= f.insurance.policy %></title></head><body>
+<h1>Home Insurance Policy <%= f.insurance.policy %></h1>
+<p>Insurer: Revontuli Mutual. Policyholder: <%= f.owner.name %>.</p>
+<p>Coverage period: <%= f.today.year %>-01-01 to <%= f.today.year %>-12-31.</p>
+<h2>Deductible</h2>
+<p>The deductible for water damage is <%= f.eur(f.insurance.water_deductible) %>. For theft and burglary the deductible is <%= f.eur(f.insurance.theft_deductible) %>.</p>
+<h2>Claims</h2>
+<p>Report a claim within 14 days by calling <%= f.insurance.claims_phone %>.</p>
+</body></html>

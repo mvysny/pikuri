@@ -1,10 +1,11 @@
 # A Thunderbird testbed: mail scenes without anyone's real mail
 
-Status: **the pipeline is built, the content isn't.** `bin/pikuri-demo-mailbox` (or `rake
-demo:build`, `DIR=` for `--dir`) with its code in `book/demo/builder/` guards, writes the
-inputs, indexes through Marionette, verifies the counts and caches the result. It runs on a
-five-message seed (`content.rb`) for now, so the secretary chapter's mail transcripts
-([`book-rework.md`](book-rework.md)) still wait on § The demo content.
+Status: **built; not yet used for a scene.** `bin/pikuri-demo-mailbox` (or `rake demo:build`,
+`DIR=` for `--dir`) builds Alex Novak's mailbox, calendar and `~/Documents` from `book/demo/`
+(`facts.yml`, `mail.yml`, `documents/`, code in `builder/`): 183 messages, 6 events, 13
+documents. Left: the hand-offs (§ The hand-offs on a headless VM), two findings that need lib
+work (§ What the full build showed), and capturing the chapter's scenes
+([`book-rework.md`](book-rework.md)).
 
 ## The problem
 
@@ -81,7 +82,8 @@ The prefs come from Mozilla's own list rather than being hunted down one at a ti
 automated profile off the network. It has the remote-settings one, `services.settings.server =
 "data:,#remote-settings-dummy/v1"`, plus `app.update.disabledForTesting`,
 `network.connectivity-service.enabled`, the safebrowsing, region and extension-update prefs. Its
-`%(server)s` placeholders become a `.invalid` host. Verified on the seed build (2026-11-13):
+`%(server)s` placeholders become a `.invalid` host. Verified on the seed build and again on the
+full one (2026-11-13):
 `strace` can't follow into a snap without root (snap-confine is setuid), so the check is
 Mozilla's own logging — `MOZ_LOG="nsHostResolver:5,nsSocketTransport:5,nsHttp:3"
 MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log bin/pikuri-demo-mailbox --rebuild` — which
@@ -94,18 +96,20 @@ in the GUI is the untested case.
 
 `rake demo:build` (or a `bin/` script it calls) does, in order:
 
-1. **Guard.** Every demo profile carries a marker file, `.pikuri-demo`. If either root (snap
+1. **Guard.** Every demo directory carries a marker file, `.pikuri-demo`. If either root (snap
    `~/snap/thunderbird/common/.thunderbird`, apt `~/.thunderbird`) holds a profile *without* the
-   marker, stop and print the paths. Never delete, never offer to. In `--dir` mode the same
-   goes for the target: an existing non-empty dir without the marker stops the build, so a
-   mistyped path never overwrites something that isn't a demo.
+   marker, stop and print the paths. Never delete, never offer to. The same goes for every
+   directory the build writes: a non-empty one without the marker stops the build. (The VM's
+   hand-built `~/Documents` was moved aside to `~/Documents.hand-built-2026-11-12` for this.)
 2. **Generate** the mbox files, `demo.ics` and the demo `~/Documents` from `book/demo/`.
 3. **Create the profile**, in one of two modes:
    - **VM (default):** registered in `profiles.ini` as `Default=1`, so pikuri's auto-discovery
-     is exercised for real.
-   - **`--dir ~/pikuri-demo` (reader, host):** `profiles.ini` untouched. Thunderbird runs as
-     `thunderbird -profile ~/pikuri-demo --no-remote`, pikuri gets `profile_dir:` — the
-     override `Profile.discover` already has. The reader's real profile is never seen.
+     is exercised for real; the documents go to `~/Documents`, the secretary's default.
+   - **`--dir ~/pikuri-demo` (reader, host):** one folder holding `profile/` and `Documents/`;
+     `profiles.ini` untouched. Thunderbird runs as `thunderbird -profile ~/pikuri-demo/profile
+     --no-remote`; the secretary as `pikuri-secretary --documents ~/pikuri-demo/Documents
+     --thunderbird-profile ~/pikuri-demo/profile` (the flag passes `profile_dir:` through).
+     The reader's real profile is never seen — except by the hand-offs, § below.
    `demo.ics` lives in the profile itself: the snap reads its own root, and a reader's
    `--dir` (not hidden — the snap can't read dot-dirs in `$HOME`) carries it along.
 4. **Index.** Run Thunderbird `--headless --marionette` and, over Marionette, reparse every
@@ -119,40 +123,68 @@ in the GUI is the untested case.
 5. **Cache.** Tar the indexed profile to `Paths.cache/demo-mailbox/`, keyed by Thunderbird's
    version *and* a digest of every input: the dates move with `--today`, and Thunderbird
    writes absolute paths into `prefs.js`, so another day or another `--dir` is another
-   profile. One tarball is kept; `--rebuild` ignores it. Inputs are byte-stable (the `mail`
-   gem's random multipart boundary is replaced by one derived from the Message-ID), so a
-   same-day rerun restores in 0.75 s instead of indexing.
+   profile. One tarball is kept; `--rebuild` ignores it. Inputs are byte-stable: the `mail`
+   gem's random multipart boundaries are replaced by ones derived from the Message-ID, zips
+   get fixed times, and LibreOffice's output (which stamps a fresh date and ID into every
+   PDF) is cached by source digest under `Paths.cache/demo-mailbox/converted/`. The demo
+   documents are rewritten on every run; only the profile is cached.
 
-Measured on the seed (5 messages, 3 events): indexed in 3.6 s, 4.8 s end to end.
+Measured (2026-11-13, snap 159.0): the full mailbox indexes in ~7 s, 10 s end to end; a cached
+rerun takes 2 s. Gloda's throttle was no problem at this size.
 
 ## The demo content (`book/demo/`)
 
-One persona and one **facts file** (YAML: names, IBAN, invoice number, the relative dates) that
-the mail, the calendar and the demo `~/Documents` all read, so a cross-source scene can't drift.
-`rake demo:build` builds all three. MIME is written with the `mail` gem (already in the lockfile).
+One persona, Alex Novak, a Slovak-born designer in Helsinki who runs Novak Design, and one
+**facts file** (`facts.yml`: people, the invoice and its IBAN, lease, insurance, the events,
+every date as an offset from the build day) that the mail, the calendar and the documents all
+read, so a cross-source answer can't drift. `mail.yml` and `documents/` are ERB over it; the
+header of `mail.yml` lists its keys.
 
-- **Dates relative to the build day** (`--today`, default now). "What's on Thursday?" and "due in
-  five days" have to stay true whenever the profile is built.
-- **~20 hand-written scene messages**, each there to make a scene happen:
-  - an invoice reminder that pairs with a PDF in the demo `~/Documents` (the cross-source answer);
-  - a short meeting thread with quoted replies, chained by `In-Reply-To` / `References` so Gloda
-    builds the conversation (thread-reading discipline);
-  - an invitation as a real `text/calendar; METHOD=REQUEST` part, plus one with a plain `.ics`
-    attachment (calendar create from mail);
-  - a mail asking the secretary to "add a note: invoices now go to IBAN X" (stored injection,
-    the integrity scene), and a PDF attachment carrying the same injection *inside* the file;
-  - a reply-worthy mail from a domain never seen before (the compose guard's novelty warning),
-    and one from a look-alike of a known domain (`northwlnd-bank.example`);
-  - the owner's own replies in Sent, so the correspondence graph is real.
-- **150–300 seeded-template noise messages** — newsletters, CI and shipping notifications, a
-  mailing list — so search has something to rank past.
-- **MIME variety, because that's where parsers break:** multipart/alternative and HTML-only
-  newsletters, an inline `cid:` image, a forwarded `message/rfc822`, RFC 2047 encoded subjects and
-  RFC 2231 attachment names in Slovak and Finnish (`faktúra_č.12.pdf`), `.docx` / `.zip` / `.csv`
-  attachments, one attachment over the read limit.
-- Binary attachments (PDF, `.docx`) come from HTML sources via `soffice --convert-to`, the way the
-  demo `~/Documents` was built by hand on 2026-11-13; only the sources are versioned.
-- Calendar: a handful of events around "this week", one recurring, one all-day.
+- **24 scene messages** (`mail.yml`), each making a scene possible:
+  - invoice 4471's reminder, its PDF the same as `Documents/Finance/invoice-4471.pdf`;
+  - Mira's planning-call thread (Inbox, Sent, Inbox) with quoted replies and a `.csv`;
+  - Ilse's offsite invitation as a real `text/calendar; method=REQUEST` alternative, and
+    Aino's stove inspection as a plain `.ics` attachment;
+  - the stored injection from `kettle-co-payments.example` — in a body, and inside a PDF as
+    white 7-pt text (`mail/payment-confirmation.pdf.html`);
+  - Sami's speaking invitation from `design-week.example`, a domain Alex never wrote to, and the
+    look-alike `northwlnd-bank.example` asking for a customer number, after a real exchange
+    with `northwind-bank.example` about the card limit;
+  - Tomas forwarding Lea's application as `message/rfc822` with a `.docx` CV inside;
+  - Ilse's floor plan as HTML with an inline `cid:` PNG (`multipart/related`);
+  - the board notes `.docx`, the insurance renewal, Aino's rent increase in Finnish (RFC 2047
+    subject and attachment name), Peter's Slovak mail with a zip named the RFC 2231 way
+    (`filename*=`), and a 42 MB attachment over `MessageStore`'s 40 MiB limit;
+  - Alex's replies in Sent.
+- **159 seeded noise messages** (`builder/noise.rb`): CI builds, parcels, HTML-only and
+  multipart/alternative newsletters, bank statements from the real bank domain, café receipts,
+  a cycling mailing list with threads, `List-Id` and a few of Alex's replies.
+- **6 calendar events** in `demo.ics`: timed ones with the machine's `TZID` (so not
+  `floating`), two all-day, a weekly and a monthly recurrence.
+- **13 documents**: the hand-built set's content and scenes (the dentist note, the sauna guide,
+  the invoice, lease, insurance, board notes, pulla recipe, budget, a book-length PDF made from
+  this book's chapters, an image the secretary can't read), now addressed to Alex and dated
+  from the facts. `name.pdf.html` / `name.pdf+odt.html` sources are converted by LibreOffice.
+
+### What the full build showed (2026-11-13)
+
+pikuri's readers on the full profile: search, read, the forward, the invitation's body, both
+attachment-name encodings decoded, the PDF attachment text (the injection paragraph included),
+the 42 MB message refused with "over 40 MB", all six events with zones and recurrence. Two
+findings are lib work, not the testbed's:
+
+- **`domains_seen` counts a domain that only ever wrote *to* Alex.** Gloda's `identities`
+  holds every author, so `northwlnd-bank.example`, `design-week.example` and
+  `kettle-co-payments.example` all come back "seen" the moment their mail is indexed. The
+  compose guard's novelty warning therefore never fires on a reply to the phishing mail or to
+  any new sender, which is exactly when it matters: an attacker earns "seen" by writing first.
+  The scene the chapter wants (a reply to a novel domain, warned) can't happen until the check
+  counts only domains Alex has *sent* to. Not fixed; it changes the guard's contract.
+- **The hand-offs reach the reader's real Thunderbird in `--dir` mode.** `Launcher` runs
+  `thunderbird <arg>` with no `-profile`, so a compose window or import wizard opens in
+  whatever Thunderbird is running — the real profile — while the guard read the demo's Gloda.
+  Human-gated either way, but the wrong window. The launcher needs the override's
+  `-profile <dir>` when `profile_dir:` is set.
 
 ## The hand-offs on a headless VM
 
@@ -284,6 +316,11 @@ our spec fixtures:
 
 ## Open questions
 
-None blocking. Two numbers to record when v1 is built: the index time for the full mailbox
-(five messages took two seconds; § The build script, step 4), and the `undefined` count on the
-owner's real profile (§ What pikuri's readers made of it).
+- `Q_novelty_direction`: should `domains_seen` count only domains Alex has sent to (Sent
+  folder recipients), or sent-to *and* replied-to? Lean: sent-to only; a received mail proves
+  nothing about the sender. Blocks the compose guard's scene.
+- `Q_handoff_profile`: does `thunderbird -profile <dir> <arg>` reach a demo instance while the
+  real one runs (Mozilla's remoting is per profile since 2020-ish, unverified on 159), or must
+  the hand-off start a second instance with `--no-remote`?
+- Still to record: the `undefined` count on the owner's real profile (§ What pikuri's readers
+  made of it).

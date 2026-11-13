@@ -1,0 +1,9 @@
+<html><head><meta charset="utf-8"><title>Board meeting, <%= f.iso(f.board.day) %></title></head><body>
+<h1>Board meeting, <%= f.iso(f.board.day) %></h1>
+<p>Present: Alex, Ilse, Tomas.</p>
+<ul>
+<li>Decided to move the office to <%= f.board.move_to %> in <%= f.board.move_month %>.</li>
+<li>Tomas owns the hiring plan for two junior developers.</li>
+<li>Budget for the offsite: <%= f.eur(f.board.offsite_budget) %>.</li>
+</ul>
+</body></html>

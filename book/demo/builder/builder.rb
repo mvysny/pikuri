@@ -33,6 +33,9 @@ module Pikuri
         @log = log
       end
 
+      # The demo documents are written every time; only the indexed profile
+      # is cached.
+      #
       # @param rebuild [Boolean] ignore a cached tarball.
       # @return [Float, nil] seconds the index took; +nil+ when restored
       #   from the cache.
@@ -42,17 +45,18 @@ module Pikuri
         inputs = self.inputs
         tarball = File.join(@cache_dir, "#{key(inputs)}.tar")
         @target.prepare!
+        @content.documents.write(@target.documents_dir)
         if !rebuild && File.file?(tarball)
-          run('tar', '-xf', tarball, '-C', @target.dir)
+          run('tar', '-xf', tarball, '-C', @target.profile_dir)
           return nil
         end
 
         inputs.each do |path, bytes|
-          file = File.join(@target.dir, path)
+          file = File.join(@target.profile_dir, path)
           FileUtils.mkdir_p(File.dirname(file))
           File.binwrite(file, bytes)
         end
-        seconds = Indexer.new(profile_dir: @target.dir, messages: @content.message_count,
+        seconds = Indexer.new(profile_dir: @target.profile_dir, messages: @content.message_count,
                               events: @content.event_count, log: @log).run!
         store(tarball)
         seconds
@@ -62,7 +66,7 @@ module Pikuri
       def inputs
         # The calendar sits in the profile itself: a snap Thunderbird can read
         # it there, and a reader's --dir profile carries it along.
-        ics = File.join(@target.dir, 'demo.ics')
+        ics = File.join(@target.profile_dir, 'demo.ics')
         mail = @content.folders.to_h { |name, messages| [File.join(MAIL_DIR, name), Mbox.render(messages)] }
         mail.merge('demo.ics' => @content.ics, 'user.js' => UserJs.render(ics_path: ics))
       end
@@ -90,7 +94,7 @@ module Pikuri
       def store(tarball)
         FileUtils.mkdir_p(@cache_dir)
         partial = "#{tarball}.partial"
-        run('tar', '-cf', partial, '--exclude=./lock', '-C', @target.dir, '.')
+        run('tar', '-cf', partial, '--exclude=./lock', '-C', @target.profile_dir, '.')
         Dir[File.join(@cache_dir, '*.tar')].each { |old| File.delete(old) }
         File.rename(partial, tarball)
       end

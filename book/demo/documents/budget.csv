@@ -1,0 +1,6 @@
+month,category,amount_eur
+<%= f.date(-60).strftime('%Y-%m') %>,groceries,612
+<%= f.date(-60).strftime('%Y-%m') %>,electricity,88
+<%= f.date(-30).strftime('%Y-%m') %>,groceries,655
+<%= f.date(-30).strftime('%Y-%m') %>,electricity,131
+<%= f.date(-30).strftime('%Y-%m') %>,sauna renovation,2400

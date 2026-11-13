@@ -1,0 +1,14 @@
+<html><head><meta charset="utf-8"><title>Residential Lease Agreement</title></head><body>
+<h1>Residential Lease Agreement</h1>
+<p>Landlord: Aino Virtanen. Tenant: <%= f.owner.name %>.</p>
+<p>Premises: <%= f.owner.address %>.</p>
+<h2>1. Rent</h2>
+<p>Monthly rent is <%= f.eur(f.lease.rent) %>, due on the <%= f.lease.rent_day %>th day of each month.</p>
+<h2>2. Notice period</h2>
+<p>The tenant may terminate this lease with a notice period of one (<%= f.lease.tenant_notice_months %>) calendar month;
+the landlord's notice period is three (<%= f.lease.landlord_notice_months %>) months.</p>
+<h2>3. Deposit</h2>
+<p>A security deposit of <%= f.eur(f.lease.deposit) %> is held by the landlord and returned within 30 days of move-out.</p>
+<h2>4. Pets</h2>
+<p>One cat is permitted. Dogs require the landlord's written consent.</p>
+</body></html>

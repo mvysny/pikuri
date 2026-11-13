@@ -4,24 +4,26 @@ require 'fileutils'
 
 module Pikuri
   module Demo
-    # Where the demo profile goes, and the guard that keeps the build away
-    # from anyone's real mail.
+    # Where the demo profile and the demo documents go, and the guard that
+    # keeps the build away from anyone's real mail and files.
     #
-    # Every demo profile carries a marker file, {MARKER}. The build refuses to
-    # run while either Thunderbird root holds a profile *without* it, and in
-    # +--dir+ mode refuses a non-empty target without it. It never deletes an
-    # unmarked profile and never offers to: it prints the paths and stops.
+    # Every demo directory carries a marker file, {MARKER}. The build refuses
+    # to run while either Thunderbird root holds a profile *without* it, or
+    # while a directory it would write is non-empty and unmarked. It never
+    # deletes an unmarked directory and never offers to: it prints the paths
+    # and stops.
     #
     # Two modes:
     #
     # * *registered* (the VM default): the profile lives in the installed
     #   Thunderbird's root and +profiles.ini+ names it +Default=1+, so pikuri's
-    #   own auto-discovery finds it.
-    # * *dir* (a reader, beside a real profile): the profile lives where the
-    #   reader says, +profiles.ini+ is never touched, and Thunderbird and pikuri
-    #   are both pointed at it explicitly.
+    #   own auto-discovery finds it; the documents go to +~/Documents+, the
+    #   secretary's default.
+    # * *dir* (a reader, beside a real profile): one folder holds the whole
+    #   demo, +profile/+ and +Documents/+; +profiles.ini+ is never touched, and
+    #   Thunderbird and the secretary are pointed at it explicitly.
     class Target
-      # The marker every demo profile carries.
+      # The marker every demo directory carries.
       MARKER = '.pikuri-demo'
 
       # Thunderbird's two install roots, as pikuri's +Profile+ probes them.
@@ -37,12 +39,20 @@ module Pikuri
       class Refused < StandardError; end
 
       # @return [String] absolute profile directory.
-      attr_reader :dir
+      attr_reader :profile_dir
+
+      # @return [String] absolute demo documents directory.
+      attr_reader :documents_dir
 
       # @param dir [String, nil] +--dir+ target; +nil+ for registered mode.
       # @return [Target]
       def self.for(dir:)
-        dir ? new(dir: File.expand_path(dir), registered: false) : new(dir: registered_dir, registered: true)
+        if dir
+          dir = File.expand_path(dir)
+          new(top: dir, profile_dir: File.join(dir, 'profile'), documents_dir: File.join(dir, 'Documents'))
+        else
+          new(top: nil, profile_dir: registered_dir, documents_dir: File.expand_path('~/Documents'))
+        end
       end
 
       # @return [String] the profile dir inside the installed Thunderbird's
@@ -60,20 +70,23 @@ module Pikuri
            .find { |p| File.executable?(p) } or raise Refused, 'no thunderbird on PATH'
       end
 
-      # @param dir [String]
-      # @param registered [Boolean]
-      def initialize(dir:, registered:)
-        @dir = dir
-        @registered = registered
+      # @param top [String, nil] the +--dir+ folder; +nil+ when registered.
+      # @param profile_dir [String]
+      # @param documents_dir [String]
+      def initialize(top:, profile_dir:, documents_dir:)
+        @top = top
+        @profile_dir = profile_dir
+        @documents_dir = documents_dir
       end
 
       # @return [Boolean] whether +profiles.ini+ registers the profile.
-      def registered? = @registered
+      def registered? = @top.nil?
 
-      # Checks both roots and the target; raises before anything is written.
+      # Checks both roots and every directory the build writes; raises
+      # before anything is written.
       #
       # @return [void]
-      # @raise [Refused] naming every unmarked profile found.
+      # @raise [Refused] naming every unmarked profile or directory found.
       def guard!
         unmarked = ROOTS.values.flat_map { |root| profiles_in(root) }.reject { |p| marked?(p) }
         unless unmarked.empty?
@@ -81,24 +94,30 @@ module Pikuri
                          "#{unmarked.join("\n  ")}\n" \
                          'The demo build never touches one. Use --dir to build beside it.'
         end
-        return if !File.exist?(@dir) || marked?(@dir) || Dir.empty?(@dir)
+        blocked = owned_dirs.reject { |d| !File.exist?(d) || marked?(d) || Dir.empty?(d) }
+        return if blocked.empty?
 
-        raise Refused, "#{@dir} exists, isn't empty and isn't a pikuri demo (no #{MARKER}). " \
-                       'Pick another --dir.'
+        raise Refused, "Not a pikuri demo (no #{MARKER}), and not empty:\n  #{blocked.join("\n  ")}\n" \
+                       'The demo build never overwrites one. Move it aside, or use --dir.'
       end
 
-      # Wipes a previous demo at the target and creates it afresh, marked; in
+      # Wipes a previous demo and creates the directories afresh, marked; in
       # registered mode also writes +profiles.ini+. Call after {#guard!}.
       #
       # @return [void]
       def prepare!
-        FileUtils.rm_rf(@dir) if marked?(@dir)
-        FileUtils.mkdir_p(@dir, mode: 0o700)
-        File.write(File.join(@dir, MARKER), "A pikuri demo profile. Holds no real mail.\n")
-        write_profiles_ini if @registered
+        owned_dirs.each do |dir|
+          FileUtils.rm_rf(dir) if marked?(dir)
+          FileUtils.mkdir_p(dir, mode: 0o700)
+          File.write(File.join(dir, MARKER), "A pikuri demo. Holds no real mail or files.\n")
+        end
+        write_profiles_ini if registered?
       end
 
       private
+
+      # @return [Array<String>] the directories the build owns and wipes.
+      def owned_dirs = registered? ? [@profile_dir, @documents_dir] : [@top]
 
       # @param path [String]
       # @return [Boolean]
@@ -140,7 +159,7 @@ module Pikuri
 
       # @return [void]
       def write_profiles_ini
-        File.write(File.join(File.dirname(@dir), 'profiles.ini'), <<~INI)
+        File.write(File.join(File.dirname(@profile_dir), 'profiles.ini'), <<~INI)
           [Profile0]
           Name=#{PROFILE_NAME}
           IsRelative=1

@@ -4,21 +4,22 @@
 # Dev / demo entry point — runs from a source checkout only; no gem installs
 # it.
 #
-# Builds the demo Thunderbird profile the secretary chapter's transcripts run
-# on: Alex Novak's mailbox and calendar, every domain RFC 2606-reserved, so
-# no real mail is ever in it. A real headless Thunderbird builds the stores
-# pikuri reads, from the mbox and .ics files this writes.
+# Builds the demo world the secretary chapter's transcripts run on: Alex
+# Novak's mailbox, calendar and ~/Documents, from book/demo/ (facts.yml,
+# mail.yml, documents/). Every domain is RFC 2606-reserved, so no real mail
+# is ever in it. A real headless Thunderbird builds the stores pikuri reads,
+# from the mbox and .ics files this writes.
 #
-#   bin/pikuri-demo-mailbox                    # the VM: registered as Thunderbird's default profile
+#   bin/pikuri-demo-mailbox                    # the VM: Thunderbird's default profile + ~/Documents
 #   bin/pikuri-demo-mailbox --dir ~/pikuri-demo  # beside your real profile, which it never touches
 #
-# With --dir, run Thunderbird on it as
-# +thunderbird -profile ~/pikuri-demo --no-remote+ and give pikuri
-# +profile_dir: ~/pikuri-demo+. A snap Thunderbird can't read a hidden
-# directory in $HOME, so don't pick one.
+# With --dir, the folder holds profile/ and Documents/; it prints how to run
+# Thunderbird and the secretary on them. A snap Thunderbird can't read a
+# hidden directory in $HOME, so don't pick one.
 #
 # It refuses to run while a Thunderbird root holds a profile that isn't a
-# pikuri demo (no .pikuri-demo marker), and never deletes one.
+# pikuri demo (no .pikuri-demo marker), or while a folder it would write is
+# non-empty and unmarked, and never deletes one.
 
 require 'bundler/setup'
 require 'date'
@@ -40,13 +41,16 @@ end.parse!
 
 tzid = File.readlink('/etc/localtime')[%r{zoneinfo/(.+)\z}, 1] || 'UTC'
 target = Pikuri::Demo::Target.for(dir: options[:dir])
-content = Pikuri::Demo::Content.new(today: options[:today], tzid: tzid)
 cache_dir = Pikuri::Paths.cache.join('demo-mailbox')
 FileUtils.mkdir_p(cache_dir)
 log = cache_dir.join('thunderbird.log').to_s
 
-puts "Building #{content.message_count} messages and #{content.event_count} events into #{target.dir}"
 begin
+  target.guard!
+  converter = Pikuri::Demo::Converter.new(cache_dir: cache_dir.join('converted').to_s)
+  content = Pikuri::Demo::Content.new(today: options[:today], tzid: tzid, converter: converter)
+  puts "Building #{content.message_count} messages and #{content.event_count} events into #{target.profile_dir}"
+  puts "and #{content.documents.files.size} documents into #{target.documents_dir}"
   builder = Pikuri::Demo::Builder.new(target: target, content: content, cache_dir: cache_dir.to_s, log: log)
   seconds = builder.build!(rebuild: options[:rebuild])
 rescue Pikuri::Demo::Target::Refused => e
@@ -56,6 +60,7 @@ puts(seconds ? format('Indexed in %.1fs. Thunderbird\'s log: %s', seconds, log) 
 puts(if target.registered?
        'Registered as the default profile; pikuri finds it on its own.'
      else
-       "Run Thunderbird on it: thunderbird -profile #{target.dir} --no-remote\n" \
-         "Point pikuri at it: profile_dir: #{target.dir}"
+       "Run Thunderbird on it: thunderbird -profile #{target.profile_dir} --no-remote\n" \
+         "Run the secretary on it: bin/pikuri-secretary --documents #{target.documents_dir} " \
+         "--thunderbird-profile #{target.profile_dir}"
      end)

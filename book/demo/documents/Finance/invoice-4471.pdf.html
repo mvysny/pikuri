@@ -1,0 +1,13 @@
+<html><head><meta charset="utf-8"><title><%= f.invoice.vendor %> — Invoice #<%= f.invoice.number %></title></head><body>
+<h1><%= f.invoice.vendor %> — Invoice #<%= f.invoice.number %></h1>
+<p>Issued: <%= f.iso(f.invoice.issued) %> · Due: <%= f.iso(f.invoice.due) %></p>
+<p>Bill to: <%= f.owner.name %>, <%= f.owner.address %></p>
+<table border="1" cellpadding="4">
+<tr><th>Item</th><th>Qty</th><th>Price</th></tr>
+<%- f.invoice.items.each do |item| -%>
+<tr><td><%= item.what %></td><td><%= item.qty %></td><td><%= f.eur(item.price) %></td></tr>
+<%- end -%>
+</table>
+<p><b>Total due: <%= f.eur(f.invoice.total) %></b></p>
+<p>Pay to IBAN <%= f.invoice.iban %>, reference <%= f.invoice.reference %>.</p>
+</body></html>
