@@ -5,23 +5,19 @@ require 'open3'
 
 module Pikuri
   module Demo
-    # Where the demo goes, and the guard that keeps the build away from
-    # anyone's real mail and files.
+    # Where the demo profile goes, and the guard that keeps the build away
+    # from anyone's real mail. The demo +~/Documents+ is {Home}'s.
     #
     # The testbed is for pikuri's developers, on a machine that holds no
     # Thunderbird data of its own (the dev VM). The demo profile is
     # Thunderbird's only profile, registered +Default=1+ in +profiles.ini+, so
     # pikuri's auto-discovery and the hand-offs' plain +thunderbird <arg>+ both
-    # land in it; the documents go to +~/Documents+, the secretary's default.
+    # land in it.
     #
-    # Every demo directory carries a marker file, {MARKER}. The build refuses
-    # while either Thunderbird root holds a profile without it, while
-    # +~/Documents+ is non-empty and unmarked, or while Thunderbird runs. It
-    # never deletes an unmarked directory and never offers to.
+    # The profile carries {Home::MARKER}. The build refuses while either
+    # Thunderbird root holds a profile without it, or while Thunderbird runs.
+    # It never deletes an unmarked directory and never offers to.
     class Target
-      # The marker every demo directory carries.
-      MARKER = '.pikuri-demo'
-
       # Thunderbird's two install roots, as pikuri's +Profile+ probes them.
       ROOTS = {
         snap: File.expand_path('~/snap/thunderbird/common/.thunderbird'),
@@ -31,15 +27,13 @@ module Pikuri
       # The profile's directory name.
       PROFILE_NAME = 'pikuri-demo'
 
-      # Raised when the guard finds something that isn't a demo, or a
-      # running Thunderbird.
-      class Refused < StandardError; end
+      # Raised when the guard finds a profile that isn't a demo, or a
+      # running Thunderbird. The same class as {Home::Refused}, so one rescue
+      # covers both guards.
+      Refused = Home::Refused
 
       # @return [String] absolute profile directory.
       attr_reader :profile_dir
-
-      # @return [String] absolute demo documents directory.
-      attr_reader :documents_dir
 
       # @return [Array<Integer>] pids of running Thunderbirds (the snap's
       #   and the tarball's +thunderbird-bin+, a distro's +thunderbird+).
@@ -64,48 +58,37 @@ module Pikuri
         # symlink to +/usr/bin/snap+, so the unresolved path tells).
         root = self.class.thunderbird_path.start_with?('/snap/') ? ROOTS[:snap] : ROOTS[:apt]
         @profile_dir = File.join(root, PROFILE_NAME)
-        @documents_dir = File.expand_path('~/Documents')
       end
 
       # Raises before anything is written.
       #
       # @return [void]
-      # @raise [Refused] naming every unmarked profile or directory found,
-      #   or the running Thunderbird's pids.
+      # @raise [Refused] naming every unmarked profile found, or the running
+      #   Thunderbird's pids.
       def guard!
         pids = self.class.running_pids
         raise Refused, "Thunderbird is running (pid #{pids.join(', ')}); quit it first." unless pids.empty?
 
-        unmarked = ROOTS.values.flat_map { |root| profiles_in(root) }.reject { |p| marked?(p) }
-        unless unmarked.empty?
-          raise Refused, "Found a Thunderbird profile that isn't a pikuri demo:\n  " \
-                         "#{unmarked.join("\n  ")}\n" \
-                         'The testbed is for a machine with no Thunderbird data of its own.'
-        end
-        return if !File.exist?(@documents_dir) || marked?(@documents_dir) || Dir.empty?(@documents_dir)
+        unmarked = ROOTS.values.flat_map { |root| profiles_in(root) }.reject { |p| Home.marked?(p) }
+        return if unmarked.empty?
 
-        raise Refused, "#{@documents_dir} is not a pikuri demo (no #{MARKER}) and not empty. " \
-                       'The demo build never overwrites it; move it aside.'
+        raise Refused, "Found a Thunderbird profile that isn't a pikuri demo:\n  " \
+                       "#{unmarked.join("\n  ")}\n" \
+                       'The testbed is for a machine with no Thunderbird data of its own.'
       end
 
-      # Wipes a previous demo, creates both directories afresh, marked, and
-      # registers the profile. Call after {#guard!}.
+      # Wipes a previous demo, creates the profile directory afresh, marked,
+      # and registers it. Call after {#guard!}.
       #
       # @return [void]
       def prepare!
-        [@profile_dir, @documents_dir].each do |dir|
-          FileUtils.rm_rf(dir) if marked?(dir)
-          FileUtils.mkdir_p(dir, mode: 0o700)
-          File.write(File.join(dir, MARKER), "A pikuri demo. Holds no real mail or files.\n")
-        end
+        FileUtils.rm_rf(@profile_dir) if Home.marked?(@profile_dir)
+        FileUtils.mkdir_p(@profile_dir, mode: 0o700)
+        File.write(File.join(@profile_dir, Home::MARKER), "A pikuri demo. Holds no real mail.\n")
         write_profiles_ini
       end
 
       private
-
-      # @param path [String]
-      # @return [Boolean]
-      def marked?(path) = File.file?(File.join(path, MARKER))
 
       # Every profile under +root+: the ones +profiles.ini+ lists, plus any
       # child dir that looks like one, so an unlisted profile is caught too.

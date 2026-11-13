@@ -5,7 +5,7 @@ require 'fileutils'
 
 module Pikuri
   module Demo
-    # The demo +~/Documents+, built from +dev/thunderbird-testbed/documents/+.
+    # The demo +~/Documents+, built from +dev/demo-home/documents/+.
     #
     # A source is rendered as ERB over the facts when it contains +<%+. A name
     # like +invoice-4471.pdf.html+ or +lease-agreement.pdf+odt.html+ is

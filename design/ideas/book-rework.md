@@ -51,13 +51,12 @@ chapters). Some are legitimate links to book 2.
 | `rag.md`, `hosting.md` | 1 each | sound |
 
 1. ~~The secretary chapter.~~ Written 2026-11-13.
-2. **`trifecta-detector.md`, the rest of its rebuild.** The `pikuri-code` worked example is
-   gone (2026-11-13) and the briefing flag is its only worked example; it ends on a forward
-   link to the secretary, which reads its own map. Still to do: the "Prerequisites" that send
-   the reader to the OS-assistant and coding-agent chapters; the loud advisory in "Reading the
-   advisory" (`[TRIFECTA: HARD] pikuri-code`), the chapter's only loud reading, and the
-   `pikuri-code` cites before it. Lean for the loud example: `pikuri-chat` beside a private
-   folder, loud through `fetch`, which shows the one-tool rule (`D_egress_axis_shape`) plainly.
+2. ~~**`trifecta-detector.md`, the rest of its rebuild.**~~ Done 2026-11-13: no book-2 wiring
+   is its example any more. The map tour reads `pikuri-thunderbird` and `pikuri-minions`; the
+   loud advisory is rendered from the real tools of `pikuri-chat` beside a private notes
+   folder, and drops to soft when `fetch` and `web_scrape` go; the briefing flag stays its
+   worked example. Book 2 is still named where it is the honest example (a shell tool behind
+   a confirmer, a coding agent loud by design).
 3. **`security.md`, rewritten.** It cites `code.md` and Bubblewrap throughout and MCP eighteen
    times, its strongest case for "cuts built into the structure beat filters" was the kernel
    namespace, and it says the book's one loud shape is a coding agent. The replacement case is

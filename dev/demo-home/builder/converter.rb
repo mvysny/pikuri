@@ -19,6 +19,12 @@ module Pikuri
       # Target extension => LibreOffice's --convert-to argument.
       FILTERS = { 'pdf' => 'pdf:writer_pdf_Export', 'docx' => 'docx:MS Word 2007 XML', 'odt' => 'odt' }.freeze
 
+      # The one both builds use, the demo home's and the Thunderbird
+      # testbed's, so a document converted by one is reused by the other.
+      #
+      # @return [Converter]
+      def self.shared = new(cache_dir: Pikuri::Paths.cache.join('demo-home', 'converted').to_s)
+
       # @param cache_dir [String]
       def initialize(cache_dir:)
         @cache_dir = cache_dir

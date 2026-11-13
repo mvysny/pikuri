@@ -28,10 +28,10 @@ about a leg that you can ask about any harness you build.
 ## Prerequisites
 
 The [security chapter](security.md) for the trifecta itself, plus
-the [OS-assistant](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md), [coding-agent](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md) and
-[hybrid-retrieval](rag.md) chapters, whose wirings are the worked
-examples here. No new binary and nothing to install: the detector
-is already running in every demo you've started.
+the [sub-agents](subagents.md) and [hybrid-retrieval](rag.md)
+chapters, whose wirings are the examples here. No new binary and
+nothing to install: the detector is already running in every demo
+you've started.
 
 ## The decision procedure, automated
 
@@ -45,10 +45,10 @@ harness, and its first step was:
 The detector is that step, done by machine, over the wiring that
 actually booted rather than the one you meant to write. That
 distinction is the whole value. You can hold a four-tool agent in
-your head; `pikuri-code` wires the file tools, `bash`, three
-sub-agent-only web tools and three personas — and the question
-"can the parent egress?" has a non-obvious answer that turns on a
-sandbox setting two files away.
+your head. The secretary at the end of this book wires seventeen
+tools from five gems, and "which of them can send bytes out, and
+does a human see those bytes first?" has an answer spread across
+their constructors. The map gathers it into one screen.
 
 ### What it is not
 
@@ -104,40 +104,59 @@ rules cover it.
 the shape; sub-agents nest under their parent.
 
 **An agent line shows its *folded* legs; a tool line shows its
-own.** This is the rule that makes the map worth printing, because
-it turns propagation into something you can *see*. Here is
-`pikuri-computer`, the fullest wiring in the book:
+own.** The agent line is the union of everything below it, so you
+read the verdict off one line and the reasons off the rest. Here is
+`pikuri-thunderbird`, the mail demo, over a mailbox:
 
 ```
-pikuri-computer [:private, :untrusted_hard, :egress_reviewed]
+pikuri-thunderbird [:private, :untrusted_hard, :egress_reviewed]
   calculator []
-  read [:private, :untrusted_hard]
-  bash [:private, :untrusted_hard]
-  fileindex_search [:private, :untrusted_hard]
   thunderbird_mail_search [:private, :untrusted_hard]
+  thunderbird_mail_read [:private, :untrusted_hard]
+  thunderbird_mail_attachment_read [:private, :untrusted_hard]
+  thunderbird_contact_search [:private, :untrusted_hard]
+  thunderbird_calendar_search [:private, :untrusted_hard]
+  thunderbird_calendar_read [:private, :untrusted_hard]
   thunderbird_mail_compose [:egress_reviewed]
-  RESEARCHER [gate: human_reviewed] [:untrusted_hard, :egress]
+  thunderbird_calendar_create [:egress_reviewed]
+```
+
+Notice what the egress rows say. Exactly two tools carry the
+outbound leg, the map names them, and both are reviewed. Two dozen
+words of threat model about this demo reduce to: the only way
+bytes leave is a window you look at.
+
+**The folding crosses a sub-agent boundary.** Here is
+`pikuri-minions` from the
+[sub-agents chapter](subagents.md):
+
+```
+pikuri-minions [:untrusted_hard, :egress]
+  web_search [:untrusted_hard, :egress_vouched]
+  web_scrape [:untrusted_hard, :egress]
+  fetch [:untrusted_hard, :egress]
+  calculator []
+  researcher [gate: unreviewed] [:untrusted_hard, :egress]
     web_search [:untrusted_hard, :egress_vouched]
+    web_scrape [:untrusted_hard, :egress]
     fetch [:untrusted_hard, :egress]
 ```
 
-`RESEARCHER` holds hard `:egress`, but the parent above it reads
-`:egress_reviewed` — weaker than its own child's. No tool of
-the parent's contributes that level; it arrived from below and got
-capped on the way. The layout shows you the discrepancy without a
-word of explanation. (Why it capped is the series rule further
-down.)
-
-Also worth noting what the egress line *doesn't* say. Exactly one
-tool carries the outbound leg, and the map names it. Two dozen
-words of threat model about this demo reduce to: the only way
-bytes leave is a compose window you look at.
+The researcher's legs are folded into the parent's line along with
+the parent's own tools, after the boundary has had its say: what
+crosses changes a leg's strength, and the
+[propagation section](#propagation-max-in-parallel-min-in-series)
+says how.
 
 **`[gate: …]` on a sub-agent line is the delegation channel.** Not
 an annotation — it's what the parent's inherited egress gets capped
-*to*. Without it printed, running with `--no-confirm` would change
-the parent's verdict while every visible tag stayed identical: an
-effect with no visible cause.
+*to*. `unreviewed` here: the parent writes the researcher's task and
+nobody sees it before it runs. A host that shows you each task,
+editable, before handing it off prints `[gate: human_reviewed]`, and
+the child's egress reaches the parent capped at that. Without the
+marker printed, that one setting would change the parent's verdict
+while every visible tag stayed identical: an effect with no visible
+cause.
 
 **`[]` means checked and clear.** `calculator []` is not an
 unrendered line; it's a tool that was examined and contributes
@@ -146,36 +165,73 @@ nothing.
 ## Reading the advisory
 
 The map carries facts; the one-line advisory above it carries the
-meaning:
+meaning. No binary in this book boots loud: each one is missing a
+leg, or has no way out that skips review *and* reaches the attacker.
+So here is one you might build next.
+Give `pikuri-chat`'s web tools a `read` over your notes folder,
+declared private. The detector is a pure function of the tool tree,
+so you don't even have to start the agent to see what it would
+print: build the tree from the real tools and render it.
+
+```ruby
+notes = Pikuri::Workspace::Workspace.new(
+  filesystem: Pikuri::Workspace::Filesystem.new(project_root: File.expand_path('~/notes'), private: true)
+)
+tools = [Pikuri::Workspace::Read.new(workspace: notes), Pikuri::Web::Search.from_h(nil),
+         Pikuri::Tool::CALCULATOR, Pikuri::Web::SCRAPE, Pikuri::Web::FETCH]
+node = Pikuri::Trifecta::Node.new(label: 'demo',
+                                  tool_legs: tools.to_h { [_1.name, _1.trifecta_legs] })
+puts Pikuri::Trifecta.walk(node).render
+```
 
 ```
-[TRIFECTA: HARD] pikuri-code — private(read, grep, glob, file_list, bash) +
-untrusted(read, grep, glob, file_list, bash, skill) + egress(bash). An injection in
-what this agent reads can drive an exfiltration. Break a leg:
-sever egress (a network-off sandbox), or privilege-separate the
-step that reads untrusted content. See book/trifecta-detector.md in this repo.
+[TRIFECTA: HARD] demo — private(read) + untrusted(read, web_search, web_scrape, fetch)
++ egress(web_search, web_scrape, fetch). An injection in what this agent reads can
+drive an exfiltration. Break a leg: sever egress (a network-off sandbox), or
+privilege-separate the step that reads untrusted content. See
+book/trifecta-detector.md in this repo.
+
+demo [:private, :untrusted_hard, :egress]
+  read [:private, :untrusted_hard]
+  web_search [:untrusted_hard, :egress_vouched]
+  calculator []
+  web_scrape [:untrusted_hard, :egress]
+  fetch [:untrusted_hard, :egress]
 ```
 
-Three things it does deliberately:
+That is the shape the [security chapter](security.md) warned about,
+assembled in five lines: a page can tell the model to read your
+notes and `fetch` an attacker's URL with them in the query. Three
+things the advisory does deliberately:
 
 - **Names the contributing tools per leg**, so the line points at
   something you can go and change. "You hold egress" is a fact;
-  "you hold egress *via bash*" is an action. It is also the half
-  that moves when you answer a boot question differently: tell
-  `pikuri-code` you wrote the files under this directory yourself
-  and `skill` drops out of that `untrusted(...)` list, because the
-  skills it loaded from this repo are then your own prose. The
-  verdict stays `HARD` — `read` and `bash` still hold the leg — but
-  the map stops naming a tool that isn't contributing one.
+  "you hold egress *via fetch*" is an action. Take `web_scrape` and
+  `fetch` out of that list and render it again:
+
+  ```
+  [TRIFECTA: soft] demo — private(read) + untrusted(read, web_search)
+  + egress(web_search). … Break a leg: sever egress outright — bytes still
+  leave, they merely reach a destination the attacker cannot read back, and
+  one unreviewed attacker-reachable tool re-hardens this node. …
+
+  demo [:private, :untrusted_hard, :egress_vouched]
+  ```
+
+  Still assembled, but nothing left can send your notes anywhere an
+  attacker reads them. Why that counts for a full step is the
+  [destination section](#what-makes-a-destination-safe-can-they-read-it-back).
 - **Names the leg to break**, and picks the advice from the
-  *cell*, not the severity — a soft verdict reached by a weakened
-  untrusted leg wants different advice from one reached by a gated
-  egress leg.
-- **Logs at `warn`, never `error`.** `pikuri-code` over a private
-  repo is loud *by design*; it's a coding agent and you cannot take
-  a leg away without breaking the job. Shouting ERROR at a correct
-  wiring teaches users that ERROR is normal, which is how you lose
-  the ability to say anything.
+  *cell*, not the severity — the two renders above wanted different
+  advice, and so does a soft verdict reached by a weakened untrusted
+  leg.
+- **Logs at `warn`, never `error`.** A loud wiring can be correct:
+  the coding agent in
+  [book 2](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md)
+  is loud over a private repo *by design*, since you cannot take a
+  leg off a coding agent without breaking the job. Shouting ERROR
+  at a correct wiring teaches users that ERROR is normal, which is
+  how you lose the ability to say anything.
 
 ## Who declares each leg
 
@@ -195,14 +251,14 @@ claim its author makes. Two axes are declared, not one.)
 
 The `:untrusted` row is "framework" in the sense that it defaults
 **on** and no tool author can quietly switch it off — but you can
-*answer* it, and the two questions `pikuri-code` asks at boot are
-exactly that. `Filesystem#trusted?` speaks for the file tools;
-`Bundle::Base(trusted:)` speaks for each place skills were loaded
-from. Both are unverifiable claims, so both default to the
-pessimistic value, and both are claims about *one reachable set*
-rather than about "the repo": a workspace that can read
-`~/.m2/repository` is honestly untrusted at the same moment the
-project's own `.pikuri/skills` beside it is honestly yours.
+*answer* it. `Filesystem#trusted?` speaks for the file tools;
+`trusted:` on a corpus speaks for the retrieval tools over it.
+Briefing answers yes for a notes folder you wrote yourself; the
+secretary answers no for `~/Documents`. Both are unverifiable
+claims, so both default to the pessimistic value, and both are
+claims about *one reachable set* rather than about "my files": a
+corpus that holds `~/Downloads` is honestly untrusted at the same
+moment the notes folder beside it is honestly yours.
 
 The asymmetry is not an oversight. Whether a tool reaches a
 network sink is a property *of the tool*, and pikuri knows it.
@@ -224,9 +280,9 @@ has the before-and-after map).
 
 Two consequences worth sitting with:
 
-**This is why the demos are quiet.** A public checkout declares no
-private leg, so the coding agent's genuine untrusted + egress pair
-never completes a trifecta. The alarm stays silent until you point
+**This is why the demos are quiet.** `pikuri-chat` holds genuine
+untrusted content and genuine egress, but nothing private, so its
+pair never completes a trifecta. The alarm stays silent until you point
 it at something that matters — which is the moment it's worth
 hearing.
 
@@ -264,17 +320,16 @@ vector, not on a symmetry argument.
 
 ## A leg's presence is binary. Its strength is not.
 
-The [OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md) ended on a line worth
-re-reading:
+Two halves to hold at once:
 
 > The trifecta is **binary in presence** — all three legs live
 > means assembled, full stop — and **graded in severity** by the
 > size of the private pool sitting beside the egress leg.
 
-Both halves still hold, and the first is the one that kills "we're
-probably fine": there is no partial credit for 2.5 legs. But the
-severity half is now sharper than pool size alone, because **two
-of the three legs come in strengths**:
+The first is the one that kills "we're probably fine": there is no
+partial credit for 2.5 legs. But the severity half is sharper than
+pool size alone, because **two of the three legs come in
+strengths**:
 
 ```
 untrusted:               none       <  weakened        <  hard
@@ -321,11 +376,11 @@ Here is the question that decides the egress row, and it is the
 most portable idea in this chapter.
 
 A naive reading says: a human is in the path, therefore
-`human_reviewed`, therefore soft. Follow that and `Code::Bash`
-becomes soft too — it consults its confirmer before every command
-— and with it *every* loud verdict in the repo. A detector whose
-top severity is unreachable is as useless as one that always
-fires.
+`human_reviewed`, therefore soft. Follow that and a shell tool
+becomes soft too — book 2's `bash` consults its confirmer before
+every command — and with it nearly every loud verdict anyone
+builds. A detector whose top severity is unreachable is as useless
+as one that always fires.
 
 The tempting rescue is frequency and salience: bash confirmations
 arrive by the dozen and get rubber-stamped, a compose window is
@@ -353,8 +408,7 @@ The admissible test is structural:
   bits is invisible to any reader. You approved a *filename* and a
   thumbnail — structurally identical to `curl`: a reference to
   bytes nobody saw. (Hypothetical here: pikuri-thunderbird ships
-  no attachment support, and [that
-  chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md)'s hand-off carries only fields that
+  no attachment support, and its hand-off carries only fields that
   render literally, for exactly this reason.)
 
 The test is derived from structure, not from anyone's diligence,
@@ -449,9 +503,9 @@ gap:
   linguistic steganography must not be what earns a softer
   verdict.
 - **Attention, frequency, salience.** Same argument, above.
-- **Bandwidth.** A narrow channel is not a safe one. The
-  OS-assistant chapter's "too big to hide" section is the long
-  version; the short version is that a drip removes the ceiling.
+- **Bandwidth.** A narrow channel is not a safe one: a secret too
+  big for one call leaves a few bytes per call, and a drip removes
+  the ceiling.
 
 And the corollary that falls out of all three: **the only thing
 better than an approver gate is not holding the leg.** There is no
@@ -494,11 +548,14 @@ parent can act on reported data.
 
 **Union at a node is `max`.** An agent holding two tools ends up
 with the strongest value on each axis. A hard untrusted leg
-absorbs a weakened one.
+absorbs a weakened one. Egress keeps one more fact through the
+union: whether a single tool is both unreviewed and
+attacker-reachable, since bytes leave through one tool, not
+through an axis.
 
 **A delegation channel is `min`.** This is the series rule, and
-it's what capped `RESEARCHER`'s hard egress to `human_reviewed` in
-the map earlier. The child's egress cannot exceed the channel
+it's what a `[gate: human_reviewed]` on the minions map would do to
+the researcher's hard egress. The child's egress cannot exceed the channel
 feeding it: if the only bytes crossing into the child are a task
 string a human approved, then even a fully poisoned child can send
 nothing else. The precondition is that **the child holds no
@@ -630,10 +687,9 @@ tools'. Union is idempotent, so every later tool declaring the same
 legs is free — five surfaces or two, the count and the advisory are
 identical. This is the
 ["A leg's presence is binary"](#a-legs-presence-is-binary-its-strength-is-not)
-section seen from both sides in one wiring, and it is the same
-idempotence as the [OS-assistant chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/os-assistant.md)'s Part 3,
-where *adding* a leg-holder to an already-assembled trifecta moves
-nothing either.
+section seen from both sides in one wiring, and the same
+idempotence holds one level up: *adding* a leg-holder to an
+already-assembled trifecta moves nothing either.
 
 ### The pipe the map will never see
 
@@ -745,13 +801,11 @@ goes quiet:
   exist, and no probe can tell which one *your* folder is. So the
   framework stays quiet, and a host that knows its workspace
   replicates off-owner adds the leg itself from its extension.
-- **No line for a tool nothing can call.** Boot `pikuri-computer`
-  and no line mentions `git_clone`, though the binary registers it:
-  it composes the coding extension, which offers that tool to a
-  persona this wiring doesn't include. So the tool exists and no
-  agent in the tree can invoke it. It gets no line, because the map
-  lists legs someone *holds* and an unreachable tool is the absence
-  of one.
+- **No line for a tool nothing can call.** A tool registered for
+  sub-agents, but named by no persona this wiring includes, exists
+  and no agent in the tree can invoke it. It gets no line, because
+  the map lists legs someone *holds* and an unreachable tool is the
+  absence of one.
   Don't read the omission as a miss. The opposite direction, a
   persona naming a tool nobody registered, is a real bug and stops
   the binary at boot rather than showing up here.

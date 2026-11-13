@@ -1,10 +1,10 @@
 # The demo world: one persona and every fact that more than one source
-# repeats. The mail (mail.yml), the calendar (the events below) and the demo
-# ~/Documents (documents/) all read it, so a cross-source answer can't drift:
-# the invoice reminder and the invoice PDF quote the same IBAN because both
-# read it from here.
+# repeats. The demo ~/Documents (documents/), and in pikuri-thunderbird's
+# testbed the mail (mail.yml) and the calendar (the events below), all read
+# it, so a cross-source answer can't drift: the invoice reminder and the
+# invoice PDF quote the same IBAN because both read it from here.
 #
-# Days are offsets from the build day (dev/thunderbird-testbed/build --today), so
+# Days are offsets from the build day (dev/demo-home/build --today), so
 # "due in five days" and "what's on Thursday?" stay true whenever it's built.
 # Every domain is RFC 2606-reserved: nothing resolves, nothing real is named.
 

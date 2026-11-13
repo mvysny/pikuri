@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev tooling, for whoever develops pikuri; readers of the book never need
+# it, they run pikuri on their own files. Runs from a source checkout.
+#
+# Builds the demo home: Alex Novak's ~/Documents, from this folder
+# (facts.yml, documents/), on a machine with no files of its own there (the
+# dev VM). The same facts feed pikuri-thunderbird's testbed, whose build
+# runs this one with the same --today, so the invoice in the inbox is the
+# invoice in ~/Documents; run this alone when only the files matter.
+#
+#   dev/demo-home/build
+#   dev/demo-home/build --today 2026-11-13
+#
+# It refuses while ~/Documents is non-empty and unmarked (no .pikuri-demo),
+# and never deletes anything unmarked.
+
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+require 'bundler/setup'
+require 'date'
+require 'optparse'
+require 'pikuri-core'
+
+Dir[File.expand_path('builder/*.rb', __dir__)].each { |f| require f }
+
+options = { today: Date.today }
+OptionParser.new do |o|
+  o.banner = 'Usage: dev/demo-home/build [--today YYYY-MM-DD]'
+  o.on('--today DATE', 'Date the facts are relative to (default: today)') { |v| options[:today] = Date.iso8601(v) }
+end.parse!
+
+begin
+  home = Pikuri::Demo::Home.new
+  home.guard!
+  documents = Pikuri::Demo::Documents.new(facts: Pikuri::Demo::Facts.new(today: options[:today]),
+                                          converter: Pikuri::Demo::Converter.shared)
+  home.write!(documents)
+rescue Pikuri::Demo::Home::Refused => e
+  abort e.message
+end
+puts "Wrote #{documents.files.size} documents into #{home.documents_dir}"
