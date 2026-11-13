@@ -15,9 +15,8 @@ module Pikuri
     #
     # The indexed profile is cached as a tarball, so an agent gets a fresh
     # copy in a second. The key is Thunderbird's version plus a digest of
-    # every input: the dates move with +--today+, and Thunderbird writes
-    # absolute paths into +prefs.js+, so a profile built for another day or
-    # another directory is a different profile. One tarball is kept.
+    # every input: the dates move with +--today+, so a profile built for
+    # another day is a different profile. One tarball is kept.
     class Builder
       # The POP3 account's mail directory, under the profile.
       MAIL_DIR = File.join('Mail', 'pop.novak.example')
@@ -64,8 +63,8 @@ module Pikuri
 
       # @return [Hash{String => String}] profile-relative path to bytes.
       def inputs
-        # The calendar sits in the profile itself: a snap Thunderbird can read
-        # it there, and a reader's --dir profile carries it along.
+        # The calendar sits in the profile itself, where a snap Thunderbird
+        # can read it (the snap can't read hidden dirs in $HOME).
         ics = File.join(@target.profile_dir, 'demo.ics')
         mail = @content.folders.to_h { |name, messages| [File.join(MAIL_DIR, name), Mbox.render(messages)] }
         mail.merge('demo.ics' => @content.ics, 'user.js' => UserJs.render(ics_path: ics))

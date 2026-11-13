@@ -1,10 +1,9 @@
 # A Thunderbird testbed: mail scenes without anyone's real mail
 
-Status: **built; not yet used for a scene.** `bin/pikuri-demo-mailbox` (or `rake demo:build`,
-`DIR=` for `--dir`) builds Alex Novak's mailbox, calendar and `~/Documents` from `book/demo/`
-(`facts.yml`, `mail.yml`, `documents/`, code in `builder/`): 183 messages, 6 events, 13
-documents. Left: the hand-offs (§ The hand-offs on a headless VM), two findings that need lib
-work (§ What the full build showed), and capturing the chapter's scenes
+Status: **built; not yet used for a scene.** `dev/thunderbird-testbed/build` builds Alex Novak's mailbox, calendar and `~/Documents` from
+its own folder (`facts.yml`, `mail.yml`, `documents/`, code in `builder/`): 183 messages, 6 events, 13
+documents. Left: the hand-offs (§ The hand-offs on a headless VM), the `domains_seen` fix
+(§ What the full build showed), and capturing the chapter's scenes
 ([`book-rework.md`](book-rework.md)).
 
 ## The problem
@@ -21,20 +20,17 @@ with no profile.
 **The rule from here: the VM only ever holds a demo profile.** A tool that auto-discovers the
 snap/apt profile root then finds demo data or nothing, never real mail.
 
+**The testbed is for whoever develops pikuri, and only on such a machine.** A reader of the book
+never builds it: they run pikuri on their own real mail and documents. So the builder assumes a
+machine with no Thunderbird data of its own, and refuses rather than work around one.
+
 ## What a testbed has to serve
 
 1. **The book's transcripts.** Every scene the secretary chapter quotes (a reply drafted, an
    invitation turned into an event, an injection attempt, the compose guard's novel-domain warning)
    runs on demo mail.
-2. **A reader reproducing the chapter's scenes.** The same mailbox, built by the reader in a few
-   steps, beside their real profile and without touching it. This is the side path: the
-   chapter's main path points the secretary at the reader's *real* mail (auto-discovery, no
-   setup) — read-only, a local model by default, the only way out a human-gated hand-off. The
-   VM-only-demo rule above is about *our* logs and transcripts, not a reader's own machine. The
-   demo is for the scenes real mail can't stage on demand (the injection mail, the look-alike
-   domain). The caveat the chapter states is a hosted provider: wire one and your mail goes to it.
-3. **Agents testing the mail tools on the VM**, headless, with no human driving a GUI.
-4. **The hand-offs.** `thunderbird_mail_compose` and `thunderbird_calendar_create` launch
+2. **Agents testing the mail tools on the VM**, headless, with no human driving a GUI.
+3. **The hand-offs.** `thunderbird_mail_compose` and `thunderbird_calendar_create` launch
    `thunderbird`; on a VM with no display something has to stand in for the window.
 
 ## Decided: we write the inputs, Thunderbird writes its stores
@@ -55,7 +51,7 @@ Rejected:
 - **Synthesizing the stores ourselves** (old option C). It tests pikuri against pikuri's own
   reading of the schema. The specs already build small Gloda databases for unit tests; the cached
   profile (below) serves agents, so C has no job left.
-- **A hand-built profile copied from the host** (old option B). Not reproducible by a reader. Its
+- **A hand-built profile copied from the host** (old option B). Not reproducible. Its
   good half — a ready profile in seconds — comes back as the build script's own cached tarball.
 
 ### The account: a dead POP3 account, not Local Folders
@@ -86,32 +82,34 @@ automated profile off the network. It has the remote-settings one, `services.set
 full one (2026-11-13):
 `strace` can't follow into a snap without root (snap-confine is setuid), so the check is
 Mozilla's own logging — `MOZ_LOG="nsHostResolver:5,nsSocketTransport:5,nsHttp:3"
-MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log bin/pikuri-demo-mailbox --rebuild` — which
+MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log dev/thunderbird-testbed/build --rebuild` — which
 showed no DNS lookup, no HTTP channel, and one socket, Marionette's on loopback. The
 remote-settings error is gone from the log. Re-run it after a Thunderbird upgrade. A build
-lasts seconds, so a fetch on a later timer would slip past it; the reader opening the profile
+lasts seconds, so a fetch on a later timer would slip past it; a developer opening the profile
 in the GUI is the untested case.
 
 ## The build script
 
-`rake demo:build` (or a `bin/` script it calls) does, in order:
+`dev/thunderbird-testbed/build` does, in order. (It lives in `dev/`, not `bin/`: `bin/` is what
+a user runs, and no user runs this.)
 
 1. **Guard.** Every demo directory carries a marker file, `.pikuri-demo`. If either root (snap
    `~/snap/thunderbird/common/.thunderbird`, apt `~/.thunderbird`) holds a profile *without* the
-   marker, stop and print the paths. Never delete, never offer to. The same goes for every
-   directory the build writes: a non-empty one without the marker stops the build. (The VM's
-   hand-built `~/Documents` was moved aside to `~/Documents.hand-built-2026-11-12` for this.)
-2. **Generate** the mbox files, `demo.ics` and the demo `~/Documents` from `book/demo/`.
-3. **Create the profile**, in one of two modes:
-   - **VM (default):** registered in `profiles.ini` as `Default=1`, so pikuri's auto-discovery
-     is exercised for real; the documents go to `~/Documents`, the secretary's default.
-   - **`--dir ~/pikuri-demo` (reader, host):** one folder holding `profile/` and `Documents/`;
-     `profiles.ini` untouched. Thunderbird runs as `thunderbird -profile ~/pikuri-demo/profile
-     --no-remote`; the secretary as `pikuri-secretary --documents ~/pikuri-demo/Documents
-     --thunderbird-profile ~/pikuri-demo/profile` (the flag passes `profile_dir:` through).
-     The reader's real profile is never seen — except by the hand-offs, § below.
-   `demo.ics` lives in the profile itself: the snap reads its own root, and a reader's
-   `--dir` (not hidden — the snap can't read dot-dirs in `$HOME`) carries it along.
+   marker, stop and print the paths: the machine has Thunderbird data of its own, and the
+   testbed isn't for it. Never delete, never offer to. A non-empty `~/Documents` without the
+   marker stops it too. (The VM's hand-built `~/Documents` was moved aside to
+   `~/Documents.hand-built-2026-11-12` for this.) A running Thunderbird stops it as well, with
+   its pid: the build wipes the profile and starts its own Thunderbird on it, and it never
+   stops one it didn't start. The process renames itself from `thunderbird` to
+   `thunderbird-bin` once the launcher execs the real binary, so a lookup checks both names.
+2. **Generate** the mbox files, `demo.ics` and the demo `~/Documents` from
+   `dev/thunderbird-testbed/`.
+3. **Create the profile**, registered in `profiles.ini` as `Default=1` and Thunderbird's only
+   one, so pikuri's auto-discovery is exercised for real and a hand-off's plain
+   `thunderbird <arg>` opens in it; the documents go to `~/Documents`, the secretary's default.
+   `demo.ics` lives in the profile itself, where the snap can read it. (A `--dir` mode beside a
+   real profile was built and dropped the same day: the testbed has no user with a real
+   profile, and its hand-offs would have opened the real Thunderbird.)
 4. **Index.** Run Thunderbird `--headless --marionette` and, over Marionette, reparse every
    mail folder and queue it for Gloda (§ Driving a real Thunderbird). The generator knows it
    wrote N messages and M events: snapshot the Gloda DB every second or two and count `messages`
@@ -120,19 +118,18 @@ in the GUI is the untested case.
    Gloda's internals. A slow index only makes the build slower, never wrong: a generous timeout
    (~5 min) with progress (`212/287`), failing loudly with the count reached. If ~300 messages
    turn out slow, suspect Gloda's indexing throttle (tuned for a user at the keyboard) first.
-5. **Cache.** Tar the indexed profile to `Paths.cache/demo-mailbox/`, keyed by Thunderbird's
-   version *and* a digest of every input: the dates move with `--today`, and Thunderbird
-   writes absolute paths into `prefs.js`, so another day or another `--dir` is another
-   profile. One tarball is kept; `--rebuild` ignores it. Inputs are byte-stable: the `mail`
+5. **Cache.** Tar the indexed profile to `Paths.cache/thunderbird-testbed/`, keyed by Thunderbird's
+   version *and* a digest of every input: the dates move with `--today`, so another day is
+   another profile. One tarball is kept; `--rebuild` ignores it. Inputs are byte-stable: the `mail`
    gem's random multipart boundaries are replaced by ones derived from the Message-ID, zips
    get fixed times, and LibreOffice's output (which stamps a fresh date and ID into every
-   PDF) is cached by source digest under `Paths.cache/demo-mailbox/converted/`. The demo
+   PDF) is cached by source digest under `Paths.cache/thunderbird-testbed/converted/`. The demo
    documents are rewritten on every run; only the profile is cached.
 
 Measured (2026-11-13, snap 159.0): the full mailbox indexes in ~7 s, 10 s end to end; a cached
 rerun takes 2 s. Gloda's throttle was no problem at this size.
 
-## The demo content (`book/demo/`)
+## The demo content (`dev/thunderbird-testbed/`)
 
 One persona, Alex Novak, a Slovak-born designer in Helsinki who runs Novak Design, and one
 **facts file** (`facts.yml`: people, the invoice and its IBAN, lease, insurance, the events,
@@ -170,8 +167,8 @@ header of `mail.yml` lists its keys.
 
 pikuri's readers on the full profile: search, read, the forward, the invitation's body, both
 attachment-name encodings decoded, the PDF attachment text (the injection paragraph included),
-the 42 MB message refused with "over 40 MB", all six events with zones and recurrence. Two
-findings are lib work, not the testbed's:
+the 42 MB message refused with "over 40 MB", all six events with zones and recurrence. One
+finding is lib work, not the testbed's:
 
 - **`domains_seen` counts a domain that only ever wrote *to* Alex.** Gloda's `identities`
   holds every author, so `northwlnd-bank.example`, `design-week.example` and
@@ -179,12 +176,9 @@ findings are lib work, not the testbed's:
   compose guard's novelty warning therefore never fires on a reply to the phishing mail or to
   any new sender, which is exactly when it matters: an attacker earns "seen" by writing first.
   The scene the chapter wants (a reply to a novel domain, warned) can't happen until the check
-  counts only domains Alex has *sent* to. Not fixed; it changes the guard's contract.
-- **The hand-offs reach the reader's real Thunderbird in `--dir` mode.** `Launcher` runs
-  `thunderbird <arg>` with no `-profile`, so a compose window or import wizard opens in
-  whatever Thunderbird is running — the real profile — while the guard read the demo's Gloda.
-  Human-gated either way, but the wrong window. The launcher needs the override's
-  `-profile <dir>` when `profile_dir:` is set.
+  counts only domains Alex has *sent* to. **Decided** (2026-11-13): sent-to only, since a
+  received mail proves nothing about its sender. Not built yet; it changes the guard's
+  contract, so it lands with a spec and the yardoc of `domains_seen` and `ComposeGuard`.
 
 ## The hand-offs on a headless VM
 
@@ -218,8 +212,7 @@ section moves to `pikuri-thunderbird/design/architecture.md` beside § Storage l
 - `thunderbird --headless --no-remote -profile <dir>` runs a full Thunderbird with no display:
   accounts load from `user.js`, Gloda's DB and the calendar stores are created, the `ics`
   calendar syncs into `cache.sqlite`.
-- `-profile <dir>` does **not** create or touch `profiles.ini` — `--dir` mode is safe beside a
-  real profile.
+- `-profile <dir>` does **not** create or touch `profiles.ini`.
 - The snap reads its own `~/snap/thunderbird/common/`; profile and `demo.ics` live there.
 - **The snap launcher links its root to an existing `~/.thunderbird`.** Launched while
   `~/.thunderbird` existed and the snap root didn't, it created
@@ -316,11 +309,5 @@ our spec fixtures:
 
 ## Open questions
 
-- `Q_novelty_direction`: should `domains_seen` count only domains Alex has sent to (Sent
-  folder recipients), or sent-to *and* replied-to? Lean: sent-to only; a received mail proves
-  nothing about the sender. Blocks the compose guard's scene.
-- `Q_handoff_profile`: does `thunderbird -profile <dir> <arg>` reach a demo instance while the
-  real one runs (Mozilla's remoting is per profile since 2020-ish, unverified on 159), or must
-  the hand-off start a second instance with `--no-remote`?
 - Still to record: the `undefined` count on the owner's real profile (§ What pikuri's readers
   made of it).

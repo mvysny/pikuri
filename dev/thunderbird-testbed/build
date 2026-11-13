@@ -1,0 +1,59 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev tooling, for whoever develops pikuri; readers of the book never need
+# it, they run pikuri on their own mail. Runs from a source checkout.
+#
+# Builds the Thunderbird testbed: Alex Novak's mailbox, calendar and
+# ~/Documents, from this folder (facts.yml, mail.yml, documents/), on a
+# machine with no Thunderbird data of its own (the dev VM). Every domain is
+# RFC 2606-reserved, so no real mail is ever in it. A real headless
+# Thunderbird builds the stores pikuri reads, from the mbox and .ics files
+# this writes; the profile is registered as Thunderbird's default, so pikuri
+# finds it on its own and the hand-offs open in it.
+#
+#   dev/thunderbird-testbed/build            # restores the cached profile when it matches
+#   dev/thunderbird-testbed/build --rebuild  # index afresh
+#
+# It refuses while a Thunderbird profile that isn't a pikuri demo exists (no
+# .pikuri-demo marker), while ~/Documents is non-empty and unmarked, or while
+# Thunderbird runs. It never deletes anything unmarked, and never stops a
+# Thunderbird it didn't start.
+
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+require 'bundler/setup'
+require 'date'
+require 'fileutils'
+require 'optparse'
+require 'pikuri-core'
+
+Dir[File.expand_path('builder/*.rb', __dir__)].each { |f| require f }
+
+$stdout.sync = true
+
+options = { today: Date.today, rebuild: false }
+OptionParser.new do |o|
+  o.banner = 'Usage: dev/thunderbird-testbed/build [--today YYYY-MM-DD] [--rebuild]'
+  o.on('--today DATE', 'Date the mailbox is relative to (default: today)') { |v| options[:today] = Date.iso8601(v) }
+  o.on('--rebuild', 'Index afresh even when a cached profile matches') { options[:rebuild] = true }
+end.parse!
+
+tzid = File.readlink('/etc/localtime')[%r{zoneinfo/(.+)\z}, 1] || 'UTC'
+cache_dir = Pikuri::Paths.cache.join('thunderbird-testbed')
+FileUtils.mkdir_p(cache_dir)
+log = cache_dir.join('thunderbird.log').to_s
+
+begin
+  target = Pikuri::Demo::Target.new
+  target.guard!
+  converter = Pikuri::Demo::Converter.new(cache_dir: cache_dir.join('converted').to_s)
+  content = Pikuri::Demo::Content.new(today: options[:today], tzid: tzid, converter: converter)
+  puts "Building #{content.message_count} messages and #{content.event_count} events into #{target.profile_dir}"
+  puts "and #{content.documents.files.size} documents into #{target.documents_dir}"
+  builder = Pikuri::Demo::Builder.new(target: target, content: content, cache_dir: cache_dir.to_s, log: log)
+  seconds = builder.build!(rebuild: options[:rebuild])
+rescue Pikuri::Demo::Target::Refused => e
+  abort e.message
+end
+puts(seconds ? format('Indexed in %.1fs. Thunderbird\'s log: %s', seconds, log) : "Restored from the cache in #{cache_dir}.")
+puts 'Registered as the default profile; pikuri finds it on its own.'

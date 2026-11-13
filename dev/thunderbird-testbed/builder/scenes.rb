@@ -7,7 +7,7 @@ require 'yaml'
 
 module Pikuri
   module Demo
-    # The hand-written scene messages of +book/demo/mail.yml+, each there to
+    # The hand-written scene messages of +dev/thunderbird-testbed/mail.yml+, each there to
     # make a scene of the secretary chapter happen. The file's header lists
     # the keys; this turns them into +mail+ gem messages.
     class Scenes

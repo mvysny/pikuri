@@ -5,7 +5,7 @@ require 'fileutils'
 
 module Pikuri
   module Demo
-    # The demo +~/Documents+, built from +book/demo/documents/+.
+    # The demo +~/Documents+, built from +dev/thunderbird-testbed/documents/+.
     #
     # A source is rendered as ERB over the facts when it contains +<%+. A name
     # like +invoice-4471.pdf.html+ or +lease-agreement.pdf+odt.html+ is
@@ -52,7 +52,7 @@ module Pikuri
       # @return [String] HTML body content.
       def self.book_html(chapters)
         chapters.map do |name|
-          text = File.read(File.expand_path("../../#{name}.md", __dir__))
+          text = File.read(File.expand_path("../../../book/#{name}.md", __dir__))
           text.split(/^```.*\n/).each_with_index.map do |chunk, i|
             next "<pre>#{CGI.escapeHTML(chunk)}</pre>" if i.odd?
 

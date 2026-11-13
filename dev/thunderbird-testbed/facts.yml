@@ -4,7 +4,7 @@
 # the invoice reminder and the invoice PDF quote the same IBAN because both
 # read it from here.
 #
-# Days are offsets from the build day (bin/pikuri-demo-mailbox --today), so
+# Days are offsets from the build day (dev/thunderbird-testbed/build --today), so
 # "due in five days" and "what's on Thursday?" stay true whenever it's built.
 # Every domain is RFC 2606-reserved: nothing resolves, nothing real is named.
 

@@ -6,7 +6,7 @@ require 'yaml'
 
 module Pikuri
   module Demo
-    # +book/demo/facts.yml+, read for one build day. The templates (+mail.yml+,
+    # +dev/thunderbird-testbed/facts.yml+, read for one build day. The templates (+mail.yml+,
     # +documents/+) are ERB with this object as +f+:
     #
     #   <%= f.invoice.iban %>              # nested keys read as methods

@@ -81,7 +81,8 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `book/` — "the book", also "the guide"; `book/README.md` is the ToC and the single source of truth for chapter order.
 - `assets/` — **Kuri**, the pika mascot (`kuri.svg` master, `kuri.png` raster); drawing + anatomy rule in `D_kuri_mascot`.
 - [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), a separate repo — the gems that need a cage: a shell, the coding agent, the OS assistant, LSP, MCP, skills, tasks, mem0, docker extractors.
-- `bin/pikuri-*` — dev / demo entry points, not gem executables, with their prompts in `prompts/`; production binaries live downstream.
+- `bin/pikuri-*` — demo entry points a user runs, not gem executables, with their prompts in `prompts/`; production binaries live downstream.
+- `dev/` — tooling for whoever develops pikuri, never run by a user or a reader. `dev/thunderbird-testbed/build` builds the demo Thunderbird profile and `~/Documents` on a machine with no Thunderbird data of its own (the dev VM).
 
 ## Conventions
 

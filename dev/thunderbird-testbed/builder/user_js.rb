@@ -22,7 +22,7 @@ module Pikuri
       # +chrome/remote/content/shared/+) — Mozilla's list for keeping an
       # automated profile off the network — plus Thunderbird's own first-run
       # dialogs. Marionette applies its list itself when it starts, but a
-      # reader opening the profile without Marionette gets only these.
+      # developer opening the profile without Marionette gets only these.
       QUIET = {
         # Remote settings: the first-run fetch the probe caught.
         'services.settings.server' => 'data:,#remote-settings-dummy/v1',
