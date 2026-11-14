@@ -148,6 +148,38 @@ RSpec.describe Pikuri::Agent::Configurator do
 
       assert_equal [:t1], observed
     end
+
+    it 'refuses an instance already added to another agent, before configuring it again' do
+      ext = extension_class.new
+      first = new_configurator
+      first.add_extension(ext)
+      second = new_configurator
+
+      err = assert_raises(ArgumentError) { second.add_extension(ext) }
+
+      assert_includes err.message, 'already added to an agent'
+      assert_same first, ext.configured_with
+      assert_equal [], second.extensions
+    end
+
+    it 'refuses the same instance added twice to one agent' do
+      c = new_configurator
+      ext = extension_class.new
+      c.add_extension(ext)
+
+      assert_raises(ArgumentError) { c.add_extension(ext) }
+      assert_equal [ext], c.extensions
+    end
+
+    it 'tells equal extensions apart by identity' do
+      value_class = Data.define(:name) { include Pikuri::Agent::Extension }
+      c = new_configurator
+
+      c.add_extension(value_class.new(name: 'x'))
+      c.add_extension(value_class.new(name: 'x'))
+
+      assert_equal 2, c.extensions.size
+    end
   end
 
   describe Pikuri::Agent::Extension do

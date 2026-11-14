@@ -169,9 +169,17 @@ module Pikuri
       # the +bind(ctx)+ sweep at the end of {Agent#initialize}. Both hooks are
       # required — +include Pikuri::Agent::Extension+ for no-op defaults.
       #
+      # An instance serves one agent ({Extension}), so one already added to
+      # any agent — this one included, and even after that agent closed — is
+      # refused before its +configure+ runs. Reuse is a host bug that fails
+      # quietly otherwise: the second agent would share the first one's
+      # per-conversation state and the servers it started.
+      #
       # @param extension [Extension, #configure, #bind] extension instance
       # @return [void]
+      # @raise [ArgumentError] when +extension+ was already added to an agent
       def add_extension(extension)
+        claim(extension)
         @extensions << extension
         extension.configure(self)
         nil
@@ -187,6 +195,31 @@ module Pikuri
 
         @on_close_handlers << blk
         nil
+      end
+
+      # Every extension ever added, process-wide. Keyed by identity (a
+      # +WeakMap+, not a +WeakKeyMap+, so two equal value objects stay two
+      # extensions) and weak, so a claim never keeps an extension alive.
+      CLAIMED = ObjectSpace::WeakMap.new
+      # Agents may be built on several threads; the check and the mark are
+      # one step.
+      CLAIM_LOCK = Mutex.new
+      private_constant :CLAIMED, :CLAIM_LOCK
+
+      private
+
+      # @param extension [Object]
+      # @return [void]
+      # @raise [ArgumentError] when +extension+ is already claimed
+      def claim(extension)
+        CLAIM_LOCK.synchronize do
+          if CLAIMED.key?(extension)
+            raise ArgumentError, "#{extension.class} instance is already added to an agent; " \
+                                 'build a fresh one for every Agent.new'
+          end
+
+          CLAIMED[extension] = true
+        end
       end
     end
   end

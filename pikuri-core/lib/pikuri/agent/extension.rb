@@ -13,7 +13,8 @@ module Pikuri
     #
     # An instance serves one agent, which is one conversation: build a fresh
     # one for every +Agent.new+, so per-conversation state is plain instance
-    # state and nothing has to reset it. A resource that legitimately outlives
+    # state and nothing has to reset it; {Configurator#add_extension} refuses
+    # a reused one. A resource that legitimately outlives
     # the conversation is built by the host and passed in.
     #
     # Mix this module in to inherit no-op defaults for every hook, and
