@@ -59,8 +59,7 @@ SIGTERM handler or a web UI's second tab, none of which knows the confirmer. pik
 `cancel_pending!` it had to call beside each one, and any it missed made `shutdown` wait out its
 timeout.
 
-**Decision.** `#ask(request:, cancellable:)` and `#confirm?(request:, cancellable:)`, both
-required. A confirming tool takes the token from its `Tool::ExecuteContext`, per call, because a
+**Decision.** `#ask(request:, cancellable:)`, the token required. A confirming tool takes the token from its `Tool::ExecuteContext`, per call, because a
 confirmer is shared between agents and conversations (`D_tool_cancellation` has the per-call
 argument). Core ships `Agent::Control::Handoff`, a one-shot slot: the human's thread calls
 `#complete`, the tool's thread waits in `#await`, which raises `Cancelled` once the token trips. It
@@ -619,7 +618,10 @@ observation, so the tools agree. A cancel is none of the three: a parked `#ask` 
   reason reaches the parent only as reply text, inviting it to re-delegate around the decline.
 
 **Consequences.** `Confirmer::Terminal` asks `[y] approve  [n] reject  [r] redirect`; `n` no longer
-prompts for a reason. `ExitPlanMode` moved off `#confirm?`, which had dropped a typed reason.
+prompts for a reason. There is no boolean `#confirm?` beside `#ask`: it read a `Redirected` as a
+plain no and dropped the words, and the one tool that used it, `ExitPlanMode`, lost a typed
+reason that way. A gate that truly has nothing to tell the model writes
+`ask(...).is_a?(Approved)`, so dropping the words is visible at the call.
 
 ---
 

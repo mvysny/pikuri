@@ -11,6 +11,11 @@ RSpec.describe Pikuri::Workspace::Confirmer do
   # A token that never trips: nothing here cancels.
   def never = Pikuri::Agent::Control::Cancellable::NEVER
 
+  # Whether +confirmer+ approves +request+.
+  def approved?(confirmer, request)
+    confirmer.ask(cancellable: never, request: request).is_a?(Pikuri::Workspace::Confirmer::Approved)
+  end
+
   # An editable request (the author-seat shape used by the +agent+ tool).
   def editable_req(detail, question = 'Delegate?')
     Pikuri::Workspace::Confirmer::Request.new(question: question, detail: detail, editable: true)
@@ -40,9 +45,9 @@ RSpec.describe Pikuri::Workspace::Confirmer do
     end
   end
 
-  describe '#confirm?' do
+  describe '#ask' do
     it 'raises NotImplementedError on the abstract base' do
-      assert_raises(NotImplementedError) { described_class.new.confirm?(cancellable: never, request: req('ok?')) }
+      assert_raises(NotImplementedError) { described_class.new.ask(cancellable: never, request: req('ok?')) }
     end
   end
 
@@ -66,110 +71,110 @@ RSpec.describe Pikuri::Workspace::Confirmer do
 
     it 'returns true for "y"' do
       stdin_with("y\n")
-      assert_equal true, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal true, approved?(described_class.new, req)
     end
 
     it 'returns true for "yes"' do
       stdin_with("yes\n")
-      assert_equal true, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal true, approved?(described_class.new, req)
     end
 
     it 'is case-insensitive: "Y", "YES", "Yes" all approve' do
       %w[Y YES Yes].each do |answer|
         stdin_with("#{answer}\n")
-        assert_equal true, described_class.new.confirm?(cancellable: never, request: req),
+        assert_equal true, approved?(described_class.new, req),
                      "expected #{answer.inspect} to approve"
       end
     end
 
     it 'strips surrounding whitespace before matching' do
       stdin_with("  yes  \n")
-      assert_equal true, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal true, approved?(described_class.new, req)
     end
 
     it 'returns false for "n"' do
       stdin_with("n\n")
-      assert_equal false, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal false, approved?(described_class.new, req)
     end
 
     it 'returns false for "no" (case-insensitive)' do
       %w[no NO No].each do |answer|
         stdin_with("#{answer}\n")
-        assert_equal false, described_class.new.confirm?(cancellable: never, request: req)
+        assert_equal false, approved?(described_class.new, req)
       end
     end
 
     it 'returns false on EOF (Ctrl+D / empty stdin)' do
       stdin_with('')
-      assert_equal false, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal false, approved?(described_class.new, req)
     end
 
     it 'reprompts on unrecognized input and honors the next answer' do
       stdin_with("maybe\nblank\nyes\n")
-      assert_equal true, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal true, approved?(described_class.new, req)
       assert_includes $stdout.string, 'Please answer y, n, or r: '
     end
 
     it 'reprompts on blank line, eventually returns false on EOF' do
       stdin_with("\n\n\n")
-      assert_equal false, described_class.new.confirm?(cancellable: never, request: req)
+      assert_equal false, approved?(described_class.new, req)
     end
 
     it 'renders question, then cue, when there is no detail' do
       stdin_with("y\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to overwrite a.txt: 4 → 6 bytes?'))
+      described_class.new.ask(cancellable: never, request: req('OK to overwrite a.txt: 4 → 6 bytes?'))
       assert_includes $stdout.string, "\nOK to overwrite a.txt: 4 → 6 bytes?\n[y] approve  [n] reject  [r] redirect\n"
     end
 
     it 'renders the detail on its own line between question and cue' do
       stdin_with("y\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: '$ ls -la'))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: '$ ls -la'))
       assert_includes $stdout.string, "\nOK to run bash\n$ ls -la\n[y] approve  [n] reject  [r] redirect\n"
     end
 
     it 'preserves newlines in a multi-line detail' do
       stdin_with("y\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: "$ for x in 1 2; do\n  echo $x\ndone"))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: "$ for x in 1 2; do\n  echo $x\ndone"))
       assert_includes $stdout.string, "$ for x in 1 2; do\n  echo $x\ndone\n[y] approve  [n] reject  [r] redirect\n"
     end
 
     it 'escapes control bytes in the detail so a \r cannot overwrite the echoed command' do
       stdin_with("n\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: "$ echo hi\rrm -rf /"))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: "$ echo hi\rrm -rf /"))
       assert_includes $stdout.string, '$ echo hi\\x0drm -rf /'
       refute_includes $stdout.string, "\r"
     end
 
     it 'escapes control bytes in the question (it may embed an LLM-written description)' do
       stdin_with("n\n")
-      described_class.new.confirm?(cancellable: never, request: req("OK to run bash: nice\e[2Kdesc"))
+      described_class.new.ask(cancellable: never, request: req("OK to run bash: nice\e[2Kdesc"))
       assert_includes $stdout.string, 'OK to run bash: nice\\x1b[2Kdesc'
       refute_includes $stdout.string, "\e"
     end
 
     it 'surfaces a warning block when the sanitizer flags suspicious content' do
       stdin_with("n\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: "$ echo hi\rrm -rf /"))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: "$ echo hi\rrm -rf /"))
       assert_includes $stdout.string, 'Suspicious content detected'
       assert_includes $stdout.string, 'Non-printable control bytes present'
     end
 
     it 'prints no warning block for a clean request' do
       stdin_with("y\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: '$ ls -la'))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: '$ ls -la'))
       refute_includes $stdout.string, 'Suspicious content detected'
     end
 
     it 'warns on a homoglyph spoof in the detail' do
       stdin_with("n\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: '$ curl https://Pаypal.com'))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: '$ curl https://Pаypal.com'))
       assert_includes $stdout.string, 'Mixed-script tokens present'
     end
 
     it 'bolds the question via Rainbow when color is enabled' do
       Rainbow.enabled = true
       stdin_with("y\n")
-      described_class.new.confirm?(cancellable: never, request: req('OK to run bash', detail: '$ ls'))
+      described_class.new.ask(cancellable: never, request: req('OK to run bash', detail: '$ ls'))
       assert_includes $stdout.string, "\e[1mOK to run bash\e[0m"
     end
 
@@ -275,8 +280,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
         change = Pikuri::Workspace::Confirmer::Change.new(
           path: 'a.txt', old: "one\ntwo\n", new: "one\nTWO\n"
         )
-        assert_equal true,
-                     described_class.new.confirm?(cancellable: never, request: req('OK to write a.txt?').with(change: change))
+        assert_equal true, approved?(described_class.new, req('OK to write a.txt?').with(change: change))
         out = $stdout.string
         assert_includes out, '-two'
         assert_includes out, '+TWO'
@@ -285,7 +289,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       it 'shows all lines added for a new file (old is nil)' do
         stdin_with("y\n")
         change = Pikuri::Workspace::Confirmer::Change.new(path: 'new.txt', old: nil, new: "hello\n")
-        described_class.new.confirm?(cancellable: never, request: req('OK to write new.txt?').with(change: change))
+        described_class.new.ask(cancellable: never, request: req('OK to write new.txt?').with(change: change))
         assert_includes $stdout.string, '+hello'
       end
     end
@@ -293,8 +297,8 @@ RSpec.describe Pikuri::Workspace::Confirmer do
 
   describe Pikuri::Workspace::Confirmer::AutoApprove do
     it 'returns true regardless of request' do
-      assert_equal true, described_class.new.confirm?(cancellable: never, request: req('anything', detail: '$ rm -rf /'))
-      assert_equal true, described_class.new.confirm?(cancellable: never, request: req(''))
+      assert_equal true, approved?(described_class.new, req('anything', detail: '$ rm -rf /'))
+      assert_equal true, approved?(described_class.new, req(''))
     end
 
     it 'returns Approved carrying the detail unchanged' do

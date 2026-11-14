@@ -59,7 +59,7 @@ end
 `Workspace` is the "look-but-don't-leak" guard around filesystem
 access. Read tools route through `#resolve_for_read(path)`; mutating
 tools route through `#resolve_for_write(path)` + the Confirmer's
-`#confirm?(request:, cancellable:)`. Pass `temp: true` to mint an ephemeral
+`#ask(request:, cancellable:)`. Pass `temp: true` to mint an ephemeral
 writable playground via `Dir.mktmpdir` — its path is exposed as
 `workspace.temp` and auto-removed at process exit.
 

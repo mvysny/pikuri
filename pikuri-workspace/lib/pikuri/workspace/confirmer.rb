@@ -57,9 +57,6 @@ module Pikuri
     # *rewrite* it — "human as author, not approver". Bash's +"$ <command>"+ is
     # a decorated display string, so it stays non-editable.
     #
-    # {#confirm?} is the boolean convenience for a gate that has nothing to tell
-    # the model — it reads a {Redirected} as a plain no and drops the words.
-    #
     # == Cancelling a parked ask
     #
     # {#ask} gets the turn's {Pikuri::Agent::Control::Cancellable}, which the
@@ -177,17 +174,6 @@ module Pikuri
       #   ask" above
       def ask(request:, cancellable:)
         raise NotImplementedError, "#{self.class}#ask must be implemented"
-      end
-
-      # Boolean convenience over {#ask}, for a question whose answer goes
-      # nowhere near the model (a {Redirected}'s words are dropped).
-      #
-      # @param request [Request]
-      # @param cancellable [Pikuri::Agent::Control::Cancellable] see {#ask}
-      # @return [Boolean] +true+ iff approved
-      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] see {#ask}
-      def confirm?(request:, cancellable:)
-        ask(request:, cancellable:).is_a?(Approved)
       end
 
       # Whether {#ask} can actually stop and wait for a person — the posture
