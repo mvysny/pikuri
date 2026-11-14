@@ -111,7 +111,8 @@ module Pikuri
       #
       # @param engines [Array<String, Symbol>, nil] engine names to use —
       #   +duckduckgo+, +brave+, +exa+. +nil+ selects DuckDuckGo plus every
-      #   engine whose key is supplied. Order carries no preference; see
+      #   engine whose key is supplied, DuckDuckGo left out under
+      #   +page_text+. Order carries no preference; see
       #   {Search::Engines.resolve}.
       # @param brave_key [String, nil] Brave key
       #   (https://api-dashboard.search.brave.com).

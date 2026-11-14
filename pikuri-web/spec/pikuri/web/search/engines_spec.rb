@@ -512,4 +512,14 @@ RSpec.describe Pikuri::Web::Search::Engines, 'page text' do
     e = described_class.new(engines: %i[duckduckgo brave exa], brave_key: 'b', exa_key: 'e', page_text: true)
     assert_equal [false, true, true], e.providers.map { |p| p.instance_variable_get(:@page_text) || false }
   end
+
+  it 'leaves DuckDuckGo out of a key-derived page-text cascade' do
+    e = described_class.new(brave_key: 'b', page_text: true)
+    assert_equal ['Brave'], e.providers.map(&:label)
+  end
+
+  it 'keeps DuckDuckGo in a page-text cascade that lists it' do
+    e = described_class.new(engines: %i[duckduckgo brave], brave_key: 'b', page_text: true)
+    assert_equal %w[DuckDuckGo Brave], e.providers.map(&:label)
+  end
 end

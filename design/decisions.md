@@ -82,6 +82,11 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   owns it. The name is plain because it's a teaching demo, and it was Puri's name back in
   pikuri-tui. Not `pikuri-puri`: sharing a name with the app would need constant attention to
   which one a sentence means.
+- ***Whole pages when the config keys Brave or Exa, snippets otherwise.*** A Brave or Exa key turns
+  on `page_text` plus `web_read_cached` (`D_page_text_by_handle`): the pages arrive with the search,
+  so the query stays the one way out and the verdict doesn't move. DuckDuckGo has no page text, so
+  the default stays `snippets_only`. Not a flag: which reader is safe follows from the engines, and
+  the secretary is the node page text was built for.
 - ***Every search confirmed by default, `--no-search-confirm` to opt out.*** Not a security gate:
   the verdict is soft either way (`D_egress_axis_shape`), and an injected query lands only in the
   engine's logs. It's **Privacy first** against the engine operator, since the model will write a
@@ -130,7 +135,8 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
 **Consequences.**
 
 - Two primitives landed upstream because the demo needed them, and Puri picks them up from here:
-  `Web::Search.build`'s `confirmer:` and `snippets_only:`.
+  `Web::Search.build`'s `confirmer:` and `snippets_only:`. The secretary is also `page_text`'s
+  only shipped caller.
 - The secretary's system prompt lives in pikuri (`prompts/pikuri-secretary.txt`); Puri may keep
   its own and reuse the fragments.
 
@@ -461,7 +467,10 @@ not a live fetch. DuckDuckGo has no text, so its rows get no handle.
 
 **Consequences.** On the map, `read` + a page-text search + `web_read_cached` is soft where `read`
 + search + `web_scrape` is loud. The pairing alone is silent, and behind a sub-agent boundary both
-shapes are soft at the parent, so no persona ships for the map's sake. Brave's text mode ranks
+shapes are soft at the parent, so no persona ships for the map's sake; `pikuri-secretary`, the
+node it was built for, turns it on when its config keys Brave or Exa (`D_secretary_wiring`). An
+`engines: nil` cascade drops DuckDuckGo under `page_text`: shuffled in, it would win about every
+other search with no handle to read. Brave's text mode ranks
 differently — 5–6 of 10 URLs shared with `/web/search`. Unknown: whether a query ever schedules an
 engine-side re-crawl, a freshness question about the search's own vouched request.
 
