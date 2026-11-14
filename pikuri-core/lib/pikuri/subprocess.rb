@@ -40,6 +40,18 @@ module Pikuri
   # SIGTERMs every tracked group at exit. The model opts out with +nohup+ /
   # +setsid+ (both detach from our group).
   #
+  # == Daemon children
+  #
+  # A long-lived child — a relay, a sidecar — is a {.spawn} nobody {#wait}s on:
+  #
+  #   relay = Pikuri::Subprocess.spawn('socat', listen, connect, chdir: '/')
+  #   Thread.new { relay.io.each_line { |l| LOGGER.warn(l) } } # drain, or it blocks on a full pipe
+  #   relay.terminate                                          # when its owner closes
+  #
+  # The shape lives here rather than with its caller because the exit-sweep
+  # set is private to this class: a daemon spawned anywhere else escapes the
+  # sweep, and opening +register+ would be the wider seam.
+  #
   # == State is process-global
   #
   # One +@active+ Set for the process, swept once at exit via
@@ -160,8 +172,7 @@ module Pikuri
     end
 
     # SIGTERM the whole process group without blocking for output — the stop
-    # button for a *daemon* child (one the caller never {#wait}s on, e.g.
-    # a socat relay in front of a sidecar container). Best-effort and idempotent;
+    # button for a daemon child (see the class doc). Best-effort and idempotent;
     # the group stays in the exit-sweep set until it dies, so a child ignoring
     # SIGTERM is re-signalled by {.cleanup!} at exit.
     #
