@@ -47,7 +47,7 @@ module Pikuri
     # +attachments+: a metadata note ("Read image: …") as +content+ for the
     # model to cite, plus the file as an attachment the model looks at.
     # +offset+/+limit+ are ignored (no line paging). Over
-    # {MAX_IMAGE_BYTES} → +"Error: image too large…"+ rather than a payload the
+    # {Pikuri::Attachment::MAX_IMAGE_BYTES} → +"Error: image too large…"+ rather than a payload the
     # provider rejects; no auto-resize (see +design/ideas/coding-agent.md+). Vision
     # capability is not checked — a non-vision model's provider error is
     # something the LLM reacts to, cheaper than tracking model metadata.
@@ -56,7 +56,7 @@ module Pikuri
     #
     # Path outside the workspace ({Filesystem::Error}), not found, EACCES, a
     # directory (refused, but the refusal carries the directory's own entries —
-    # see {.directory_refusal}), image over {MAX_IMAGE_BYTES}, binary content
+    # see {.directory_refusal}), image over {Pikuri::Attachment::MAX_IMAGE_BYTES}, binary content
     # (nothing in the registry claims it — the {Pikuri::FileType.binary?}
     # heuristic catches archives/artifacts with no extension list), offset past
     # EOF.
@@ -85,13 +85,8 @@ module Pikuri
       #   prefix).
       MAX_BYTES = Pikuri::Extractor::PAGE_MAX_BYTES
 
-      # @return [Integer] hard size cap on inline-attached images (Anthropic's
-      #   per-image limit; same order on OpenAI/Gemini). Above it we refuse
-      #   rather than encode a payload the provider would reject.
-      MAX_IMAGE_BYTES = 5 * 1024 * 1024
-
-      # @return [String] human-readable {MAX_IMAGE_BYTES} for refusal messages.
-      MAX_IMAGE_BYTES_LABEL = "#{MAX_IMAGE_BYTES / (1024 * 1024)} MB"
+      # @return [String] human-readable {Pikuri::Attachment::MAX_IMAGE_BYTES} for refusal messages.
+      MAX_IMAGE_BYTES_LABEL = "#{Pikuri::Attachment::MAX_IMAGE_BYTES / (1024 * 1024)} MB"
 
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.
@@ -234,7 +229,7 @@ module Pikuri
 
       # Build a multimodal observation: a metadata note ("Read image: …") plus
       # the file attached, both arriving in the same +tool_result+ turn. Over
-      # {MAX_IMAGE_BYTES} we refuse (an +"Error: ..."+ the model reacts to)
+      # {Pikuri::Attachment::MAX_IMAGE_BYTES} we refuse (an +"Error: ..."+ the model reacts to)
       # rather than encoding a payload the provider rejects. The bytes are read
       # here, once, at most one past the cap — what the model sees is what was
       # checked, and an oversized file is never loaded whole.
@@ -250,8 +245,8 @@ module Pikuri
       # @return [Tool::Result] attachment-carrying on success;
       #   {Pikuri::Tool::Result.error} on size refusal
       def self.format_image(path:, resolved:, mime:)
-        bytes = File.binread(resolved, MAX_IMAGE_BYTES + 1)
-        if bytes.bytesize > MAX_IMAGE_BYTES
+        bytes = File.binread(resolved, Pikuri::Attachment::MAX_IMAGE_BYTES + 1)
+        if bytes.bytesize > Pikuri::Attachment::MAX_IMAGE_BYTES
           return Tool::Result.error("image too large to inline: #{path} is " \
                                     "#{resolved.size} bytes; max #{MAX_IMAGE_BYTES_LABEL}.")
         end

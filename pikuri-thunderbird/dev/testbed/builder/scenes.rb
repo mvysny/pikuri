@@ -108,6 +108,8 @@ module Pikuri
           Mime.attachment(spec['name'] || "#{base}.#{to}", @converter.convert(html, to))
         elsif spec['text']
           Mime.attachment(spec['name'], spec['text'], type: spec['type'])
+        elsif spec['png']
+          Mime.attachment(spec['name'], Png.named(spec['png']), type: 'image/png')
         elsif spec['zip']
           Mime.attachment(spec['name'], zip(spec['zip']), type: 'application/zip')
         elsif spec['bytes']

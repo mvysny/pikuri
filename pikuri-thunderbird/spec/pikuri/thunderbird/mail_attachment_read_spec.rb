@@ -55,8 +55,9 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
       You deleted an attachment from this message.
       --B
       Content-Type: image/jpeg; name="photo.jpg"
+      Content-Transfer-Encoding: base64
 
-      not read
+      #{["\xFF\xD8\xFF\xE0jpeg".b].pack('m0')}
       --B
       Content-Type: message/rfc822
       Content-Disposition: attachment; filename="ForwardedMessage.eml"
@@ -171,12 +172,33 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
     end
   end
 
-  it 'refuses a detached stub, an image and an online link' do
+  it 'refuses a detached stub and an online link' do
     with_tools do |tool, _|
       assert_includes read(tool, 4).content, 'detached or deleted'
-      assert_includes read(tool, 5).content, 'attachment 5 is an image'
       assert_includes read(tool, 7).content, 'attachment 7 is a link to an online file'
     end
+  end
+
+  it 'answers an image as the picture itself, typed by its bytes' do
+    with_tools do |tool, _|
+      result = read(tool, 5)
+
+      assert_equal 'Read image: photo.jpg (8 B, image/jpeg)', result.content
+      assert_equal 'Read image, 8 B', result.summary
+      assert_equal [Pikuri::Attachment.new(mime: 'image/jpeg', filename: 'photo.jpg', bytes: "\xFF\xD8\xFF\xE0jpeg".b)],
+                   result.attachments
+    end
+  end
+
+  it 'refuses an image over the cap, before it reaches the model' do
+    att = Pikuri::Thunderbird::Gloda::Attachment.new(name: 'huge.png', content_type: 'image/png', size: 0,
+                                                     part: '1.2', external: false)
+    big = "\x89PNG\r\n\x1a\n".b + ("\0".b * Pikuri::Attachment::MAX_IMAGE_BYTES)
+
+    result = described_class.send(:image_result, 3, att, big, 'image/png')
+
+    assert_equal 'Error: attachment 3 is an image of 5.0 MB, over the 5.0 MB that can be shown.', result.content
+    assert_empty result.attachments
   end
 
   it "reads a forwarded email as its headers, attachments and text, listing what Gloda would" do

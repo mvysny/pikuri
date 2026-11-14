@@ -2,8 +2,7 @@
 
 `thunderbird_mail_attachment_read` reads an attachment's text (v1, see
 `pikuri-thunderbird/design/architecture.md`). What it still can't do, each
-answered with a message saying so; build one only when it is asked for. Images have
-their own idea: `thunderbird-attachment-images.md`.
+answered with a message saying so; build one only when it is asked for.
 
 ## Forwarded mails: their own attachments
 

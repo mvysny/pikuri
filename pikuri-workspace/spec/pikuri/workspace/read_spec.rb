@@ -264,9 +264,9 @@ RSpec.describe Pikuri::Workspace::Read do
       assert_equal original, result.attachments.first.bytes
     end
 
-    it 'refuses images larger than MAX_IMAGE_BYTES with an Error string the model can react to' do
+    it 'refuses images larger than Attachment::MAX_IMAGE_BYTES with an Error string the model can react to' do
       path = root + 'huge.png'
-      File.binwrite(path, PNG_MAGIC + ("\x00".b * (Pikuri::Workspace::Read::MAX_IMAGE_BYTES + 1)))
+      File.binwrite(path, PNG_MAGIC + ("\x00".b * (Pikuri::Attachment::MAX_IMAGE_BYTES + 1)))
 
       result = described_class.read(workspace: workspace, path: 'huge.png', offset: 1, limit: 2000).to_s
 

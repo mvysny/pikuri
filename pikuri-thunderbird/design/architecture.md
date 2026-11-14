@@ -62,6 +62,9 @@ posture choice: pikuri-pdf is pure Ruby, so memory-safe, and its realistic
 risk is a parser DoS (no per-call timeout today; Ruby's `Timeout` is unsafe
 and pages are parsed lazily); pikuri-extractors runs native converters but in
 a networkless one-shot container, the stronger choice for a mail host.
+An image goes to the model as the picture itself: pikuri only sniffs its
+magic bytes and never decodes it — the model server does — but a vision
+model reads text *drawn* into it, which no human reviews either.
 Reading an attachment is *inbound*, so it does not touch the outbound "no
 attachment ever ships" invariant below.
 

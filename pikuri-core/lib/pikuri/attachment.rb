@@ -15,7 +15,13 @@ module Pikuri
   # String at construction, fetches a URL one, and may read a path again at send
   # time, so a file edited in between reaches the model unchecked. An
   # +Attachment+ is what the model saw, and compares by content.
-  Attachment = Data.define(:mime, :filename, :bytes) do
+  class Attachment < Data.define(:mime, :filename, :bytes)
+    # @return [Integer] the largest image a tool or host attaches: Anthropic's
+    #   per-image limit, the same order on OpenAI and Gemini. Refuse a bigger
+    #   one with an error the model can react to, rather than send a payload
+    #   the provider rejects.
+    MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
     # Rebuild one from ruby_llm's type — the way back from a live chat.
     #
     # @param attachment [RubyLLM::Attachment] path- or IO-backed; a URL-backed

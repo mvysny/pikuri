@@ -12,6 +12,7 @@
 #                 source: <mail/<file>.html, converted>, name: <override>
 #                 text: <content>, name:, type:
 #                 zip: [<files>], name:
+#                 png: <a demo-home Png name>, name:
 #                 bytes: <n> (filler), name:
 #                 rfc2231: true writes a non-ASCII name as filename*= (RFC 2231)
 #                 instead of the mail gem's quoted encoded-word (RFC 2047)
@@ -360,6 +361,19 @@
     - name: fotky_z_chaty_č.1.zip
       zip: [chata-1.png, chata-2.png]
       rfc2231: true
+# --- A photo attached outright: an image the model can see.
+- id: christmas-photo
+  at: [-3, '20:40']
+  from: peter
+  subject: Ešte jedna fotka z chaty
+  body: |
+    Ešte jedna, západ slnka z mola. Tá sa do zipu nezmestila.
+
+    (One more, the sunset from the jetty. That one didn't make it into the zip.)
+
+    Peter
+  attachments:
+    - { name: západ_slnka.png, png: chata-2 }
 - id: christmas-reply
   folder: Sent
   at: [-2, '21:00']

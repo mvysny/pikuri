@@ -21,8 +21,6 @@ module ChatAttachments
 
   TOKEN = /(?<=\A|\s)@(?:'([^']*)'|"([^"]*)"|((?:\\.|\S)+))[ \t]?/
   IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp)\z/i
-  # Same cap as the `read` tool's (Pikuri::Workspace::Read::MAX_IMAGE_BYTES).
-  MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
   # @param line [String] what the user typed
   # @return [Array(String, Array<Pikuri::Attachment>)] the line without its `@path`
@@ -65,8 +63,9 @@ module ChatAttachments
   # @return [Pikuri::Attachment]
   # @raise [Error]
   def self.image(path)
-    bytes = File.binread(path, MAX_IMAGE_BYTES + 1)
-    raise Error, "#{path} is over #{Pikuri::Tool.format_bytes(MAX_IMAGE_BYTES)}" if bytes.bytesize > MAX_IMAGE_BYTES
+    cap = Pikuri::Attachment::MAX_IMAGE_BYTES
+    bytes = File.binread(path, cap + 1)
+    raise Error, "#{path} is over #{Pikuri::Tool.format_bytes(cap)}" if bytes.bytesize > cap
 
     mime = Pikuri::FileType.detect_mime(bytes)
     raise Error, "#{path} is not a PNG, JPEG, GIF or WebP image" unless mime&.start_with?('image/')

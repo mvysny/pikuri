@@ -44,6 +44,10 @@ RSpec.describe Pikuri::FileType do
       assert_nil described_class.detect_mime("héllo wörld".b)
     end
 
+    it 'takes a UTF-8-tagged String too, as a mail part decodes to' do
+      assert_nil described_class.detect_mime('héllo wörld')
+    end
+
     it 'returns nil for an opaque-binary blob with no recognised prefix' do
       # Plausible ZIP magic — pikuri does not currently route archives.
       assert_nil described_class.detect_mime("PK\x03\x04".b + ('x' * 16).b)

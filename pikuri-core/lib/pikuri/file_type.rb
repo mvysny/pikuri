@@ -170,9 +170,8 @@ module Pikuri
     end
     private_class_method :guard_extractable
 
-    # Coerce +input+ into a bytes String for the sniffs: a +String+ is
-    # returned as-is, a +Pathname+ is opened binary and up to {SAMPLE_BYTES}
-    # read. Empty files → empty String (not-binary, +nil+ mime).
+    # Coerce +input+ into up to {SAMPLE_BYTES} binary bytes for the sniffs: a
+    # +String+ is sliced, a +Pathname+ opened binary and read. Empty files → empty String (not-binary, +nil+ mime).
     #
     # @param input [String, Pathname]
     # @return [String] raw bytes.
@@ -181,7 +180,8 @@ module Pikuri
     def sample_of(input)
       case input
       when String
-        input
+        # Binary: a UTF-8 String holding non-ASCII raises against the magic prefixes.
+        input.byteslice(0, SAMPLE_BYTES).b
       when Pathname
         input.open('rb') { |io| io.read(SAMPLE_BYTES) || +'' }
       else

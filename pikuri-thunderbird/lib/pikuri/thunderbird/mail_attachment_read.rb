@@ -26,8 +26,10 @@ module Pikuri
     #
     # A forwarded mail (+message/rfc822+) reads as its headers, attachment
     # list and text ({ForwardedMail}); its own attachments can't be opened
-    # yet. Refused up front: images, encrypted parts, links to online files,
-    # and detached stubs. Inbound-only, with the
+    # yet. A PNG, JPEG, GIF or WebP comes back as the picture itself, for a
+    # vision model to see (a text-only one gets a note instead; see
+    # {Pikuri::Tool#to_ruby_llm_tool}). Refused up front: encrypted parts,
+    # links to online files, and detached stubs. Inbound-only, with the
     # same legs as +thunderbird_mail_read+: an attachment is untrusted the same
     # way a body is.
     #
@@ -55,7 +57,8 @@ module Pikuri
         - PDFs and other documents come back as extracted text; PDFs carry `--- Page N ---` markers you can cite.
         - Use `offset` and `limit` to page; when the response ends in `Use offset=N to continue`, call again with that offset.
         - A forwarded email comes back as its headers, attachment list and text.
-        - Images and encrypted attachments can't be read here.
+        - A PNG, JPEG, GIF or WebP image comes back as the picture itself, which needs a vision-capable model to see.
+        - Encrypted attachments can't be read here.
       DESC
 
       # @param backend [Gloda::Mail] the attachment list and folder copies.
@@ -107,6 +110,10 @@ module Pikuri
         return Pikuri::Tool::Result.error("attachment #{attachment} #{refusal}") if refusal
 
         bytes = attachment_bytes(store, rec, att)
+        # By the bytes, not Gloda's type, which it guessed from a sender-chosen file name.
+        mime = Pikuri::FileType.detect_mime(bytes)
+        return image_result(attachment, att, bytes, mime) if mime&.start_with?('image/')
+
         type = att.content_type
         bytes, type = ForwardedMail.render(bytes), 'text/plain' if type == 'message/rfc822'
         page = extract(bytes, type, offset:, limit:)
@@ -144,11 +151,36 @@ module Pikuri
       def self.refusal(att)
         type = att.content_type
         if att.external then 'is a link to an online file, not stored in the message.'
-        elsif type.start_with?('image/') then "is an image, which can't be read yet."
         elsif ENCRYPTED_TYPES.include?(type) then "is encrypted, so there is no text to read."
         end
       end
       private_class_method :refusal
+
+      # The picture as an attachment beside a note; +offset+ and +limit+ don't
+      # apply. The note reads:
+      #
+      #   Read image: cottage.png (398 B, image/png)
+      #
+      # @param number [Integer] the attachment's number, for the refusal.
+      # @param att [Gloda::Attachment]
+      # @param bytes [String] the decoded image.
+      # @param mime [String] sniffed from +bytes+, e.g. +"image/png"+.
+      # @return [Pikuri::Tool::Result] the image, or an error over
+      #   {Pikuri::Attachment::MAX_IMAGE_BYTES}.
+      def self.image_result(number, att, bytes, mime)
+        size = Pikuri::Tool.format_bytes(bytes.bytesize)
+        cap = Pikuri::Attachment::MAX_IMAGE_BYTES
+        if bytes.bytesize > cap
+          return Pikuri::Tool::Result.error("attachment #{number} is an image of #{size}, over the " \
+                                            "#{Pikuri::Tool.format_bytes(cap)} that can be shown.")
+        end
+
+        name = att.name.gsub(/[[:cntrl:]]/, ' ')
+        Pikuri::Tool::Result.new(content: "Read image: #{name} (#{size}, #{mime})",
+                                 attachments: [Pikuri::Attachment.new(mime:, filename: name, bytes:)],
+                                 summary: "Read image, #{size}")
+      end
+      private_class_method :image_result
 
       # @param store [MessageStore]
       # @param rec [Hash] the {Gloda::Mail#read} record.
