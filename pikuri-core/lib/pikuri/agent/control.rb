@@ -11,7 +11,7 @@ module Pikuri
     # The split: listeners are pure consumers of the event stream; controls are
     # host-facing signal holders the +Agent+ reads. The +Agent+ is the only
     # entity that emits events, checks the cancel flag, and drains the
-    # interloper queue — "what fires when" is one grep for +@listeners.emit+ in
+    # interloper queue — "what fires when" is one grep for +@listeners.on_event+ in
     # +agent.rb+.
     #
     # * {Cancellable} — cooperative cancel flag, shared by reference across the

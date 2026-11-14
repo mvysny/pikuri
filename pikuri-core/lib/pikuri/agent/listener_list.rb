@@ -2,16 +2,20 @@
 
 module Pikuri
   class Agent
-    # Listener-list value object an {Agent} owns: wraps an +Array+ of
-    # {Listener::Base} and fans {#emit} out to each.
+    # The composite listener an {Agent} owns: fans {#on_event} out to every
+    # wrapped {Listener::Base}, in registration order.
     #
-    # One job: fan out. The +Agent+ wires ruby_llm's callbacks itself, and the
-    # sub-agent derivation rule lives in {#for_sub_agent}. Controls are not
-    # listeners and don't appear here.
-    class ListenerList
+    #   list = ListenerList.new([Listener::Terminal.new, Listener::TokenLog.new])
+    #   list.on_event(event)                            # both see it
+    #   child = list.for_sub_agent(id: 'sub_agent 0')   # the sub-agent's list
+    #
+    # Being a listener itself, a list nests in another like any leaf, and
+    # {#for_sub_agent} recurses into it.
+    class ListenerList < Listener::Base
       # @param listeners [Array<Listener::Base>] listeners that
       #   define +on_event(event)+
       def initialize(listeners)
+        super()
         @listeners = listeners.dup
       end
 
@@ -22,15 +26,12 @@ module Pikuri
         nil
       end
 
-      # Dispatch one event to every listener, in registration order. Exactly two
-      # callers: {Agent} (loop-narration {Event}s) and
-      # {Configurator#emit_event} (domain events); listeners never call it —
-      # the stream is one-way.
+      # Dispatch one event to every listener, in registration order.
       #
       # @param event [Object] an {Agent::Event} variant or a gem domain event
       #   (an immutable value, by convention a +Data+)
       # @return [void]
-      def emit(event)
+      def on_event(event)
         @listeners.each { |l| l.on_event(event) }
       end
 

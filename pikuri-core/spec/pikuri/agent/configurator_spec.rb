@@ -83,7 +83,7 @@ RSpec.describe Pikuri::Agent::Configurator do
       c.add_listener(later)
       event = Pikuri::Agent::Event::Cancelled.new
 
-      listeners.emit(event)
+      listeners.on_event(event)
 
       assert_equal [event], recorder.events
       assert_equal [event], later.events
@@ -220,7 +220,7 @@ RSpec.describe Pikuri::Agent::Configurator do
       derived = new_configurator.sub_agent_listeners(id: 'researcher 0')
       event = Pikuri::Agent::Event::Cancelled.new
 
-      derived.emit(event)
+      derived.on_event(event)
 
       refute_same listeners, derived
       assert_equal [event], recorder.events

@@ -168,7 +168,7 @@ module Pikuri
       # @param event [Object] an immutable event value (by convention a +Data+)
       # @return [void]
       def emit_event(event)
-        @listeners.emit(event)
+        @listeners.on_event(event)
         nil
       end
 

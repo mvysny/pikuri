@@ -23,7 +23,7 @@ module Pikuri
   #    +check!+ on every +before_tool_call+, +drain!+ once each tool batch
   #    is answered. Resetting the cancel flag per turn is the host's job.
   #
-  # "What fires when" is one grep for +@listeners.emit+ (loop narration)
+  # "What fires when" is one grep for +@listeners.on_event+ (loop narration)
   # plus {Configurator#emit_event} (domain events).
   #
   # == One agent, one conversation
@@ -474,7 +474,7 @@ module Pikuri
         message = { role: :user, content: text }
         message[:attachments] = attachments.map(&:to_ruby_llm) unless attachments.empty?
         track_message(@chat.add_message(message))
-        @listeners.emit(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
+        @listeners.on_event(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
       end
       # The turn's first cancellation point: a plain non-streaming turn with no
       # +around_request+ has no other before its request goes out.
@@ -488,7 +488,7 @@ module Pikuri
       end
       nil
     rescue Control::Cancellable::Cancelled
-      @listeners.emit(Event::Cancelled.new)
+      @listeners.on_event(Event::Cancelled.new)
       raise
     ensure
       repair_dangling_tool_calls!($!)
@@ -613,7 +613,7 @@ module Pikuri
       # Wire @chat for the event stream and controls via ruby_llm's three
       # registered callbacks. (The per-chunk streaming callback is separate
       # — {#streaming_block} — since ruby_llm takes it as a block to
-      # +Chat#complete+, not a registered hook.) With the +@listeners.emit+
+      # +Chat#complete+, not a registered hook.) With the +@listeners.on_event+
       # calls in {#run_loop}/{#dispatch_ext_on_user_message}, this is the
       # complete callback→event map.
       # Identity-keyed, so nothing can drift out of alignment with
@@ -648,7 +648,7 @@ module Pikuri
         call_id = tc.provider_call_id
         @pending_tool_call = { tool_call_id: call_id, name: tc.name, summary: nil }
         record_tool_call_lines(call_id, display_name: display_name, argument: argument)
-        @listeners.emit(Event::ToolCall.new(
+        @listeners.on_event(Event::ToolCall.new(
                           tool_call_id: call_id, name: tc.name, arguments: tc.arguments,
                           display_name: display_name, argument: argument
                         ))
@@ -658,13 +658,13 @@ module Pikuri
         pending = @pending_tool_call || {}
         summary = summarize_tool_result(result)
         pending[:summary] = summary
-        @listeners.emit(Event::ToolResult.new(
+        @listeners.on_event(Event::ToolResult.new(
                           tool_call_id: pending[:tool_call_id], name: pending[:name],
                           content: tool_result_content(result), summary: summary
                         ))
       end
 
-      @listeners.emit(restore_history(@history)) if @history
+      @listeners.on_event(restore_history(@history)) if @history
     end
 
     # Put a saved conversation into the freshly built chat. Restored:
@@ -789,7 +789,7 @@ module Pikuri
       @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
       @chat.with_provider_options(filled.params)
       strip_foreign_thinking!
-      @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
+      @listeners.on_event(Event::ModelSwitched.new(from: old, to: filled))
     end
 
     # Build the chat for +transport+ — always through a dedicated
@@ -940,7 +940,7 @@ module Pikuri
       # injection from something the human typed — both land as +:user+.
       track_message(@chat.add_message(role: :user, content: "<#{REFERENCE_TAG}>\n#{body}\n#{close}"),
                     kind: 'reference')
-      @listeners.emit(Event::SystemInjected.new(content: content))
+      @listeners.on_event(Event::SystemInjected.new(content: content))
       nil
     end
 
@@ -1140,7 +1140,7 @@ module Pikuri
         # id on the wire. The event names the server's, like every other one.
         track_message(@chat.add_message(role: :tool, content: content, tool_call_id: call.id),
                       summary: INTERRUPTED_SUMMARY)
-        @listeners.emit(Event::ToolResult.new(tool_call_id: call.provider_call_id, name: call.name,
+        @listeners.on_event(Event::ToolResult.new(tool_call_id: call.provider_call_id, name: call.name,
                                              content: content, summary: INTERRUPTED_SUMMARY))
       end
       LOGGER.warn { "answered #{dangling.size} dangling tool call(s) after #{cause.class}" }
@@ -1221,12 +1221,12 @@ module Pikuri
       return unless msg.role == :assistant
 
       text = msg.thinking&.text
-      @listeners.emit(Event::Thinking.new(content: text)) if text && !text.empty?
+      @listeners.on_event(Event::Thinking.new(content: text)) if text && !text.empty?
 
       content = msg.content
-      @listeners.emit(Event::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
+      @listeners.on_event(Event::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
 
-      @listeners.emit(Event::Tokens.new(
+      @listeners.on_event(Event::Tokens.new(
                         input: msg.tokens.input,
                         output: msg.tokens.output,
                         cached: msg.tokens.cache_read,
@@ -1244,9 +1244,9 @@ module Pikuri
     # @return [void]
     def emit_chunk(chunk)
       thinking = chunk.thinking&.text
-      @listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
+      @listeners.on_event(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
       content = chunk.content
-      @listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
+      @listeners.on_event(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
     end
 
     # Drain the interloper queue, landing each item per its
@@ -1298,7 +1298,7 @@ module Pikuri
       message = { role: :user, content: text.empty? ? nil : text }
       message[:attachments] = sent.map(&:to_ruby_llm) unless sent.empty?
       track_message(@chat.add_message(message))
-      @listeners.emit(Event::UserTurn.new(content: text, attachments: sent, mid_loop: true))
+      @listeners.on_event(Event::UserTurn.new(content: text, attachments: sent, mid_loop: true))
       dispatch_ext_on_user_message(item.content, sent)
     end
   end

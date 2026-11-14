@@ -3,21 +3,32 @@
 RSpec.describe Pikuri::Agent::ListenerList do
   let(:recorder) { Pikuri::Agent::Listener::InMemoryEventList.new }
 
-  describe '#emit' do
+  describe '#on_event' do
     it 'fans every event out to every listener, in registration order' do
       other = Pikuri::Agent::Listener::InMemoryEventList.new
       list = described_class.new([recorder, other])
 
       event = Pikuri::Agent::Event::UserTurn.new(content: 'hi')
-      list.emit(event)
+      list.on_event(event)
 
       assert_equal [event], recorder.events
       assert_equal [event], other.events
     end
 
+    it 'fans through a nested list, which is itself a listener' do
+      inner = described_class.new([recorder])
+      outer = described_class.new([inner])
+
+      event = Pikuri::Agent::Event::UserTurn.new(content: 'hi')
+      outer.on_event(event)
+
+      assert_kind_of Pikuri::Agent::Listener::Base, inner
+      assert_equal [event], recorder.events
+    end
+
     it 'works with no listeners — no raise, no observable effect' do
       list = described_class.new([])
-      list.emit(Pikuri::Agent::Event::Assistant.new(content: 'unobserved'))
+      list.on_event(Pikuri::Agent::Event::Assistant.new(content: 'unobserved'))
     end
   end
 
@@ -83,6 +94,17 @@ RSpec.describe Pikuri::Agent::ListenerList do
       derived_token_log = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
       assert_equal '', derived_token_log.id
       assert_same recorder, derived_listeners.last
+    end
+
+    it 'recurses into a nested list' do
+      token_log = Pikuri::Agent::Listener::TokenLog.new
+      outer = described_class.new([described_class.new([token_log])])
+
+      derived_inner = outer.for_sub_agent(id: 'sub_agent 0').instance_variable_get(:@listeners).first
+      derived_token_log = derived_inner.instance_variable_get(:@listeners).first
+
+      assert_kind_of described_class, derived_inner
+      assert_equal 'sub_agent 0', derived_token_log.id
     end
 
     it 'is a copy-only no-op when no listener defines for_sub_agent' do
