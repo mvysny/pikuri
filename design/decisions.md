@@ -21,6 +21,33 @@ what it already says.
 
 ---
 
+## D_token_log_status_line — Why does `TokenLog` expose its status line to hosts, rather than a host-side listener computing its own?
+
+**Context.** The 2026-11-14 reachability audit found `TokenLog#status_line`, `#on_status_line`
+and `#context_window_size` consumed only downstream: pikuri-tui's status rule pulls the line and
+takes pushes for sub-agent rows, pikuri-webui's runner pushes it to the browser and reads the size
+against the cap. Both hosts depend on pikuri-workshop's `pikuri-conversations`, so moving the
+readers there was possible.
+
+**Decision.** They stay on `TokenLog`. The log line and the status line are one string, formatted
+by the same code from the same running snapshot, so exposing it costs an `attr_reader`, an
+observer slot and its two calls — about six lines.
+
+**Alternatives rejected.**
+
+- **A `Conversations::StatusLine` listener in the workshop.** It would recompute what `TokenLog`
+  already holds: the context sum, the message counter, the Δ, the `k` formatting, the reseed on
+  `HistoryLoaded`, its own `for_sub_agent`. About a hundred lines and a spec to save six, and two
+  listeners computing one number can drift.
+- **A workshop subclass of `TokenLog`, with inheritance allowed as an exception.** Core would
+  still need a hook designed for overriding, called after each line, whose contract (the loop
+  thread, exceptions propagate, what `for_sub_agent` builds) is the observer's doc again, plus the
+  promise that internals are stable for subclasses. The subclass would then hold the host's sink
+  and carry it into every sub-agent instance, which is the observer rebuilt. The callable *is*
+  the minimal extension point, and it is composition.
+
+---
+
 ## D_confirmer_sees_the_cancel — Why does `Confirmer#ask` take the turn's `Cancellable`, rather than the host waking its own confirmer?
 
 **Context.** `#ask` blocks the tool's thread until a human answers, and nothing handed it the

@@ -48,7 +48,7 @@ module Pikuri
         # {#id} / {#on_status_line} and choose their own presentation). Empty
         # until the first {Event::Tokens}. Hosts surfacing the snapshot in
         # their own UI (a TUI footer) read this; hosts wanting to be pushed set
-        # {#on_status_line}.
+        # {#on_status_line}. Why these live here: +D_token_log_status_line+.
         #
         # Safe to read from any thread (a single +String+ ivar read); a reader
         # may briefly see the previous turn's line mid-{#on_event}, acceptable

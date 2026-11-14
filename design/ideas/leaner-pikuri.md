@@ -72,7 +72,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | ~~`BundlerEnv`~~ | 68 | lsp, mcp, code | **kept 2026-11-14** — why in `D_de_bundlerized_children`; `Thunderbird::Launcher` now spawns over it too, giving it a pikuri root |
 | ~~`FILE_MINER` persona~~ | 56 | pikuri-code, tui-code | **kept 2026-11-14** — the "drops egress" half of the security chapter's persona pairing; root: `pikuri-files --file-miner`, run in the sub-agents chapter |
 | ~~`Parameters#required_string_array`, `EMPTY`~~ | ~46 | tasks, code | **kept 2026-11-14** — generic type family, the only array type; without it a list-taking tool reinvents parsing. No `optional_string_array` until a tool needs one |
-| `TokenLog` status-line API | ~40 | tui, webui | could go to pikuri-conversations |
+| ~~`TokenLog` status-line API~~ | ~40 | tui, webui | **kept 2026-11-14** — a seam, not a leaf; moved to C |
 | `Confirmer::AutoApprove`, `#confirm?` | ~32 | code, os, tui | |
 | `Paths.config` / `Paths.state` | ~26 | os, tui, webui | the `Paths` convention lives here — lean keep |
 
@@ -85,6 +85,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | History export/restore | ~440 | conversations, webui | ✓ `D_history_*` (4) |
 | `around_request:` + `RequestInstrumenter` | ~125 | conversations, mcp | ✓ `D_llm_request_throttle` |
 | `ChatTransport#params` | ~70 | tui, webui | ✓ `D_opaque_request_params` |
+| `TokenLog` `status_line` / `on_status_line` / `context_window_size` | ~40 | tui, webui | ✓ `D_token_log_status_line` |
 | `modalities` + attachment refusal | ~110 | conversations, tui, webui | ✓ `D_refuse_unsupported_attachments` |
 | reference block | ~50 | skills, memory (pikuri: wire-check only) | ✓ `D_reference_text_as_user_turn` |
 | denylist walk in grep/glob/listing | ~80 | code/tui-code `--yolo`, lsp | ✓ `D_walked_path_denylist`; `AllowAll` (~150) itself could move |
