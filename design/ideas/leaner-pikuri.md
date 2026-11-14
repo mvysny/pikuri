@@ -33,9 +33,16 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   per-tool-pool deferral went with it. Stale examples remain in pikuri-workshop's docs
   (`design/decisions.md:610,638`, `design/ideas/tool-list-in-context.md:79`,
   `pikuri-memory/design/architecture.md:461`).
-- `Q_core_dead_code` — ~140: `Parameters` number/boolean types + `#names`; `Agent#to_s`, `#model`,
-  `#system_prompt` (+ listener/control `to_s`); `Result.error(detail:)`, `#error?`;
-  `Cancellable#cancelled?`; `InMemoryEventList` (spec-only → `Testing`).
+- ~~`Q_core_dead_code`~~ **Done 2026-11-14:** removed `Agent#to_s`, `Agent#model`,
+  `Cancellable#to_s`, `Result.error(detail:)`. Kept, correcting the audit:
+  - `Parameters`' number/boolean types and `#names` — a complete, simple type family a tool can
+    reasonably want (owner's call; speculative but not a knob).
+  - `Result#error?`, `Cancellable#cancelled?`, `Agent#system_prompt` — the observation points specs
+    in four repos assert through.
+  - Listener / `ListenerList#to_s` — pikuri-tui's specs read listener names through them, and
+    downstream listeners follow the convention.
+  - `InMemoryEventList` — moving it into `Testing` saves no lines and edits specs in five workshop
+    gems; tidiness only.
 - `Q_dead_knobs` — ~100, kwargs nobody passes: thunderbird `thunderbird_bin:` (4 ctors), `cache_dir:`;
   `Server::{Qdrant,Chroma}` `data_dir:` / `port:` / `healthcheck_timeout:` + `#endpoint`;
   `Backend::Chroma` `tenant:` / `database:`; `Watcher` `latency:`; both Extensions' `chunker:`;

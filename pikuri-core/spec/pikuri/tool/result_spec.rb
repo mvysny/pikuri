@@ -29,13 +29,6 @@ RSpec.describe Pikuri::Tool::Result do
       assert_includes result.content, 'Schema:'
       assert_equal 'Error: bad arguments', result.summary
     end
-
-    it 'appends detail after a blank line, out of the display line' do
-      result = described_class.error('no such task id: 7', detail: "1. write specs\n2. ship")
-
-      assert_includes result.content, '2. ship'
-      assert_equal 'Error: no such task id: 7', result.summary
-    end
   end
 
   describe '.page' do

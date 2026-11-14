@@ -134,7 +134,7 @@ module Pikuri
           end
         end
 
-        # @return [String] short label for {Agent#to_s}; appends
+        # @return [String] short label for {ListenerList#to_s}; appends
         #   each non-default knob (+padding+, +streaming+) so the
         #   default form stays +"Terminal"+
         def to_s

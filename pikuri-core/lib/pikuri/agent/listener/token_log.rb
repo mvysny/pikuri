@@ -112,7 +112,7 @@ module Pikuri
           end
         end
 
-        # @return [String] short label for {Agent#to_s}, including
+        # @return [String] short label for {ListenerList#to_s}, including
         #   the current context-window size
         def to_s
           "TokenLog(ctx=#{format_k(@context_window_size)})"

@@ -24,7 +24,7 @@ module Pikuri
           @events << event
         end
 
-        # @return [String] short label for {Agent#to_s}
+        # @return [String] short label for {ListenerList#to_s}
         def to_s
           'InMemoryEventList'
         end

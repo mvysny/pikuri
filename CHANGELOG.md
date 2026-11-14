@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** removed the unused `Pikuri::Agent#to_s`, `Agent#model`, `Agent::Control::Cancellable#to_s` and `Tool::Result.error`'s `detail:`. Read the model as `agent.transport.model`, and append detail to the message yourself.
 - **Breaking:** removed the unwired `Pikuri::VectorDb::LIBRARIAN` persona, and with it pikuri-vectordb's dependency on pikuri-subagents (see `D_corpus_trust_declaration` for why no corpus-quarantine persona ships). A host that wired it defines its own `Persona` with the same `tool_names`.
 - **Breaking:** removed `Pikuri::VectorDb::Tokenizer::LlamaServer` and `Tokenizer::CharHeuristic`'s `chars_per_token:`, which nothing wired; the ratio is now the constant `CharHeuristic::CHARS_PER_TOKEN`. For exact counts, pass any object with `count(text)` as `Chunker::FixedWindow`'s `tokenizer:`.
 - `bin/pikuri-secretary` reads whole result pages from the engine's index (`page_text` plus `web_read_cached`) when its config keys Brave or Exa, and `Pikuri::Web::Search::Engines` leaves DuckDuckGo out of a key-derived `page_text` cascade, whose rows it can't give handles (`D_page_text_by_handle`).

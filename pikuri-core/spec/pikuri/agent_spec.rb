@@ -178,16 +178,11 @@ RSpec.describe Pikuri::Agent do
       assert_equal 1, fake_chat.hooks[:after_tool_result].size
     end
 
-    it 'defaults to an empty tool list and an empty ListenerList when the block is omitted' do
-      # With the Configurator-only wiring, an agent constructed
-      # without a block has nothing wired by the host.
+    it 'defaults to an empty tool list when the block is omitted' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's')
 
       assert_equal [], agent.tools
-      # No public listeners reader (the API is sealed — see
-      # Configurator); the banner is the observable surface.
-      assert_includes agent.to_s, 'listeners=[]'
     end
 
     it 'defaults id to empty (main agent)' do
@@ -279,7 +274,7 @@ RSpec.describe Pikuri::Agent do
                        ))
 
         assert_equal [['big', :openai, true]], fake_chat.model_switches
-        assert_equal 'big', agent.model
+        assert_equal 'big', agent.transport.model
       end
 
       it 'does not switch when the transport is structurally identical' do
@@ -291,7 +286,7 @@ RSpec.describe Pikuri::Agent do
                        transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 8_192))
 
         assert_nil fake_chat.model_switches
-        assert_equal 'm', agent.model
+        assert_equal 'm', agent.transport.model
       end
 
       it "shows a ModelSwitched listener the new model's modalities" do
@@ -1146,24 +1141,6 @@ RSpec.describe Pikuri::Agent do
                                 system_prompt: 's') { |c| c.add_listener recorder }
 
       assert_nil agent.last_assistant_content
-    end
-  end
-
-  describe '#to_s' do
-    it 'renders model, tool count, and listener list as a one-liner' do
-      tool = Pikuri::Tool.new(
-        name: 't', description: 'd',
-        parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :x, 'x' },
-        execute: ->(x:) { x }
-      )
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's') do |c|
-        c.add_tool tool
-        c.add_listener recorder
-      end
-
-      assert_equal 'Agent(id=, model=m, tools=1, listeners=[InMemoryEventList])',
-                   agent.to_s
     end
   end
 

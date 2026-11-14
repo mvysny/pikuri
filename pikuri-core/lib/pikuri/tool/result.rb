@@ -68,15 +68,11 @@ module Pikuri
       # @param message [String] what went wrong, without the +"Error: "+ prefix
       #   (already prefixed is fine — it is not doubled). May be multi-line; the
       #   model gets all of it.
-      # @param detail [String, nil] further observation text for the model,
-      #   appended after a blank line (the current task list, a failing
-      #   command's output).
       # @return [Result]
-      def self.error(message, detail: nil)
+      def self.error(message)
         text = message.to_s
         text = "Error: #{text}" unless text.start_with?('Error:')
-        new(content: detail ? "#{text}\n\n#{detail}" : text,
-            summary: Tool.one_line(text.lines.first))
+        new(content: text, summary: Tool.one_line(text.lines.first))
       end
 
       # The observation for one {Pikuri::Extractor::Page} window — what every

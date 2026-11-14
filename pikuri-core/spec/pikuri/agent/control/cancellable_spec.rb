@@ -66,18 +66,6 @@ RSpec.describe Pikuri::Agent::Control::Cancellable do
     end
   end
 
-  describe '#to_s' do
-    it 'renders the armed state when no cancel has happened' do
-      assert_equal 'Cancellable(armed)', described_class.new.to_s
-    end
-
-    it 'renders the cancelled state after #cancel!' do
-      flag = described_class.new
-      flag.cancel!
-      assert_equal 'Cancellable(cancelled)', flag.to_s
-    end
-  end
-
   describe '#sleep' do
     # Durations are a few slices at most: the point is the *cut-short*, and a
     # test that waits a realistic pacing interval (2s) would only be slower.

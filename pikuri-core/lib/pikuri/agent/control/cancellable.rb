@@ -142,11 +142,6 @@ module Pikuri
         def reset!
           @cancelled = false
         end
-
-        # @return [String] short label for {Agent#to_s}, reflecting the flag state.
-        def to_s
-          "Cancellable(#{@cancelled ? 'cancelled' : 'armed'})"
-        end
       end
     end
   end

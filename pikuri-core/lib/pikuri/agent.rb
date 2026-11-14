@@ -304,11 +304,6 @@ module Pikuri
     #   see {Configurator}.
     attr_reader :sub_agent_tools
 
-    # @return [String] resolved model id from {#transport}.
-    def model
-      @transport.model
-    end
-
     # @return [String] system prompt actually sent — the base
     #   +system_prompt:+ plus every extension's
     #   {Extension#system_prompt_snippets}. Not inherited by sub-agents.
@@ -543,18 +538,6 @@ module Pikuri
       rescue StandardError => e
         LOGGER.warn("on_close handler raised #{e.class}: #{e.message}")
       end
-    end
-
-    # Short, single-line config dump suitable for a startup
-    # banner or a debug print.
-    #
-    # @example
-    #   agent.to_s
-    #   # => "Agent(id=, model=qwen3-35b, tools=4, listeners=[Terminal])"
-    #
-    # @return [String]
-    def to_s
-      "Agent(id=#{@id}, model=#{model}, tools=#{@tools.size}, listeners=#{@listeners})"
     end
 
     # This agent's lethal-trifecta picture: which legs it holds, which its
