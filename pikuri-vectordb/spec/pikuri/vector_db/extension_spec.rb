@@ -89,23 +89,9 @@ describe Pikuri::VectorDb::Extension do
     end
 
     it 'contributes no system-prompt snippet' do
-      # Two use modes (direct + LIBRARIAN-mediated) live behind
-      # the same Extension; contributing a one-or-the-other usage
-      # block would conflict in the LIBRARIAN-mediated case. It
-      # inherits the no-op system_prompt_snippets default.
       ext = build_extension
       ext.configure(configurator)
       assert_empty ext.system_prompt_snippets
-    end
-
-    it 'does NOT auto-register the LIBRARIAN persona' do
-      # LIBRARIAN is opt-in via SubAgent::Extension — same
-      # precedent as Pikuri::Code::GIT_REPO_RESEARCHER.
-      build_extension.configure(configurator)
-      # The agent tool would only be present if a SubAgent
-      # extension had been registered; VectorDb::Extension
-      # alone doesn't pull that in.
-      refute(configurator.tools.any? { |t| t.name == 'agent' })
     end
 
     it 'raises if vectordb_search has been pre-registered' do

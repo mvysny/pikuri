@@ -26,9 +26,13 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   `chars_per_token:` (now `CharHeuristic::CHARS_PER_TOKEN`). Kept `FixedWindow`'s `tokenizer:`: six
   specs (vectordb, rag, pdf) pass a one-token-per-word fake through it, and it's where a host plugs
   an exact tokenizer. Documented in `Tokenizer`'s yardoc.
-- `Q_librarian` — vectordb `LIBRARIAN` persona + prompt, ~60. Wired nowhere. The only reason
-  pikuri-vectordb depends on pikuri-subagents at runtime (and briefing/secretary load subagents for
-  nothing).
+- ~~`Q_librarian`~~ **Done 2026-11-14:** removed, with pikuri-vectordb's pikuri-subagents
+  dependency. The book promised a demo it never gave, it couldn't be wired as a boundary
+  (`VectorDb::Extension` puts `vectordb_search` on the parent), and the secretary contradicts the
+  "corpus + web ⇒ quarantine" argument. Why-not note in `D_corpus_trust_declaration`; the
+  per-tool-pool deferral went with it. Stale examples remain in pikuri-workshop's docs
+  (`design/decisions.md:610,638`, `design/ideas/tool-list-in-context.md:79`,
+  `pikuri-memory/design/architecture.md:461`).
 - `Q_core_dead_code` — ~140: `Parameters` number/boolean types + `#names`; `Agent#to_s`, `#model`,
   `#system_prompt` (+ listener/control `to_s`); `Result.error(detail:)`, `#error?`;
   `Cancellable#cancelled?`; `InMemoryEventList` (spec-only → `Testing`).

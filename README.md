@@ -85,9 +85,8 @@ in:
     tool + `Persona` record + the `pikuri-minions` fan-out demo.
   - [`pikuri-vectordb`](pikuri-vectordb/README.md) — topical
     retrieval over a local corpus, the vector-search primitive:
-    `vectordb_search` / `vectordb_read` / `vectordb_reindex`, the
-    `LIBRARIAN` persona, and the `pikuri-corpus` demo (a no-egress
-    recall agent).
+    `vectordb_search` / `vectordb_read` / `vectordb_reindex` and the
+    `pikuri-corpus` demo (a no-egress recall agent).
   - [`pikuri-rag`](pikuri-rag/README.md) — hybrid retrieval on that
     primitive: a keyword index beside the vectors, so `rag_search`
     also finds an invoice number and `rag_search_keywords` lists *every*

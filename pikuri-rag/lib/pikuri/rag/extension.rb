@@ -70,13 +70,10 @@ module Pikuri
     # byte hash, so swapping the embedder model or chunker window leaves every
     # indexed chunk silently stale. Run +rag_reindex+.
     #
-    # == No LIBRARIAN, and no system-prompt snippet
+    # == No system-prompt snippet
     #
-    # {Pikuri::VectorDb::LIBRARIAN} names +vectordb_*+ tools, so it cannot be
-    # reused over this family; a +rag_*+ persona would be a new persona in this
-    # gem, and nothing has asked for one. No +<rag_usage>+ block is appended
-    # either — the split between "relevance" and "completeness" is what each
-    # tool's own description is for.
+    # No +<rag_usage>+ block is appended: the split between "relevance" and
+    # "completeness" is what each tool's own description is for.
     class Extension
       include Pikuri::Agent::Extension
 

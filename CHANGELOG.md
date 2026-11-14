@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** removed the unwired `Pikuri::VectorDb::LIBRARIAN` persona, and with it pikuri-vectordb's dependency on pikuri-subagents (see `D_corpus_trust_declaration` for why no corpus-quarantine persona ships). A host that wired it defines its own `Persona` with the same `tool_names`.
 - **Breaking:** removed `Pikuri::VectorDb::Tokenizer::LlamaServer` and `Tokenizer::CharHeuristic`'s `chars_per_token:`, which nothing wired; the ratio is now the constant `CharHeuristic::CHARS_PER_TOKEN`. For exact counts, pass any object with `count(text)` as `Chunker::FixedWindow`'s `tokenizer:`.
 - `bin/pikuri-secretary` reads whole result pages from the engine's index (`page_text` plus `web_read_cached`) when its config keys Brave or Exa, and `Pikuri::Web::Search::Engines` leaves DuckDuckGo out of a key-derived `page_text` cascade, whose rows it can't give handles (`D_page_text_by_handle`).
 - **Breaking:** `Pikuri::Workspace::Confirmer#ask` and `#confirm?` take the asking turn's `cancellable:`, and the new `Agent::Control::Handoff` lets a confirmer wait for a human on another thread until any cancel ends the wait (`D_confirmer_sees_the_cancel`). Add `cancellable:` to your `#ask`, and pass `context.cancellable` (with `wants_context: true`) wherever a tool asks.

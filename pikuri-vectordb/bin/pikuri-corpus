@@ -21,11 +21,6 @@
 # the printed map says, which is the point: with no egress leg the verdict
 # stays silent either way.
 #
-# The privilege-separated `LIBRARIAN` persona is bundled by this gem but
-# deliberately NOT wired here — it earns its keep only under an agent
-# that *does* have egress, where the corpus must be quarantined in a
-# sub-agent. See book/vectordb.md.
-#
 # Same Bundler bootstrap pattern as the other bundled bins so callers
 # don't need the `bundle exec` ceremony.
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)

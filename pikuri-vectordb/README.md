@@ -148,24 +148,6 @@ across runs, `--watch` keeps it live, `--no-reranker` drops the
 reranker requirement. The guide's
 [the vector-DB chapter](../book/vectordb.md) is the full walkthrough.
 
-## The LIBRARIAN persona
-
-For hosts that want recall behind a privilege-separated sub-agent —
-the right shape once the *parent* agent has egress (see
-`SECURITY.md` at the repo root) — the bundled
-`Pikuri::VectorDb::LIBRARIAN` persona is opt-in via
-`pikuri-subagents`:
-
-```ruby
-require 'pikuri-subagents'
-
-c.add_extension(
-  Pikuri::SubAgent::Extension.new(
-    personas: [Pikuri::VectorDb::LIBRARIAN]
-  )
-)
-```
-
 ## Three model endpoints
 
 A full setup wants three LLM endpoints: chat (via `ruby_llm`), an
@@ -199,9 +181,8 @@ OpenAI-compatible endpoints and would also work, but pikuri's
 gem 'pikuri-vectordb'
 ```
 
-Depends on `pikuri-core`, `pikuri-subagents` (the `Persona` value
-type `LIBRARIAN` is an instance of), and `listen` (filesystem
-events for the `Watcher`; loaded only when a `Watcher` starts).
+Depends on `pikuri-core` and `listen` (filesystem events for the
+`Watcher`; loaded only when a `Watcher` starts).
 
 ## Further reading
 

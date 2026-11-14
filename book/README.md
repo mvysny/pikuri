@@ -86,9 +86,7 @@ assistant, the coding agent, MCP, skills, language servers — is
   reranker pipeline, in-memory vs Qdrant backends, and why the
   demo agent has no internet access — treat the corpus as
   private, give the reader an agent that can't leak it. Demo via
-  `pikuri-corpus` against the pikuri guide itself. (The
-  privilege-separated `LIBRARIAN` persona, for an agent that
-  *does* have egress, gets a short section of its own.)
+  `pikuri-corpus` against the pikuri guide itself.
 - **[Hybrid retrieval: the questions vectors can't answer](rag.md).**
   The two questions pure geometry cannot answer — *completeness*
   ("every note mentioning Acme": top-k is a sample and cosine has no

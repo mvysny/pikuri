@@ -29,10 +29,7 @@ Gem::Specification.new do |spec|
     follow-up. Hosts wire the feature via
     +c.add_extension Pikuri::VectorDb::Extension.new(...)+ inside
     the +Agent.new+ block — same opt-in shape as +pikuri-tasks+ /
-    +pikuri-skills+. The bundled +Pikuri::VectorDb::LIBRARIAN+
-    persona is the privilege-separated sub-agent counterpart for
-    hosts that want recall to flow through a child rather than the
-    parent's context.
+    +pikuri-skills+.
 
     Three model endpoints in the full setup — chat (via ruby_llm),
     an embedder (via +RubyLLM.embed+), and an optional reranker
@@ -69,12 +66,6 @@ Gem::Specification.new do |spec|
   # the pikuri-pdf extractor — deliberately not a dependency here, so
   # the lean no-PDF install stays lean).
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
-  # pikuri-subagents ships +Pikuri::SubAgent::Persona+, the value
-  # type the bundled +LIBRARIAN+ persona constant is an instance
-  # of. Hosts that want LIBRARIAN spawnable wire it via
-  # +SubAgent::Extension.new(personas: [..., LIBRARIAN])+ — same
-  # shape +pikuri-code+ uses for +GIT_REPO_RESEARCHER+.
-  spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
   # listen backs the optional +VectorDb::Watcher+ auto-watch daemon
   # (inotify on Linux, with a polling fallback). Only loaded when a
   # host actually starts a Watcher — +require 'listen'+ is deferred to

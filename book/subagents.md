@@ -270,8 +270,6 @@ You now know the smallest extension shape (one `configure`
 hook), and you've seen one persona in action. The next two
 chapters — [vectordb](vectordb.md) and [hybrid retrieval](rag.md) —
 add the capability an assistant wants most: recall over your own
-documents. The vector-DB chapter introduces a second persona —
-`LIBRARIAN` — and demonstrates the same privilege-separation
-argument with the corpus's chunks as the threat surface.
+documents.
 
 → Continue to [Agentic search and the vector DB](vectordb.md).

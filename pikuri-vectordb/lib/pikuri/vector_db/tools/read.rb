@@ -14,10 +14,8 @@ module Pikuri
       #
       # Reading is *inbound only*. The lethal trifecta's load-bearing leg is
       # egress; this pours more (already-private, already-possibly-poisoned)
-      # corpus content in but adds no way out, so both wirings stay safe — the
-      # egress-free +bin/pikuri-corpus+ agent stays egress-free, and the
-      # {LIBRARIAN} privilege-separation argument survives (a poisoned document
-      # still has no hand to act with). See {LIBRARIAN}.
+      # corpus content in but adds no way out: the egress-free
+      # +bin/pikuri-corpus+ agent stays egress-free.
       #
       # == The read domain is exactly the search domain
       #

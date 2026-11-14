@@ -42,7 +42,6 @@ PATH
     pikuri-vectordb (0.1.0)
       listen (~> 3.9)
       pikuri-core (= 0.1.0)
-      pikuri-subagents (= 0.1.0)
 
 PATH
   remote: pikuri-web

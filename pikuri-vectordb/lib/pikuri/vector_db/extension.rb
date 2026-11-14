@@ -52,14 +52,11 @@ module Pikuri
     # leaves every indexed chunk silently stale — new queries embed with the new
     # model but score against old-model vectors. Run a full +vectordb_reindex+.
     #
-    # == No system-prompt snippet; LIBRARIAN not auto-registered
+    # == No system-prompt snippet
     #
-    # Unlike the workspace and sub-agent extensions, no +<vectordb_usage>+ block is appended:
-    # the parent may call +vectordb_search+ directly *or* delegate to
-    # {LIBRARIAN}, and a snippet favoring one would conflict with the
-    # trifecta-defense argument in the mediated mode. The bundled {LIBRARIAN}
-    # persona is opt-in — hosts wanting sub-agent recall add it via +SubAgent::Extension.new(personas:
-    # [LIBRARIAN])+, keeping the +pikuri-subagents+ dependency registration-only.
+    # Unlike the workspace and sub-agent extensions, no +<vectordb_usage>+
+    # block is appended: when to search is what each tool's own description
+    # is for.
     class Extension
       include Pikuri::Agent::Extension
 
