@@ -38,7 +38,8 @@ march on.
 - **Breaking:** the 5 MB image cap moved from `Pikuri::Workspace::Read::MAX_IMAGE_BYTES` to `Pikuri::Attachment::MAX_IMAGE_BYTES`, so every gem attaching an image shares it; rename the constant where you read it.
 - Fix `Pikuri::Attachment#to_ruby_llm` letting ruby_llm guess the type from the file name; it now passes `mime` through, so the provider is told the type pikuri checked.
 - Fix `Pikuri::FileType.detect_mime` raising `Encoding::CompatibilityError` on a UTF-8 String holding non-ASCII; it now sniffs a binary copy of the leading bytes.
-- `thunderbird_mail_attachment_read` now reads a forwarded email (`message/rfc822`) as its sender, recipients, date, attachment list and text (`Pikuri::Thunderbird::ForwardedMail`), and `thunderbird_mail_read` lists one as `forwarded email`, noting its text may already be in the body.
+- `thunderbird_mail_attachment_read` now reads a forwarded email (`message/rfc822`) as its sender, recipients, date, numbered attachment list and text (`Pikuri::Thunderbird::ForwardedMail`), and `thunderbird_mail_read` lists one as `forwarded email`, noting its text may already be in the body.
+- **Breaking:** `thunderbird_mail_attachment_read`'s `attachment` parameter is a string, `"2"` or a path into a forwarded email such as `"2.1"`, so a forward's own attachments read at any depth (`D_attachment_path_handle`). A host calling the tool directly passes the number as a string.
 - Fix `thunderbird_mail_read` failing the turn on a body over 40 KB whose cut split a multi-byte character; the torn tail is now dropped.
 - **Breaking:** `Agent::ListenerList` is itself a `Listener::Base`, so a list nests in another and `#for_sub_agent` recurses into it; its `#emit` is renamed `#on_event`.
 - **Breaking:** `Agent::Control::Interloper#peek` and `#to_s` are gone, since no host read them. Show the pending count with `#size` or `#on_change`, and in a spec read the queue with `#drain!`.

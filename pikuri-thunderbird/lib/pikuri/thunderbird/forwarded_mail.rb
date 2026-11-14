@@ -6,17 +6,20 @@ require 'stringio'
 module Pikuri
   module Thunderbird
     # A forwarded email (a +message/rfc822+ attachment) as text, laid out
-    # like +thunderbird_mail_read+ shows a message:
+    # like +thunderbird_mail_read+ shows a message, its attachments numbered
+    # under the forward's own handle (+"2"+ here), so +"2.1"+ reads the CV:
     #
-    #   ForwardedMail.render(part.decoded)
+    #   ForwardedMail.render(part.decoded, handle: '2')
     #   # => Subject: Application: junior developer
     #   #    From: "Lea Mäkinen" <lea@example.com>
     #   #    To: Tomas Horák <tomas@novak.example>
     #   #    Date: 2026-11-09 22:14
-    #   #    Attachments (open them in Thunderbird):
-    #   #      - Lea_Mäkinen_CV.docx (application/vnd.openxmlformats-…, 5.1 kB)
+    #   #    Attachments:
+    #   #      2.1. Lea_Mäkinen_CV.docx (application/vnd.openxmlformats-…, 5.1 kB)
     #   #
     #   #    Hello Tomas, …
+    #
+    #   ForwardedMail.attachments(part.decoded)[0].part.decoded  # the CV's bytes
     #
     # Gloda indexes only the outer message, so this walks the bytes with the
     # +mail+ gem, which decodes the RFC 2047 headers and charsets.
@@ -27,26 +30,71 @@ module Pikuri
     # so the two levels agree. Thunderbird's C++ MIME code decides that, so
     # the rule in {.kind} is measured, not ported: the testbed holds Apple
     # Mail, Outlook and odd-leaf shapes each top-level and forwarded
-    # (+design/architecture.md+ § "Mail: the Gloda index").
+    # (+design/architecture.md+ § "Mail: the Gloda index"), and
+    # +dev/testbed/compare-forwards+ re-checks them.
     module ForwardedMail
+      # One attachment of a forwarded email.
+      #
+      # * +part+ — +Mail::Part+, its bytes via +part.decoded+.
+      # * +name+ — +String+, sender-authored; a nameless part is Gloda's
+      #   +"Part 1.5"+, after its part path.
+      # * +content_type+ — +String+, lowercased, from the part's own header.
+      Attachment = Data.define(:part, :name, :content_type)
+
       # @param bytes [String] the +message/rfc822+ part's decoded body.
+      # @param handle [String] the forward's own attachment handle, e.g.
+      #   +"2"+ or +"2.1"+; prefixes the numbers in the listing.
       # @return [String] headers, attachment list and text body.
-      def self.render(bytes)
+      def self.render(bytes, handle:)
         mail = ::Mail.new(bytes.b)
-        leaves = []
-        walk(mail, '1', related: false, alternative: false) { |part, path, kind| leaves << [part, path, kind] }
-        attachments = leaves.select { |_, _, kind| kind == :attachment }
+        leaves = leaves(mail)
+        attachments = leaves.filter_map { |part, path, kind| attachment(part, path) if kind == :attachment }
 
         headers = [['Subject', mail.subject], ['From', field(mail, :from)], ['To', field(mail, :to)],
                    ['Cc', field(mail, :cc)], ['Date', mail.date && DateHelpers.short_datetime(mail.date.to_time)]]
         lines = headers.filter_map { |name, value| "#{name}: #{clean(value)}" if value && !value.to_s.empty? }
-        lines << if attachments.empty?
-                   'Attachments: (none)'
-                 else
-                   "Attachments (open them in Thunderbird):\n#{attachments.map { |p, path, _| "  - #{describe(p, path)}" }.join("\n")}"
-                 end
+        lines << (attachments.empty? ? 'Attachments: (none)' : "Attachments:\n#{listing(attachments, handle)}")
         "#{lines.join("\n")}\n\n#{body(leaves.filter_map { |part, _, kind| part if kind == :body })}"
       end
+
+      # @param bytes [String] the +message/rfc822+ part's decoded body.
+      # @return [Array<Attachment>] in listing order, so +"2.1"+ is the first.
+      def self.attachments(bytes)
+        leaves(::Mail.new(bytes.b)).filter_map { |part, path, kind| attachment(part, path) if kind == :attachment }
+      end
+
+      # The numbered listing under +handle+, also quoted back for a wrong
+      # number:
+      #
+      #   listing(attachments(bytes), '2')
+      #   # =>   2.1. Lea_Mäkinen_CV.docx (application/vnd.openxmlformats-…, 5.1 kB)
+      #   #      2.2. Fwd.eml (forwarded email)
+      #
+      # @param attachments [Array<Attachment>]
+      # @param handle [String] the forward's own handle.
+      # @return [String] one indented line per attachment.
+      def self.listing(attachments, handle)
+        attachments.each_with_index.map { |a, i| "  #{handle}.#{i + 1}. #{describe(a)}" }.join("\n")
+      end
+
+      # @param mail [Mail::Message]
+      # @return [Array<Array(Mail::Part, String, Symbol)>] every leaf, its
+      #   part path and its {.kind}.
+      def self.leaves(mail)
+        out = []
+        walk(mail, '1', related: false, alternative: false) { |part, path, kind| out << [part, path, kind] }
+        out
+      end
+      private_class_method :leaves
+
+      # @param part [Mail::Part]
+      # @param path [String]
+      # @return [Attachment]
+      def self.attachment(part, path)
+        Attachment.new(part:, name: part.filename || "Part #{path}",
+                       content_type: (part.mime_type || 'text/plain').downcase)
+      end
+      private_class_method :attachment
 
       # Yields every leaf part with its Gloda-style part path (+"1.2.2"+:
       # the root is +1+) and its {.kind}.
@@ -111,14 +159,13 @@ module Pikuri
       end
       private_class_method :body
 
-      # @param part [Mail::Part]
-      # @param path [String] names a nameless part, as Gloda does.
+      # @param att [Attachment]
       # @return [String] +"cv.pdf (application/pdf, 5.1 kB)"+.
-      def self.describe(part, path)
-        name = clean(part.filename || "Part #{path}")
-        return "#{name} (forwarded email)" if part.mime_type == 'message/rfc822'
+      def self.describe(att)
+        name = clean(att.name)
+        return "#{name} (forwarded email)" if att.content_type == 'message/rfc822'
 
-        "#{name} (#{part.mime_type}, #{Pikuri::Tool.format_bytes(part.body.decoded.bytesize)})"
+        "#{name} (#{att.content_type}, #{Pikuri::Tool.format_bytes(att.part.body.decoded.bytesize)})"
       end
       private_class_method :describe
 

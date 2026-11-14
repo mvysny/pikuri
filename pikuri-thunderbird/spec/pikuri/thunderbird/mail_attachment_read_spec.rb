@@ -98,6 +98,28 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
       Content-Disposition: attachment; filename="cv.pdf"
 
       %PDF-
+      --C
+      Content-Type: text/plain; name="references.txt"
+      Content-Disposition: attachment; filename="references.txt"
+
+      Ask Mira at Lumo.
+      --C
+      Content-Type: message/rfc822
+      Content-Disposition: attachment; filename="Earlier.eml"
+
+      Subject: Portfolio
+      Content-Type: multipart/mixed; boundary="F"
+
+      --F
+      Content-Type: text/plain
+
+      My portfolio.
+      --F
+      Content-Type: text/plain; name="portfolio.txt"
+      Content-Disposition: attachment; filename="portfolio.txt"
+
+      Two shop sites.
+      --F--
       --C--
       --B--
     MSG
@@ -143,7 +165,7 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
   end
 
   def read(tool, attachment, id: 'att@x', **opts)
-    tool.run({ 'message_id' => id, 'attachment' => attachment }.merge(opts.transform_keys(&:to_s)))
+    tool.run({ 'message_id' => id, 'attachment' => attachment.to_s }.merge(opts.transform_keys(&:to_s)))
   end
 
   it 'reads a text attachment as a cat -n page, transcoded to UTF-8' do
@@ -191,17 +213,16 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
   end
 
   it 'refuses an image over the cap, before it reaches the model' do
-    att = Pikuri::Thunderbird::Gloda::Attachment.new(name: 'huge.png', content_type: 'image/png', size: 0,
-                                                     part: '1.2', external: false)
     big = "\x89PNG\r\n\x1a\n".b + ("\0".b * Pikuri::Attachment::MAX_IMAGE_BYTES)
+    found = described_class::Found.new(handle: '3.1', name: 'huge.png', content_type: 'image/png', bytes: big)
 
-    result = described_class.send(:image_result, 3, att, big, 'image/png')
+    result = described_class.send(:image_result, found, 'image/png')
 
-    assert_equal 'Error: attachment 3 is an image of 5.0 MB, over the 5.0 MB that can be shown.', result.content
+    assert_equal 'Error: attachment 3.1 is an image of 5.0 MB, over the 5.0 MB that can be shown.', result.content
     assert_empty result.attachments
   end
 
-  it "reads a forwarded email as its headers, attachments and text, listing what Gloda would" do
+  it "reads a forwarded email as its headers, numbered attachments and text, listing what Gloda would" do
     with_tools do |tool, _|
       lines = read(tool, 6).content.lines.map { _1.sub(/\A *\d+\t/, '').chomp }
 
@@ -210,11 +231,45 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
                     'To: Tomas <tomas@example.com>',
                     'Cc: ilse@example.com',
                     "Date: #{Time.utc(2026, 11, 9, 22, 14).getlocal.strftime('%Y-%m-%d %H:%M')}",
-                    'Attachments (open them in Thunderbird):',
-                    '  - cv.pdf (application/pdf, 5 B)',
+                    'Attachments:',
+                    '  6.1. cv.pdf (application/pdf, 5 B)',
+                    '  6.2. references.txt (text/plain, 17 B)',
+                    '  6.3. Earlier.eml (forwarded email)',
                     '',
-                    'My CV is attached, café.'], lines.first(9)
+                    'My CV is attached, café.'], lines.first(11)
       refute_includes lines.join, 'logo.png' # a cid: image is body, as Gloda has it
+    end
+  end
+
+  describe 'a path into a forwarded email' do
+    it "reads the forward's own attachment, and one a forward deeper" do
+      with_tools do |tool, _|
+        assert_includes read(tool, '6.2').content, "1\tAsk Mira at Lumo."
+        assert_includes read(tool, '6.3').content, "  6.3.1. portfolio.txt (text/plain, 15 B)"
+        assert_includes read(tool, '6.3.1').content, "1\tTwo shop sites."
+        assert_includes read(tool, '6.2.').content, "1\tAsk Mira at Lumo." # as the listing prints it
+      end
+    end
+
+    it 'answers a wrong number with the listing it missed' do
+      with_tools do |tool, _|
+        out = read(tool, '6.9').content
+
+        assert out.start_with?('Error: no attachment 6.9; attachment 6 has:')
+        assert_includes out, '  6.2. references.txt (text/plain, 17 B)'
+        assert_equal 'Error: attachment 1 is not a forwarded email, so it has no attachment 1.1.',
+                     read(tool, '1.1').content
+        assert_equal 'Error: attachment 6.2 is not a forwarded email, so it has no attachment 6.2.1.',
+                     read(tool, '6.2.1').content
+      end
+    end
+
+    it 'refuses a handle that is not a listed number' do
+      with_tools do |tool, _|
+        assert_equal 'Error: attachment must be a number as listed, e.g. "2" or "2.1"; got "first".',
+                     read(tool, 'first').content
+        assert_includes read(tool, '0').content, 'must be a number as listed'
+      end
     end
   end
 

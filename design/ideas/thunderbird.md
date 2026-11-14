@@ -79,5 +79,4 @@ Each needs a live install or a comm-central read; none blocks what ships.
 - **`.msf` (Mork) and mbox fallbacks** — the `available?`-probed second arm
   for a Gloda-disabled host. Build only when such a host is a real user.
   Attachment bytes already come from the mbox store
-  ({Pikuri::Thunderbird::MessageStore}); what attachments still lack is in
-  [`thunderbird-attachments-v2.md`](thunderbird-attachments-v2.md).
+  ({Pikuri::Thunderbird::MessageStore}).

@@ -59,8 +59,9 @@ a PDF carries far more injection text than a body, and no human ever reads
 it — and every attachment is a stranger's *file* fed to a parser, which a
 workspace file mostly is not. The PDF arm the host picks is therefore a
 posture choice: pikuri-pdf is pure Ruby, so memory-safe, and its realistic
-risk is a parser DoS (no per-call timeout today; Ruby's `Timeout` is unsafe
-and pages are parsed lazily); pikuri-extractors runs native converters but in
+risk is a parser DoS (no per-call timeout: Ruby's `Timeout` is unsafe around
+native code, pages are parsed lazily, and `MessageStore`'s 40 MB message cap
+bounds the input; revisit if a hostile PDF ever hangs a turn); pikuri-extractors runs native converters but in
 a networkless one-shot container, the stronger choice for a mail host.
 An HTML attachment renders through pikuri-html, which keeps text the markup
 hides but labels it `[hidden in the original: …]`. It can't spot white-on-white,
@@ -374,7 +375,8 @@ A complete, pre-decoded search index. Tables that matter:
   attachments inside a forward, at any depth, which this list omits
   (testbed, 159: a forward of a forward still indexes the CV two levels
   down), so a search can find a mail by an attachment name its listing
-  never shows.
+  never shows. The forward's own listing shows it, numbered under the
+  forward's handle (`D_attachment_path_handle`).
 - **What `attachmentInfos` lists** (testbed, 159). Thunderbird's C++
   MIME code decides this, so the rule is measured, not read off source;
   `ForwardedMail` follows it, and `dev/testbed/mail/*.eml` holds the

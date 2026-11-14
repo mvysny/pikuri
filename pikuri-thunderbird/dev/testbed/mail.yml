@@ -355,9 +355,9 @@
     Alex
   forward: floor-plan
 
-# --- Other clients' MIME trees (Q_fwd_listing_policy), each in the Inbox and
-#     forwarded: Gloda's list for the top-level copy is what ForwardedMail
-#     must list for the forwarded one.
+# --- Other clients' MIME trees, each in the Inbox and forwarded: Gloda's
+#     list for the top-level copy is what ForwardedMail must list for the
+#     forwarded one (compare-forwards checks it, D_attachment_path_handle).
 #     Apple Mail: the PDF sits inside the HTML alternative, between two HTML
 #     fragments (alternative > [plain, mixed > [html, pdf, html]]).
 - id: venue-quote

@@ -5,12 +5,11 @@
 # Mail, Outlook and odd-leaf shapes of dev/testbed/mail/*.eml, cut down.
 describe Pikuri::Thunderbird::ForwardedMail do
   # @param tree [String] the forwarded mail's MIME entity, boundaries "A", "B", "C".
+  # @return [String] the whole mail.
+  def mail(tree) = "From: sami@example.com\nSubject: Quote\nMIME-Version: 1.0\n#{tree}".gsub("\n", "\r\n")
+
   # @return [Array<String>] the listed names.
-  def listed(tree)
-    mail = "From: sami@example.com\nSubject: Quote\nMIME-Version: 1.0\n#{tree}".gsub("\n", "\r\n")
-    out = described_class.render(mail)
-    out[/^Attachments.*?(?=\n\n)/m].lines(chomp: true).drop(1).map { _1[/\A  - (.*) \(/, 1] }
-  end
+  def listed(tree) = described_class.attachments(mail(tree)).map(&:name)
 
   it 'lists an Apple Mail attachment that sits inside the HTML alternative' do
     tree = <<~MIME
@@ -125,7 +124,8 @@ describe Pikuri::Thunderbird::ForwardedMail do
     MIME
 
     assert_equal ['Part 1.2', 'statement.csv', 'notes.txt', 'Part 1.5'], listed(tree)
-    out = described_class.render("Subject: s\nMIME-Version: 1.0\n#{tree}".gsub("\n", "\r\n"))
+    out = described_class.render(mail(tree), handle: '3')
+    assert_includes out, "Attachments:\n  3.1. Part 1.2 (text/plain, 15 B)\n  3.2. statement.csv (text/csv, 13 B)\n"
     assert_includes out, "your statement\n\nDo not reply."
     refute_includes out, 'account summary'
   end

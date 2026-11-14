@@ -24,7 +24,11 @@ module Pikuri
     # A folder URI maps to its mbox through +prefs.js+, the only file naming
     # which account owns which store directory (a second account on one host
     # gets +imap.gmail-1.com+). Gloda's folder URIs are not valid RFC 3986 —
-    # raw +[Gmail]+ brackets and spaces — so they are split by regex.
+    # raw +[Gmail]+ brackets and spaces — so they are split by regex. A folder
+    # name is mapped verbatim: one with characters the filesystem can't hold,
+    # which Thunderbird hashes into its file name (+NS_MsgHashIfNecessary+),
+    # isn't found, and its messages answer "not stored". Unhandled until a
+    # real folder hits it.
     #
     # Within the mbox the message is found by a linear scan for its
     # +Message-ID:+ header (~0.5 s for a 440 MB +[Gmail]/All Mail+), skipping

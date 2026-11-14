@@ -21,6 +21,36 @@ what it already says.
 
 ---
 
+## D_attachment_path_handle — Why does `thunderbird_mail_attachment_read` take a string path like `"2.1"` rather than a second number for a forward's attachment?
+
+**Context.** A forwarded mail reads as its headers, attachment list and text
+(`Pikuri::Thunderbird::ForwardedMail`), and Gloda's `c2attachmentNames`
+finds a mail by the names inside a forward. So a search for "CV" lands on a
+forward whose CV the model could see listed but not open. It needed a handle
+for an attachment inside a forward, and inside a forward of a forward.
+
+**Decision.** The `attachment` parameter is a string path. `"2"` is Gloda's
+number, as `thunderbird_mail_read` lists it. Each further number indexes the
+listing of the forward before it, which prints the full handle (`2.1.`) so
+the model copies it, and the walk descends any depth. The numbers are
+handles, so a forward's list must be the one Gloda shows for the same mail at
+top level. That rule was measured, not ported, on Apple Mail, Outlook and
+odd-leaf fixtures (`pikuri-thunderbird/design/architecture.md` § "What
+`attachmentInfos` lists"); `dev/testbed/compare-forwards` re-checks it.
+
+**Alternatives rejected.**
+
+- **A second integer** (`attachment: 2, inner: 1`) — the more obvious schema
+  for a small model, but it stops one level down: a forward of a forward
+  needs a third. The parameter description carries example values (`"2"`,
+  `"2.1"`) instead.
+- **Accepting an integer too** — `Parameters` has no union type, and a bare
+  `2` fails coercion with an error the model fixes in one step; not worth a
+  core type.
+- **Gloda's MIME part numbers** (`1.2.2`) — unique at any depth, but the model
+  would read them off a listing that never shows them, and they don't follow
+  the 1..n numbering of `thunderbird_mail_read`.
+
 ## D_model_switch_in_place — Why does `Agent` switch models mid-conversation itself, rather than the host rebuilding it?
 
 **Context.** A `run_loop(transport:)` naming another model or connection switches the live chat
@@ -927,8 +957,8 @@ The verified storage facts are in `pikuri-thunderbird/design/architecture.md`
   mails. Gloda's `attachmentInfos` resolved all 1286 part numbers on the real
   profile.
 - **A hand-rolled MIME walker** — ~20 lines matched every part, but forwarded
-  mails (deferred) need RFC 2047 header decoding stdlib lacks, so the walker
-  would be thrown away; the `mail` gem is parse-only here.
+  mails need RFC 2047 header decoding stdlib lacks; the `mail` gem is
+  parse-only here.
 
 ## D_deferred_cap_probe — Why doesn't `Agent` probe the server for its context window and modalities?
 
