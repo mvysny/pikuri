@@ -153,6 +153,22 @@ describe 'pikuri-thunderbird tools' do
       end
     end
 
+    it "says a body may be cut off once it reaches Gloda's 20 KB per part, and only then" do
+      Dir.mktmpdir do |dir|
+        path = make_gloda(dir)
+        db = SQLite3::Database.new(path)
+        db.execute("INSERT INTO messagesText_content VALUES (2,?,'Rules','','a@x','me@x')", ['x' * (20 * 1024)])
+        db.execute("INSERT INTO messages VALUES (2,1,0,'<rules@x>',0,'{}')")
+        db.close
+        g = Pikuri::Thunderbird::Gloda.new(gloda_path: path, cache_dir: File.join(dir, 'gc'))
+        tool = Pikuri::Thunderbird::MailRead.new(backend: mail(g))
+
+        assert tool.run('message_id' => '<rules@x>').to_s.end_with?("x\n\n#{Pikuri::Thunderbird::MailRead::CUT_NOTE}")
+        refute_includes tool.run('message_id' => '<a@x>').to_s, 'may continue past this point'
+        g.close
+      end
+    end
+
     it 'truncates a long body on a character boundary, so the result stays valid UTF-8' do
       Dir.mktmpdir do |dir|
         path = make_gloda(dir)

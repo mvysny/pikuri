@@ -43,7 +43,3 @@ CV through `application-fwd` (`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`).
 - **Extraction timeout (`Q_extract_timeout`).** None today: Ruby's `Timeout`
   is unsafe around native code, pikuri-pdf parses pages lazily, and the 40 MB
   message cap bounds the input. Revisit if a hostile PDF ever hangs a turn.
-- **Paging the body.** `thunderbird_mail_read` still hard-truncates a body at
-  40 KB; it could take `offset`/`limit` and answer through
-  `Tool::Result.page` like the attachment reader does. The testbed's longest
-  body is 487 bytes, so it needs one long scene before this is testable.

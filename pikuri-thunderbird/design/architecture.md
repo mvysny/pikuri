@@ -336,6 +336,14 @@ A complete, pre-decoded search index. Tables that matter:
   author (the owner as a recipient gets it too), probably an address-book
   field for a contact that isn't in the address book. The readers pass it on
   today; stripping it is `design/ideas/gloda-undefined-author.md`.
+- **Gloda keeps at most ~20 KB of each body part.** It indexes with
+  `saneBodySize` (`MAX_SANE_BODY_PART_SIZE = 20 * 1024`,
+  `MimeMessageEmitter.sys.mjs`), so a longer body is cut mid-sentence
+  (testbed's `house-rules`: 20632 bytes kept), and an HTML part is cut
+  before its markup is stripped. `thunderbird_mail_read` ends a body that
+  reached the cap with a note to open it in Thunderbird; it doesn't fetch the
+  rest from the mbox, since a mail that long is rare and the fallback would
+  cost a store scan per read.
 - **The FTS subject drops `Re:`** — a reply's `c1subject` is the bare subject,
   so a search by subject can't tell a thread's replies from its opener.
 - A `messages` row with a null `folderID` is a **ghost**: Gloda's placeholder

@@ -380,8 +380,9 @@
 
     Alex
 
-# --- A long mail, over one page of thunderbird_mail_read (50 KB): the answer
-#     sits at the end, so finding it takes paging with offset.
+# --- A long mail, past Gloda's 20 KB per body part: the index cuts it mid-
+#     sentence, so the answer at the end (§ 151) is out of reach and
+#     thunderbird_mail_read says the message may continue.
 - id: house-rules
   at: [-14, '08:30']
   from: aino

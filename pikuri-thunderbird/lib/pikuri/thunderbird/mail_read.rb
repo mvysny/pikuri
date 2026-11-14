@@ -17,9 +17,21 @@ module Pikuri
     # Sharing: +P_shared_locked+ — no state of its own, and the {Gloda}
     # backend it queries locks; see that class's +== Sharing+.
     class MailRead < Pikuri::Tool
-      # @return [Integer] hard cap on the body bytes returned (a runaway
-      #   50k-char body would swamp the context).
+      # @return [Integer] hard cap on the body bytes returned. Gloda keeps at
+      #   most {GLODA_PART_CAP} of each body part, but the parts of a message
+      #   carrying forwards add up.
       MAX_BODY = 40 * 1024
+
+      # @return [Integer] how much of one body part Gloda keeps: it indexes
+      #   with +saneBodySize+, Thunderbird's +MAX_SANE_BODY_PART_SIZE+
+      #   (+MimeMessageEmitter.sys.mjs+). A plain-text body this long was cut
+      #   there; an HTML one is cut *before* its markup is stripped, so its
+      #   shorter text slips under this test unflagged.
+      GLODA_PART_CAP = 20 * 1024
+
+      # @return [String] ends a body that reached {GLODA_PART_CAP}.
+      CUT_NOTE = "[The message may continue past this point: Thunderbird's search index keeps only about " \
+                 'the first 20 KB of its text. Ask the user to open it in Thunderbird for the rest.]'
 
       # @return [String] follows the listing when it holds a forwarded email.
       FORWARD_NOTE = "  (A forwarded email's text may also appear in the body below; read the attachment " \
@@ -104,12 +116,14 @@ module Pikuri
       # string fails the JSON encoding of the whole request, so the torn
       # tail is scrubbed away.
       #
-      # @return [String] the body, truncated with a marker if over {MAX_BODY}.
+      # @return [String] the body, truncated with a marker if over {MAX_BODY},
+      #   and ending in {CUT_NOTE} if Gloda may have cut it.
       def self.body(text)
         text = text.to_s
-        return text if text.bytesize <= MAX_BODY
+        note = text.bytesize >= GLODA_PART_CAP ? "\n\n#{CUT_NOTE}" : ''
+        return "#{text}#{note}" if text.bytesize <= MAX_BODY
 
-        "#{text.byteslice(0, MAX_BODY).scrub('')}\n\n… [truncated; message longer than #{MAX_BODY / 1024} KB] …"
+        "#{text.byteslice(0, MAX_BODY).scrub('')}\n\n… [truncated; message longer than #{MAX_BODY / 1024} KB] …#{note}"
       end
       private_class_method :body
     end
