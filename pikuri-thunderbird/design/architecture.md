@@ -427,7 +427,13 @@ is **mbox** (extensionless files, `file(1)` "Mailbox text"), under
   `.type`); a second account on one host gets a `-1` directory. The store kind
   is per server (`.storeContractID`, `…/berkeleystore;1` = mbox,
   `…/maildirstore;1` = one file per message); the global
-  `mail.serverDefaultStoreContractID` was absent. Gloda's `folderURI`s are
+  `mail.serverDefaultStoreContractID` was absent from `prefs.js` because
+  Thunderbird ships it as mbox for every account type, POP3 and IMAP alike
+  (159's `defaults/pref/mailnews.js`). Maildir is a per-account opt-in, so
+  only mbox is read and a Maildir account is refused with a message. Should
+  that change, the testbed indexes Maildir as-is (one file per message
+  dropped into `<folder>/cur/`), and a `Message-ID:` header scan over its
+  177 files took ~1 ms. Gloda's `folderURI`s are
   **not RFC 3986** (raw `[Gmail]` brackets and spaces — Ruby's `URI()` raises),
   so they are split by regex and percent-decoded.
 - **Which message:** `messageKey` is the IMAP UID under `ImapMail/`, and the

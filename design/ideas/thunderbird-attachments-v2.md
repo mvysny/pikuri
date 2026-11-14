@@ -17,10 +17,11 @@ Next step: number the forward's list and take a path handle,
 string, `"3"` still works. The walk then descends by path, so forwards of
 forwards come free.
 
-- `Q_fwd_handle` — string path (`"1.2"`) vs a second integer param
-  (`attachment: 1, inner: 2`)? The path generalises to any depth and is one
-  param; the integer pair is the more obvious schema for a small model. Lean:
-  path, with an example value in the parameter description.
+- **Handle: decided, the path** (2026-11-14), over a second integer param
+  (`attachment: 1, inner: 2`): one param, any depth. The parameter
+  description carries an example value (`"1.2"`), since the integer pair
+  would have been the more obvious schema for a small model. On graduation
+  this becomes a `D_` entry.
 - `Q_fwd_listing_policy` — `ForwardedMail` mimics Gloda's rule (body = what
   sits under `alternative` / `related`, plus unnamed text/plain and text/html
   leaves), verified against the testbed and a synthetic spec, never against a
@@ -33,38 +34,12 @@ inside), `venue-fwd` (an image inside), `floor-plan-fwd` (an HTML mail whose
 forward). Live, each lists what Gloda would. The path handle's spec should read the
 CV through `application-fwd` (`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`).
 
-## Maildir and other stores
-
-`MessageStore` raises on a non-`berkeleystore` server. Maildir is one file per
-message under `<folder>/cur/`.
-
-**What the testbed showed:** `storeContractID = …/maildirstore;1` on the POP
-account in `user.js`, plus one file per message in `Inbox/cur/` instead of the
-mbox, and the builder's existing reparse + `indexFolder` indexed all 187
-messages (7.7 s). Thunderbird kept our file names, created no `tmp/` / `new/`,
-and `messageKey` became a small sequence number. The current refusal fired as
-designed. A prototype — read each file's header block (up to the first blank
-line), match the same `Message-ID:` regex `scan` uses — found the invoice mail
-in ~1 ms over 177 files, and the PDF extracted.
-
-- `Q_maildir_lookup` — header scan per file (simple, O(folder) opens) vs the
-  `.msf` `storeToken` (exact, but means reading Mork). Lean: scan; a 50k-file
-  folder is ~50k small reads, measure on the testbed with noise turned up
-  before reaching for Mork.
-- `Q_maildir_testbed` — how the testbed keeps covering it. A build flag
-  (`--maildir`) tests it only when someone remembers. Making **Local Folders**
-  maildir and filing a few scene messages there (an `Archive` folder) covers
-  both stores on every build without a second identity. Lean: Local Folders,
-  if Gloda indexes it (check).
-- `MessageStore` would pick the store per server: the mbox scan as today, the
-  maildir scan as a sibling method — no store-strategy class until a third
-  store exists.
-
-Folder names with filesystem-illegal characters get hashed by Thunderbird
-(`NS_MsgHashIfNecessary`); unhandled until a real folder hits it.
-
 ## Smaller ones
 
+- **Hashed folder names.** Thunderbird hashes a folder name with
+  filesystem-illegal characters into its mbox file name
+  (`NS_MsgHashIfNecessary`); `MessageStore` maps the name verbatim.
+  Unhandled until a real folder hits it.
 - **Extraction timeout (`Q_extract_timeout`).** None today: Ruby's `Timeout`
   is unsafe around native code, pikuri-pdf parses pages lazily, and the 40 MB
   message cap bounds the input. Revisit if a hostile PDF ever hangs a turn.

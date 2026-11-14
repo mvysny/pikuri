@@ -76,7 +76,7 @@ Each needs a live install or a comm-central read; none blocks what ships.
   manually-curated contacts the user may never have mailed. It would **extend the
   read allowlist** beyond Gloda, calendar and the mbox store, a deliberate seam decision — so build
   it only if the derived graph proves too thin in practice.
-- **`.msf` (Mork), maildir, mbox fallbacks** — the `available?`-probed second arm
+- **`.msf` (Mork) and mbox fallbacks** — the `available?`-probed second arm
   for a Gloda-disabled host. Build only when such a host is a real user.
   Attachment bytes already come from the mbox store
   ({Pikuri::Thunderbird::MessageStore}); what attachments still lack is in
