@@ -3584,14 +3584,15 @@ what grok-build does too, and it means one grep finds every injection.
   observation. That stickiness was a side effect of the split above rather
   than anything anyone implemented, and it arrived bundled with a silent
   reposition the doc never claimed.
-- **`Agent::EmptyTurnError` survives, and got narrower.** Its trigger was a
-  `:system`-only conversation rendering `messages: []` on a provider that
-  carries `:system` in a separate field — which used to include the
-  "bare-load a skill, then run a blank turn" case. A drained reference
-  block is now a `:user` message, so that
-  case completes normally; what remains is a genuinely empty conversation
-  (fresh chat, blank turn). Kept rather than retired: that case is still
-  reachable and still a 400.
+- **A bare skill load completes on every provider, so pikuri no longer guards
+  an empty turn.** A `:system`-only conversation renders `messages: []` on a
+  provider that carries `:system` in a separate field, and Anthropic 400s
+  it; that used to include "bare-load a skill, then run a blank turn", and
+  `Agent::EmptyTurnError` raised before sending. A drained reference block is
+  now a `:user` message, so that case completes. What was left — a fresh chat
+  and a blank turn, on Anthropic or Bedrock — is one no host sends on purpose,
+  on providers pikuri never wires, and the server's own 400 is loud enough;
+  the guard (~45 lines and a provider list) was dropped on 2026-11-14.
 - **Two consecutive `:user` messages are now routine** — the turn plus its
   reference block. Fine on OpenAI-family and on a chat template (two
   `<|im_start|>user` blocks); grok-build ships the same shape against the

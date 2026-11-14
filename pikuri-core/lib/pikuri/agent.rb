@@ -99,49 +99,6 @@ module Pikuri
     REFERENCE_TAG = 'system-reminder'
     private_constant :REFERENCE_TAG
 
-    # Provider slugs (matched against +@chat.model.provider+) whose wire format
-    # carries system content in a top-level request field rather than as an
-    # element of +messages+ — Anthropic's +system+ param, Bedrock's +system+
-    # blocks. ruby_llm's provider splits it out at payload-render time
-    # (+messages.partition { |m| m.role == :system }+), so a conversation
-    # holding nothing but the system prompt renders +messages: []+ and the API
-    # 400s — see {EmptyTurnError}. Everywhere else +:system+ is an ordinary
-    # array element (OpenAI, Gemini) and that same conversation is a legal
-    # one-message request.
-    #
-    # Only +:system+ moves — a placement difference in the payload, not a
-    # rewrite of what pikuri appended, so the +:user+ blocks of
-    # {#append_reference_block} ride through untouched on every provider here.
-    SEPARATE_SYSTEM_FIELD_PROVIDERS = %w[anthropic bedrock].freeze
-    private_constant :SEPARATE_SYSTEM_FIELD_PROVIDERS
-
-    # A blank turn was requested against a conversation holding nothing but the
-    # assembled system prompt, on a provider that would render that as
-    # +messages: []+ (see {SEPARATE_SYSTEM_FIELD_PROVIDERS}):
-    #
-    #   agent.run_loop(user_message: nil)   # fresh chat, backend Anthropic
-    #   # => EmptyTurnError; the host catches it and prompts for a real message
-    #
-    # Narrow by construction: every *injected* block lands as +role: :user+
-    # ({#append_reference_block}), so a skill-only or memory-only bare load has
-    # a message to complete against and never reaches here. What remains is a
-    # genuinely empty conversation.
-    #
-    # Content-neutral: {#provider} is all it carries — the host owns any
-    # user-facing wording.
-    class EmptyTurnError < StandardError
-      # @return [String] the resolved provider slug that can't complete the turn
-      attr_reader :provider
-
-      # @param provider [String] the resolved provider slug (e.g. +"anthropic"+)
-      def initialize(provider)
-        @provider = provider
-        super("#{provider} cannot complete a turn whose conversation holds only " \
-              ':system content (no user or assistant message): it would send an ' \
-              'empty messages array. Add a user message.')
-      end
-    end
-
     # A turn carried an attachment the model is known not to accept — an image
     # to a llama.cpp model launched without a vision projector:
     #
@@ -357,7 +314,8 @@ module Pikuri
     # emits an {Event::UserTurn} (+mid_loop: false+) and appends it; with
     # neither, runs a *bare* turn against whatever the conversation + drained injections
     # already hold — the case a host uses after loading a skill on its own
-    # initiative, so the agent reacts to it. Drains any pending
+    # initiative, so the agent reacts to it, or for a mid-turn message that
+    # arrived after the last tool batch (+D_mid_turn_user_message+). Drains any pending
     # {Control::Interloper} injections, then +complete+s the chat. Output is
     # the listeners' job; subsequent calls build on the same history.
     #
@@ -367,12 +325,6 @@ module Pikuri
     # An attachment-only turn is not blank: it goes out with no text part
     # at all, since Anthropic refuses an empty one. {Extension#on_user_message}
     # still fires, with +""+ and the attachments.
-    #
-    # A blank turn against a conversation holding nothing but the
-    # system prompt is provider-split: providers that can't complete it raise
-    # {EmptyTurnError}, the rest run the turn against that history. A blank turn
-    # *mid-conversation* always proceeds — real turns remain to answer, and a
-    # drained injection is itself one.
     #
     # Cancellation trips are handled per the class header's "Cancellation
     # rescue". A cancel sent before this call — the host already counts the
@@ -424,9 +376,6 @@ module Pikuri
     #   ones use (see above); +nil+ keeps the current one
     # @raise [Control::Cancellable::Cancelled] if cancelled mid-turn (an
     #   {Event::Cancelled} is emitted first)
-    # @raise [EmptyTurnError] on a blank turn against a prompt-only
-    #   conversation when the provider carries +:system+ outside +messages+
-    #   (see above)
     # @raise [ArgumentError] if an attachment is not a {Pikuri::Attachment}
     # @raise [UnsupportedAttachmentError] if the transport's stated
     #   modalities refuse an attachment; nothing is appended
@@ -446,14 +395,6 @@ module Pikuri
 
       text = user_message.to_s.strip.empty? ? nil : user_message
       blank = text.nil? && attachments.empty?
-      # These providers would send `messages: []` here (see EmptyTurnError).
-      # The drain above is what usually saves this case: an injected block is a
-      # :user message, so a skill-only bare load has something to complete
-      # against and falls through.
-      if blank && @chat.messages.all? { |m| m.role == :system } &&
-         SEPARATE_SYSTEM_FIELD_PROVIDERS.include?(@chat.model.provider.to_s)
-        raise EmptyTurnError, @chat.model.provider
-      end
 
       attachments.each do |a|
         reason = attachment_refusal(a)
@@ -898,7 +839,7 @@ module Pikuri
     # +:user+ rather than +:system+ because a mid-conversation +:system+ message
     # is not portable: Qwen3.6's chat template silently drops every one past the
     # leading header, and providers carrying +:system+ in a separate field
-    # (Anthropic, Bedrock — see {SEPARATE_SYSTEM_FIELD_PROVIDERS}) merge it into
+    # (Anthropic's +system+ param, Bedrock's +system+ blocks) merge it into
     # the standing system prompt, so the block is presented as though it had
     # always been there and stays in force. Neither failure is visible from
     # anything pikuri can observe: the message is in the payload, the listener

@@ -531,50 +531,17 @@ RSpec.describe Pikuri::Agent do
       end
     end
 
-    describe 'blank input against a :system-only conversation is provider-split' do
-      # A blank message with nothing but :system messages to complete against
-      # (a fresh chat, or a skill-only bare-load) can't run on a provider that
-      # carries :system in a top-level field rather than in messages — it would
-      # send messages: [] and 400 — so run_loop raises EmptyTurnError there.
-      # Providers that keep :system in the array complete the turn instead.
-      # (Mid-conversation bare turns proceed everywhere; covered under the
-      # host-driven-load specs.)
+    describe 'blank input' do
       let!(:agent) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's') { |c| c.add_listener recorder }
       end
 
-      describe 'on a provider carrying :system in a separate field (Anthropic/Bedrock)' do
-        before { fake_chat.model.provider = 'anthropic' }
+      it 'runs a bare turn against the history, appending nothing' do
+        [nil, '', "  \n\t "].each { |blank| agent.run_loop(user_message: blank) }
 
-        it 'raises EmptyTurnError on nil and never reaches the chat or listeners' do
-          before_events = recorder.events.size
-
-          err = assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: nil) }
-          assert_equal 'anthropic', err.provider
-          assert_nil fake_chat.completes
-          assert_equal [], fake_chat.added_messages
-          assert_equal before_events, recorder.events.size
-        end
-
-        it 'raises on an empty string' do
-          assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: '') }
-          assert_nil fake_chat.completes
-        end
-
-        it 'raises on a whitespace-only string' do
-          assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: "  \n\t ") }
-          assert_nil fake_chat.completes
-        end
-      end
-
-      describe 'on a provider that keeps :system in the messages array (OpenAI/Gemini)' do
-        # fake_chat defaults to 'openai', which keeps :system in the array.
-        it 'runs the bare turn against the :system-only history, appending nothing' do
-          assert_nil agent.run_loop(user_message: nil)
-          assert_equal 1, fake_chat.completes
-          assert_equal [], fake_chat.added_messages
-        end
+        assert_equal 3, fake_chat.completes
+        assert_equal [], fake_chat.added_messages
       end
     end
 
@@ -642,16 +609,6 @@ RSpec.describe Pikuri::Agent do
         assert_equal ['<skill>load</skill>'], injected.map(&:content)
       end
 
-      it 'bare-loads a skill and completes on a separate-system-field provider too' do
-        fake_chat.model.provider = 'anthropic'
-        interloper.inject_system_message('<skill>load</skill>')
-
-        # The drained block is a :user message, so the conversation is no longer
-        # prompt-only and Anthropic has something to complete against. Before
-        # reference blocks became :user turns this raised EmptyTurnError.
-        assert_nil agent.run_loop(user_message: nil)
-        assert_equal 1, fake_chat.completes
-      end
     end
   end
 
