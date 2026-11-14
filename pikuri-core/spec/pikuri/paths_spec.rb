@@ -2,10 +2,10 @@
 
 RSpec.describe Pikuri::Paths do
   around do |example|
-    saved = ENV.values_at('XDG_CACHE_HOME', 'XDG_CONFIG_HOME')
+    saved = ENV.values_at('XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'HOME')
     example.run
   ensure
-    %w[XDG_CACHE_HOME XDG_CONFIG_HOME].each_with_index do |key, i|
+    %w[XDG_CACHE_HOME XDG_CONFIG_HOME XDG_STATE_HOME HOME].each_with_index do |key, i|
       saved[i].nil? ? ENV.delete(key) : ENV[key] = saved[i]
     end
   end
@@ -121,6 +121,45 @@ RSpec.describe Pikuri::Paths do
       ENV['XDG_CONFIG_HOME'] = '/tmp/cfg'
       assert_kind_of Pathname, Pikuri::Paths.config
       assert_equal '/tmp/cfg/pikuri/MACHINE.md', Pikuri::Paths.config.join('MACHINE.md').to_s
+    end
+  end
+
+  describe '.state' do
+    # .state creates its directory, so every case roots in a throwaway dir —
+    # the fallbacks by pointing HOME there.
+    around do |example|
+      Dir.mktmpdir do |dir|
+        @dir = dir
+        example.run
+      end
+    end
+
+    it 'is <XDG_STATE_HOME>/pikuri when XDG_STATE_HOME is set' do
+      ENV['XDG_STATE_HOME'] = @dir
+      assert_equal "#{@dir}/pikuri", Pikuri::Paths.state.to_s
+    end
+
+    it 'falls back to ~/.local/state/pikuri when XDG_STATE_HOME is unset' do
+      ENV.delete('XDG_STATE_HOME')
+      ENV['HOME'] = @dir
+      assert_equal "#{@dir}/.local/state/pikuri", Pikuri::Paths.state.to_s
+    end
+
+    it 'falls back to ~/.local/state/pikuri when XDG_STATE_HOME is empty' do
+      ENV['XDG_STATE_HOME'] = ''
+      ENV['HOME'] = @dir
+      assert_equal "#{@dir}/.local/state/pikuri", Pikuri::Paths.state.to_s
+    end
+
+    it 'creates the directory' do
+      ENV['XDG_STATE_HOME'] = @dir
+      assert File.directory?(Pikuri::Paths.state)
+    end
+
+    it 'returns a Pathname so callers can chain #join' do
+      ENV['XDG_STATE_HOME'] = @dir
+      assert_kind_of Pathname, Pikuri::Paths.state
+      assert_equal "#{@dir}/pikuri/trusted-projects", Pikuri::Paths.state.join('trusted-projects').to_s
     end
   end
 end

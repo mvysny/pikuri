@@ -74,7 +74,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | ~~`Parameters#required_string_array`, `EMPTY`~~ | ~46 | tasks, code | **kept 2026-11-14** — generic type family, the only array type; without it a list-taking tool reinvents parsing. No `optional_string_array` until a tool needs one |
 | ~~`TokenLog` status-line API~~ | ~40 | tui, webui | **kept 2026-11-14** — a seam, not a leaf; moved to C |
 | ~~`Confirmer::AutoApprove`, `#confirm?`~~ | ~32 | code, os, tui | **2026-11-14:** `AutoApprove` kept — the one `blocks_on_human? == false` confirmer, which pikuri's own trifecta specs and every `--no-confirm` use. `#confirm?` dropped: no gate called it, and it dropped a `Redirected`'s words (`D_bare_rejected`). Its five callers were boot questions in `bin/pikuri-code` and `bin/pikuri-tui-code` (all missing the required `cancellable:`), now a bin-local `yes?` over `puts`/`gets` — Terminal's approve/reject/redirect cue never fit a yes/no question |
-| `Paths.config` / `Paths.state` | ~26 | os, tui, webui | the `Paths` convention lives here — lean keep |
+| ~~`Paths.config` / `Paths.state`~~ | ~26 | os, tui, webui | **kept 2026-11-14** — the one XDG resolver; moving would split it across conversations and os. Now named in AGENTS.md's `Paths` convention; `.state` got its specs |
 
 `Q_move_leaves` — which of these move.
 
