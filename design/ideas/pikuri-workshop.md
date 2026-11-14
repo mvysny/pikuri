@@ -58,7 +58,7 @@ Two tests; failing either sends a gem to the workshop:
    teaching a concept better, never by gaining features. Features go to the workshop
    even when they're host-safe. This is what places mem0 and the Docker
    office extractors. `design/ideas/` already answers it: `coding-agent.md`,
-   `claude-parity.md`, `bash-confirmer.md` and `grok-build-cheap-borrows.md`
+   `claude-parity.md` and `bash-confirmer.md`
    all ask for features.
 2. **Would you run it on your host, with your real data, as-is?** If it
    needs a cage, it's book 2, however well it teaches. This is what places
