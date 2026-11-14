@@ -1,6 +1,8 @@
 # More confirmers: human-in-the-loop shapes for the returning third leg
 
-Status: **partly shipped, rest brainstorm.** Staging area for the
+Status: **partly shipped, rest brainstorm.** Since `pikuri-os` moved to pikuri-workshop
+(2026-11-12), the examples below are the OS assistant's; rebase them on the secretary, whose
+search confirmer grows out of this. Staging area for the
 human-in-the-loop confirmer ideas surfaced while scoping web access for
 `pikuri-os`. **Shipped and graduated — no longer detailed here:** all web
 quarantined in the `RESEARCHER` sub-agent (no filesystem), reached via

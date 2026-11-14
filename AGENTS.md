@@ -103,7 +103,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - **No tool names in a main/binary system prompt.** `prompts/<bin>.txt` names no wired tool and restates no mechanics; persona prompts (`prompts/persona-*.txt`) are the carve-out.
 - **Grow by adding tools, listeners or controls** — new `Pikuri::Tool` / `Listener` / `Control` constants with their own specs; core and the loop stay ignorant of them.
 - **Name a gem after what it refuses to become.** A gem is earned by a *novel* threat model or cohesive lib code needing a home; a nameable posture alone ships as a demo.
-- **A gem whose future is more features goes to pikuri-workshop, and so does one that isn't safe on your host as-is.** pikuri grows by explaining better, never by gaining features.
+- **A gem whose future is more features goes to pikuri-workshop, and so does one that isn't safe on your host as-is.** pikuri grows by explaining better, never by gaining features. See `D_gem_placement`.
 - **A `bin/` script is simple on purpose**, so its simplifications are not pikuri policy — never cite one as evidence of how pikuri behaves. Library behaviour is `lib/` and its yardoc.
 - **Book chapters are named, not numbered** — never an ordinal, anywhere. A new concept is one `book/<slug>.md`, one line in `book/README.md`, and fixed neighbouring "What's next" links.
 - **A CHANGELOG entry is one sentence**, new work under `[Unreleased]`, a shipped section closed.

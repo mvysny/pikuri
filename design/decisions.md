@@ -21,6 +21,69 @@ what it already says.
 
 ---
 
+## D_gem_placement — Why does a gem live in pikuri rather than in pikuri-workshop?
+
+**Context.** On 2026-11-12 eight of pikuri's sixteen gems moved to pikuri-workshop
+(`pikuri-workshop:D_separate_repo` says why it's a repo of its own). Each had pulled pikuri two
+ways: stay simple enough to teach, and grow complete enough for the corner cases. Bash's tokenizer
+and sandbox, a language server and MCP's container model can't do both. Split, each project keeps
+one promise: pikuri stays readable in an evening, and the workshop may be as complex as the real
+world makes it, explaining the hard parts rather than every line.
+
+**Decision.** Two tests, and failing either sends a gem to the workshop:
+
+1. **Is its future "explain it better" or "more features"?** pikuri grows by teaching a concept
+   better, never by gaining features, so a feature gem goes even when it's safe on your host. This
+   placed mem0 and the Docker office extractors.
+2. **Would you run it on your host, with your real data, as-is?** If it needs a cage (a VM, a
+   container, a network the kernel has cut), it goes, however well it teaches. This placed the
+   shell, MCP, skills, LSP, the coding agent and the OS assistant, and kept `pikuri-thunderbird`:
+   the secretary reads your real mail on your real machine, and that's fine.
+
+pikuri is safe because of what's *missing*: no shell, no stranger's code, writes confined to one
+folder, egress only to an engine the code picks. The workshop is safe because of what *surrounds*
+it. Size is no test: core, `pikuri-vectordb` and `pikuri-thunderbird` are pikuri's biggest gems,
+and they stay because they pass both.
+
+**Alternatives rejected.**
+
+- **Keep the shell, split out of the coding agent as a `pikuri-bash`.** It's the tool that writes
+  anywhere, so it drags along the passive-command detector, the confirms and the sandbox, and
+  needs the cage on its own. The secretary decided against it for the same reason. pikuri trades
+  the kernel-namespace cut for one you can see in a tool's shape: search never fetches.
+- **Move `pikuri-workspace` too.** It can't go. `pikuri-subagents` depends on it (the `agent`
+  tool's task prompt is confirmed through its `Confirmer`, and each child gets a `Workspace`),
+  `pikuri-vectordb` depends on `pikuri-subagents`, and the secretary confirms its searches,
+  calendar creates and memory edits through `Confirmer`.
+- **Keep MCP, defended by its verifier.** An MCP server is a stranger's code: its output is
+  untrusted, it usually holds a credential or private data, and its process can reach the network
+  without the agent seeing it. pikuri can't truthfully declare its tools' `trifecta_legs`, so it
+  must assume all three. The verifier is an LLM scanning tool descriptions for injection, a
+  filter, and filters lose to adversarial text.
+- **Keep skills, as instructions loaded on demand.** A skill earns its keep by shipping scripts,
+  and a script needs the shell. Without one, a note the rag search finds covers most of a skill;
+  only the catalog is lost (the model knows what exists without searching). Path-activated skills,
+  promoted when a matching file is touched, are coding material outright.
+- **Keep `pikuri-tasks`.** A task list pays off on long multi-step work, mostly coding, and only
+  `bin/pikuri-code` wired it. Its tool-design lesson stays in the book, rebuilt on `calculator`.
+- **Keep mem0 as the memory lesson.** It's an integration (a sidecar, a Qdrant collection, a
+  non-reasoning extraction model) whose future is features. pikuri teaches durable memory with the
+  secretary's memory file; the automatic prefetch tier is what's lost.
+- **Keep the Docker office extractors beside `pikuri-pdf`.** Office conversion is a feature. The
+  pure-Ruby PDF arm is the cheap option the retrieval demos need, and the `Extractor` registry
+  stays in core.
+- **Keep the OS assistant.** It's an app built from domain tools (Recoll, the GNOME file index,
+  `system_info`, `MACHINE.md`), not a concept, and it needs the coding agent's sandbox.
+
+**Consequences.** Placement is asked again whenever a gem grows, by the first test. The ones to
+watch: `pikuri-web`, since search engines pile up, and `pikuri-workspace`, whose `ProjectRoot` and
+`.gitignore`-aware listing lean towards coding and would move into the workshop's `pikuri-code`
+if they grow. `pikuri-thunderbird` also has feature ideas; each faces the "explain it better" bar
+before it lands, and one that fails it is the moment to reconsider the gem's placement. Docker
+still earns its keep in pikuri, running Qdrant behind `pikuri-vectordb`.
+
+---
+
 ## D_one_phase_extensions — Why does an extension get one `configure` hook rather than `configure` plus `bind`?
 
 **Context.** An extension used to be wired in two phases. `configure(c)` ran inside the
