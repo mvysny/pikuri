@@ -741,24 +741,22 @@ module Pikuri
     # chat, its connection and the history's thinking all belong to the same
     # model as before, and the host that made the update already knows it.
     #
-    # A switch goes through +Chat#with_model+, which keeps history and
-    # callbacks, and emits {Event::ModelSwitched}.
-    # The new transport's +params+ replace the old one's, so a switch cannot
-    # leave a thinking-off kwarg on a connection that never asked for one.
+    # A switch rebuilds the connection the way {#build_chat} built the first
+    # one — a fresh +RubyLLM::Context+ via +Chat#with_context+, then
+    # +Chat#with_model+, both of which keep history and callbacks — and emits
+    # {Event::ModelSwitched}. The context is rebuilt on every switch, not only
+    # a cross-server one, so nothing of the old transport's connection can
+    # linger: its base URL and key, its +faraday_adapter+, the base URL the
+    # {RequestInstrumenter} reports. The new transport's +params+ replace the
+    # old one's, so a switch cannot leave a thinking-off kwarg on a connection
+    # that never asked for one.
     #
     # Because the history is kept, every turn in it is now potentially from
     # another model, so {#strip_foreign_thinking!} runs before the event —
     # {#restore_history}'s repair only covers a conversation that arrives stale.
     #
-    # == Cross-server switches
-    #
-    # +with_model+ re-resolves against the chat's existing connection, so it
-    # only moves between models on one server. When either transport
-    # overrides the connection (+ChatTransport#connection_overrides?+), a
-    # fresh +RubyLLM::Context+ is installed via +Chat#with_context+ first
-    # (re-pointing the connection, preserving history + callbacks). The "old
-    # overrode" half handles switching *back* to a global-config model: the
-    # rebuilt context dups the global config, resetting the prior override.
+    # Why switch in place rather than have the host rebuild the agent around
+    # {#export_history}: +design/decisions.md+ +D_model_switch_in_place+.
     #
     # @param transport [ChatTransport] the model to switch to
     # @return [void]
@@ -768,7 +766,7 @@ module Pikuri
       @transport = filled
       return if filled.with(context_window: old.context_window, modalities: old.modalities) == old
 
-      @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
+      @chat.with_context(build_context(filled))
       @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
       @chat.with_provider_options(filled.params)
       strip_foreign_thinking!
@@ -794,8 +792,9 @@ module Pikuri
     # A +RubyLLM::Context+ carrying +transport+'s connection overrides on the
     # provider's config slots (+#{provider}_api_base+ / +_api_key+).
     # +RubyLLM.context+ dups the global config, so an absent override inherits
-    # the global value and a no-override transport yields a plain dup (used by
-    # {#apply_transport!} to reset a prior override). +ChatTransport+
+    # the global value and a no-override transport yields a plain dup — which
+    # is how a switch back to a global-config model drops a prior override.
+    # +ChatTransport+
     # guarantees a non-+nil+ +provider+ whenever an override is set.
     #
     # A transport's +faraday_adapter+ (if any) is installed here too: the

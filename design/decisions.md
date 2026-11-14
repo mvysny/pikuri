@@ -21,6 +21,53 @@ what it already says.
 
 ---
 
+## D_model_switch_in_place — Why does `Agent` switch models mid-conversation itself, rather than the host rebuilding it?
+
+**Context.** A `run_loop(transport:)` naming another model or connection switches the live chat
+(`Agent#apply_transport!`): a fresh `RubyLLM::Context`, `Chat#with_model`, the new transport's
+`params`, foreign thinking withheld, `Event::ModelSwitched`. No pikuri bin triggers one;
+pikuri-workshop's pikuri-conversations does, behind pikuri-tui's model picker. Yet core already
+holds everything a host needs to get the same conversation on another model without it:
+`export_history`, `close`, then `Agent.new(history:, transport:)` — and `restore_history` scrubs
+foreign thinking on that path too.
+
+**Decision.** Keep the switch in core, and in place.
+
+**A rebuild is a reset; a switch is not.** A user switches model as the mild step — "this needs a
+stronger model to finish". A rebuild throws away everything that lives outside the conversation,
+which `restore_history` deliberately does not restore: the workspace's read-before-edit marks,
+promoted skills, the task list, what every MCP server held — and it re-runs every
+`Extension#configure`, respawning the MCP children. Mid-task, the transcript would then describe
+work the agent no longer has the state for.
+
+**Not for the prompt cache.** A different model prefills the whole prefix either way, so switching
+in place saves no tokens; what it saves is the state above.
+
+**It cannot live downstream.** Every line of it acts on the `RubyLLM::Chat`, which the loop seam
+keeps inside `agent.rb`, and a live `Agent` is read-only (the capability seam). Moving the switch
+to pikuri-workshop would first need core to hand out the chat or a swap-the-model hook — a seam as
+large as the ~40 lines of code it removes, and one that breaks both invariants.
+
+**One door, not two.** The facts-only update (`D_deferred_cap_probe`) already enters through
+`run_loop(transport:)`; a switch is the same parameter carrying a bigger change, confined to the
+top of `run_loop` because the chat is single-thread-confined.
+
+**The context is rebuilt on every switch,** same-server included, the way `build_chat` built the
+first one, so nothing of the old transport's connection lingers — its base URL and key, its
+`faraday_adapter`, the base URL the `RequestInstrumenter` reports. The rebuild used to be
+cross-server only, keyed on a `ChatTransport#connection_overrides?` that had no other caller, which
+kept the old `faraday_adapter` across a switch between two transports that set none of the
+connection fields. How the history's reasoning survives a switch is `D_thinking_block_replay`.
+
+**Alternatives rejected.**
+
+- **The host rebuilds the agent around `export_history`.** Works today with no core code, and
+  loses the state above on every pick; see the context.
+- **Move the switch to pikuri-workshop.** Needs a core seam onto the chat at least as large as the
+  switch; see above.
+
+---
+
 ## D_html_own_gem — Why is the HTML extractor a gem of its own rather than part of pikuri-web?
 
 **Context.** On 2026-11-12 the HTML → Markdown extractor left pikuri-core for pikuri-web, on the

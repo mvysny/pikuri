@@ -51,8 +51,8 @@ RSpec.describe Pikuri::Agent do
         self
       end
 
-      # Records each +with_context+ install so cross-server switch specs
-      # can assert a dedicated +RubyLLM::Context+ was applied.
+      # Records each +with_context+ install so switch specs can assert a
+      # dedicated +RubyLLM::Context+ was applied.
       attr_reader :contexts
 
       def with_context(context)
@@ -372,14 +372,17 @@ RSpec.describe Pikuri::Agent do
         assert_equal [['big', :openai, true]], fake_chat.model_switches
       end
 
-      it 'leaves a same-server switch on the with_model-only path' do
+      # A switch back to a global-config model must not keep the old
+      # transport's server: the rebuilt context dups the global config.
+      it 'rebuilds the context on a same-server switch too' do
         agent = build_agent
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
                          model: 'big', provider: :openai, assume_model_exists: true
                        ))
 
-        assert_nil fake_chat.contexts
+        assert_equal 1, fake_chat.contexts.size
+        assert_equal RubyLLM.config.openai_api_base, fake_chat.contexts.first.config.openai_api_base
         assert_equal [['big', :openai, true]], fake_chat.model_switches
       end
 

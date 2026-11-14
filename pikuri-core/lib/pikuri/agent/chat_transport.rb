@@ -168,14 +168,6 @@ module Pikuri
         { model: model, provider: provider, assume_model_exists: assume_model_exists }
       end
 
-      # Whether this transport overrides the process-global connection
-      # (and so needs a dedicated +RubyLLM::Context+).
-      #
-      # @return [Boolean]
-      def connection_overrides?
-        !api_base.nil? || !api_key.nil?
-      end
-
       # Default +Data#inspect+ would print +api_key+ verbatim into any log line
       # or backtrace. Redact it.
       #

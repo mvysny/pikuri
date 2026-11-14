@@ -2,12 +2,12 @@
 
 RSpec.describe Pikuri::Agent::ChatTransport do
   describe '.from_openai_server' do
-    it 'builds an :openai transport that overrides the connection' do
+    it 'builds an :openai transport that names its server' do
       t = described_class.from_openai_server(server: 'http://localhost:8080', model: 'm')
       assert_equal :openai, t.provider
       assert_equal 'm', t.model
       assert t.assume_model_exists
-      assert t.connection_overrides?
+      refute_nil t.api_base
     end
 
     it 'appends /v1 to a bare server origin' do
@@ -160,20 +160,6 @@ RSpec.describe Pikuri::Agent::ChatTransport do
       c = described_class.new(model: 'm', context_window: 8_192)
       refute_equal a, b
       assert_equal a, c
-    end
-  end
-
-  describe '#connection_overrides?' do
-    it 'is false for a transport that rides the global config' do
-      refute described_class.new(model: 'm').connection_overrides?
-    end
-
-    it 'is true when api_base is set' do
-      assert described_class.new(model: 'm', provider: :openai, api_base: 'http://x/v1').connection_overrides?
-    end
-
-    it 'is true when only api_key is set' do
-      assert described_class.new(model: 'm', provider: :openai, api_key: 'k').connection_overrides?
     end
   end
 

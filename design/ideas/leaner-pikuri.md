@@ -90,7 +90,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | reference block | ~50 | skills, memory (pikuri: wire-check only) | ✓ `D_reference_text_as_user_turn` |
 | denylist walk in grep/glob/listing | ~80 | code/tui-code `--yolo`, lsp | ✓ `D_walked_path_denylist`; `AllowAll` (~150) itself could move |
 | `Control::Handoff` | 75 | none yet | ✓ `D_confirmer_sees_the_cancel` |
-| mid-conversation model switch | ~110 | conversations | ◐ `D_thinking_block_replay` = how, not why in core |
+| mid-conversation model switch | ~95 | conversations, tui | ✓ `D_model_switch_in_place` (2026-11-14); no pikuri bin demos it. Trimmed: context rebuilt on every switch, `ChatTransport#connection_overrides?` gone |
 | Subprocess `env:` / `terminate` / `io` | ~20 | workshop | ◐ `D_de_bundlerized_children` |
 | streaming | ~140 | conversations, tui, webui | ✗ AGENTS.md invariant only; no pikuri bin can turn it on |
 | domain events (`emit_event`, `Transient`, Terminal) | ~85 | lsp, tasks, code, skills | ✗ |
