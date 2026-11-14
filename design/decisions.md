@@ -21,6 +21,76 @@ what it already says.
 
 ---
 
+## D_secretary_wiring — Why does book 1 end on a secretary that holds all three legs, rather than on the coding agent, and why is it wired as it is?
+
+**Context.** Book 1 needed a closing demo that pays off the trifecta chapter. The coding agent
+puts all three legs into one blob (the repo is untrusted, the code is private, the build needs the
+network), so its cut confines the disk around it: right for code, and the workshop's. The
+secretary nominally holds all three legs too, over your mail, calendar and `~/Documents`, and
+weakens egress structurally instead: search never fetches, and every other way out shows the human
+the bytes. `book/secretary.md` teaches it as a diff against `pikuri-briefing --with-mail`, one
+added capability per section; this entry keeps the forks the chapter doesn't argue.
+
+**Decision, fork by fork.**
+
+- ***`bin/pikuri-secretary`, at the repo root.*** Its wiring spans five gems, so no gem's `bin/`
+  owns it. The name is plain because it's a teaching demo, and it was Puri's name back in
+  pikuri-tui. Not `pikuri-puri`: sharing a name with the app would need constant attention to
+  which one a sentence means.
+- ***Every search confirmed by default, `--no-search-confirm` to opt out.*** Not a security gate:
+  the verdict is soft either way (`D_egress_axis_shape`), and an injected query lands only in the
+  engine's logs. It's **Privacy first** against the engine operator, since the model will write a
+  sick friend's name into a query unprompted.
+- ***Every note write confirmed, with its diff.*** It guards integrity, which no leg measures.
+  Loosening it (say, confirming only edits to notes the agent didn't write) is to be decided from
+  practice, not up front.
+- ***The memory is a note pinned into the prompt.*** `Notes/SECRETARY.md`, written through the
+  same confirmed write as every note and read into the system prompt at boot. Loading it is the
+  binary's job, so no memory-file primitive landed upstream; the workshop's OS assistant keeps its
+  own `MachineMemory`. It's indexed like any other note: a search hit duplicating the prompt is
+  harmless, and excluding it would be a knob.
+- ***A memory edit takes effect next session.*** Re-reading it mid-conversation would rewrite the
+  system prompt, cost the KV cache, and brush against "never `role: :system` mid-conversation",
+  for a fact the confirmed write's result already told the model.
+- ***The rag wiring is copied from `pikuri-briefing`, not lifted into `pikuri-rag`.*** Each bin
+  stays readable on its own, and Puri wires its own, so a library entry point would have one
+  caller. Revisit if the copy bites.
+- ***Qdrant by default, `--in-memory` to opt out***, reversing briefing's in-memory default, and
+  making podman or docker a prerequisite of the chapter.
+- ***Today's date and weekday go into the binary's prompt at boot***, not core's.
+  `calendar_search` takes absolute bounds and expects the model to turn "tomorrow" into a range.
+  Stale after midnight in a long session; accepted.
+- ***The index stays live under the vectordb `Watcher`***, so a note the agent just wrote is
+  findable in the same session. It comes free with the copy.
+- ***About 17 tools on the book's default model, Ornith-1.5.*** Designed for the best tool set,
+  not the smallest, counting on local models improving: Siri's on-device 4B dense model routes
+  among as many. The chapter's transcripts were the test, and routing held, at the odd wasted call.
+
+**Alternatives rejected.**
+
+- **No web search.** The verdict would be silent, but there'd be no Siri, and the trifecta
+  chapter would lose its one binary with every egress tool weakened.
+- **An ungated search by default.** It breaks **Privacy first** a query at a time, and the query
+  is the whole payload, so it's also the book's cleanest "does the human see the bytes?" example.
+- **Automatic memory capture (mem0).** A mail could plant a "fact"; that's only safe on an agent
+  with no egress. mem0 itself is the workshop's (`D_gem_placement`).
+- **An in-memory index, as briefing has.** Measured on the owner's real `~/Documents` (11,685
+  files, many books): minutes of silence, then hours of a GPU at 100%, paid again on every start,
+  with the chat queued behind the embedder on the same llama-server.
+- **A clock tool, or `date.today() + timedelta(…)` in the calculator.** A feature, and the model
+  must think to call it. Worth reopening only if transcripts show botched date arithmetic.
+- **Reminders.** `pikuri-thunderbird` reads no tasks (VTODO), and a reminder that fires needs a
+  resident process a CLI doesn't have. Puri leaves them out too, to start with.
+
+**Consequences.**
+
+- Two primitives landed upstream because the demo needed them, and Puri picks them up from here:
+  `Web::Search.build`'s `confirmer:` and `snippets_only:`.
+- The secretary's system prompt lives in pikuri (`prompts/pikuri-secretary.txt`); Puri may keep
+  its own and reuse the fragments.
+
+---
+
 ## D_gem_placement — Why does a gem live in pikuri rather than in pikuri-workshop?
 
 **Context.** On 2026-11-12 eight of pikuri's sixteen gems moved to pikuri-workshop
