@@ -250,7 +250,7 @@ module Pikuri
 
       # See the class header for the algorithm rationale.
       def resolve(path, roots)
-        path = apply_tmp_alias(path)
+        path = apply_tmp_alias(expand_home(path))
         pn = Pathname.new(path)
         pn = @project_root + pn unless pn.absolute?
         cleaned = pn.cleanpath
@@ -316,6 +316,26 @@ module Pikuri
       def denied_roots = []
 
       private
+
+      # Expand a leading +~+ / +~/+ to the home folder, as a shell would:
+      #
+      #   expand_home('~/.bashrc')   # => "/home/alex/.bashrc"
+      #   expand_home('a/~/b')       # => "a/~/b"
+      #
+      # Models write +~/.bashrc+ out of shell habit; left alone it resolves to
+      # +<project_root>/~/.bashrc+ and fails as *not found* instead of *outside
+      # the workspace*, sending the model off on a detour. +~user+ is left
+      # alone (Ruby's expansion of it raises on an unknown user).
+      #
+      # @param path [String, Pathname]
+      # @return [String]
+      def expand_home(path)
+        path = path.to_s
+        return Dir.home if path == '~'
+        return File.join(Dir.home, path[2..]) if path.start_with?('~/')
+
+        path
+      end
 
       # Rewrite +/tmp+ / +/tmp/foo+ inputs to land under {#temp} when
       # {#alias_tmp_to_temp} is set; other inputs pass through. In the base
@@ -485,7 +505,7 @@ module Pikuri
         end
 
         def resolve_unrestricted(path)
-          path = apply_tmp_alias(path)
+          path = apply_tmp_alias(expand_home(path))
           pn = Pathname.new(path)
           pn = @project_root + pn unless pn.absolute?
           cleaned = pn.cleanpath

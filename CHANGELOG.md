@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `Pikuri::Workspace::Filesystem` reading a model's `~/.bashrc` as a folder named `~` inside the workspace; a leading `~` now expands to the home folder, so the path is refused as outside the workspace (or reached, when it is inside).
 - `thunderbird_mail_read` ends a body that reached Thunderbird's 20 KB index cap with a note that the message may continue, instead of stopping mid-sentence without a word; the full text stays in Thunderbird.
 - `thunderbird_mail_attachment_read` answers a PNG, JPEG, GIF or WebP attachment as the picture itself, for a vision model to see; a text-only model gets a note instead (`D_refuse_unsupported_attachments`).
 - **Breaking:** the 5 MB image cap moved from `Pikuri::Workspace::Read::MAX_IMAGE_BYTES` to `Pikuri::Attachment::MAX_IMAGE_BYTES`, so every gem attaching an image shares it; rename the constant where you read it.

@@ -251,6 +251,43 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
   end
 
+  describe 'a leading ~' do
+    before do
+      @original_home = Dir.method(:home)
+      fake_home = outside.to_s
+      Dir.define_singleton_method(:home) { |*| fake_home }
+    end
+
+    after do
+      original = @original_home
+      Dir.define_singleton_method(:home) { |*args| original.call(*args) }
+    end
+
+    it 'expands ~/ to the home folder, so a home path is refused as outside the workspace' do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
+        workspace.resolve_for_read('~/.bashrc')
+      end
+      assert_includes err.message, "'#{outside}/.bashrc' is outside the workspace"
+    end
+
+    it 'expands ~/ into a home-rooted workspace' do
+      ws = described_class.new(project_root: root, readable: [outside])
+      assert_equal outside + '.bashrc', ws.resolve_for_read('~/.bashrc')
+      assert_equal outside, ws.resolve_for_read('~')
+    end
+
+    it 'leaves a ~ that is not leading alone' do
+      assert_equal root + 'a/~/b', workspace.resolve_for_write('a/~/b')
+    end
+
+    it 'lets AllowAll refuse a denylisted ~/ path' do
+      ws = described_class::AllowAll.new(project_root: root, denylist: [outside + '.ssh'])
+      assert_raises(Pikuri::Workspace::Filesystem::Error) do
+        ws.resolve_for_read('~/.ssh/id_rsa')
+      end
+    end
+  end
+
   describe 'multi-root behavior' do
     let(:ws) { described_class.new(project_root: root, readable: [extra_read], writable: [extra_write]) }
 

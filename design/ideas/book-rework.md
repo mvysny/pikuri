@@ -1,6 +1,6 @@
 # Book 1 rework: one track that ends on the secretary
 
-Status: **done, 2026-11-13**, bar two loose ends: `Q_tilde` (under *New chapters*) and the
+Status: **done, 2026-11-13**, bar two loose ends: the `~/.bashrc` transcript (under *New chapters*) and the
 optional `wire.md` paragraph (under *The sweep*). The workshop split (2026-11-12) took the
 chapters about running code you didn't write to book 2; book 1 now runs as one track ending on
 [the secretary](secretary.md), and its ToC is `book/README.md`.
@@ -84,7 +84,10 @@ chapters). Some are legitimate links to book 2.
   `pikuri-workspace/bin/pikuri-files`, not a flag on `pikuri-chat`, which stays the book's
   simplest program (owner, 2026-11-13). Seen in its transcript: a model passing `~/.bashrc` gets
   *not found* (relative to the folder) rather than *outside the workspace*, since `~` isn't
-  expanded; `Q_tilde`: should the workspace expand a leading `~/` so the refusal names itself?
+  expanded. `Q_tilde` settled 2026-11-14: the workspace now expands a leading `~` / `~/`, so
+  that read is refused as *outside the workspace*. **Left:** re-shoot that transcript on the
+  testbed and rewrite the paragraph after it (`book/touching-files.md`, "Here is a model
+  running into the edge"), which still tells the old *not found* story.
 
 ## The sweep
 
