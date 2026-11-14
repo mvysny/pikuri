@@ -83,7 +83,7 @@ def run_turn(agent, line)
   agent.cancellable&.reset!
   prev_trap = trap('INT') { agent.cancellable&.cancel! }
   agent.run_loop(user_message: message, attachments: attachments)
-rescue ChatAttachments::Error, Pikuri::Agent::UnsupportedAttachmentError => e
+rescue ChatAttachments::Error => e
   warn "Not sent: #{e.message}"
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   # Notice already rendered by the Terminal listener; nothing else to do.

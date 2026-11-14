@@ -60,10 +60,9 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   `Profile#gloda?`, `Calendar#available?`; `DatabaseSnapshot#refresh(attempts:, backoff:)` and
   `IcsEvent.build(uid:, dtstamp:)` are test seams. web: Engines `disk_cache:`/`memory_cache:`
   injection + `UrlCache::NULL` (~45, test seams).
-- `Q_chat_dead_rescue` — `pikuri-chat:86` rescues `UnsupportedAttachmentError`, which can't fire:
-  `from_openai_server` cannot pass `modalities`.
-- `Q_handoff` — `Control::Handoff`, 75. Unused, but landed in 35f02e10 with
-  `D_confirmer_sees_the_cancel`; likely awaiting its consumer, not dead.
+- ~~`Q_chat_dead_rescue`~~ **Done 2026-11-14:** dropped from `pikuri-chat`.
+- ~~`Q_handoff`~~ **Decided 2026-11-14: keep** — a seam awaiting its consumer, justified by
+  `D_confirmer_sees_the_cancel`.
 
 ## B. Downstream-only leaves — could move as-is
 
