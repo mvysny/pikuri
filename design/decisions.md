@@ -21,6 +21,46 @@ what it already says.
 
 ---
 
+## D_mid_turn_user_message — Why can a user message reach a turn that is still running?
+
+**Context.** `Control::Interloper#inject_user_message` takes a message from any thread while the
+agent works, and `Agent` appends it at turn start or once a tool batch is answered —
+`drain_user_item`, which also withholds an attachment the model cannot see. `size`, `pending?` and
+`on_change` let the host watch the queue. pikuri-workshop's pikuri-conversations is the consumer,
+and through it pikuri-tui and pikuri-webui, where the user types while the agent works. No pikuri
+bin can: `pikuri-chat` reads input only between turns. The `:system` kind's own why is
+`D_reference_text_as_user_turn`.
+
+**Decision.** A user message reaches the running turn at its next round-trip, not the next turn.
+
+**Why.** A long agentic turn should be steerable without being killed. "Also check the tests" or
+"wrong file — it's `config.rb`" matters most while the agent is mid-way through the wrong thing,
+and the next round-trip is the earliest moment the model can read it.
+
+**Why in core.** Appending to the chat is the loop seam's, and only the agent knows when a batch
+is complete — `tool_batch_complete?` runs inside ruby_llm's `after_message` callback. A host has
+neither.
+
+**Why a host can watch the queue.** A message injected after the turn's last tool batch is still
+queued when `run_loop` returns: the model gave its final answer without another round-trip.
+Running a turn for it is the host's call, so `pending?` tells it there is one —
+pikuri-conversations follows a completed turn with a bare one (`conversation.rb`'s `run_turns`).
+`size` and `on_change` drive a "2 queued" badge without a polling thread; `on_change` fires
+outside the lock, on the mutating thread.
+
+**Alternatives rejected.**
+
+- **The host holds the message until the turn ends**, then sends it as the next turn. The agent
+  finishes ten minutes in the wrong direction first.
+- **Cancel and resend.** Throws away the in-flight batch, whose unanswered calls then get
+  synthesized results (`D_unwound_batch_repair`), and the work done so far is answered as
+  interrupted.
+- **Deliver as soon as a tool returns** (`after_tool_result`). Splits the assistant `tool_calls`
+  message from its `:tool` answers, which every provider treats as one unit; the
+  `Control::Interloper` yardoc has the details.
+
+---
+
 ## D_domain_events — Why do gems put their own events on the agent's listener stream?
 
 **Context.** `Agent::Event` is sealed: it narrates the loop and nothing else. Gems have state a

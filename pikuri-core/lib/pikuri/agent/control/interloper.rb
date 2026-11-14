@@ -13,7 +13,9 @@ module Pikuri
       # answered: an injection made while idle lands ahead of the next turn's
       # message, one made mid-turn reaches the next round-trip.
       # {Agent#drain_interloper} says how each {Item#kind} lands. A host
-      # showing a "2 queued" badge reads {#size} or sets {#on_change}.
+      # showing a "2 queued" badge reads {#size} or sets {#on_change}. Why a
+      # running turn takes a user message at all: +design/decisions.md+
+      # +D_mid_turn_user_message+.
       #
       # Sub-agents are private to the parent, so a child's queue stays empty —
       # injection is directed at the main agent, where {Control::Cancellable}

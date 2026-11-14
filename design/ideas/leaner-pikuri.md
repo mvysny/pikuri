@@ -94,7 +94,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | Subprocess `env:` / `terminate` / `io` | ~20 | `env:` ROOT (`Thunderbird::Launcher`) + code, mem0; `terminate`/`io` mem0's relay | ✓ `env:` → `D_de_bundlerized_children`; daemon-child shape → `Subprocess`'s `== Daemon children` yardoc (2026-11-14; too small for a `D_`) |
 | streaming | ~140 | chat, minions; conversations, tui, webui | ✓ `D_streaming_opt_in` (2026-11-14); rooted: `pikuri-chat` and `pikuri-minions` now stream, so `Terminal`'s streaming mode has callers |
 | domain events (`emit_event`, Terminal) | ~40 | lsp, tasks, code, skills | ✓ `D_domain_events` (2026-11-14). `Event::Transient` and `Terminal`'s in-place line dropped (~45); pikuri-lsp emits only begin/done (workshop 3087c56, not pushed) |
-| Interloper `:user` kind, `on_change`/`pending?`/`size` | ~65 | conversations | ◐ yardoc + invariant |
+| Interloper `:user` kind, `on_change`/`pending?`/`size` | ~65 | conversations | ✓ `D_mid_turn_user_message` (2026-11-14); no pikuri bin can demo it (readline between turns) |
 | bare turn / `EmptyTurnError` | ~55 | skills, tui | ✗ |
 | `on_user_message` hook | ~41 | memory, code | ✗ |
 | `ReadOnly` gate + slots in Write/Edit/Extension | ~150 | code plan mode, os, tui | ✗ |
