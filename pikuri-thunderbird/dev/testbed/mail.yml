@@ -380,6 +380,38 @@
 
     Alex
 
+# --- A long mail, over one page of thunderbird_mail_read (50 KB): the answer
+#     sits at the end, so finding it takes paging with offset.
+- id: house-rules
+  at: [-14, '08:30']
+  from: aino
+  subject: Updated house rules for Koivukuja 4
+  body: |
+    Dear residents,
+
+    the board has updated the house rules. The full text is below; the sauna
+    turns for next year are in the last section.
+
+    <%= rules = [
+          ["Quiet hours", "Between 22:00 and 07:00 keep noise down so that it does not carry to\n    the neighbours. Drilling and hammering are allowed on weekdays from 08:00\n    to 20:00 and on Saturdays from 09:00 to 18:00, never on Sundays."],
+          ["Laundry room", "Book the laundry room on the list by its door, at most two turns a week.\n    Clean the lint filter and wipe the machines after use. A turn not started\n    within half an hour is free for anyone to take."],
+          ["Bicycle storage", "Bicycles go in the basement storage, not in the stairwell. Mark yours with\n    your flat number; unmarked bicycles are removed at the spring clean-up\n    after two weeks' notice on the notice board."],
+          ["Waste sorting", "Sort bio, cardboard, glass, metal and plastic into their own bins. Large\n    items and electronics go to the recycling centre, never next to the bins,\n    since the collection fee for them is charged to all residents."],
+          ["Balconies", "No open fire or charcoal grill on balconies; an electric grill is fine.\n    Do not shake rugs over the railing, and keep flower boxes on the inside\n    of it so that nothing falls on the yard below."],
+          ["Stairwell", "The stairwell is an escape route: keep it free of shoes, prams and boxes.\n    Doors to the stairwell close on their own and must never be wedged open,\n    as that defeats the fire compartments."],
+          ["Car heating posts", "Heating posts are rented per flat from the property manager. Use the\n    timer, at most two hours before you leave, and unplug the cable after use\n    so the next one can reach the post."],
+          ["Water leaks", "Report any leak at once to the maintenance company's 24-hour number. A\n    dripping tap or a running toilet left unreported can be charged to the\n    flat if the damage spreads to a neighbour's ceiling."]
+        ]
+        (1..150).map { |n| t, text = rules[(n - 1) % rules.size]; "§ #{n}. #{t} (part #{(n - 1) / rules.size + 1}).\n    #{text}" }.join("\n\n    ") %>
+
+    § 151. Sauna turns.
+    Each flat has one weekly turn in the building's sauna. From January, flat
+    B 12 (Alex Novak) has Thursday 19:00 to 20:00. Swaps are agreed between
+    neighbours and written on the list by the sauna door.
+
+    With best regards,
+    Aino Virtanen, chair of the board
+
 # --- Cross-source with Documents/Insurance.
 - id: insurance-renewal
   at: [-12, '09:00']
