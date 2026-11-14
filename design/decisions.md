@@ -21,6 +21,39 @@ what it already says.
 
 ---
 
+## D_domain_events — Why do gems put their own events on the agent's listener stream?
+
+**Context.** `Agent::Event` is sealed: it narrates the loop and nothing else. Gems have state a
+chrome wants to show too — pikuri-workshop's task list (`ListChanged`), a promoted skill
+(`Promoted`), plan mode (`PlanModeChanged`), a language server indexing (`ServerProgress`). No
+pikuri gem emits one yet: vectordb's indexing, the obvious candidate, runs before the agent exists
+or on the watcher's thread.
+
+**Decision.** `Configurator#emit_event` puts any value on the same stream the loop narrates on.
+A listener styles the variants it knows and ignores the rest; `Listener::Terminal` prints the rest
+as one dim line of their `to_s`, defanged, so a gem's events show in the demo with no change to
+core or to the bin. Core never reads a domain event's fields — `to_s` is its whole rendering.
+
+**One stream, because the alternative is every host learning every gem.** A per-gem callback
+(`list.on_change = …`) works for the host that wires it and for no other: pikuri-tui, pikuri-webui
+and each bin would each wire each gem, and a gem added later shows nowhere until they do. On the
+stream it reaches every listener already attached, sub-agents' included, in order with the tool
+call that caused it. `emit_event` is the agent thread's, like everything else on the stream, so a
+gem with a background thread hands the event over first (pikuri-lsp's `Readiness`).
+
+**Alternatives rejected.**
+
+- **A marker for an event that replaces its predecessor** — `Event::Transient`, which `Terminal`
+  redrew in place, as a progress bar. Shipped, and dropped on 2026-11-14: one emitter (pikuri-lsp's
+  `ServerProgress`), one renderer (core's `Terminal`; neither pikuri-tui nor pikuri-webui read the
+  marker), for ~45 lines of carriage-return bookkeeping every reader of `Terminal` paid for. A
+  begin line and a done line answer what the bar was for — a 78-second cold import that would
+  otherwise look like a hang.
+- **Grow the sealed `Event` set** with each gem's variant. Core would then name gems it must not
+  know.
+
+---
+
 ## D_streaming_opt_in — Why is chunk streaming in core, off by default, and inherited by sub-agents?
 
 **Context.** `Agent.new(streaming: true)` hands ruby_llm a per-chunk block and emits each chunk as

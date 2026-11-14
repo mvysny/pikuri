@@ -19,10 +19,9 @@ module Pikuri
       # (echo, or {TokenLog}'s business); {Event::SystemInjected} renders dim
       # grey with a +⊕+ marker. Any unrecognized event — notably a gem
       # *domain* event — renders generically via its +to_s+ (dim grey, +·+
-      # marker), so a new variant shows in the demo without a change here. An
-      # {Event::Transient} one instead rewrites a single line in place, and the
-      # text of every domain event is defanged through {Pikuri::Sanitizer} —
-      # a +to_s+ may carry a filename, a skill name or a server's own words.
+      # marker), so a new variant shows in the demo without a change here. Its
+      # text is defanged through {Pikuri::Sanitizer} — a +to_s+ may carry a
+      # filename, a skill name or a server's own words.
       #
       # Assistant Markdown prints raw, no Markdown-to-ANSI: rendering can't
       # apply to the streaming path anyway (half-built fences/tables), and the
@@ -75,7 +74,6 @@ module Pikuri
           @padding = padding
           @streaming = streaming
           @at_line_start = true
-          @transient = false
         end
 
         # @return [Integer] current padding width.
@@ -153,72 +151,17 @@ module Pikuri
         # @param text [String]
         # @return [void]
         def println(text)
-          clear_transient
           puts text
           @at_line_start = true
         end
 
-        # A gem domain event, defanged and dimmed — an {Event::Transient} one
-        # rewriting a single line rather than appending to the log.
+        # A gem domain event as one defanged, dimmed line.
         #
         # @param event [Object] any event variant this listener does not style.
         # @return [void]
         def domain_event(event)
           text = Sanitizer.sanitize(event.to_s.gsub(/\s+/, ' ').strip).text
-          return dim_line(text) unless event.is_a?(Event::Transient)
-
-          transient(text, done: event.done)
-        end
-
-        # @param text [String] sanitized and flattened.
-        # @return [void]
-        def dim_line(text)
           println(indent(Rainbow("· #{text}").color(85, 85, 85)))
-        end
-
-        # Rewrite the in-place line, or retire it.
-        #
-        # Off a terminal it degrades to the final state only, as an ordinary line:
-        # a stream of +\r+ into a file is one unreadable mega-line, and a cold
-        # index emits hundreds of updates.
-        #
-        # @param text [String] sanitized and flattened.
-        # @param done [Boolean] the sequence is over, so the line goes away.
-        # @return [void]
-        def transient(text, done:)
-          unless $stdout.tty?
-            dim_line(text) if done
-            return
-          end
-
-          clear_transient
-          return if done
-
-          print(Rainbow(cut(indent("· #{text}"))).color(85, 85, 85))
-          $stdout.flush
-          @transient = true
-          @at_line_start = false
-        end
-
-        # Erase the in-place line so ordinary output does not land mid-bar.
-        #
-        # @return [void]
-        def clear_transient
-          return unless @transient
-
-          print("\r\e[K")
-          @transient = false
-          @at_line_start = true
-        end
-
-        # Fit +text+ in one row, because a line that wraps leaves its tail behind
-        # the carriage return that was supposed to erase it.
-        #
-        # @param text [String]
-        # @return [String]
-        def cut(text)
-          width = terminal_width
-          text.length < width ? text : "#{text[0, width - 2]}…"
         end
 
         # Emit a newline as a stream terminator and reset line-state — the
@@ -227,7 +170,6 @@ module Pikuri
         #
         # @return [void]
         def terminate_stream
-          clear_transient
           puts
           @at_line_start = true
         end
@@ -241,8 +183,6 @@ module Pikuri
         # @return [void]
         def stream_fragment(text)
           return if text.nil? || text.empty?
-
-          clear_transient
 
           if @padding.zero?
             print(text)

@@ -92,21 +92,6 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
   end
 
   describe 'gem domain events' do
-    # Stand-in for a gem's own transient event (Pikuri::Lsp::ServerProgress):
-    # core knows nothing of the type and renders only its to_s.
-    progress = Data.define(:text, :done) do
-      include Pikuri::Agent::Event::Transient
-
-      def to_s = text
-    end
-
-    # $stdout is a StringIO under capture_stdout, so a tty has to be asked for.
-    fake_tty = Class.new(StringIO) do
-      def tty? = true
-
-      def winsize = [24, 40]
-    end
-
     it 'defangs the text, because a to_s may carry a server\'s own words' do
       hostile = Class.new do
         def to_s = "Indexing \e[31mred\e[0m"
@@ -126,71 +111,6 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
       out = capture_stdout { listener.on_event(noisy) }
 
       assert_includes out, 'first second'
-    end
-
-    describe 'a transient event' do
-      it 'shows only the final state when stdout is not a terminal' do
-        out = capture_stdout do
-          listener.on_event(progress.new(text: 'Indexing 10%', done: false))
-          listener.on_event(progress.new(text: 'Indexing 90%', done: false))
-          listener.on_event(progress.new(text: 'Indexing done', done: true))
-        end
-
-        refute_includes out, 'Indexing 10%'
-        refute_includes out, 'Indexing 90%'
-        assert_includes out, 'Indexing done'
-        assert_equal 1, out.lines.length
-      end
-
-      it 'rewrites one line in place on a terminal, and retires it when done' do
-        captured = fake_tty.new
-        original = $stdout
-        $stdout = captured
-        begin
-          listener.on_event(progress.new(text: 'Indexing 10%', done: false))
-          listener.on_event(progress.new(text: 'Indexing 90%', done: false))
-          # StringIO#string hands back the live buffer, so snapshot it.
-          mid = captured.string.dup
-          listener.on_event(progress.new(text: 'Indexing done', done: true))
-        ensure
-          $stdout = original
-        end
-
-        assert_includes mid, 'Indexing 10%'
-        assert_includes mid, 'Indexing 90%'
-        assert_equal 1, mid.scan("\r\e[K").length, 'the second update erases the first'
-        refute_includes mid, "\n", 'a bar that ended its line could not be rewritten'
-        assert_equal 2, captured.string.scan("\r\e[K").length, 'the final state takes the line down'
-        refute_includes captured.string, 'Indexing done'
-      end
-
-      it 'cuts the line to the window, so a wrapped bar cannot outlive its erase' do
-        captured = fake_tty.new
-        original = $stdout
-        $stdout = captured
-        begin
-          listener.on_event(progress.new(text: 'x' * 200, done: false))
-        ensure
-          $stdout = original
-        end
-
-        assert captured.string.length < 200, captured.string.length
-        assert_includes captured.string, '…'
-      end
-
-      it 'clears the bar before ordinary output lands, rather than printing into it' do
-        captured = fake_tty.new
-        original = $stdout
-        $stdout = captured
-        begin
-          listener.on_event(progress.new(text: 'Indexing 10%', done: false))
-          listener.on_event(tool_result(content: '42', summary: 'Returned 2 bytes'))
-        ensure
-          $stdout = original
-        end
-
-        assert_match(/\r\e\[K.*Returned 2 bytes/m, captured.string)
-      end
     end
   end
 

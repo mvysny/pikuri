@@ -11,7 +11,10 @@ module Pikuri
     # observability belongs here. Gems define their own *domain* events in
     # their own namespace (e.g. a task list's +ListChanged+) and emit
     # them via {Configurator#emit_event} onto the same stream;
-    # listeners must no-op on variants they don't recognize.
+    # listeners must no-op on variants they don't recognize. A domain event's
+    # +#to_s+ is its whole rendering in a generic listener, which never reads
+    # its fields — that keeps core ignorant of a gem's payload. Why one open
+    # stream: +design/decisions.md+ +D_domain_events+.
     module Event
       # User input for a turn (+mid_loop: false+, the default) or a host
       # injection delivered mid-loop (+mid_loop: true+, drained from
@@ -141,22 +144,6 @@ module Pikuri
       # +Cancelled+ exception re-raises. No recovery follows; the caller
       # returns control to the user.
       Cancelled = Data.define
-
-      # Marks a *domain* event whose successor **replaces** it rather than adding
-      # to a log: an indexing bar, a download percentage. A chrome that can
-      # rewrite a line does; one that cannot shows only the final state.
-      #
-      #   Progress = Data.define(:title, :done) do
-      #     include Pikuri::Agent::Event::Transient
-      #     def to_s = done ? "#{title} — done" : title
-      #   end
-      #
-      # The contract is two methods, both of which a +Data.define+ already
-      # answers: +#to_s+ is the whole rendering — a listener never inspects the
-      # fields, which is what keeps core ignorant of a gem's payload — and
-      # +#done+ says the sequence is over and its line may go away.
-      module Transient
-      end
 
       # The agent was built with a saved conversation (+Agent.new(history:)+)
       # rather than an empty one. Emitted once, at the end of construction,

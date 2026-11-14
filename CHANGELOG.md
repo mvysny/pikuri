@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** removed `Pikuri::Agent::Event::Transient`; `Listener::Terminal` prints every domain event as one line and no longer redraws one in place (`D_domain_events`). Drop the `include`, and emit a progress sequence's start and end rather than each update.
 - Add `Pikuri::Workspace::ReadOnly#remove_on_change`; `#on_change` now returns the block it registered, so a subscriber that dies before the flag, like an agent after a `/clear`, removes itself instead of pinning its closed conversation.
 - `bin/pikuri-chat` and `bin/pikuri-minions` stream the reply as it is generated, sub-agents included (`D_streaming_opt_in`).
 - **Breaking:** removed `Pikuri::Agent::ChatTransport#connection_overrides?`; a model switch now rebuilds the connection every time, so nothing of the old transport's lingers (`D_model_switch_in_place`). Test `api_base`/`api_key` for `nil` yourself.
