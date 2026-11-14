@@ -130,7 +130,8 @@ module Pikuri
                               'The agent has no access to your conversation, so ' \
                               'include all necessary context.'
           },
-          execute: lambda { |name:, task:|
+          wants_context: true,
+          execute: lambda { |name:, task:, context:|
             persona = personas.fetch(name)
 
             # Optional human gate on the *task prompt* before dispatch: the
@@ -148,7 +149,7 @@ module Pikuri
                 detail: task,
                 editable: true
               )
-              case decision = confirmer.ask(request: request)
+              case decision = confirmer.ask(request: request, cancellable: context.cancellable)
               in Pikuri::Workspace::Confirmer::Approved(new_request_detail:)
                 task = new_request_detail
               in Pikuri::Workspace::Confirmer::Rejected | Pikuri::Workspace::Confirmer::Redirected

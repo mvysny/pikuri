@@ -158,7 +158,7 @@ module Pikuri
               case decision = confirmer.ask(request: Workspace::Confirmer::Request.new(
                 question: 'Send this web search query to the search engine?',
                 detail: query, editable: true
-              ))
+              ), cancellable: context.cancellable)
               in Workspace::Confirmer::Approved(new_request_detail:) then query = new_request_detail
               in Workspace::Confirmer::Rejected | Workspace::Confirmer::Redirected
                 return decision.observation('the web search')

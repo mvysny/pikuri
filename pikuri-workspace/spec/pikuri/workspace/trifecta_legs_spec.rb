@@ -111,7 +111,7 @@ end
 RSpec.describe 'Confirmer#blocks_on_human?' do
   it 'is true on the base class — a confirmer exists to ask' do
     asking = Class.new(Pikuri::Workspace::Confirmer) do
-      def ask(request:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      def ask(request:, cancellable:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
     end
     assert asking.new.blocks_on_human?
   end

@@ -78,8 +78,10 @@ module Pikuri
         HUNK_COLOR = Pikuri::Agent::Listener::Terminal::TOOL_COLOR
 
         # @param request [Request]
+        # @param cancellable [Pikuri::Agent::Control::Cancellable] unused:
+        #   Ctrl+C interrupts the blocking read as +SIGINT+, which no flag can
         # @return [Approved, Rejected, Redirected]
-        def ask(request:)
+        def ask(request:, cancellable:)
           warnings = render(request)
           if request.editable && !request.detail.nil?
             ask_editable(request, clean: warnings.empty?)

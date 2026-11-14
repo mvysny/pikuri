@@ -35,12 +35,17 @@ module Pikuri
       # @param resolved [Pathname] resolved write target.
       # @param question [String] one-line confirm headline.
       # @param change [Confirmer::Change] the diff payload (old/new bytes).
+      # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
+      #   turn's token, for {Confirmer#ask}.
       # @return [Pikuri::Tool::Result, nil] the observation to return at once
       #   (unwritable, rejected or redirected), or +nil+ to proceed.
-      def check(confirmer:, path:, resolved:, question:, change:)
+      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] when the turn
+      #   is cancelled while the question waits.
+      def check(confirmer:, path:, resolved:, question:, change:, cancellable:)
         return permission_denied(path) unless writable_target?(resolved)
 
-        case decision = confirmer.ask(request: Confirmer::Request.new(question: question, change: change))
+        case decision = confirmer.ask(request: Confirmer::Request.new(question: question, change: change),
+                                      cancellable: cancellable)
         in Confirmer::Approved then nil
         in Confirmer::Rejected | Confirmer::Redirected then decision.observation("the write to #{path}")
         end

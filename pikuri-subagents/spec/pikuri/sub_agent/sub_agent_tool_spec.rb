@@ -562,7 +562,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
           @requests = []
         end
 
-        def ask(request:)
+        def ask(request:, cancellable:)
           @requests << request
           @decision.call(request)
         end

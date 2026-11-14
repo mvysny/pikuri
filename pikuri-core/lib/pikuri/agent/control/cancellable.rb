@@ -30,11 +30,12 @@ module Pikuri
       # (the response lands, then the next boundary trips), nor is an in-flight
       # tool (notably +Bash+). Both are the intentional "gentle cancel" v1 scope.
       #
-      # {#sleep} widens that boundary by one case: code *waiting* inside a tool
-      # can wait through this instead of +Kernel#sleep+ and become
-      # interruptible. It reaches waits only — a thread blocked in IO (a Faraday
-      # read, +Subprocess#wait+) is still uninterruptible, so most of a tool's
-      # blocking is untouched by design.
+      # {#sleep} and {Handoff#await} widen that boundary to code *waiting* inside
+      # a tool — pacing, or a confirmer waiting on a human — which waits through
+      # them instead of +Kernel#sleep+ or a +Queue+ and becomes interruptible.
+      # They reach waits only — a thread blocked in IO (a Faraday read,
+      # +Subprocess#wait+) is still uninterruptible, so most of a tool's blocking
+      # is untouched by design.
       #
       # == Sub-agent semantics
       #
@@ -56,7 +57,7 @@ module Pikuri
           end
         end
 
-        # Longest a {#sleep} stays unresponsive to a {#cancel!}: it wakes on
+        # Longest a {#sleep} or {Handoff#await} stays unresponsive to a {#cancel!}: it wakes on
         # this cadence to re-check the flag. Polling rather than a
         # +ConditionVariable+ because {#cancel!} must stay callable from a
         # SIGINT trap, where taking a +Mutex+ raises +ThreadError+ — so the

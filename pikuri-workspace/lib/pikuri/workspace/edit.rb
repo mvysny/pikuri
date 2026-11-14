@@ -118,10 +118,12 @@ module Pikuri
                                'context when the file repeats the same ' \
                                'snippet. Cannot be combined with replace_all.'
           },
-          execute: ->(path:, old_string:, new_string:, replace_all: false, occurrence: nil) {
+          wants_context: true,
+          execute: ->(path:, old_string:, new_string:, context:, replace_all: false, occurrence: nil) {
             Edit.edit(workspace: workspace, read_only: read_only, confirmer: confirmer,
                       path: path, old_string: old_string, new_string: new_string,
-                      replace_all: replace_all, occurrence: occurrence)
+                      replace_all: replace_all, occurrence: occurrence,
+                      cancellable: context.cancellable)
           },
           # No legs, for the same reason as {Write}: the observation reports the
           # outcome, never the file's bytes, so nothing enters the model's
@@ -148,12 +150,14 @@ module Pikuri
       # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
       #   (default +nil+ for direct callers/specs).
       # @param confirmer [Confirmer, nil] see {#initialize} (default +nil+).
+      # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
+      #   turn's token, for the confirmation.
       # @return [Tool::Result] +"Added 2 lines, removed 3 lines"+ once the edit
       #   lands; {Pikuri::Tool::Result.error} for a refusal or the confirmer's
       #   decline. The counts are exact without a differ: the replaced text and
       #   its substitute are both arguments.
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
-                    occurrence: nil, read_only: nil, confirmer: nil)
+                    cancellable:, occurrence: nil, read_only: nil, confirmer: nil)
         return Tool::Result.error("cannot edit #{path} — #{read_only.message}") if read_only&.active?
 
         if old_string.empty?
@@ -228,7 +232,8 @@ module Pikuri
           gate = WriteGate.check(
             confirmer: confirmer, path: path, resolved: resolved,
             question: "OK to edit #{path} (#{detail})?",
-            change: Confirmer::Change.new(path: path, old: raw, new: final)
+            change: Confirmer::Change.new(path: path, old: raw, new: final),
+            cancellable: cancellable
           )
           return gate if gate
         end

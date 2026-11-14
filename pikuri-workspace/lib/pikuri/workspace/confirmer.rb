@@ -41,7 +41,7 @@ module Pikuri
     # decline answers the model through the decision's own {Rejected#observation}
     # / {Redirected#observation}:
     #
-    #   case decision = confirmer.ask(request: request)
+    #   case decision = confirmer.ask(request: request, cancellable: context.cancellable)
     #   in Confirmer::Approved(new_request_detail:) then ...act on it...
     #   in Confirmer::Rejected | Confirmer::Redirected
     #     return decision.observation('the bash command')
@@ -62,14 +62,16 @@ module Pikuri
     #
     # == Cancelling a parked ask
     #
-    # A host whose cancel key (Escape, Ctrl+C) can fire while {#ask} waits
-    # should call +cancel!+ on the turn's {Pikuri::Agent::Control::Cancellable}
-    # and make the parked {#ask} raise
+    # {#ask} gets the turn's {Pikuri::Agent::Control::Cancellable}, which the
+    # tool takes from its {Pikuri::Tool::ExecuteContext}. A confirmer whose
+    # human answers on another thread waits in a
+    # {Pikuri::Agent::Control::Handoff} built on it, so any +cancel!+ — the
+    # cancel key, a shutdown, another tab — makes the parked {#ask} raise
     # {Pikuri::Agent::Control::Cancellable::Cancelled}: the tool lets it
     # through, the agent ends the turn, and the stranded call is answered
-    # +[Cancelled by the user]+ — the same path a cancelled
-    # {Pikuri::Agent::Control::Cancellable#sleep} takes. Answering {Rejected}
-    # instead is not a cancel: the turn runs on for one more model reply.
+    # +[Cancelled by the user]+. Answering {Rejected} instead is not a cancel:
+    # the turn runs on for one more model reply. {Terminal} ignores the token —
+    # Ctrl+C reaches its +gets+ as +SIGINT+. +D_confirmer_sees_the_cancel+.
     #
     # A +:once+/+:always+ scope knob was *rejected*: it manages decision
     # *fatigue*, a distinct axis, and the long-term answer to fatigue is making
@@ -165,12 +167,15 @@ module Pikuri
       # @param request [Request] semantic content composed by the calling
       #   tool. The confirmer renders it (escaping for its medium), poses
       #   the question, and parses the answer.
+      # @param cancellable [Pikuri::Agent::Control::Cancellable] the asking
+      #   turn's token. Per call, never per confirmer: one confirmer serves
+      #   many agents, each with its own.
       # @return [Approved, Rejected, Redirected]
       # @raise [NotImplementedError] in the abstract base
-      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] when the host
-      #   cancels the turn while the question waits — see "Cancelling a parked
+      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] when the turn
+      #   is cancelled while the question waits — see "Cancelling a parked
       #   ask" above
-      def ask(request:)
+      def ask(request:, cancellable:)
         raise NotImplementedError, "#{self.class}#ask must be implemented"
       end
 
@@ -178,9 +183,11 @@ module Pikuri
       # nowhere near the model (a {Redirected}'s words are dropped).
       #
       # @param request [Request]
+      # @param cancellable [Pikuri::Agent::Control::Cancellable] see {#ask}
       # @return [Boolean] +true+ iff approved
-      def confirm?(request:)
-        ask(request:).is_a?(Approved)
+      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] see {#ask}
+      def confirm?(request:, cancellable:)
+        ask(request:, cancellable:).is_a?(Approved)
       end
 
       # Whether {#ask} can actually stop and wait for a person — the posture
@@ -203,8 +210,10 @@ module Pikuri
       # legitimate Confirmer. Used by hosts' yolo modes and specs that don't want to coordinate stdin.
       class AutoApprove < Confirmer
         # @param request [Request]
+        # @param cancellable [Pikuri::Agent::Control::Cancellable] unused —
+        #   nothing waits
         # @return [Approved] always, carrying +detail+ unchanged
-        def ask(request:)
+        def ask(request:, cancellable:)
           Approved.new(new_request_detail: request.detail)
         end
 

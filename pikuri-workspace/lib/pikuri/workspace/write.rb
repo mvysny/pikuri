@@ -94,10 +94,11 @@ module Pikuri
                               'Full contents to write to the file, e.g. ' \
                               '"class Foo\nend\n".'
           },
-          execute: ->(path:, content:) {
+          wants_context: true,
+          execute: ->(path:, content:, context:) {
             Write.write(workspace: workspace, confirmer: confirmer,
                         read_only: read_only, confirm_all_writes: confirm_all_writes,
-                        path: path, content: content)
+                        path: path, content: content, cancellable: context.cancellable)
           },
           # No legs: no file bytes enter the model's context (the observation is
           # an outcome), and a local write is not an external sink.
@@ -121,12 +122,15 @@ module Pikuri
       # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
       #   (default +nil+ for direct callers/specs).
       # @param confirm_all_writes [Boolean] see {#initialize} (default +false+).
+      # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
+      #   turn's token, for the confirmation.
       # @return [Tool::Result] +"Created, 88 lines"+ / +"Updated, 88 lines (was
       #   90)"+ on a write; {Pikuri::Tool::Result.error} for a refusal or the
       #   confirmer's decline. The line counts rather than a diff: pikuri has no
       #   in-process differ (a diff-capable chrome renders the
       #   {Confirmer::Change} itself).
-      def self.write(workspace:, confirmer:, path:, content:, read_only: nil, confirm_all_writes: false)
+      def self.write(workspace:, confirmer:, path:, content:, cancellable:, read_only: nil,
+                     confirm_all_writes: false)
         return Tool::Result.error("cannot write #{path} — #{read_only.message}") if read_only&.active?
 
         resolved = workspace.resolve_for_write(path)
@@ -150,7 +154,8 @@ module Pikuri
           gate = WriteGate.check(
             confirmer: confirmer, path: path, resolved: resolved,
             question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?",
-            change: Confirmer::Change.new(path: path, old: existing, new: content.b)
+            change: Confirmer::Change.new(path: path, old: existing, new: content.b),
+            cancellable: cancellable
           )
           return gate if gate
 
@@ -166,7 +171,8 @@ module Pikuri
             gate = WriteGate.check(
               confirmer: confirmer, path: path, resolved: resolved,
               question: "OK to create #{path} (#{content.bytesize} bytes)?",
-              change: Confirmer::Change.new(path: path, old: nil, new: content.b)
+              change: Confirmer::Change.new(path: path, old: nil, new: content.b),
+              cancellable: cancellable
             )
             return gate if gate
           end

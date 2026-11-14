@@ -43,7 +43,7 @@ RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
 
   it 'marks the delegation edge as gated when the confirmer can block on a human' do
     asking = Class.new(Pikuri::Workspace::Confirmer) do
-      def ask(request:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      def ask(request:, cancellable:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
     end
     child = extension(confirmer: asking.new).trifecta_contribution(web_tools).children.first
     assert_equal :human_reviewed, child.channel_egress
@@ -73,7 +73,7 @@ RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
 
     it 'caps the propagated egress at the gate — soft, not loud' do
       asking = Class.new(Pikuri::Workspace::Confirmer) do
-        def ask(request:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+        def ask(request:, cancellable:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
       end
       report = parent_report(confirmer: asking.new)
       assert_equal :human_reviewed, report.legs.egress_payload_review

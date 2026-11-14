@@ -21,6 +21,51 @@ what it already says.
 
 ---
 
+## D_confirmer_sees_the_cancel — Why does `Confirmer#ask` take the turn's `Cancellable`, rather than the host waking its own confirmer?
+
+**Context.** `#ask` blocks the tool's thread until a human answers, and nothing handed it the
+turn's token, so a `cancel!` flipped the flag and the turn waited on the human anyway. The host was
+meant to wake its own confirmer next to every cancel it issued. Moving pikuri-tui onto
+pikuri-workshop's `pikuri-conversations` (2026-11-14) showed that rule cannot hold: a cancel also
+comes from `Conversation#cancel`, `close(force: true)` and `Conversations#shutdown`, so from a
+SIGTERM handler or a web UI's second tab, none of which knows the confirmer. pikuri-tui kept a
+`cancel_pending!` it had to call beside each one, and any it missed made `shutdown` wait out its
+timeout.
+
+**Decision.** `#ask(request:, cancellable:)` and `#confirm?(request:, cancellable:)`, both
+required. A confirming tool takes the token from its `Tool::ExecuteContext`, per call, because a
+confirmer is shared between agents and conversations (`D_tool_cancellation` has the per-call
+argument). Core ships `Agent::Control::Handoff`, a one-shot slot: the human's thread calls
+`#complete`, the tool's thread waits in `#await`, which raises `Cancelled` once the token trips. It
+is `Cancellable#sleep`'s contract applied to the other place a tool waits: a cancel is polled every
+`SLICE_SECONDS`, so `cancel!` stays a bare flag write that is safe from a SIGINT trap. Only the
+completing side, never a trap, takes the lock.
+
+**Alternatives rejected.**
+
+- **The host wakes its confirmer**, the old rule. Every cancel source has to know every confirmer,
+  and the one that doesn't hangs the turn on a dialog. Its case was that only the confirming tools
+  go `wants_context: true` and `Terminal` gains nothing, since a flag can't interrupt its `gets`.
+  Both are still true, and both cost less than the hang.
+- **`Cancellable#on_cancel { … }`**, a callback the parked confirmer registers. The callback runs
+  inside `cancel!`, so inside a SIGINT trap, and waking a parked thread takes a lock, which a trap
+  can't.
+- **`Cancellable#pop(queue)`**, the `Queue` version of `#sleep`. `Queue#pop(timeout:)` answers
+  `nil` both for a timeout and for a closed queue, so the confirmer could never answer `nil`, and a
+  queue carries many items where a question has one answer. A slot that raises on a second
+  `#complete` says that.
+- **A `cancellable: Cancellable::NEVER` default.** It would save third-party confirmers a breaking
+  change, and a tool that forgot to pass the token would bring the bug back without anything
+  failing.
+- **Carrying the token in `Confirmer::Request`.** A request is what is being asked, and the turn
+  asking it is not part of that.
+
+**Consequences.** `write`, `edit`, `agent` and `web_search` all take the context, and so does
+pikuri-workshop's `bash`. A host's confirmer waits in a `Handoff` and needs no cancel hook of its
+own. Its `ensure` takes the dialog down.
+
+---
+
 ## D_secretary_wiring — Why does book 1 end on a secretary that holds all three legs, rather than on the coding agent, and why is it wired as it is?
 
 **Context.** Book 1 needed a closing demo that pays off the trifecta chapter. The coding agent
@@ -524,8 +569,8 @@ text typed into the entry.
 **Decision.** Three outcomes: `Approved`, a textless `Rejected` ("stop; don't reach the same end
 another way") and `Redirected(message:)` ("the user declined and said: …", not an error, a new
 proposal welcome). The type carries one bit — is a retry welcome — and each decision words its own
-observation, so the tools agree. Cancelling a parked `#ask` is the host raising
-`Cancellable::Cancelled` from it, which already ends the turn and repairs the stranded call.
+observation, so the tools agree. A cancel is none of the three: a parked `#ask` raises
+`Cancellable::Cancelled` (`D_confirmer_sees_the_cancel`).
 
 **Alternatives rejected.**
 
@@ -535,9 +580,6 @@ observation, so the tools agree. Cancelling a parked `#ask` is the host raising
   nothing: the user's next message carries it with the next step attached. A reason scoping the no
   ("don't touch generated files") is steering, so a `Redirected`. In a sub-agent tree a child's
   reason reaches the parent only as reply text, inviting it to re-delegate around the decline.
-- **Hand `#ask` the turn's `Cancellable`.** Every confirming tool would go `wants_context: true`, to
-  serve a cancel source that isn't the confirmer's owner — a SIGINT trap, i.e. `Terminal`, whose
-  `gets` no flag interrupts (`D_tool_cancellation`).
 
 **Consequences.** `Confirmer::Terminal` asks `[y] approve  [n] reject  [r] redirect`; `n` no longer
 prompts for a reason. `ExitPlanMode` moved off `#confirm?`, which had dropped a typed reason.

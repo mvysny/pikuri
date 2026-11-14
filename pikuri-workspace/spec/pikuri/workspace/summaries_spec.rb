@@ -17,7 +17,7 @@ RSpec.describe 'Pikuri::Workspace display summaries' do
 
   def approving_confirmer
     confirmer = Object.new
-    confirmer.define_singleton_method(:ask) do |request:|
+    confirmer.define_singleton_method(:ask) do |request:, cancellable:|
       Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
     end
     confirmer

@@ -7,9 +7,11 @@ RSpec.describe Pikuri::Workspace::WriteGate do
   let(:root) { Pathname.new(Dir.mktmpdir('pikuri-wg-')).realpath }
   after { FileUtils.rm_rf(root) }
 
+  def never = Pikuri::Agent::Control::Cancellable::NEVER
+
   def approving
     c = Object.new
-    c.define_singleton_method(:ask) do |request:|
+    c.define_singleton_method(:ask) do |request:, cancellable:|
       Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
     end
     c
@@ -17,13 +19,13 @@ RSpec.describe Pikuri::Workspace::WriteGate do
 
   def deciding(decision)
     c = Object.new
-    c.define_singleton_method(:ask) { |request:| decision }
+    c.define_singleton_method(:ask) { |request:, cancellable:| decision }
     c
   end
 
   def never_called
     c = Object.new
-    c.define_singleton_method(:ask) { |request:| raise "confirmer must not be consulted (#{request.inspect})" }
+    c.define_singleton_method(:ask) { |request:, cancellable:| raise "confirmer must not be consulted (#{request.inspect})" }
     c
   end
 
@@ -60,12 +62,12 @@ RSpec.describe Pikuri::Workspace::WriteGate do
     end
 
     it 'returns nil (proceed) when writable and approved' do
-      assert_nil described_class.check(confirmer: approving, path: 'a.txt',
+      assert_nil described_class.check(cancellable: never, confirmer: approving, path: 'a.txt',
                                        resolved: existing_target, question: 'OK?', change: change)
     end
 
     it 'answers a Rejected with a stop observation' do
-      result = described_class.check(confirmer: deciding(Pikuri::Workspace::Confirmer::Rejected.new),
+      result = described_class.check(cancellable: never, confirmer: deciding(Pikuri::Workspace::Confirmer::Rejected.new),
                                      path: 'a.txt', resolved: existing_target, question: 'OK?', change: change)
       assert result.error?
       assert_includes result.content, 'user declined the write to a.txt. Don\'t retry it'
@@ -73,7 +75,7 @@ RSpec.describe Pikuri::Workspace::WriteGate do
 
     it 'answers a Redirected by quoting the user, not as an error' do
       decision = Pikuri::Workspace::Confirmer::Redirected.new(message: 'use vim')
-      result = described_class.check(confirmer: deciding(decision), path: 'a.txt',
+      result = described_class.check(cancellable: never, confirmer: deciding(decision), path: 'a.txt',
                                      resolved: existing_target, question: 'OK?', change: change)
       refute result.error?
       assert_equal 'The user declined the write to a.txt and said: use vim', result.content
@@ -85,7 +87,7 @@ RSpec.describe Pikuri::Workspace::WriteGate do
       locked = root + 'locked'
       FileUtils.mkdir_p(locked)
       File.chmod(0o555, locked)
-      result = described_class.check(confirmer: never_called, path: 'locked/x.txt',
+      result = described_class.check(cancellable: never, confirmer: never_called, path: 'locked/x.txt',
                                      resolved: locked + 'x.txt', question: 'OK?', change: change)
       assert_includes result.content, 'permission denied'
     ensure

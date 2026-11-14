@@ -127,7 +127,7 @@ RSpec.describe 'Pikuri::Web::Search.build' do
       asked = self.asked
       decisions = self.decisions
       Class.new(Pikuri::Workspace::Confirmer) do
-        define_method(:ask) do |request:|
+        define_method(:ask) do |request:, cancellable:|
           asked << request
           decisions.shift
         end

@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::Workspace::Confirmer#ask` and `#confirm?` take the asking turn's `cancellable:`, and the new `Agent::Control::Handoff` lets a confirmer wait for a human on another thread until any cancel ends the wait (`D_confirmer_sees_the_cancel`). Add `cancellable:` to your `#ask`, and pass `context.cancellable` (with `wants_context: true`) wherever a tool asks.
 - Fix `Pikuri::Workspace::Filesystem` reading a model's `~/.bashrc` as a folder named `~` inside the workspace; a leading `~` now expands to the home folder, so the path is refused as outside the workspace (or reached, when it is inside).
 - `thunderbird_mail_read` ends a body that reached Thunderbird's 20 KB index cap with a note that the message may continue, instead of stopping mid-sentence without a word; the full text stays in Thunderbird.
 - `thunderbird_mail_attachment_read` answers a PNG, JPEG, GIF or WebP attachment as the picture itself, for a vision model to see; a text-only model gets a note instead (`D_refuse_unsupported_attachments`).
