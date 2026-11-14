@@ -26,10 +26,12 @@ forwards come free.
   leaves), verified against the testbed and a synthetic spec, never against a
   real Outlook / Apple Mail forward. Check on the real box before numbering,
   since the numbers become handles.
-- `Q_fwd_testbed` — the testbed has one forward, carrying one `.docx`. Add a
-  forward carrying an image, a forward of an HTML mail with a `cid:` image
-  (pins the listing policy end to end), and a forward of a forward (pins the
-  recursion).
+
+The testbed covers the shapes (2026-11-14): `application-fwd` (a `.docx`
+inside), `venue-fwd` (an image inside), `floor-plan-fwd` (an HTML mail whose
+`cid:` image must stay body) and `application-fwd-fwd` (a forward of a
+forward). Live, each lists what Gloda would. The path handle's spec should read the
+CV through `application-fwd` (`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`).
 
 ## Maildir and other stores
 

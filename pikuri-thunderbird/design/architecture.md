@@ -360,13 +360,16 @@ A complete, pre-decoded search index. Tables that matter:
   for a detached attachment (that is a `text/x-moz-deleted` part). The FTS
   column `c2attachmentNames` **omits forwarded mails**, which is why the
   listing numbers this list instead — yet it *carries* the names of the
-  attachments inside a forward, which this list omits (testbed, 159), so a
-  search can find a mail by an attachment name its listing never shows.
+  attachments inside a forward, at any depth, which this list omits
+  (testbed, 159: a forward of a forward still indexes the CV two levels
+  down), so a search can find a mail by an attachment name its listing
+  never shows.
 - **What `attachmentInfos` leaves out** (testbed, 159): an image an HTML part
   shows by `cid:` inside `multipart/related` — under `alternative` or as the
   mail's root — is not listed at all; an image attached outright, or
   `inline` under `multipart/mixed`, is. A forward's text body, by contrast,
-  is appended to the outer message's `c0body` with no separator.
+  is appended to the outer message's `c0body` with no separator, at any
+  depth.
 - Ignore: `imConversations*`, `ext_mimeTypes`.
 
 **The mozporter sharp edge.** Both FTS tables use Mozilla's custom `mozporter`

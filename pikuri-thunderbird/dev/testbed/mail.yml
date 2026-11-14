@@ -18,7 +18,7 @@
 #                 instead of the mail gem's quoted encoded-word (RFC 2047)
 #   invite:       an invites key: a text/calendar METHOD:REQUEST part
 #   ics:          an invites key: attached as a plain .ics file
-#   forward:      id of a folder: none message, attached as message/rfc822
+#   forward:      id of a message (often folder: none), attached as message/rfc822
 
 # --- The invoice: the cross-source answer (the PDF is in Documents/Finance).
 - id: kettle-4471-reminder
@@ -277,6 +277,46 @@
     Tomas
   forward: application
 
+# --- A forward carrying an image, for the offsite Alex is planning.
+- id: venue-photo
+  folder: none
+  at: [-6, '11:20']
+  from: sami
+  to: ilse
+  subject: Lakeside venue for your offsite
+  body: |
+    Hi Ilse,
+
+    the lakeside cabin we talked about, photo attached. Sleeps twelve, sauna
+    on the jetty, 40 minutes from Tampere.
+
+    Sami
+  attachments:
+    - { name: venue-lakeside.png, png: chata-1 }
+- id: venue-fwd
+  at: [-6, '14:05']
+  from: ilse
+  subject: 'Fwd: Lakeside venue for your offsite'
+  body: |
+    Alex, Sami's venue for the offsite. Photo in his mail. Worth a visit?
+
+    Ilse
+  forward: venue-photo
+
+# --- A forward of a forward: Alex passes the application on to Mira.
+- id: application-fwd-fwd
+  folder: Sent
+  at: [-3, '09:30']
+  from: owner
+  to: mira
+  subject: 'Fwd: Fwd: Application: junior developer'
+  body: |
+    Mira, Lea mentions two shop sites in Ruby. Could she help on your shop
+    projects too, while we decide?
+
+    Alex
+  forward: application-fwd
+
 # --- HTML with an inline cid: image (multipart/related).
 - id: floor-plan
   at: [-10, '13:30']
@@ -298,6 +338,20 @@
     <p>Ilse</p>
   related:
     - { cid: floor-plan@novak.example, name: floor-plan.png, png: floor-plan }
+
+# --- A forward of an HTML mail: its cid: image is body, not an attachment.
+- id: floor-plan-fwd
+  folder: Sent
+  at: [-10, '16:00']
+  from: owner
+  to: tomas
+  subject: 'Fwd: Tampere office: floor plan'
+  body: |
+    Tomas, the Tampere floor plan from Ilse. Six desks; does that work for
+    the hiring plan?
+
+    Alex
+  forward: floor-plan
 
 # --- The board meeting notes, the .docx twin of Documents/Work.
 - id: board-notes

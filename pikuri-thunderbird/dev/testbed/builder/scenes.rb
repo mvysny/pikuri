@@ -33,9 +33,11 @@ module Pikuri
         @folders ||= begin
           scenes = YAML.safe_load(@facts.render(File.read(PATH)))
           ids = scenes.to_h { |s| [s['id'], "#{s['id']}@#{domain(s['from'])}"] }
+          by_id = scenes.to_h { |s| [s['id'], s] }
           built = {}
-          # Forwards last, so the message they carry is built.
-          scenes.sort_by { |s| s['forward'] ? 1 : 0 }.each { |s| built[s['id']] = message(s, ids, built) }
+          # On demand: a forward needs the message it carries, which may be a forward too.
+          build = ->(id) { built[id] ||= message(by_id.fetch(id), ids, build) }
+          scenes.each { |s| build.(s['id']) }
           scenes.reject { |s| s['folder'] == 'none' }
                 .group_by { |s| s['folder'] || 'Inbox' }
                 .transform_values { |list| list.map { |s| built.fetch(s['id']) } }
@@ -44,8 +46,9 @@ module Pikuri
 
       private
 
+      # @param build [Proc] scene id → its built message.
       # @return [Mail::Message]
-      def message(scene, ids, built)
+      def message(scene, ids, build)
         message = Mail.new
         message.from = @facts.person(scene['from'])
         message.to = Array(scene['to'] || 'owner').map { |k| @facts.person(k) }
@@ -59,7 +62,7 @@ module Pikuri
           message.in_reply_to = refs.last
           message.references = refs.join(' ')
         end
-        extras = attachments(scene) + Array(scene['forward'] && Mime.forwarded(built.fetch(scene['forward'])))
+        extras = attachments(scene) + Array(scene['forward'] && Mime.forwarded(build.(scene['forward'])))
         body = body_part(scene)
         top = extras.empty? ? body : Mime.multipart('mixed', [body, *extras])
         Mime.finish(message, top, scene['id'])
