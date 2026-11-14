@@ -59,8 +59,8 @@ module Pikuri
       #   shown with it. Passed as data, so each extension words it as it
       #   needs — a memory extension records a note naming each file, while a
       #   reminder that only reacts to the turn ignores them.
-      # @return [String, nil] text to inject verbatim as a system-role message
-      #   after the user message, or +nil+ to inject nothing
+      # @return [String, nil] text to append, stripped and wrapped, as a +:user+
+      #   reference block after the user message; +nil+ or blank injects nothing
       def on_user_message(content, attachments); end
 
       # This extension's system-prompt contributions, as text sections.
