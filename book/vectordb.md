@@ -356,13 +356,10 @@ summaries below tell you what each owns.
   Markdown-heading-aware and AST-aware chunkers are sketched in
   [`design/ideas/vectordb-deferrals.md`](../design/ideas/vectordb-deferrals.md) as
   quality-improvement follow-ups.
-- **Tokenizer** (`Tokenizer::CharHeuristic` /
-  `Tokenizer::LlamaServer`) — counts tokens so the chunker knows
-  when a window is full. `CharHeuristic` is the
-  one-token-per-four-chars approximation (offline, fast, slightly
-  over-counts on non-English). `LlamaServer` calls the actual
-  embedder over HTTP for an exact count, at the cost of one round
-  trip per chunk during indexing.
+- **Tokenizer** (`Tokenizer::CharHeuristic`) — counts tokens so the
+  chunker knows when a window is full: one token per four
+  characters, offline and fast. It's an approximation: close for
+  English prose, off for code or Chinese.
 - **Embedder** (`Embedder`) — a thin wrapper over `RubyLLM.embed`.
   Pins the return shape to `Array<Array<Float>>` (the indexer
   always wants the batched form) and lets tests inject a fake

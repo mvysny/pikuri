@@ -114,11 +114,10 @@ piece — each swappable via the Extension's keyword arguments:
 - **Chunker** (`Chunker::FixedWindow`) — overlapping windows,
   default 512 tokens with 50 of overlap, so an answer straddling a
   boundary survives in at least one chunk.
-- **Tokenizer** (`Tokenizer::CharHeuristic` default /
-  `Tokenizer::LlamaServer`) — counts tokens for the chunker; the
-  heuristic is the offline ~4-chars-per-token rule, the
-  `LlamaServer` variant asks the embedder's `/tokenize` endpoint
-  for an exact count.
+- **Tokenizer** (`Tokenizer::CharHeuristic`) — counts tokens for
+  the chunker, by the offline ~4-chars-per-token rule. Anything with
+  a `count(text)` method plugs into `Chunker::FixedWindow` instead,
+  for a corpus the rule miscounts.
 - **Embedder** — thin wrapper over `RubyLLM.embed`; tests inject a
   fake `#embed` without monkey-patching ruby_llm.
 - **Reranker** (`Reranker::LlamaServer`, optional) — cross-encoder

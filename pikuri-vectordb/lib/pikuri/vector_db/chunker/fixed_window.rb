@@ -24,9 +24,8 @@ module Pikuri
       #
       # *Per-chunk tokenizer cost*: the greedy "add a word, re-count" algorithm
       # calls +tokenizer.count+ O(n_words × chunks) times — negligible for
-      # {Tokenizer::CharHeuristic}, but one HTTP round-trip each for
-      # {Tokenizer::LlamaServer}, so indexing a large corpus takes minutes. A
-      # one-time boot/reindex cost, accepted for v1.
+      # {Tokenizer::CharHeuristic}, but a tokenizer behind an HTTP round-trip
+      # would turn indexing a large corpus into minutes.
       #
       # *Forward-progress guard*: the constructor rejects +overlap >= size+, and
       # the inner loop always advances at least one word — termination holds even

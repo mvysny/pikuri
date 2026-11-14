@@ -26,26 +26,4 @@ describe Pikuri::VectorDb::Tokenizer::CharHeuristic do
       assert_equal 5, tokenizer.count('abcdefghijklmnopq')
     end
   end
-
-  describe 'with a custom chars_per_token' do
-    it 'honors a denser ratio (e.g., Mandarin ≈ 2 chars/token)' do
-      tokenizer = Pikuri::VectorDb::Tokenizer::CharHeuristic.new(chars_per_token: 2.0)
-      assert_equal 8, tokenizer.count('abcdefghijklmnop') # 16 chars / 2 = 8
-    end
-
-    it 'accepts fractional ratios' do
-      # Japanese sometimes runs ~1.5 chars/token
-      tokenizer = Pikuri::VectorDb::Tokenizer::CharHeuristic.new(chars_per_token: 1.5)
-      assert_equal 7, tokenizer.count('abcdefghij') # 10 / 1.5 = 6.67 → 7
-    end
-
-    it 'rejects non-positive values' do
-      assert_raises(ArgumentError) do
-        Pikuri::VectorDb::Tokenizer::CharHeuristic.new(chars_per_token: 0)
-      end
-      assert_raises(ArgumentError) do
-        Pikuri::VectorDb::Tokenizer::CharHeuristic.new(chars_per_token: -1.0)
-      end
-    end
-  end
 end

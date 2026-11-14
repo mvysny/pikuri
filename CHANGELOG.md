@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** removed `Pikuri::VectorDb::Tokenizer::LlamaServer` and `Tokenizer::CharHeuristic`'s `chars_per_token:`, which nothing wired; the ratio is now the constant `CharHeuristic::CHARS_PER_TOKEN`. For exact counts, pass any object with `count(text)` as `Chunker::FixedWindow`'s `tokenizer:`.
 - `bin/pikuri-secretary` reads whole result pages from the engine's index (`page_text` plus `web_read_cached`) when its config keys Brave or Exa, and `Pikuri::Web::Search::Engines` leaves DuckDuckGo out of a key-derived `page_text` cascade, whose rows it can't give handles (`D_page_text_by_handle`).
 - **Breaking:** `Pikuri::Workspace::Confirmer#ask` and `#confirm?` take the asking turn's `cancellable:`, and the new `Agent::Control::Handoff` lets a confirmer wait for a human on another thread until any cancel ends the wait (`D_confirmer_sees_the_cancel`). Add `cancellable:` to your `#ask`, and pass `context.cancellable` (with `wants_context: true`) wherever a tool asks.
 - Fix `Pikuri::Workspace::Filesystem` reading a model's `~/.bashrc` as a folder named `~` inside the workspace; a leading `~` now expands to the home folder, so the path is refused as outside the workspace (or reached, when it is inside).

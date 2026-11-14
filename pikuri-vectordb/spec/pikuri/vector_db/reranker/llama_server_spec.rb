@@ -5,8 +5,7 @@ require 'faraday'
 require 'json'
 
 describe Pikuri::VectorDb::Reranker::LlamaServer do
-  # Mirror the Faraday::Adapter::Test stub pattern from
-  # tokenizer/llama_server_spec.rb so request shape + response
+  # Faraday::Adapter::Test stubs, so request shape + response
   # parsing are exercised end-to-end with the same middleware
   # production uses.
   def build_connection(&block)

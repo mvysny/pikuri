@@ -16,9 +16,9 @@ module Pikuri
     # in-process store registry). Hosts already running an engine construct the
     # backend directly and never touch this namespace.
     #
-    # Only *supervisors* (and {Container}) live here. Classes with "server"
-    # in the name that are actually HTTP *clients* — {Reranker::LlamaServer},
-    # {Tokenizer::LlamaServer} — stay in their feature namespaces.
+    # Only *supervisors* (and {Container}) live here. A class with "server"
+    # in its name that is actually an HTTP *client*, like
+    # {Reranker::LlamaServer}, stays in its feature namespace.
     module Server
     end
   end

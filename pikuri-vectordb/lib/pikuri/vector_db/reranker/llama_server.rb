@@ -23,7 +23,7 @@ module Pikuri
       # chat and embeddings — so a reranker on a keyed server isn't rejected
       # with a 401 that {Tools::Search} would quietly degrade into "no reranker".
       #
-      # Errors are loud (same posture as {Tokenizer::LlamaServer}): non-2xx,
+      # Errors are loud: non-2xx,
       # missing +results+, malformed body, +Faraday::Error+ all raise. The
       # {Tools::Search} caller catches and falls back to vector-only top-k —
       # outages degrade at the *tool* level, not by the client lying about scores.

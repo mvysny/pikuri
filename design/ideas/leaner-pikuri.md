@@ -22,9 +22,10 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   `page_text` + `web_read_cached`, else `snippets_only`; `Engines` drops DuckDuckGo from a
   key-derived `page_text` cascade). Graduated into `D_page_text_by_handle` and
   `D_secretary_wiring`. The analysis below can go when this file graduates.
-- `Q_tokenizer_seam` — vectordb `Tokenizer::LlamaServer` + the `tokenizer:` kwarg on `FixedWindow`
-  + `tokenizer.rb`, ~100 + 119 spec. Nothing builds it; `CharHeuristic`'s `chars_per_token` is never
-  set either, so the chunker could just count chars.
+- ~~`Q_tokenizer_seam`~~ **Done 2026-11-14:** dropped `Tokenizer::LlamaServer` and
+  `chars_per_token:` (now `CharHeuristic::CHARS_PER_TOKEN`). Kept `FixedWindow`'s `tokenizer:`: six
+  specs (vectordb, rag, pdf) pass a one-token-per-word fake through it, and it's where a host plugs
+  an exact tokenizer. Documented in `Tokenizer`'s yardoc.
 - `Q_librarian` — vectordb `LIBRARIAN` persona + prompt, ~60. Wired nowhere. The only reason
   pikuri-vectordb depends on pikuri-subagents at runtime (and briefing/secretary load subagents for
   nothing).

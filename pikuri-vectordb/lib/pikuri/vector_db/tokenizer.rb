@@ -2,18 +2,22 @@
 
 module Pikuri
   module VectorDb
-    # Namespace for tokenizers. Two ship: {CharHeuristic} (zero-dep default,
-    # ~4 chars/token — slight overshoot is fine, embedders truncate gracefully)
-    # and {LlamaServer} (exact via +/tokenize+, typically the embedder's own
-    # server so chunk sizing matches its vocab).
+    # Namespace for tokenizers: what {Chunker::FixedWindow} asks how full a
+    # window is. One ships, {CharHeuristic}, the offline ~4-chars-per-token
+    # rule.
     #
     # == Tokenizer protocol
     #
-    # Duck-typed, single method (like pikuri's other seams): +#count(text) ->
-    # Integer+, +0+ for empty, deterministic. Lifting it out of {Chunker} lets
-    # the chunker test against a fake, lets a future +Tiktoken+ plug in
-    # untouched, and makes the CharHeuristic/LlamaServer choice a host knob (the
-    # +chunker:+ passed to {Extension}).
+    # Duck-typed, single method: +#count(text) -> Integer+, +0+ for empty,
+    # deterministic. Specs pass a one-token-per-word fake to get exact chunk
+    # boundaries:
+    #
+    #   tokenizer = Object.new
+    #   def tokenizer.count(text) = text.split.length
+    #   Chunker::FixedWindow.new(size: 7, overlap: 2, tokenizer: tokenizer)
+    #
+    # A host whose corpus the heuristic miscounts (code, CJK) plugs an exact
+    # tokenizer in the same way.
     module Tokenizer
     end
   end
