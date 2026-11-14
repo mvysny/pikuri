@@ -29,7 +29,9 @@ module Pikuri
     # key binding, a slash command) and a feature on top (a plan mode the model
     # enters and leaves through {#activate!}/{#deactivate!}) flip the *same*
     # instance. {#on_change} lets an observer (one re-emitting it as a domain
-    # event on the agent's stream) render the posture continuously.
+    # event on the agent's stream) render the posture continuously. Observers
+    # append and remove their own ({#remove_on_change}); there is no setter and
+    # no +clear+, so no subscriber can silently drop another's.
     #
     # == Not an Agent control
     #
@@ -91,16 +93,40 @@ module Pikuri
       end
 
       # Register a callback fired once per real transition, with the new state.
-      # Guarded so a late registration races safely with a concurrent flip.
+      # Returns the block, so a subscriber that dies before the flag can hold it
+      # and remove itself:
+      #
+      #   cb = read_only.on_change { |active| c.emit_event(PlanModeChanged.new(active: active)) }
+      #   c.on_close { read_only.remove_on_change(cb) }
+      #
+      # Callbacks fire in registration order; one that raises aborts the fan-out
+      # and propagates.
       #
       # @yieldparam active [Boolean] the new posture
-      # @return [void]
+      # @return [Proc] the registered block, for {#remove_on_change}
       # @raise [ArgumentError] when called without a block
       def on_change(&blk)
         raise ArgumentError, 'on_change requires a block' unless block_given?
 
         @mutex.synchronize { @on_change << blk }
-        nil
+        blk
+      end
+
+      # Remove the first registration of +callable+; one remove balances one
+      # {#on_change}. The flag is host-owned and outlives every agent built on
+      # it, so an agent-scoped subscriber that never removes itself pins its
+      # closed agent, whole conversation included, for the life of the flag.
+      #
+      # A flip already fanning out on another thread may still call it once.
+      #
+      # @param callable [Proc] what {#on_change} returned
+      # @return [Boolean] whether it was registered
+      def remove_on_change(callable)
+        @mutex.synchronize do
+          index = @on_change.index { _1 == callable }
+          @on_change.delete_at(index) if index
+          !index.nil?
+        end
       end
 
       # @return [String] short label for debug prints; reflects the

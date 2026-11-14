@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `Pikuri::Workspace::ReadOnly#remove_on_change`; `#on_change` now returns the block it registered, so a subscriber that dies before the flag, like an agent after a `/clear`, removes itself instead of pinning its closed conversation.
 - **Breaking:** the HTML → Markdown extractor moved from pikuri-web to the new `pikuri-html` gem as `Pikuri::Extractors::HTML`, still registered on require; pikuri-web depends on it (`D_html_own_gem`). Rename `Pikuri::Web::HTML`, and require `pikuri-html` instead of pikuri-web where you only want rendered HTML.
 - `Pikuri::Extractors::HTML` keeps text the markup hides (`hidden`, inline `display: none` or `visibility: hidden`), labelled `[hidden in the original: …]`.
 - `bin/pikuri-thunderbird` requires pikuri-html, so `thunderbird_mail_attachment_read` renders an HTML attachment as Markdown instead of raw markup.

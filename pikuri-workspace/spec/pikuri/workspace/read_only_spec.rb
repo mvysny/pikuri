@@ -90,6 +90,44 @@ RSpec.describe Pikuri::Workspace::ReadOnly do
     it 'requires a block' do
       assert_raises(ArgumentError) { described_class.new.on_change }
     end
+
+    it 'returns the registered block' do
+      blk = proc { |_active| nil }
+      assert_same blk, described_class.new.on_change(&blk)
+    end
+  end
+
+  describe '#remove_on_change' do
+    it 'stops the removed callback, leaving the others' do
+      flag = described_class.new
+      a = []
+      b = []
+      cb = flag.on_change { |s| a << s }
+      flag.on_change { |s| b << s }
+
+      assert flag.remove_on_change(cb)
+      flag.activate!
+
+      assert_empty a
+      assert_equal [true], b
+    end
+
+    it 'answers false for a callable that is not registered' do
+      refute described_class.new.remove_on_change(proc { nil })
+    end
+
+    it 'removes one registration per call' do
+      flag = described_class.new
+      seen = []
+      cb = proc { |s| seen << s }
+      flag.on_change(&cb)
+      flag.on_change(&cb)
+
+      flag.remove_on_change(cb)
+      flag.activate!
+
+      assert_equal [true], seen
+    end
   end
 
   describe 'cross-thread transitions' do
