@@ -313,6 +313,21 @@ with nothing else in the way, the sister project
 is written exactly for that. Pikuri uses the same shape, just
 wrapped in tools, listeners, and sub-agents.
 
+Step 1 hides one thing. "The running conversation" is a list of
+messages, one per turn, tool call and observation, but the model
+reads one string. Turning the list into that string is the job of
+a **chat template**, a small program that ships inside the GGUF
+file and that `llama-server --jinja` runs on every request. It's
+code you didn't write, and it doesn't have to keep every message:
+Ornith-1.5's template, like Qwen3.6's, quietly drops a `system`
+message anywhere but the very start of the conversation. Nothing
+errors; the model just never sees it. That's why pikuri never adds
+a system message mid-conversation, and why, when an agent behaves
+as though it's ignoring you, the first thing to check is what the
+model actually read. Book 2's
+[The messages array is not the prompt](https://github.com/mvysny/pikuri-workshop/blob/master/book/wire.md)
+shows how to look.
+
 ## The bundled tools
 
 The ones `pikuri-chat` wires. `calculator` is pikuri-core's one

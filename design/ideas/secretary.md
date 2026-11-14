@@ -9,7 +9,7 @@ into Thunderbird's compose window, an event handed to Thunderbird's import, a me
 a note edited, and the memory used after a restart. **Its chapter, `book/secretary.md`, is
 written** (2026-11-13), from transcripts captured on the Thunderbird testbed,
 `pikuri-thunderbird/dev/testbed/` with `dev/demo-home/` (`D_thunderbird_testbed`). What's left here is the open questions
-below; [`book-rework.md`](book-rework.md) owns the book, this file owns the demo.
+below.
 
 ## What it is
 
@@ -135,7 +135,7 @@ live there too.
 
 **The model is Ornith-1.5**, `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M` (agreed 2026-11-12,
 was `Q_tool_count` and `Q_model_default`), and it becomes the whole book's default, not the
-secretary's alone (the switch is [`book-rework.md`](book-rework.md)'s). The secretary wires
+secretary's alone. The secretary wires
 about 15 tools: rag (2–3), thunderbird (~8), write/edit, search, calculator. Design for the
 best tool set, not the smallest, and count on local models improving: if Siri's on-device 4B
 dense model routes among this many, Ornith-1.5 and Qwen3.6-35B-A3B should too. To be tested,

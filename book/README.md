@@ -28,6 +28,10 @@ on purpose and shows what keeps that in bounds. Hosting steps outside
 the single-agent shape, and the coda points at the apps built on
 pikuri.
 
+Each chapter has its own small demo binary rather than one example
+grown chapter by chapter: a demo shows one idea and one trifecta
+shape, so you can see what each chapter adds and what it costs.
+
 Running code you didn't write — a shell and its sandbox, the OS
 assistant, the coding agent, MCP, skills, language servers — is
 [book 2, the workshop](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md).

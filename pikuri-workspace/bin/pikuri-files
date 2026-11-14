@@ -9,6 +9,9 @@
 # shown to you as a diff before it lands, and you approve, edit or decline
 # it. There is no network tool, so nothing the model reads can leave the
 # machine. Walk-through: the touching-files chapter of the book.
+#
+# Its own binary rather than a flag on pikuri-chat, which stays the book's
+# simplest program.
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
