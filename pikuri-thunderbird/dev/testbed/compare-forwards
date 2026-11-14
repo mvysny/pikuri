@@ -1,0 +1,67 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev tooling, for whoever develops pikuri. Checks that a forwarded mail's
+# attachment list (Pikuri::Thunderbird::ForwardedMail) matches what Gloda
+# lists for the same mail at top level, on the built testbed
+# (pikuri-thunderbird/dev/testbed/build first):
+#
+#   pikuri-thunderbird/dev/testbed/compare-forwards
+#   # OK   claim-form-fwd@novak.example: ["claim-form.pdf", "image002.png", "winmail.dat"]
+#   # FAIL venue-quote-fwd@novak.example: gloda ["lakeside-quote.pdf"], ours []
+#
+# A forward whose original lives only inside it (mail.yml's folder: none)
+# has no Gloda row to compare with, and is skipped. Exits 1 on a mismatch.
+# Re-run it after a new fixture in mail/ or a change to ForwardedMail.
+
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../../Gemfile', __dir__)
+require 'bundler/setup'
+require 'json'
+require 'mail'
+require 'sqlite3'
+require 'pikuri-core'
+require 'pikuri-thunderbird'
+
+Dir[File.expand_path('../../../dev/demo-home/builder/*.rb', __dir__)].each { |f| require f }
+Dir[File.expand_path('builder/*.rb', __dir__)].each { |f| require f }
+
+profile = Pikuri::Demo::Target.new.profile_dir
+gloda_file = File.join(profile, 'global-messages-db.sqlite')
+abort "No indexed testbed at #{profile}; run pikuri-thunderbird/dev/testbed/build first." unless File.file?(gloda_file)
+
+db = SQLite3::Database.new(gloda_file, readonly: true)
+infos_id = db.get_first_value("SELECT id FROM attributeDefinitions WHERE name = 'attachmentInfos'").to_s
+gloda_names = lambda do |message_id|
+  json = db.get_first_value('SELECT jsonAttributes FROM messages WHERE headerMessageID = ? AND folderID IS NOT NULL',
+                            [message_id])
+  json && (JSON.parse(json)[infos_id] || []).map(&:first)
+end
+
+# The names ForwardedMail lists, read back off its rendered text.
+listed = lambda do |bytes|
+  listing = Pikuri::Thunderbird::ForwardedMail.render(bytes)[/^Attachments.*?(?=\n\n)/m]
+  listing.lines(chomp: true).drop(1).map { _1[/\A  - (.*) \((?:forwarded email|[^,]+, [^)]+)\)\z/, 1] }
+end
+
+mboxes = Dir[File.join(profile, Pikuri::Demo::Builder::MAIL_DIR, '*')].select { File.file?(_1) && File.extname(_1).empty? }
+messages = mboxes.flat_map { File.binread(_1).split(/\r\n(?=From - )/) }
+                 .map { Mail.new(_1.sub(/\AFrom - [^\r\n]*\r\n/, '')) }
+
+failures = 0
+messages.select(&:multipart?).each do |outer|
+  outer.parts.select { _1.mime_type == 'message/rfc822' }.each do |forward|
+    bytes = forward.body.decoded
+    original = Mail.new(bytes).message_id
+    expected = gloda_names.(original)
+    next puts("skip #{outer.message_id}: #{original} is not indexed top-level") unless expected
+
+    ours = listed.(bytes)
+    if ours == expected
+      puts "OK   #{outer.message_id}: #{ours.inspect}"
+    else
+      failures += 1
+      puts "FAIL #{outer.message_id}: gloda #{expected.inspect}, ours #{ours.inspect}"
+    end
+  end
+end
+exit(failures.zero? ? 0 : 1)

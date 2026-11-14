@@ -34,8 +34,9 @@ The testbed's forwards: `application-fwd` (a `.docx` inside), `venue-fwd`
 (an image), `floor-plan-fwd` (a `cid:` image that stays body),
 `application-fwd-fwd` (a forward of a forward), and `venue-quote-fwd`,
 `claim-form-fwd`, `statement-fwd` (the other clients' trees). Each of the
-last three has its original in the Inbox, so the comparison with Gloda can be
-re-run. The path handle's spec should read the CV through `application-fwd`
+last three has its original in the Inbox, so
+`pikuri-thunderbird/dev/testbed/compare-forwards` checks them against Gloda;
+re-run it once the listing is numbered. The path handle's spec should read the CV through `application-fwd`
 (`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`), and Apple Mail's PDF
 through `venue-quote-fwd`.
 

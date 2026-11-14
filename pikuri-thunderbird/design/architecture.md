@@ -378,7 +378,8 @@ A complete, pre-decoded search index. Tables that matter:
 - **What `attachmentInfos` lists** (testbed, 159). Thunderbird's C++
   MIME code decides this, so the rule is measured, not read off source;
   `ForwardedMail` follows it, and `dev/testbed/mail/*.eml` holds the
-  Apple Mail, Outlook and odd-leaf trees it was measured on.
+  Apple Mail, Outlook and odd-leaf trees it was measured on;
+  `dev/testbed/compare-forwards` re-checks the two agree.
   - A **file name, or `Content-Disposition: attachment` alone**, lists a
     leaf at any depth: Apple Mail's PDF inside
     `alternative > mixed > [html, pdf, html]` too. A leaf with no name
