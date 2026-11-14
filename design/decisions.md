@@ -3178,6 +3178,17 @@ set-but-empty is not unset, and `RUBYOPT=""` is itself a legitimate setting
 already spells removal as `nil`, and `BundlerEnv` relies on it, so a second
 spelling would need a translation layer where none exists today.
 
+**Why `BundlerEnv` lives in pikuri-core.** Its Ruby-serving consumers are all
+in pikuri-workshop — pikuri-code's `Bash`, pikuri-lsp and pikuri-mcp; in pikuri
+only `Thunderbird::Launcher` uses it, for the user's own long-lived Thunderbird.
+Core still owns it: pikuri's `bin/` convention (`bundler/setup`) is what
+pollutes the environment, so the undo belongs beside the cause, and it is the
+other half of `Subprocess.spawn`'s `nil`-unsets `env:` contract. Every workshop
+home is worse — the three consumers share no dependency but pikuri-core, ~10
+lines don't earn a gem, routing lsp and mcp through pikuri-code would drag
+pikuri-workspace and pikuri-subagents into mcp, and three copies would triplicate the
+`BUNDLER_ORIG_*` restore this entry argues for.
+
 ---
 
 ## D_reference_text_as_user_turn — Why is mid-conversation reference text a wrapped `:user` turn rather than `:system`?

@@ -56,10 +56,15 @@ module Pikuri
 
       private
 
+      # De-bundlerized ({Pikuri::BundlerEnv}): a Thunderbird not yet running
+      # starts here as the user's own instance, outlives pikuri, and passes its
+      # environment to everything it launches.
+      #
       # @param arg [String] the argument to open.
       # @return [Object] the {Pikuri::Subprocess} wait result.
       def detached_spawn(arg)
-        Pikuri::Subprocess.spawn('setsid', '--fork', @thunderbird_bin, arg, chdir: Dir.home).wait
+        Pikuri::Subprocess.spawn('setsid', '--fork', @thunderbird_bin, arg,
+                                 chdir: Dir.home, env: Pikuri::BundlerEnv.clean_delta).wait
       end
 
       # @param bin [String] a PATH name or absolute path.
