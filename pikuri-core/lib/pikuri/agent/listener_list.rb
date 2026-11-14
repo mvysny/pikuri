@@ -5,8 +5,7 @@ module Pikuri
     # Listener-list value object an {Agent} owns: wraps an +Array+ of
     # {Listener::Base} and fans {#emit} out to each.
     #
-    # One job: fan out. The +Agent+ wires ruby_llm's callbacks itself, the
-    # context cap rides the stream as a one-shot {Event::ContextCap}, and the
+    # One job: fan out. The +Agent+ wires ruby_llm's callbacks itself, and the
     # sub-agent derivation rule lives in {#for_sub_agent}. Controls are not
     # listeners and don't appear here.
     class ListenerList

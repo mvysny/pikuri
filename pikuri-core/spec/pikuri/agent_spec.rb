@@ -263,52 +263,11 @@ RSpec.describe Pikuri::Agent do
       assert_equal 'researcher 0', agent.id
     end
 
-    it 'emits a one-shot Event::ContextCap at construction so TokenLog can pick the cap up' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 32_768),
-                        system_prompt: 's') do |c|
-        c.add_listener recorder
-      end
-
-      cap_events = recorder.events.select { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) }
-      assert_equal 1, cap_events.size
-      assert_equal 32_768, cap_events.first.cap
-    end
-
-    describe 'the stated cap' do
-      let(:token_log) { Pikuri::Agent::Listener::TokenLog.new }
-
-      def wire_token_log(c)
-        c.add_listener recorder
-        c.add_listener token_log
-      end
-
-      it 'pushes the stated cap onto every TokenLog via the ContextCap event' do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 32_768),
-                          system_prompt: 's') { |c| wire_token_log(c) }
-
-        assert_equal 32_768, token_log.context_window_cap
-      end
-
-      it 'announces no cap when the transport states none, and a turn announces nothing more' do
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.from_openai_server(
-          server: 'http://127.0.0.1:9', model: 'm'
-        ), system_prompt: 's') { |c| wire_token_log(c) }
-        agent.run_loop(user_message: 'hi')
-
-        caps = recorder.events.grep(Pikuri::Agent::Event::ContextCap)
-        assert_equal [nil], caps.map(&:cap)
-        assert_nil token_log.context_window_cap
-      end
-    end
-
     describe 'switching models via run_loop(transport:)' do
-      let(:token_log) { Pikuri::Agent::Listener::TokenLog.new }
-
       def build_agent
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 8_192),
                           system_prompt: 's') do |c|
           c.add_listener recorder
-          c.add_listener token_log
         end
       end
 
@@ -352,7 +311,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal [{ vision: true }], seen
       end
 
-      it 'adopts a transport differing only in stated facts without switching, emitting ContextCap alone' do
+      it 'adopts a transport differing only in stated facts silently, without switching' do
         agent = build_agent
         recorder.events.clear
         restated = Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 64_000,
@@ -362,10 +321,7 @@ RSpec.describe Pikuri::Agent do
         assert_nil fake_chat.model_switches
         assert_nil fake_chat.contexts
         assert_same restated, agent.transport
-        assert_equal 64_000, token_log.context_window_cap
-        refute(recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) })
-        assert_equal [Pikuri::Agent::Event::ContextCap, Pikuri::Agent::Event::UserTurn],
-                     recorder.events.map(&:class).first(2)
+        assert_equal Pikuri::Agent::Event::UserTurn, recorder.events.first.class
       end
 
       it "refuses an attachment by a fact update's modalities on the same turn" do
@@ -379,7 +335,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal({ vision: false }, agent.transport.modalities)
       end
 
-      it 'emits ModelSwitched then a fresh ContextCap on a switch' do
+      it "emits ModelSwitched ahead of the turn's UserTurn on a switch" do
         agent = build_agent
         recorder.events.clear
         agent.run_loop(user_message: 'hi',
@@ -387,27 +343,12 @@ RSpec.describe Pikuri::Agent do
                          model: 'big', provider: :openai, assume_model_exists: true
                        ))
 
-        kinds = recorder.events.map(&:class)
-        switched = kinds.index(Pikuri::Agent::Event::ModelSwitched)
-        cap = kinds.index(Pikuri::Agent::Event::ContextCap)
-        refute_nil switched
-        refute_nil cap
-        assert switched < cap, 'ModelSwitched must precede the new ContextCap'
+        assert_equal [Pikuri::Agent::Event::ModelSwitched, Pikuri::Agent::Event::UserTurn],
+                     recorder.events.map(&:class).first(2)
 
         ev = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) }
         assert_equal 'm', ev.from.model
         assert_equal 'big', ev.to.model
-      end
-
-      it "adopts the new transport's own cap on a switch (no bleed from the old one)" do
-        agent = build_agent
-        agent.run_loop(user_message: 'hi',
-                       transport: Pikuri::Agent::ChatTransport.new(
-                         model: 'big', provider: :openai, assume_model_exists: true,
-                         context_window: 2_000_000
-                       ))
-
-        assert_equal 2_000_000, token_log.context_window_cap
       end
 
       it 'drops the cap to nil when switching to a capless transport' do
@@ -419,7 +360,6 @@ RSpec.describe Pikuri::Agent do
                        ))
 
         assert_nil agent.transport.context_window
-        assert_nil token_log.context_window_cap
       end
 
       it 'routes a cross-server switch through with_context then with_model' do
@@ -601,10 +541,6 @@ RSpec.describe Pikuri::Agent do
       # Providers that keep :system in the array complete the turn instead.
       # (Mid-conversation bare turns proceed everywhere; covered under the
       # host-driven-load specs.)
-      #
-      # Force eager construction so the ContextCap event emitted at
-      # construction time doesn't get attributed to run_loop's
-      # observable behaviour.
       let!(:agent) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's') { |c| c.add_listener recorder }
@@ -733,7 +669,7 @@ RSpec.describe Pikuri::Agent do
       msg = fake_chat.add_assistant('**hi**', thinking: 'pondered')
       fake_chat.fire(:after_message, msg)
 
-      assistant_events = recorder.events.reject { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) }
+      assistant_events = recorder.events
       assert_equal(
         [
           Pikuri::Agent::Event::Thinking.new(content: 'pondered'),
@@ -1356,30 +1292,30 @@ RSpec.describe Pikuri::Agent do
       assert_equal %w[tt uu], fake_chat.tools.values.map(&:name)
     end
 
-    it 'lets the block add listeners via c.add_listener; ContextCap reaches them' do
+    it 'lets the block add listeners via c.add_listener; the turn reaches them' do
       block_recorder = Pikuri::Agent::Listener::InMemoryEventList.new
 
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's') do |c|
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
         c.add_listener(block_recorder)
       end
+      agent.run_loop(user_message: 'hi')
 
-      # ContextCap fires at the end of #initialize so any listener
-      # added in the block must see it.
-      assert(block_recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
+      assert(block_recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::UserTurn) })
     end
 
     it 'lets the block add a batch of listeners via c.add_listeners (accepting a ListenerList)' do
       first  = Pikuri::Agent::Listener::InMemoryEventList.new
       second = Pikuri::Agent::Listener::InMemoryEventList.new
 
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's') do |c|
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
         c.add_listeners(Pikuri::Agent::ListenerList.new([first, second]))
       end
+      agent.run_loop(user_message: 'hi')
 
-      assert(first.events.any?  { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
-      assert(second.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
+      assert(first.events.any?  { |e| e.is_a?(Pikuri::Agent::Event::UserTurn) })
+      assert(second.events.any? { |e| e.is_a?(Pikuri::Agent::Event::UserTurn) })
     end
 
     it 'assembles the base prompt with each extension system_prompt_snippets, blank-line separated' do

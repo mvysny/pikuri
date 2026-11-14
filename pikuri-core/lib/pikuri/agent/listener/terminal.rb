@@ -15,7 +15,7 @@ module Pikuri
       #   → Write(lib/shared/config.rb)
       #   = Added 2 lines, removed 3 lines
       #
-      # {Event::UserTurn} / {Event::Tokens} / {Event::ContextCap} are silent
+      # {Event::UserTurn} / {Event::Tokens} are silent
       # (echo, or {TokenLog}'s business); {Event::SystemInjected} renders dim
       # grey with a +⊕+ marker. Any unrecognized event — notably a gem
       # *domain* event — renders generically via its +to_s+ (dim grey, +·+
@@ -124,9 +124,8 @@ module Pikuri
             println(indent(Rainbow("⇄ model: #{from.model} → #{to.model}").magenta))
           in Event::Cancelled
             println(indent(Rainbow('! cancelled').red))
-          in Event::UserTurn | Event::Tokens | Event::ContextCap
-            # Silent: UserTurn echoes just-typed input; Tokens/ContextCap are
-            # TokenLog's. (Non-streaming deltas no-op in their branches above.)
+          in Event::UserTurn | Event::Tokens
+            # Silent: UserTurn echoes just-typed input; Tokens are TokenLog's. (Non-streaming deltas no-op in their branches above.)
           else
             # Any other event — notably a gem *domain* event — renders via its
             # own to_s; core needs no knowledge of the type. A richer host

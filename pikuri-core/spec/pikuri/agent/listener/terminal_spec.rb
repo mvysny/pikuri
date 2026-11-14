@@ -76,11 +76,6 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     assert_equal '', out
   end
 
-  it 'is silent for ContextCap events' do
-    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768)) }
-    assert_equal '', out
-  end
-
   it 'prints Cancelled notice in red' do
     out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Cancelled.new) }
     assert_includes out, 'cancelled'

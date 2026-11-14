@@ -130,18 +130,10 @@ module Pikuri
       # - +model_id+ — provider-side model name on the response.
       Tokens = Data.define(:input, :output, :cached, :cache_creation, :thinking, :model_id)
 
-      # The transport's stated context-window cap (+nil+ if unknown). Emitted
-      # at construction, and again whenever {Agent#run_loop} takes a
-      # +transport:+ that switches model or restates the cap — before that
-      # turn's {UserTurn}. A later ContextCap overwrites the prior; the
-      # running context size is not re-baselined.
-      ContextCap = Data.define(:cap)
-
       # Agent switched model mid-conversation. Emitted by {Agent#run_loop}
-      # ahead of the new model's {ContextCap}. Carries both
-      # {Agent::ChatTransport}s verbatim and unformatted — each chrome
-      # presents them its own way. The new cap rides on the paired
-      # {ContextCap}, not here.
+      # ahead of that turn's {UserTurn}. Carries both {Agent::ChatTransport}s
+      # verbatim and unformatted — each chrome presents them its own way; the
+      # new model's stated cap and modalities ride on +to+.
       ModelSwitched = Data.define(:from, :to)
 
       # Out-of-band notice that the user cancelled the in-flight turn via

@@ -109,49 +109,17 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
     end
   end
 
-  describe 'Event::ContextCap dispatch' do
-    it 'picks the cap off a ContextCap event and stores it' do
-      listener = described_class.new
-      assert_nil listener.context_window_cap
+  it 'renders ctx in absolute tokens, with no cap' do
+    listener = described_class.new
+    listener.on_event(tokens(input: 10_240))
 
-      listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
-
-      assert_equal 32_768, listener.context_window_cap
-    end
-
-    it 'accepts nil so an agent without a detected cap still emits a one-shot event' do
-      listener = described_class.new
-      listener.context_window_cap = 16_000
-
-      listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: nil))
-
-      assert_nil listener.context_window_cap
-    end
-
-    it 'with a cap set, renders ctx as <used>/<cap> in the log line' do
-      listener = described_class.new
-      listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
-
-      listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
-
-      # used = 1024 + 9216 + 1024 = 11264 → 11.0k; cap = 32768 → 32.0k.
-      line = buf.string.lines.first
-      assert_includes line, 'ctx=11.0k/32.0k'
-      assert_includes line, 'Δ+11.0k'
-    end
-
-    it 'with no cap event, renders ctx as <used> only (no slash form)' do
-      listener = described_class.new
-      listener.on_event(tokens(input: 10_240))
-
-      line = buf.string.lines.first
-      assert_includes line, 'ctx=10.0k '
-      refute_includes line, 'ctx=10.0k/'
-    end
+    line = buf.string.lines.first
+    assert_includes line, 'ctx=10.0k '
+    refute_includes line, 'ctx=10.0k/'
   end
 
   describe 'irrelevant event variants' do
-    it 'is a no-op for every non-Tokens, non-ContextCap variant' do
+    it 'is a no-op for every non-Tokens variant' do
       listener = described_class.new
 
       [
@@ -187,9 +155,8 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
   end
 
   describe '#for_sub_agent' do
-    it 'returns a fresh TokenLog with a zeroed snapshot and nil cap' do
+    it 'returns a fresh TokenLog with a zeroed snapshot' do
       original = described_class.new
-      original.context_window_cap = 32_768
       original.on_event(tokens(input: 10_240))
       refute_equal 0, original.context_window_size
 
@@ -197,7 +164,6 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
 
       refute_same original, derived
       assert_equal 0, derived.context_window_size
-      assert_nil derived.context_window_cap
     end
 
     it 'ignores unrelated params forwarded by ListenerList#for_sub_agent' do
@@ -300,12 +266,11 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
                     ['', 'msg #2: ctx=14.0k  Δ+3.0k  ↑2.0k  ↓2.0k']], pushed
     end
 
-    it 'does not fire on non-Tokens variants (ContextCap only updates the cap)' do
+    it 'does not fire on non-Tokens variants' do
       pushed = []
       listener = described_class.new
       listener.on_status_line = ->(id, line) { pushed << [id, line] }
 
-      listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
       listener.on_event(Pikuri::Agent::Event::Assistant.new(content: 'reply'))
 
       assert_equal [], pushed
@@ -353,14 +318,6 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       listener.on_event(tokens(input: 1024, cached: 11_321))
 
       assert_equal 'TokenLog(ctx=12.1k)', listener.to_s
-    end
-
-    it 'shows ctx as <used>/<cap> when a context_window_cap has been received' do
-      listener = described_class.new
-      listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
-      listener.on_event(tokens(input: 1024, cached: 11_321))
-
-      assert_equal 'TokenLog(ctx=12.1k/32.0k)', listener.to_s
     end
   end
 end

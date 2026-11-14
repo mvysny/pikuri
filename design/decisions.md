@@ -708,13 +708,14 @@ load. The next asks were more servers — vLLM's `max_model_len`, Ollama's `/api
 
 **Decision.** `Agent` never probes. Its cap is `ChatTransport#context_window`, its modalities
 `ChatTransport#modalities`, as the host states them; unstated is `nil`, shown as no cap, and
-refuses no attachment. `ContextCap` goes out at construction and on every `run_loop(transport:)`
-that switches model *or* only restates those facts — a transport differing only in
-`context_window` / `modalities` is the same model, so it rebuilds no connection, strips no
-thinking and emits no `ModelSwitched`. That fact-only path is how a host that probes hands the
-agent what it learnt. The probe itself moved to pikuri-workshop's `pikuri-conversations` gem,
-which already owns the request throttle the probe's `total_slots` sizes, keeps the
-wait-for-the-turn rule above, and caches per server and model across conversations.
+refuses no attachment. Nothing in core reads the cap or announces it: no event carries it, and
+`TokenLog` prints `ctx=8.4k` in absolute tokens. A `run_loop(transport:)` differing only in
+`context_window` / `modalities` is the same model, adopted silently — it rebuilds no connection,
+strips no thinking and emits no `ModelSwitched`. That fact-only path is how a host that probes
+hands the agent what it learnt. The probe itself moved to pikuri-workshop's `pikuri-conversations`
+gem, which already owns the request throttle the probe's `total_slots` sizes, keeps the
+wait-for-the-turn rule above, caches per server and model across conversations, and announces
+the cap to its own listeners with an event of its own.
 
 It fails the placement test (`D_gem_placement`): llama.cpp-specific HTTP whose future is more
 servers is a feature, not explaining better. And no single bin needs it: the cap is a cosmetic
@@ -730,13 +731,17 @@ already goes out.
   many conversations, or a sub-agent with an unstated cap, re-asks the same server; nothing in an
   agent outlives it to cache the answer, and the slot count it learns is for a throttle core no
   longer has (`D_llm_request_throttle`).
+- **Keep a cap event in core** (`Event::ContextCap`), emitted from the stated cap. Its only
+  reader was `TokenLog`'s `/cap` suffix, which no bin feeds once nothing probes; and the host that
+  learns a cap is the one that should announce it, when it learns it.
 - **An `Agent#transport=` writer for the switch.** `pikuri-conversations` validates a turn's
   attachments before handing `run_loop` the picked transport, so the switch is never lost to a
   turn that dies before its top; a second door to the same switch earns nothing yet.
 
 **Consequences.**
 
-- **A bin that states no cap shows none** — `ctx=8.4k`, no denominator — rather than a guess.
+- **pikuri shows no cap** — `TokenLog` reads `ctx=8.4k`, never `8.4k/32.0k`; a host that knows the
+  cap reads `agent.transport.context_window` and shows it itself.
 - **A bin that states no modalities sends an image to a blind model**, and the server's 500
   speaks, retries and a poisoned history included (`D_refuse_unsupported_attachments`). A host
   that knows its models states them on the transport.
@@ -4274,8 +4279,9 @@ window, which pikuri-workshop's `pikuri-conversations` does
   fallback that lies is indistinguishable from one that works until it
   silently truncates.
 
-**Consequences.** A bin that states no cap shows none — `ctx=8.4k`, no
-denominator — deliberately, rather than the registry's guess.
+**Consequences.** A host that states no cap shows none, deliberately, rather
+than the registry's guess; pikuri's own `TokenLog` shows no cap at all
+(`D_deferred_cap_probe`).
 
 ---
 

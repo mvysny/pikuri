@@ -7,19 +7,19 @@ module Pikuri
       # turn via +Pikuri.logger_for('Tokens')+ — a running headline to catch
       # growth before the provider raises
       # +RubyLLM::ContextLengthExceededError+. Consumes {Event::Tokens} (one
-      # line each), {Event::ContextCap} (caches the cap, refreshed on a model
-      # switch), and {Event::HistoryLoaded} (seed the snapshot, see
+      # line each) and {Event::HistoryLoaded} (seed the snapshot, see
       # {#seed_snapshot}); every other variant is a no-op.
       #
       # == Log line shape
       #
-      #   msg #1: ctx=6.8k  Δ+6.8k  ↑6.8k  ↓0.0k          # no cap
-      #   msg #2: ctx=8.4k/32.0k  Δ+1.6k  ↑1.0k  ↓0.6k    # cap 32k
+      #   msg #1: ctx=6.8k  Δ+6.8k  ↑6.8k  ↓0.0k
+      #   msg #2: ctx=8.4k  Δ+1.6k  ↑1.0k  ↓0.6k
       #   [researcher 0] msg #1: ctx=4.2k  ...            # sub-agent (Agent#id)
       #
       # +ctx+ is the through-this-turn snapshot (+input + cached +
-      # cache_creation + output+; see {Event::Tokens}), suffixed +/<cap>+ when
-      # {#context_window_cap} is set. +Δ+ is the signed climb between turns
+      # cache_creation + output+; see {Event::Tokens}), in absolute tokens: a
+      # host that knows the model's cap ({Agent::ChatTransport#context_window}) shows
+      # it beside. +Δ+ is the signed climb between turns
       # (equal to +ctx+ on msg #1); +↑+/+↓+ are this turn's input/output
       # (Claude Code's convention). Sizes are 1024-scaled with a +k+ suffix.
       #
@@ -38,14 +38,6 @@ module Pikuri
         #
         # @return [Integer]
         attr_reader :context_window_size
-
-        # Model's context-window cap, or +nil+ if the transport states none
-        # ({Agent::ChatTransport#context_window}). When set, +ctx+ renders as
-        # +<used>/<cap>+. Picked off the one-shot {Event::ContextCap}; a bare
-        # instance (tests, {#for_sub_agent}) defaults to +nil+.
-        #
-        # @return [Integer, nil]
-        attr_accessor :context_window_cap
 
         # @return [String] owning agent's id ({Agent#id}); empty for the main
         #   agent, set by {#for_sub_agent} so log lines get an +[<id>] + prefix.
@@ -90,7 +82,6 @@ module Pikuri
           @id = id
           @msg = 0
           @context_window_size = 0
-          @context_window_cap = nil
           @status_line = ''
           @on_status_line = nil
         end
@@ -98,8 +89,7 @@ module Pikuri
         # Sub-agent variant: a fresh +TokenLog+ with a zeroed snapshot so the
         # sub-agent tracks its own +RubyLLM::Chat+, carrying the sub-agent's
         # +id:+ (for the +[<id>] + prefix) and the {#on_status_line} observer
-        # by reference. The cap stays +nil+ — the sub-agent's own
-        # {Event::ContextCap} refills it.
+        # by reference.
         #
         # @param id [String] sub-agent's id
         # @return [TokenLog]
@@ -115,8 +105,6 @@ module Pikuri
           case event
           in Event::Tokens => tokens
             log_tokens(tokens)
-          in Event::ContextCap(cap:)
-            @context_window_cap = cap
           in Event::HistoryLoaded(tokens:)
             seed_snapshot(tokens)
           else
@@ -125,10 +113,9 @@ module Pikuri
         end
 
         # @return [String] short label for {Agent#to_s}, including
-        #   the current context-window size (with cap suffix when
-        #   set)
+        #   the current context-window size
         def to_s
-          "TokenLog(ctx=#{format_ctx})"
+          "TokenLog(ctx=#{format_k(@context_window_size)})"
         end
 
         private
@@ -150,7 +137,7 @@ module Pikuri
 
           @context_window_size = tokens.input.to_i + tokens.cached.to_i +
                                  tokens.cache_creation.to_i + tokens.output.to_i
-          @status_line = "restored: ctx=#{format_ctx}"
+          @status_line = "restored: ctx=#{format_k(@context_window_size)}"
           @on_status_line&.call(@id, @status_line)
           nil
         end
@@ -179,16 +166,7 @@ module Pikuri
 
         def format_line(input, output, delta)
           sign = delta.negative? ? '-' : '+'
-          "msg ##{@msg}: ctx=#{format_ctx}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
-        end
-
-        # +<used>+ with no cap, +<used>/<cap>+ with one. Shared by
-        # {#format_line} and {#to_s}.
-        def format_ctx
-          base = format_k(@context_window_size)
-          return base if @context_window_cap.nil?
-
-          "#{base}/#{format_k(@context_window_cap)}"
+          "msg ##{@msg}: ctx=#{format_k(@context_window_size)}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
         end
 
         # Format a token count as a 1024-scaled +k+-suffixed string

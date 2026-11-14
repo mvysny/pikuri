@@ -34,15 +34,13 @@ below).
 
 The number exists; it just points at the human.
 
-- {Pikuri::Agent::ChatTransport#context_window}, stated by the host, emitted as
-  `Event::ContextCap` at construction and on every switch.
+- {Pikuri::Agent::ChatTransport#context_window}, stated by the host and
+  read off `agent.transport`; core emits no cap event (`D_deferred_cap_probe`).
 - `Event::Tokens` per assistant message (`agent.rb:653`) — input, cached,
   cache_creation, output.
 - {Pikuri::Agent::Listener::TokenLog} computes exactly the wanted number:
-  `input + cached + cache_creation + output` (`token_log.rb:164`),
-  rendered `ctx=8.4k/32.0k` with a cap, bare `8.4k` without
-  (`token_log.rb:180`). It already degrades honestly when the cap is
-  `nil`, which is the same rule a model-facing line would need.
+  `input + cached + cache_creation + output`, rendered `ctx=8.4k` in
+  absolute tokens, with no cap.
 - `TokenLog#status_line` + `#on_status_line` exist *specifically* so a
   host can put the readout in a TUI footer.
 
@@ -206,8 +204,8 @@ wearing a different hat.
 The feature is two pieces, and only one of them is blocked:
 
 - **Sensor** — band-crossing detection: 85/95, once per band, hysteresis,
-  `nil` cap ⇒ no bands. Pure arithmetic over `Event::ContextCap` +
-  `Event::Tokens`, both of which already ship, over a numerator
+  `nil` cap ⇒ no bands. Pure arithmetic over `agent.transport.context_window`
+  and `Event::Tokens`, both of which already ship, over a numerator
   `TokenLog` already computes (`token_log.rb:164`). Policy-free: *every*
   compaction strategy needs the same trigger — summarize-in-place and
   seed-a-fresh-agent both fire on a threshold, not on the raise. Unlike

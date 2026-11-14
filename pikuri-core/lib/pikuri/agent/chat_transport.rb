@@ -67,11 +67,12 @@ module Pikuri
     #     {#inspect}.
     # @!attribute [r] context_window
     #   @return [Integer, nil] this model-on-server's context-window cap, or
-    #     +nil+ when unknown — then no listener shows a denominator. Travels
+    #     +nil+ when unknown. Travels
     #     with the model because the cap *is* per-model-per-server. pikuri
     #     never looks it up: the host states it, or a probe the host runs fills
-    #     it in. Never sent to ruby_llm; {Agent} announces it as
-    #     {Event::ContextCap}, and a sub-agent inherits it with the transport.
+    #     it in. Never sent to ruby_llm, and read by nothing in pikuri-core: it
+    #     is for the host's own display, and a sub-agent inherits it with the
+    #     transport.
     # @!attribute [r] modalities
     #   @return [Hash{Symbol => Boolean}, nil] which input kinds this
     #     model-on-server accepts, in llama.cpp's +/props+ vocabulary

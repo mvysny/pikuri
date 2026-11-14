@@ -29,7 +29,7 @@ module Pikuri
         #
         # @param event [Event::UserTurn, Event::Thinking, Event::ThinkingDelta,
         #   Event::Assistant, Event::AssistantDelta, Event::ToolCall,
-        #   Event::ToolResult, Event::Tokens, Event::ContextCap,
+        #   Event::ToolResult, Event::Tokens, Event::ModelSwitched,
         #   Event::Cancelled, Object] a core
         #   loop-narration variant, or a gem domain event via
         #   {Agent::Configurator#emit_event} (e.g. a task list's +ListChanged+)

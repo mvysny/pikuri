@@ -388,11 +388,11 @@ module Pikuri
     # == Switching models mid-conversation
     #
     # A +transport:+ naming another model or connection switches the chat to
-    # it (via {#apply_transport!}) and emits {Event::ModelSwitched}, then a
-    # fresh {Event::ContextCap}. One that differs only in its stated facts —
-    # +context_window+, +modalities+ — is the same model, newly described: the
-    # agent adopts it and emits the {Event::ContextCap} alone. That is how a
-    # host that probes the server hands the agent what it learnt:
+    # it (via {#apply_transport!}) and emits {Event::ModelSwitched}. One that
+    # differs only in its stated facts — +context_window+, +modalities+ — is
+    # the same model, newly described: the agent adopts it silently, emitting
+    # nothing. That is how a host that probes the server hands the agent what
+    # it learnt:
     #
     #   agent.run_loop(user_message: text, transport: transport.with(context_window: 32_768))
     #
@@ -664,8 +664,6 @@ module Pikuri
                         ))
       end
 
-      @listeners.emit(Event::ContextCap.new(cap: @transport.context_window))
-
       @listeners.emit(restore_history(@history)) if @history
     end
 
@@ -756,12 +754,12 @@ module Pikuri
     # {#initialize}'s +nil+-model fill before comparing, so a transport
     # deferring to the default model doesn't switch spuriously.
     #
-    # A fact update touches nothing but +@transport+ and emits the new
-    # {Event::ContextCap}: the chat, its connection and the history's
-    # thinking all belong to the same model as before.
+    # A fact update touches nothing but +@transport+ and emits nothing: the
+    # chat, its connection and the history's thinking all belong to the same
+    # model as before, and the host that made the update already knows it.
     #
     # A switch goes through +Chat#with_model+, which keeps history and
-    # callbacks, and emits {Event::ModelSwitched} then {Event::ContextCap}.
+    # callbacks, and emits {Event::ModelSwitched}.
     # The new transport's +params+ replace the old one's, so a switch cannot
     # leave a thinking-off kwarg on a connection that never asked for one.
     #
@@ -783,18 +781,15 @@ module Pikuri
     # @return [void]
     def apply_transport!(transport)
       filled = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
-      return if filled == @transport
-
       old = @transport
       @transport = filled
-      unless filled.with(context_window: old.context_window, modalities: old.modalities) == old
-        @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
-        @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
-        @chat.with_provider_options(filled.params)
-        strip_foreign_thinking!
-        @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
-      end
-      @listeners.emit(Event::ContextCap.new(cap: filled.context_window))
+      return if filled.with(context_window: old.context_window, modalities: old.modalities) == old
+
+      @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
+      @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
+      @chat.with_provider_options(filled.params)
+      strip_foreign_thinking!
+      @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
     end
 
     # Build the chat for +transport+ — always through a dedicated

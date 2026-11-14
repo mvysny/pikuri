@@ -373,8 +373,6 @@ RSpec.describe 'Pikuri::Agent history round trip' do
   describe 'TokenLog seeding' do
     it 'reseeds the context readout from a restored history instead of showing zero' do
       log = Pikuri::Agent::Listener::TokenLog.new
-      log.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
-      assert_equal 'TokenLog(ctx=0.0k/32.0k)', log.to_s
 
       log.on_event(Pikuri::Agent::Event::HistoryLoaded.new(
                      messages: 12,
@@ -384,7 +382,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
                      )
                    ))
 
-      assert_equal 'TokenLog(ctx=8.2k/32.0k)', log.to_s
+      assert_equal 'TokenLog(ctx=8.2k)', log.to_s
     end
 
     it 'leaves the snapshot alone when the history carried no usage' do
