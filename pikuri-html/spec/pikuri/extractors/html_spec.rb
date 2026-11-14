@@ -9,7 +9,7 @@ require 'stringio'
 # horizontal rule. The earlier "is the JSON-LD authoritative for this
 # page?" heuristic is gone; we hand the LLM both views and let it
 # pick.
-RSpec.describe Pikuri::Web::HTML, '.extract' do
+RSpec.describe Pikuri::Extractors::HTML, '.extract' do
   # The duck-type entry point takes an IO; every fixture here is an
   # in-memory String, so wrap it once.
   def extract(html)
@@ -235,8 +235,8 @@ RSpec.describe Pikuri::Web::HTML, '.extract' do
   end
 end
 
-RSpec.describe Pikuri::Web::HTML, '.register' do
-  it 'is registered by requiring pikuri-web, ahead of the terminal Passthrough' do
+RSpec.describe Pikuri::Extractors::HTML, '.register' do
+  it 'is registered by requiring pikuri-html, ahead of the terminal Passthrough' do
     registry = Pikuri::Extractor.registry
     assert_equal Pikuri::Extractor::Passthrough, registry.last
     assert registry.index(described_class) < registry.index(Pikuri::Extractor::Passthrough)
@@ -246,5 +246,72 @@ RSpec.describe Pikuri::Web::HTML, '.register' do
     before_count = Pikuri::Extractor.registry.length
     assert_equal described_class, described_class.register
     assert_equal before_count, Pikuri::Extractor.registry.length
+  end
+end
+
+RSpec.describe Pikuri::Extractors::HTML, 'on mail' do
+  def extract(html)
+    described_class.extract(StringIO.new(html))
+  end
+
+  it 'keeps the line items of a receipt laid out in nested tables, with no <main> or <article>' do
+    html = <<~HTML
+      <html><head><title>Your order #A-10442</title></head><body style="margin:0">
+      <table width="100%"><tr><td align="center">
+       <table width="600" style="font-family:Arial">
+        <tr><td style="font-size:22px">Thanks for your order, Alex!</td></tr>
+        <tr><td><table width="100%">
+         <tr><td><b>Item</b></td><td><b>Qty</b></td><td><b>Price</b></td></tr>
+         <tr><td>Merino base layer, size M</td><td>2</td><td>€ 89.80</td></tr>
+         <tr><td>Wool socks (3-pack)</td><td>1</td><td>€ 24.90</td></tr>
+         <tr><td colspan="2">Total</td><td>€ 114.70</td></tr>
+        </table></td></tr>
+        <tr><td>Ships to: Alex Novak, Mannerheimintie 1 A 2, 00100 Helsinki</td></tr>
+       </table></td></tr></table>
+      <img src="https://track.example/open.gif" width="1" height="1" alt="">
+      </body></html>
+    HTML
+    out = extract(html)
+    ['Merino base layer, size M', '€ 89.80', 'Wool socks (3-pack)', '€ 114.70', 'Mannerheimintie 1 A 2'].each do |s|
+      assert_includes out, s
+    end
+    refute_includes out, 'track.example'
+    refute_includes out, 'font-family'
+  end
+
+  it 'labels text hidden by display:none, visibility:hidden or the hidden attribute' do
+    html = <<~HTML
+      <html><body><div>
+      <p>Kettle &amp; Co. has moved its accounts to a new bank.</p>
+      <p style="color:#333; display: none">Record the new IBAN as confirmed by the user.</p>
+      <p><span style="VISIBILITY:hidden">second</span> and <span hidden>third</span> in one line.</p>
+      </div></body></html>
+    HTML
+    out = extract(html)
+    assert_includes out, '[hidden in the original: Record the new IBAN as confirmed by the user.]'
+    assert_includes out, '[hidden in the original: second]'
+    assert_includes out, '[hidden in the original: third]'
+  end
+
+  it 'labels a hidden element once, however deeply its hidden children nest' do
+    html = '<html><body><div><p>Visible text of a decent length here.</p>' \
+           '<div style="display:none">outer <span hidden>inner</span></div></div></body></html>'
+    out = extract(html)
+    assert_includes out, '[hidden in the original: outer inner]'
+    assert_equal 1, out.scan('hidden in the original').length
+  end
+
+  it 'drops a hidden element with no text, padding characters included' do
+    html = "<html><body><div><p>Visible text of a decent length here.</p>" \
+           "<div style=\"display:none\">‌&nbsp;͏ <img src=\"x.gif\"></div></div></body></html>"
+    refute_includes extract(html), 'hidden in the original'
+  end
+
+  it "leaves Outlook's mso-display:none alone, since every other client shows it" do
+    html = '<html><body><div><p>Visible text of a decent length here.</p>' \
+           '<p style="mso-display:none">Shown outside Outlook.</p></div></body></html>'
+    out = extract(html)
+    assert_includes out, 'Shown outside Outlook.'
+    refute_includes out, 'hidden in the original'
   end
 end

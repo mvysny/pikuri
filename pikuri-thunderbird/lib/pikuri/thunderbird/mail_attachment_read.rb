@@ -22,7 +22,7 @@ module Pikuri
     # number and undoes its transfer encoding; the {Pikuri::Extractor} registry
     # turns it into text, so which formats read depends on what the host
     # registered (pikuri-pdf, pikuri-workshop's office extractors; an HTML attachment renders
-    # only when pikuri-web is loaded, and is raw markup otherwise).
+    # as Markdown only when the host requires pikuri-html, and is raw markup otherwise).
     #
     # A forwarded mail (+message/rfc822+) reads as its headers, attachment
     # list and text ({ForwardedMail}); its own attachments can't be opened

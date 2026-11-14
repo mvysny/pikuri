@@ -9,6 +9,7 @@ source 'https://rubygems.org'
 # no metagem; see +D_no_metagem+.
 gemspec path: 'pikuri-core'
 gemspec path: 'pikuri-pdf'
+gemspec path: 'pikuri-html'
 gemspec path: 'pikuri-web'
 gemspec path: 'pikuri-workspace'
 gemspec path: 'pikuri-thunderbird'

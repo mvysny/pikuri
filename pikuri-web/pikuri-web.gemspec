@@ -45,18 +45,12 @@ Gem::Specification.new do |spec|
   # The Confirmer seam a +web_search+ built with +confirmer:+ asks through.
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 
+  # The HTML extractor web_scrape and fetch render a text/html body through.
+  spec.add_dependency 'pikuri-html', "= #{Pikuri::VERSION}"
+
   # HTTP client for the scraper and the Brave / Exa APIs.
   spec.add_dependency 'faraday',     '~> 2.9'
 
-  # HTML parser for DuckDuckGo's result page, Brave's snippets and
-  # Pikuri::Web::HTML.
+  # HTML parser for DuckDuckGo's result page and Brave's snippets.
   spec.add_dependency 'nokogiri',    '~> 1.19'
-
-  # HTML → Markdown conversion in Pikuri::Web::HTML, so the LLM reads
-  # Markdown rather than raw HTML.
-  spec.add_dependency 'reverse_markdown', '~> 3.0'
-
-  # Readability-style main-content extraction (require 'readability'), which
-  # Pikuri::Web::HTML uses to strip a page's chrome before converting it.
-  spec.add_dependency 'ruby-readability', '~> 0.7'
 end

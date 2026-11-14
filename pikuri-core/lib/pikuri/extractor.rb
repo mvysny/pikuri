@@ -3,7 +3,7 @@
 module Pikuri
   # The format→text extraction seam: one ordered registry of extractors
   # turning an +IO+ of a recognised format (plain text in core; HTML via
-  # pikuri-web, PDF via pikuri-pdf, office formats via pikuri-workshop's
+  # pikuri-html, PDF via pikuri-pdf, office formats via pikuri-workshop's
   # pikuri-extractors) into
   # Markdown-flavoured UTF-8, behind two front doors:
   #

@@ -26,6 +26,7 @@ Dir.glob(File.expand_path('tasks/*.rake', __dir__)).sort.each { |f| load f }
 GEMS = %w[
   pikuri-core
   pikuri-pdf
+  pikuri-html
   pikuri-web
   pikuri-workspace
   pikuri-subagents

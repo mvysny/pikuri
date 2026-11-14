@@ -22,6 +22,7 @@ require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-thunderbird' # pulls in pikuri-core
 require 'pikuri-pdf' # PDF → text extractor (see registration below)
+require 'pikuri-html' # renders an HTML attachment as Markdown; registers on require, no network
 
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing): teach the
 # Extractor registry to read PDFs, so thunderbird_mail_attachment_read can open

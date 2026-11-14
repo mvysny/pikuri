@@ -76,6 +76,8 @@ in:
   - [`pikuri-pdf`](pikuri-pdf/README.md) — PDF → text extraction,
     in-process and lazily paged (pure-Ruby pdf-reader); the
     docker-free alternative to pikuri-workshop's pikuri-extractors.
+  - [`pikuri-html`](pikuri-html/README.md) — HTML → Markdown
+    extraction, for web pages and HTML mail attachments alike.
   - [`pikuri-web`](pikuri-web/README.md) — the tools that reach the
     internet: `web_search` (DuckDuckGo, Brave, Exa), `web_scrape`,
     `fetch` and `web_read_cached`.

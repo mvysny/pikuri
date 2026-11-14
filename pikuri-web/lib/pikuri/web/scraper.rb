@@ -9,7 +9,7 @@ module Pikuri
     # HTTP side of the web tools ({Web::SCRAPE} and {Web::FETCH}): GET the
     # URL with a real-browser User-Agent, follow redirects, and hand the body to
     # {Pikuri::Extractor.extract} with the response +Content-Type+ as the hint.
-    # HTML/XHTML renders via {Web::HTML}, other +text/*+ passes through
+    # HTML/XHTML renders via {Pikuri::Extractors::HTML}, other +text/*+ passes through
     # verbatim, plug-in extractors extend the set (with pikuri-pdf,
     # +application/pdf+ extracts — by header or +%PDF-+ magic, so a lying header
     # still works); remaining types raise {FetchError} so the LLM observes the

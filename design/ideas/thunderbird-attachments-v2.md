@@ -36,6 +36,11 @@ CV through `application-fwd` (`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`).
 
 ## Smaller ones
 
+- `Q_inline_vs_attachment`: does Gloda ever list the `text/html` alternative of a
+  multipart/alternative *body* as an attachment? Then reading it would re-read the
+  body, now rendered by pikuri-html. Check `attachmentInfos` for a newsletter on a
+  built testbed; `ForwardedMail`'s body rule suggests not.
+
 - **Hashed folder names.** Thunderbird hashes a folder name with
   filesystem-illegal characters into its mbox file name
   (`NS_MsgHashIfNecessary`); `MessageStore` maps the name verbatim.

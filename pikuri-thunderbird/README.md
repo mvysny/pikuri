@@ -28,7 +28,8 @@ sent mail to. See [`design/architecture.md`](design/architecture.md).
   default.
 - For attachments: mail kept on this computer ("Keep messages for this
   account on this computer", the IMAP default). A PDF needs a PDF reader
-  registered — the demo registers pikuri-pdf. For calendar: events must be cached to disk (a local calendar, or
+  registered — the demo registers pikuri-pdf. An HTML attachment reads as raw
+  markup unless pikuri-html is loaded — the demo loads it. For calendar: events must be cached to disk (a local calendar, or
   a network calendar with "Offline Support" turned on).
 
 ## Try it

@@ -19,6 +19,9 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** the HTML → Markdown extractor moved from pikuri-web to the new `pikuri-html` gem as `Pikuri::Extractors::HTML`, still registered on require; pikuri-web depends on it (`D_html_own_gem`). Rename `Pikuri::Web::HTML`, and require `pikuri-html` instead of pikuri-web where you only want rendered HTML.
+- `Pikuri::Extractors::HTML` keeps text the markup hides (`hidden`, inline `display: none` or `visibility: hidden`), labelled `[hidden in the original: …]`.
+- `bin/pikuri-thunderbird` requires pikuri-html, so `thunderbird_mail_attachment_read` renders an HTML attachment as Markdown instead of raw markup.
 - **Breaking:** `Pikuri::Workspace::ProjectRoot` moved to pikuri-workshop's pikuri-code as `Pikuri::Code::ProjectRoot`; only a coding agent called it. Depend on pikuri-code and rename the constant.
 - **Breaking:** removed options nothing set: `thunderbird_bin:` on `Pikuri::Thunderbird::Extension`, `MailCompose` and `CalendarCreate` (Thunderbird must be on `PATH`), `Calendar#available?`, `VectorDb::Watcher`'s `latency:` (now `Watcher::LATENCY`), `Rag::Stemmer::Voikko`'s `compounds:` (always on) and `Workspace::ProjectRoot.find`'s `markers:`.
 - **Breaking:** removed the unused `Pikuri::Agent#to_s`, `Agent#model`, `Agent::Control::Cancellable#to_s` and `Tool::Result.error`'s `detail:`. Read the model as `agent.transport.model`, and append detail to the message yourself.

@@ -21,6 +21,42 @@ what it already says.
 
 ---
 
+## D_html_own_gem — Why is the HTML extractor a gem of its own rather than part of pikuri-web?
+
+**Context.** On 2026-11-12 the HTML → Markdown extractor left pikuri-core for pikuri-web, on the
+premise that only an HTTP response ever carries `text/html`. It doesn't: a mail attachment does
+too, and `thunderbird_mail_attachment_read` read a forwarded receipt or booking confirmation as
+raw markup, mostly inline CSS and layout tables, unless its host happened to load pikuri-web.
+
+**Decision.** `pikuri-html` holds `Pikuri::Extractors::HTML` and its three libraries (nokogiri,
+ruby-readability, reverse_markdown), and registers on require; pikuri-web depends on it, and
+`bin/pikuri-thunderbird` requires it. Before the split, a probe on 2026-11-14 rendered the
+testbed's HTML and a receipt and a booking built from nested layout tables: readability kept every
+line item and total (2.5 KB → 0.7 KB), as untidy Markdown tables. The receipt spec in pikuri-html
+pins it.
+
+**Alternatives rejected.**
+
+- **The mail host requires pikuri-web and wires none of its tools.** No new code, no egress. But
+  the offline demo would load code it never runs (`D_read_what_you_run`), and whoever audits a mail
+  agent that must never reach the internet would find the gem whose name says it does, and have to
+  check nothing of it is wired.
+- **pikuri-thunderbird depends on pikuri-web.** The same, forced on every host, with the dependency
+  pointing from a local-only gem to a network gem.
+- **pikuri-workshop's docker extractors claim `text/html`.** Their converter handles HTML, but a
+  container round-trip per small attachment is costly, and only hosts wiring that gem would get it.
+- **Explicit `register`, like pikuri-pdf.** pikuri-pdf asks because two PDF arms compete; no rival
+  HTML arm exists, so requiring the gem is the choice.
+- **Fold it back into pikuri-core.** Core is in every deployment, and most never render HTML; the
+  move out of core stands.
+
+**Consequences.** One file earns a gem here the way pikuri-pdf's does: a native-extension parser
+fed strangers' files is an audit surface a host should be able to leave out. Hidden markup is
+labelled, not dropped, and the label is no defense; `Pikuri::Extractors::HTML.label_hidden`'s
+yardoc says why.
+
+---
+
 ## D_token_log_status_line — Why does `TokenLog` expose its status line to hosts, rather than a host-side listener computing its own?
 
 **Context.** The 2026-11-14 reachability audit found `TokenLog#status_line`, `#on_status_line`

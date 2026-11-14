@@ -8,6 +8,15 @@ PATH
       zeitwerk (~> 2.7)
 
 PATH
+  remote: pikuri-html
+  specs:
+    pikuri-html (0.1.0)
+      nokogiri (~> 1.19)
+      pikuri-core (= 0.1.0)
+      reverse_markdown (~> 3.0)
+      ruby-readability (~> 0.7)
+
+PATH
   remote: pikuri-pdf
   specs:
     pikuri-pdf (0.1.0)
@@ -50,9 +59,8 @@ PATH
       faraday (~> 2.9)
       nokogiri (~> 1.19)
       pikuri-core (= 0.1.0)
+      pikuri-html (= 0.1.0)
       pikuri-workspace (= 0.1.0)
-      reverse_markdown (~> 3.0)
-      ruby-readability (~> 0.7)
 
 PATH
   remote: pikuri-workspace
@@ -185,6 +193,7 @@ DEPENDENCIES
   irb (~> 1.14)
   minitest (~> 6.0)
   pikuri-core!
+  pikuri-html!
   pikuri-pdf!
   pikuri-rag!
   pikuri-subagents!
@@ -231,6 +240,7 @@ CHECKSUMS
   nokogiri (1.19.4-x86_64-linux-gnu) sha256=379fae440b28915e3f19d752ce2dcf8465ed2b2fbefd2a7ca0dd497bc981a06a
   pdf-reader (2.16.0) sha256=bf1b5564c085264d8279bde3cf1467778b75841494d20c0fe7da3dad475f3732
   pikuri-core (0.1.0)
+  pikuri-html (0.1.0)
   pikuri-pdf (0.1.0)
   pikuri-rag (0.1.0)
   pikuri-subagents (0.1.0)
