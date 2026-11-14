@@ -1,0 +1,38 @@
+Content-Type: multipart/mixed; boundary="kettle-statement-7f3a"
+
+--kettle-statement-7f3a
+Content-Type: text/plain; charset=utf-8
+
+Dear Alex Novak,
+
+your statement for this month is attached, with the details of each
+invoice. Notes from our accounts team are attached too.
+
+Kettle & Co. Billing
+--kettle-statement-7f3a
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment
+
+Account summary (no file name: Content-Disposition attachment, no filename).
+Open: invoice <%= f.invoice.number %>, <%= f.eur(f.invoice.total) %>.
+--kettle-statement-7f3a
+Content-Type: text/csv; charset=utf-8; name="statement.csv"
+
+invoice,total,due
+<%= f.invoice.number %>,<%= f.invoice.total %>,<%= f.iso(f.invoice.due) %>
+--kettle-statement-7f3a
+Content-Type: text/plain; charset=utf-8; name="notes.txt"
+Content-Disposition: inline; filename="notes.txt"
+
+Notes from accounts: no late fee this month.
+--kettle-statement-7f3a
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+S0VUVExFLVNUQVRFTUVOVC1EQVRB
+--kettle-statement-7f3a
+Content-Type: text/plain; charset=utf-8
+
+--
+Kettle & Co. sends this statement automatically. Do not reply.
+--kettle-statement-7f3a--

@@ -19,6 +19,8 @@
 #   invite:       an invites key: a text/calendar METHOD:REQUEST part
 #   ics:          an invites key: attached as a plain .ics file
 #   forward:      id of a message (often folder: none), attached as message/rfc822
+#   raw:          mail/<file>.eml, a hand-written MIME tree (ERB too) in place of
+#                 body/html: a shape another client writes and the mail gem can't
 
 # --- The invoice: the cross-source answer (the PDF is in Documents/Finance).
 - id: kettle-4471-reminder
@@ -352,6 +354,64 @@
 
     Alex
   forward: floor-plan
+
+# --- Other clients' MIME trees (Q_fwd_listing_policy), each in the Inbox and
+#     forwarded: Gloda's list for the top-level copy is what ForwardedMail
+#     must list for the forwarded one.
+#     Apple Mail: the PDF sits inside the HTML alternative, between two HTML
+#     fragments (alternative > [plain, mixed > [html, pdf, html]]).
+- id: venue-quote
+  at: [-5, '10:40']
+  from: sami
+  to: ilse
+  subject: Quote for the lakeside cabin
+  raw: apple-mail.eml
+- id: venue-quote-fwd
+  at: [-5, '12:15']
+  from: ilse
+  subject: 'Fwd: Quote for the lakeside cabin'
+  body: |
+    Alex, Sami's quote for the cabin. Within the offsite budget?
+
+    Ilse
+  forward: venue-quote
+#     Outlook: a signature image by cid: under related, a PDF, an unreferenced
+#     inline image under mixed, and a winmail.dat.
+- id: claim-form
+  at: [-11, '08:14']
+  from: insurer
+  subject: 'Your claim: water damage'
+  raw: outlook.eml
+- id: claim-form-fwd
+  folder: Sent
+  at: [-11, '09:02']
+  from: owner
+  to: aino
+  subject: 'Fwd: Your claim: water damage'
+  body: |
+    Hei Aino, the insurer's claim form for the leak. Could you sign the
+    landlord's part?
+
+    Alex
+  forward: claim-form
+#     Edge leaves: an attachment disposition with no file name, a name only on
+#     Content-Type, a named inline .txt, a nameless binary, an unnamed footer.
+- id: statement
+  at: [-2, '06:00']
+  from: kettle
+  subject: Your monthly statement
+  raw: edge-leaves.eml
+- id: statement-fwd
+  folder: Sent
+  at: [-2, '09:10']
+  from: owner
+  to: tomas
+  subject: 'Fwd: Your monthly statement'
+  body: |
+    Tomas, Kettle's statement for the books.
+
+    Alex
+  forward: statement
 
 # --- The board meeting notes, the .docx twin of Documents/Work.
 - id: board-notes

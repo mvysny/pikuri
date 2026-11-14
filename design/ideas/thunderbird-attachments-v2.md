@@ -22,24 +22,24 @@ forwards come free.
   description carries an example value (`"1.2"`), since the integer pair
   would have been the more obvious schema for a small model. On graduation
   this becomes a `D_` entry.
-- `Q_fwd_listing_policy` — `ForwardedMail` mimics Gloda's rule (body = what
-  sits under `alternative` / `related`, plus unnamed text/plain and text/html
-  leaves), verified against the testbed and a synthetic spec, never against a
-  real Outlook / Apple Mail forward. Check on the real box before numbering,
-  since the numbers become handles.
+- **The listing is settled, so its numbers can become handles**
+  (2026-11-14). `ForwardedMail` lists what Gloda lists for the same tree at
+  top level. The testbed checks that for Apple Mail, Outlook and odd-leaf
+  trees, from hand-written `.eml` fixtures (the rule:
+  `pikuri-thunderbird/design/architecture.md` § "What `attachmentInfos`
+  lists"). Those trees rest on what the clients are documented to write; a
+  shape found in the wild becomes another fixture.
 
-The testbed covers the shapes (2026-11-14): `application-fwd` (a `.docx`
-inside), `venue-fwd` (an image inside), `floor-plan-fwd` (an HTML mail whose
-`cid:` image must stay body) and `application-fwd-fwd` (a forward of a
-forward). Live, each lists what Gloda would. The path handle's spec should read the
-CV through `application-fwd` (`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`).
+The testbed's forwards: `application-fwd` (a `.docx` inside), `venue-fwd`
+(an image), `floor-plan-fwd` (a `cid:` image that stays body),
+`application-fwd-fwd` (a forward of a forward), and `venue-quote-fwd`,
+`claim-form-fwd`, `statement-fwd` (the other clients' trees). Each of the
+last three has its original in the Inbox, so the comparison with Gloda can be
+re-run. The path handle's spec should read the CV through `application-fwd`
+(`"1.1"`) and `application-fwd-fwd` (`"1.1.1"`), and Apple Mail's PDF
+through `venue-quote-fwd`.
 
 ## Smaller ones
-
-- `Q_inline_vs_attachment`: does Gloda ever list the `text/html` alternative of a
-  multipart/alternative *body* as an attachment? Then reading it would re-read the
-  body, now rendered by pikuri-html. Check `attachmentInfos` for a newsletter on a
-  built testbed; `ForwardedMail`'s body rule suggests not.
 
 - **Hashed folder names.** Thunderbird hashes a folder name with
   filesystem-illegal characters into its mbox file name

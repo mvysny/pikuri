@@ -88,6 +88,22 @@ module Pikuri
         part
       end
 
+      # A message whose MIME tree is written by hand: the gem writes only the
+      # envelope headers, never the tree, since it would sort the parts
+      # (text/plain first) and lose a nested multipart's children on
+      # re-encoding, and the tree's exact shape is the point.
+      Raw = Data.define(:encoded, :date, :subject)
+
+      # @param message [Mail::Message] the envelope headers, no body.
+      # @param tree [String] the MIME entity: its +Content-Type+ header, a
+      #   blank line, the body.
+      # @return [Raw] answers what {Mbox.render} and {.forwarded} ask a
+      #   +Mail::Message+.
+      def self.raw(message, tree)
+        encoded = "#{message.header.encoded}MIME-Version: 1.0\r\n#{tree.gsub(/\r?\n/, "\r\n")}"
+        Raw.new(encoded: encoded, date: message.date, subject: message.subject)
+      end
+
       # Makes +top+ the body of +message+ and fixes every boundary.
       #
       # @param message [Mail::Message]

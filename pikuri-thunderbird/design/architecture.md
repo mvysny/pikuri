@@ -375,12 +375,24 @@ A complete, pre-decoded search index. Tables that matter:
   (testbed, 159: a forward of a forward still indexes the CV two levels
   down), so a search can find a mail by an attachment name its listing
   never shows.
-- **What `attachmentInfos` leaves out** (testbed, 159): an image an HTML part
-  shows by `cid:` inside `multipart/related` — under `alternative` or as the
-  mail's root — is not listed at all; an image attached outright, or
-  `inline` under `multipart/mixed`, is. A forward's text body, by contrast,
-  is appended to the outer message's `c0body` with no separator, at any
-  depth.
+- **What `attachmentInfos` lists** (testbed, 159). Thunderbird's C++
+  MIME code decides this, so the rule is measured, not read off source;
+  `ForwardedMail` follows it, and `dev/testbed/mail/*.eml` holds the
+  Apple Mail, Outlook and odd-leaf trees it was measured on.
+  - A **file name, or `Content-Disposition: attachment` alone**, lists a
+    leaf at any depth: Apple Mail's PDF inside
+    `alternative > mixed > [html, pdf, html]` too. A leaf with no name
+    is listed as `Part 1.2`, after its part path.
+  - **Inside `multipart/related`, nothing** is listed, named or not: an
+    image an HTML part shows by `cid:` (Outlook's `image001.png`). The
+    same image `inline` under `mixed` is listed.
+  - An **unnamed leaf** is body when it is text/plain or text/html, under
+    `mixed` too (a trailing footer). Any other unnamed leaf is listed,
+    unless it is an `alternative`'s rendition, like an invitation's
+    `text/calendar`. So the HTML half of a newsletter's `alternative` is
+    never listed.
+  - A forward's text body is appended to the outer message's `c0body`
+    with no separator, at any depth.
 - Ignore: `imConversations*`, `ext_mimeTypes`.
 
 **The mozporter sharp edge.** Both FTS tables use Mozilla's custom `mozporter`

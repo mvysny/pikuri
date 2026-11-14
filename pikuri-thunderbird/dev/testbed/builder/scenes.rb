@@ -47,7 +47,7 @@ module Pikuri
       private
 
       # @param build [Proc] scene id → its built message.
-      # @return [Mail::Message]
+      # @return [Mail::Message, Mime::Raw]
       def message(scene, ids, build)
         message = Mail.new
         message.from = @facts.person(scene['from'])
@@ -62,6 +62,8 @@ module Pikuri
           message.in_reply_to = refs.last
           message.references = refs.join(' ')
         end
+        return Mime.raw(message, raw_tree(scene['raw'])) if scene['raw']
+
         extras = attachments(scene) + Array(scene['forward'] && Mime.forwarded(build.(scene['forward'])))
         body = body_part(scene)
         top = extras.empty? ? body : Mime.multipart('mixed', [body, *extras])
@@ -83,6 +85,16 @@ module Pikuri
         end
         alternatives << Mime.calendar(@calendar.invite(scene['invite']), method: 'REQUEST') if scene['invite']
         alternatives.size == 1 ? alternatives.first : Mime.multipart('alternative', alternatives)
+      end
+
+      # A hand-written MIME tree, for a shape another mail client writes and
+      # the +mail+ gem doesn't.
+      #
+      # @param file [String] a name in {ATTACHMENTS}, e.g. "apple-mail.eml".
+      # @return [String] the file after ERB: its +Content-Type+ header, a
+      #   blank line, the body.
+      def raw_tree(file)
+        @facts.render(File.read(File.join(ATTACHMENTS, file)))
       end
 
       # @return [Array<Mail::Part>]
