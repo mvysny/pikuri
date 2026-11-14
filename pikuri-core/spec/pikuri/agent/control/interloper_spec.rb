@@ -2,9 +2,8 @@
 
 RSpec.describe Pikuri::Agent::Control::Interloper do
   describe '#initialize' do
-    it 'starts empty — peek is empty, pending? is false, size is 0, drain! returns []' do
+    it 'starts empty — pending? is false, size is 0, drain! returns []' do
       interloper = described_class.new
-      assert_equal [], interloper.peek
       refute interloper.pending?
       assert_equal 0, interloper.size
       assert_equal [], interloper.drain!
@@ -24,13 +23,14 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       assert_raises(ArgumentError) { described_class.new.inject_user_message("   \t\n") }
     end
 
-    it 'pushes a :user item onto the queue, observable via #peek and #pending?' do
+    it 'pushes a :user item onto the queue, observable via #pending?' do
       interloper = described_class.new
       interloper.inject_user_message('hi')
 
-      assert_equal [:user], interloper.peek.map(&:kind)
-      assert_equal ['hi'], interloper.peek.map(&:content)
       assert interloper.pending?
+      drained = interloper.drain!
+      assert_equal [:user], drained.map(&:kind)
+      assert_equal ['hi'], drained.map(&:content)
     end
 
     it 'preserves FIFO order across multiple injections' do
@@ -39,7 +39,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       interloper.inject_user_message('two')
       interloper.inject_user_message('three')
 
-      assert_equal %w[one two three], interloper.peek.map(&:content)
+      assert_equal %w[one two three], interloper.drain!.map(&:content)
     end
 
     it 'returns nil' do
@@ -54,7 +54,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
         interloper.inject_user_message('and this?', attachments: [png])
 
         assert_equal [described_class::Item.new(kind: :user, content: 'and this?', attachments: [png])],
-                     interloper.peek
+                     interloper.drain!
       end
 
       it 'accepts an attachment-only message, its text normalized to ""' do
@@ -62,7 +62,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
         interloper.inject_user_message(attachments: [png])
         interloper.inject_user_message("  \n", attachments: [png])
 
-        assert_equal ['', ''], interloper.peek.map(&:content)
+        assert_equal ['', ''], interloper.drain!.map(&:content)
       end
 
       it 'refuses a RubyLLM::Attachment, whose path or URL source ruby_llm would read' do
@@ -84,8 +84,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       interloper = described_class.new
       assert_nil interloper.inject_system_message('<skill>…</skill>')
 
-      assert_equal [:system], interloper.peek.map(&:kind)
-      assert_equal ['<skill>…</skill>'], interloper.peek.map(&:content)
+      assert_equal [described_class::Item.new(kind: :system, content: '<skill>…</skill>')], interloper.drain!
     end
   end
 
@@ -99,18 +98,6 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       drained = interloper.drain!
       assert_equal %i[user system user], drained.map(&:kind)
       assert_equal %w[u1 s1 u2], drained.map(&:content)
-    end
-  end
-
-  describe '#peek' do
-    it 'returns a copy — mutating the result does not mutate the queue' do
-      interloper = described_class.new
-      interloper.inject_user_message('a')
-
-      snapshot = interloper.peek
-      snapshot << 'b'
-
-      assert_equal ['a'], interloper.peek.map(&:content)
     end
   end
 
@@ -142,7 +129,6 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       assert_equal %w[one two], interloper.drain!.map(&:content)
 
       refute interloper.pending?
-      assert_equal [], interloper.peek
       assert_equal [], interloper.drain!
     end
 
@@ -216,19 +202,6 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       interloper.inject_user_message('one')
 
       assert_equal [[1, 1]], seen
-    end
-  end
-
-  describe '#to_s' do
-    it 'renders the bare class name when idle' do
-      assert_equal 'Interloper', described_class.new.to_s
-    end
-
-    it 'renders the pending count when items are queued' do
-      interloper = described_class.new
-      interloper.inject_user_message('one')
-      interloper.inject_user_message('two')
-      assert_equal 'Interloper(2 pending)', interloper.to_s
     end
   end
 end

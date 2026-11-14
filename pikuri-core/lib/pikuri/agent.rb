@@ -1362,7 +1362,7 @@ module Pikuri
       message[:attachments] = sent.map(&:to_ruby_llm) unless sent.empty?
       track_message(@chat.add_message(message))
       @listeners.emit(Event::UserTurn.new(content: text, attachments: sent, mid_loop: true))
-      dispatch_ext_on_user_message(item.content.to_s.strip.empty? ? '' : item.content, sent)
+      dispatch_ext_on_user_message(item.content, sent)
     end
   end
 end

@@ -27,6 +27,7 @@ march on.
 - Fix `Pikuri::FileType.detect_mime` raising `Encoding::CompatibilityError` on a UTF-8 String holding non-ASCII; it now sniffs a binary copy of the leading bytes.
 - `thunderbird_mail_attachment_read` now reads a forwarded email (`message/rfc822`) as its sender, recipients, date, attachment list and text (`Pikuri::Thunderbird::ForwardedMail`), and `thunderbird_mail_read` lists one as `forwarded email`, noting its text may already be in the body.
 - Fix `thunderbird_mail_read` failing the turn on a body over 40 KB whose cut split a multi-byte character; the torn tail is now dropped.
+- **Breaking:** `Agent::Control::Interloper#peek` and `#to_s` are gone, since no host read them. Show the pending count with `#size` or `#on_change`, and in a spec read the queue with `#drain!`.
 
 - **Breaking:** `Agent::History` is in-memory only: `#to_json`, `#to_h`, `#save`, `.parse`, `.from_h`, `.load`, `History::Error`, `#version` and `Attachment#stored_name` are gone, since storing a conversation is the host's job and moves to pikuri-workshop; hand `agent.export_history` straight to `Agent.new(history:)`.
 - **Breaking:** `Agent.new` takes no `interloper:`; every agent builds its own `Control::Interloper`, reached as `Agent#interloper`, so a queued mid-turn message can't leak into the next conversation's agent. Read `agent.interloper` (or `c.interloper` inside the block) where you held your own.
