@@ -96,7 +96,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | domain events (`emit_event`, Terminal) | ~40 | lsp, tasks, code, skills | ✓ `D_domain_events` (2026-11-14). `Event::Transient` and `Terminal`'s in-place line dropped (~45); pikuri-lsp emits only begin/done (workshop 3087c56, not pushed) |
 | Interloper `:user` kind, `on_change`/`pending?`/`size` | ~65 | conversations | ✓ `D_mid_turn_user_message` (2026-11-14); no pikuri bin can demo it (readline between turns) |
 | bare turn / `EmptyTurnError` | ~10 | conversations, skills | ✓ bare turn → `run_loop` yardoc + `D_mid_turn_user_message`; `EmptyTurnError` dropped (~45), why-not in `D_reference_text_as_user_turn`; pikuri-tui's arm removed (tui e2f7298, not pushed; its specs unrun — bundle not installed) |
-| `on_user_message` hook | ~41 | memory, code | ✗ |
+| `on_user_message` hook | ~41 | memory, code | ✓ `D_on_user_message_hook` (2026-11-14) |
 | `ReadOnly` gate + slots in Write/Edit/Extension | ~150 | code plan mode, os, tui | ✗ |
 | Filesystem temp/tmp-alias, env/git identity | ~118 | code bash sandbox | ✗ |
 | temp workspace for sub-agents (`with_workspace` ×4, mint, `needs_temp_workspace`) | ~105 | GIT_REPO_RESEARCHER | ✗ |

@@ -21,6 +21,38 @@ what it already says.
 
 ---
 
+## D_on_user_message_hook — Why does an extension annotate a user turn by returning text from a hook?
+
+**Context.** `Extension#on_user_message(content, attachments)` may return a string, which the
+agent appends as a `<system-reminder>` reference block right after the user's message and before
+the turn's first request (`Agent#dispatch_ext_on_user_message`). It fires for a turn-start message
+and for a mid-turn one the `Interloper` delivers. pikuri-workshop's pikuri-memory records the turn
+and prefetches a `<memory-context>` block through it; pikuri-code re-asserts plan mode on every
+turn while it is on. No pikuri extension reacts per turn.
+
+**Decision.** Core keeps the hook; the extension returns text and core places it.
+
+**It is the only moment that works.** Between "the user's message is appended" and "the first
+request goes out" nothing but the agent runs. A recalled memory or a plan-mode reminder is for
+*this* turn; arriving one round-trip later, the model has already answered without it.
+
+**Returning text keeps the extension off the chat.** Core decides where the block goes, appends
+only at the tail — never an edit, which would invalidate the prompt cache from the edit on — and
+keeps several extensions in registration order.
+
+**Alternatives rejected.**
+
+- **A listener on `Event::UserTurn` that injects through the `Interloper`.** Needs no hook, and
+  lands too late: at turn start the interloper drains *before* the user's message is appended, so
+  the block waits for the end of the first tool batch, or the next turn when there is none.
+- **An append capability on the `Configurator`.** A wider seam: an extension holding it could
+  append at any moment, including between an assistant `tool_calls` message and its answers, which
+  every provider treats as one unit.
+- **Amend the system prompt per turn.** Re-prefills everything after the change on every turn; the
+  `Agent#assemble_system_prompt` yardoc has the details.
+
+---
+
 ## D_mid_turn_user_message — Why can a user message reach a turn that is still running?
 
 **Context.** `Control::Interloper#inject_user_message` takes a message from any thread while the

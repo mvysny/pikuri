@@ -51,7 +51,8 @@ module Pikuri
       # The Agent only ever *appends* the returned block at the tail — never
       # rewrites or removes an earlier one, which would bust the provider
       # prefix cache for everything after the edit. Stale blocks ride the
-      # existing context-window machinery, not a per-turn rewrite.
+      # existing context-window machinery, not a per-turn rewrite. Why a hook
+      # rather than a listener: +design/decisions.md+ +D_on_user_message_hook+.
       #
       # @param content [String] the user message's text (initial or
       #   interloper); +""+ when the turn carries only attachments
