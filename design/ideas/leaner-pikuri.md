@@ -92,7 +92,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | `Control::Handoff` | 75 | none yet | ✓ `D_confirmer_sees_the_cancel` |
 | mid-conversation model switch | ~95 | conversations, tui | ✓ `D_model_switch_in_place` (2026-11-14); no pikuri bin demos it. Trimmed: context rebuilt on every switch, `ChatTransport#connection_overrides?` gone |
 | Subprocess `env:` / `terminate` / `io` | ~20 | `env:` ROOT (`Thunderbird::Launcher`) + code, mem0; `terminate`/`io` mem0's relay | ✓ `env:` → `D_de_bundlerized_children`; daemon-child shape → `Subprocess`'s `== Daemon children` yardoc (2026-11-14; too small for a `D_`) |
-| streaming | ~140 | conversations, tui, webui | ✗ AGENTS.md invariant only; no pikuri bin can turn it on |
+| streaming | ~140 | chat, minions; conversations, tui, webui | ✓ `D_streaming_opt_in` (2026-11-14); rooted: `pikuri-chat` and `pikuri-minions` now stream, so `Terminal`'s streaming mode has callers |
 | domain events (`emit_event`, `Transient`, Terminal) | ~85 | lsp, tasks, code, skills | ✗ |
 | Interloper `:user` kind, `on_change`/`pending?`/`size` | ~65 | conversations | ◐ yardoc + invariant |
 | bare turn / `EmptyTurnError` | ~55 | skills, tui | ✗ |

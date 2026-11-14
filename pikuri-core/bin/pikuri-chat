@@ -41,7 +41,7 @@ end
 
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model = examples_config['llm_model'] || 'ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'
-streaming = false
+streaming = true
 
 custom_prompt = nil
 parser = OptionParser.new do |opts|

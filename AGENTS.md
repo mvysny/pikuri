@@ -52,7 +52,7 @@ docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it
 - **Finalizers / teardown seam.** One process-global teardown registry and a single `at_exit`, each resource registering at its ownership boundary. See {Pikuri::Finalizers}.
 - **Capability seam.** A live `Agent` reference is read-only; everything that *acts on* a wired agent lives on its `Agent::Configurator`, handed only to the `Agent.new` block and `Extension#configure`. See `D_one_phase_extensions`.
 - **Environment is not a secret store.** pikuri never *filters* `ENV` before spawning; config holds tokens verbatim, and a per-child `env:` is the credential channel. See `D_de_bundlerized_children`.
-- **Streaming flag.** `Agent.new(..., streaming:)` is opt-in and propagates to sub-agents, so the tree is consistent.
+- **Streaming flag.** `Agent.new(..., streaming:)` is opt-in and propagates to sub-agents, so the tree is consistent. See `D_streaming_opt_in`.
 - **Interloper injection seam.** Mid-loop host→agent injection routes through `Control::Interloper`, delivered at turn start or once a tool batch is complete — never inside one. See {Pikuri::Agent::Control::Interloper}.
 - **Nothing pikuri appends mid-conversation is ever `role: :system`** — a mid-conversation `:system` message fails silently. See {Pikuri::Agent#append_reference_block}, `D_reference_text_as_user_turn`.
 - **Display-line seam.** The **tool** composes its three display strings at `execute` time — never the model, and never a renderer, which only styles, caps and defangs them. See {Pikuri::Tool}'s `== Display lines`, `D_tool_summary_lines`.

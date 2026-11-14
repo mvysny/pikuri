@@ -21,6 +21,43 @@ what it already says.
 
 ---
 
+## D_streaming_opt_in — Why is chunk streaming in core, off by default, and inherited by sub-agents?
+
+**Context.** `Agent.new(streaming: true)` hands ruby_llm a per-chunk block and emits each chunk as
+an `Event::ThinkingDelta` / `Event::AssistantDelta`, ahead of the `Thinking` / `Assistant`
+bookends that stay authoritative. `Listener::Terminal.new(streaming: true)` prints the deltas live
+and reduces the bookends to a line break. `pikuri-chat` and `pikuri-minions` stream;
+pikuri-workshop's pikuri-conversations defaults it on, so pikuri-tui and pikuri-webui do too.
+
+**Decision.** Core owns it, a host opts in, and a sub-agent inherits its parent's flag.
+
+**Worth its lines.** A local model writes 20–40 tokens a second, so a 500-token answer is 15–25
+seconds of a silent screen, and a thinking model reasons for thousands of tokens before its first
+word. Streaming also gives a tool-free turn its only cancellation points mid-generation:
+`streaming_block` checks the `Cancellable` before every chunk, where a plain turn's last check is
+before the request goes out, so a cancel waits for the whole reply.
+
+**In core, because nowhere else can reach it.** The chunk block is an argument to
+`Chat#complete`, which the loop seam keeps inside `agent.rb`. A gem or host that wanted live text
+without it would have to parse the provider's SSE stream itself, next to ruby_llm's.
+
+**Opt-in, because a host that renders nothing gains nothing.** A report (`pikuri-briefing`), a
+titler or a batch job would take ruby_llm's separate streaming code path — which has had bugs of
+its own, the one that prompted `D_keep_ruby_llm` among them — and receive events it ignores.
+
+**Inherited, because a mixed tree loses text.** A sub-agent renders through its parent's listeners
+(`for_sub_agent`), and a streaming `Terminal` prints the answer only from deltas. A child that
+didn't stream under a parent that does would show its tool calls and nothing it said.
+
+**Alternatives rejected.**
+
+- **Always stream, no flag.** Forces the streaming path, and a delta stream, on every host that
+  renders nothing.
+- **Let each child choose.** Loses the child's text, as above, for no host that has asked for a
+  mixed tree.
+
+---
+
 ## D_attachment_path_handle — Why does `thunderbird_mail_attachment_read` take a string path like `"2.1"` rather than a second number for a forward's attachment?
 
 **Context.** A forwarded mail reads as its headers, attachment list and text
