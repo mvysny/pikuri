@@ -197,11 +197,12 @@ and they stay because they pass both.
   `system_info`, `MACHINE.md`), not a concept, and it needs the coding agent's sandbox.
 
 **Consequences.** Placement is asked again whenever a gem grows, by the first test. The ones to
-watch: `pikuri-web`, since search engines pile up, and `pikuri-workspace`, whose `ProjectRoot` and
-`.gitignore`-aware listing lean towards coding and would move into the workshop's `pikuri-code`
-if they grow. `pikuri-thunderbird` also has feature ideas; each faces the "explain it better" bar
-before it lands, and one that fails it is the moment to reconsider the gem's placement. Docker
-still earns its keep in pikuri, running Qdrant behind `pikuri-vectordb`.
+watch: `pikuri-web`, since search engines pile up, and `pikuri-workspace`, whose `.gitignore`-aware
+listing leans towards coding and would move into the workshop's `pikuri-code` if it grows;
+`ProjectRoot`, which only a coding agent called, already has (now `Pikuri::Code::ProjectRoot`).
+`pikuri-thunderbird` also has feature ideas; each faces the "explain it better" bar before it
+lands, and one that fails it is the moment to reconsider the gem's placement. Docker still earns
+its keep in pikuri, running Qdrant behind `pikuri-vectordb`.
 
 ---
 

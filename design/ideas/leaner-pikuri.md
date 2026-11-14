@@ -68,7 +68,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 
 | Item | Lines | Consumers | Catch |
 |---|---|---|---|
-| `Workspace::ProjectRoot` | 77 | pikuri-code, tui-code | cleanest move |
+| ~~`Workspace::ProjectRoot`~~ | 77 | pikuri-code, tui-code | **moved 2026-11-14** to `Pikuri::Code::ProjectRoot` (workshop 77cad77); pikuri-tui-code still to switch after the workshop is pushed |
 | `BundlerEnv` | 68 | lsp, mcp, code | 3 workshop gems → needs a shared home there |
 | `FILE_MINER` persona | 56 | pikuri-code, tui-code | book subagents/security chapters lean on it |
 | `Parameters#required_string_array`, `EMPTY` | ~46 | tasks, code | generic, tiny — lean keep |
