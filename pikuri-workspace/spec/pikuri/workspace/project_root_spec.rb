@@ -136,21 +136,5 @@ RSpec.describe Pikuri::Workspace::ProjectRoot do
         end
       end
     end
-
-    it 'accepts a caller-supplied marker list' do
-      Dir.mktmpdir do |root|
-        marker_root = File.join(root, 'a')
-        nested = File.join(marker_root, 'b', 'c')
-        FileUtils.mkdir_p(nested)
-        File.write(File.join(marker_root, 'MY_PROJECT'), '')
-
-        Dir.mktmpdir do |fake_home|
-          with_home(fake_home) do
-            assert_equal Pathname.new(marker_root).realpath,
-                         described_class.find(cwd: nested, markers: ['MY_PROJECT'])
-          end
-        end
-      end
-    end
   end
 end

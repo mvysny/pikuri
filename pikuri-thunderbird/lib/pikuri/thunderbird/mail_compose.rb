@@ -2,13 +2,12 @@
 
 module Pikuri
   module Thunderbird
-    # The +thunderbird_mail_compose+ tool — the one v2 outbound tool, and an
-    # egress leg. It never sends: it hands a pre-filled draft to Thunderbird's
-    # own compose window (a +mailto:+ URI, {MailtoUri}) where the *human*
-    # reviews the recipient and body and clicks Send. That human commit is the
-    # gate that keeps the trifecta broken even with an egress leg present — so
-    # this tool is opt-in (+compose:+ on {Extension}) and never wired into the
-    # no-egress +bin/pikuri-thunderbird+ demo.
+    # The +thunderbird_mail_compose+ tool — an outbound tool, and an egress
+    # leg. It never sends: it hands a pre-filled draft to Thunderbird's own
+    # compose window (a +mailto:+ URI, {MailtoUri}) where the *human* reviews
+    # the recipient and body and clicks Send. That human commit is the gate
+    # that keeps the trifecta broken even with an egress leg present — so this
+    # tool is opt-in (+allow_compose_mail:+ on {Extension}).
     #
     # The agent drafts a *full, useful body* on purpose: content-drafting is the
     # agent's job, destination-authorship is the human's. What protects against a
@@ -44,16 +43,14 @@ module Pikuri
         - A recipient you have never sent mail to is flagged, not blocked — relay that warning to the user.
       DESC
 
-      # @param thunderbird_bin [String] the Thunderbird executable — a PATH name
-      #   (default +"thunderbird"+) or an absolute path.
       # @param backend [Gloda::Contacts, nil] contact resolver for the
       #   recipient-novelty check; +nil+ degrades it to a "couldn't check" note.
       # @param launcher [Launcher, nil] test seam — the {Launcher} that opens the
       #   compose window; +nil+ builds the real one.
       # @return [MailCompose]
-      def initialize(thunderbird_bin: 'thunderbird', backend: nil, launcher: nil)
+      def initialize(backend: nil, launcher: nil)
         @guard = ComposeGuard.new(backend: backend)
-        @launcher = launcher || Launcher.new(thunderbird_bin: thunderbird_bin)
+        @launcher = launcher || Launcher.new
         super(
           name: 'thunderbird_mail_compose',
           description: DESCRIPTION,

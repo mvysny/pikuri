@@ -34,7 +34,7 @@ module Pikuri
     #
     # == Priority
     #
-    # All +markers+ are checked at each ancestor before climbing, so the
+    # All {VCS_MARKERS} are checked at each ancestor before climbing, so the
     # *nearest* VCS marker wins regardless of type.
     module ProjectRoot
       # Climb-up boundary. Overlaps {Filesystem::DENIED_PROJECT_ROOTS} but kept
@@ -50,19 +50,18 @@ module Pikuri
       # checkout) and a regular file (+.git+ in a worktree/submodule).
       VCS_MARKERS = %w[.git .hg .svn].freeze
 
-      # Find the nearest ancestor of +cwd+ containing any of +markers+. See the
-      # class header for the safety bounds and priority.
+      # Find the nearest ancestor of +cwd+ containing any of {VCS_MARKERS}. See
+      # the class header for the safety bounds and priority.
       #
       # @param cwd [String, Pathname] starting dir; +realpath+'d so symlinked
       #   checkouts don't bounce out of the tree.
-      # @param markers [Array<String>] VCS marker names; default {VCS_MARKERS}.
       # @return [Pathname, nil] the matching ancestor, or +nil+ if none found
       #   within the safe-climb bounds (caller falls back to +cwd+).
-      def self.find(cwd:, markers: VCS_MARKERS)
+      def self.find(cwd:)
         current = Pathname.new(cwd).realpath
         home = Pathname.new(Dir.home).realpath
         loop do
-          return current if markers.any? { |m| current.join(m).exist? }
+          return current if VCS_MARKERS.any? { |m| current.join(m).exist? }
 
           parent = current.parent
           return nil if parent == current     # at the filesystem root

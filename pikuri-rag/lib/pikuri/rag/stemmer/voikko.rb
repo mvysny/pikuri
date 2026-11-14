@@ -26,17 +26,14 @@ module Pikuri
         # @param voikko [#analyze, #language] an open +::Voikko+ handle; anything
         #   whose +#analyze(word)+ answers objects with +#base_form+ and
         #   +#morphemes+ will do.
-        # @param compounds [Boolean] whether {#index_stems} adds each compound
-        #   part's dictionary forms, which lets "kone" find "tietokone" at the
-        #   cost of longer bm25 document lengths.
-        def initialize(voikko, compounds: true)
+        def initialize(voikko)
           @voikko = voikko
-          @compounds = compounds
         end
 
-        # @return [String] +"voikko-fi+compounds"+, or +"voikko-fi"+ with
-        #   +compounds: false+; the language is the handle's tag as opened.
-        def id = "voikko-#{@voikko.language}#{'+compounds' if @compounds}"
+        # @return [String] +"voikko-fi+compounds"+, the language being the
+        #   handle's tag as opened. The suffix names {#index_stems}' compound
+        #   split, so an index built by a stemmer without it rebuilds.
+        def id = "voikko-#{@voikko.language}+compounds"
 
         # Every reading's dictionary form, lower-cased.
         #
@@ -48,7 +45,8 @@ module Pikuri
           forms.empty? ? [word.downcase] : forms.map(&:downcase).uniq
         end
 
-        # {#stems}, plus each compound part's own {#stems}.
+        # {#stems}, plus each compound part's own {#stems}, so "kone" finds
+        # "tietokone" (at the cost of longer bm25 document lengths).
         #
         #   index_stems('versionhallintajärjestelmää')
         #   # => ["versionhallintajärjestelmä", "versio", "hallinta", "järjestelmä"]
@@ -59,8 +57,6 @@ module Pikuri
         # @param word [String] one {Query.tokenize} token.
         # @return [Array<String>] never empty.
         def index_stems(word)
-          return stems(word) unless @compounds
-
           forms = @voikko.analyze(word).flat_map do |analysis|
             parts = analysis.morphemes || []
             part_stems = parts.size < 2 ? [] : parts.flat_map { |part| stems(part.text) }

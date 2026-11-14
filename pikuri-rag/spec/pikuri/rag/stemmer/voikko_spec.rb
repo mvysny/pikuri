@@ -67,17 +67,11 @@ describe Pikuri::Rag::Stemmer::Voikko do
     it 'answers an unknown word itself' do
       assert_equal ['backend'], stemmer.index_stems('backend')
     end
-
-    it 'is #stems with compounds: false' do
-      stemmer = described_class.new(voikko, compounds: false)
-      assert_equal ['tietokone'], stemmer.index_stems('tietokoneella')
-    end
   end
 
   describe '#id' do
     it 'names the language and the compound split, so changing either rebuilds the index' do
       assert_equal 'voikko-fi+compounds', stemmer.id
-      assert_equal 'voikko-fi', described_class.new(voikko, compounds: false).id
     end
   end
 

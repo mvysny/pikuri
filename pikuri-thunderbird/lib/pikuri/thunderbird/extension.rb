@@ -50,7 +50,7 @@ module Pikuri
     # install (profiles under two roots) raises from {Profile.discover} —
     # loud, with the fix — rather than guessing.
     #
-    # By default this is the v1 (search-only, no-egress) surface. The two v2
+    # By default this is the search-only, no-egress surface. The two
     # outbound tools are each *opt-in* because each adds an egress leg, so
     # leaving them off by default is what keeps a bundled inbound-only wiring's
     # trifecta broken by construction:
@@ -168,16 +168,12 @@ module Pikuri
       #   +thunderbird_calendar_create+ tool (default +false+). Opt-in for the
       #   same reason; the event is still human-committed in Thunderbird's
       #   import wizard.
-      # @param thunderbird_bin [String] the Thunderbird executable for the
-      #   outbound hand-offs (PATH name or absolute path); ignored unless an
-      #   +allow_+ flag is on. Mirrors +profile_dir:+'s override role.
       # @raise [ArgumentError] on a surface name outside {SURFACES} — a typo
       #   there would silently drop a surface the host asked for, and a
       #   *narrower* pool than intended is exactly the failure nobody notices.
       # @return [Extension]
       def initialize(profile_dir: nil, cache_dir: nil, surfaces: SURFACES,
-                     allow_compose_mail: false, allow_create_calendar_event: false,
-                     thunderbird_bin: 'thunderbird')
+                     allow_compose_mail: false, allow_create_calendar_event: false)
         @surfaces = surfaces.map(&:to_sym).uniq
         unknown = @surfaces - SURFACES
         unless unknown.empty?
@@ -189,7 +185,6 @@ module Pikuri
         @cache_base = cache_dir || Paths.new_temp.to_s
         @allow_compose_mail = allow_compose_mail
         @allow_create_calendar_event = allow_create_calendar_event
-        @thunderbird_bin = thunderbird_bin
         # The surfaces #configure actually wired — a *subset* of @surfaces,
         # since a requested surface still needs its store to exist. Drives
         # both #mail_wired? and which usage paragraphs are contributed, so
@@ -216,10 +211,8 @@ module Pikuri
         # Neither outbound tool needs Gloda (only a Thunderbird binary); the
         # contacts resolver, when present, powers compose's recipient-novelty
         # warn and is nil otherwise.
-        c.add_tool MailCompose.new(thunderbird_bin: @thunderbird_bin, backend: contacts) if @allow_compose_mail
-        if @allow_create_calendar_event
-          c.add_tool CalendarCreate.new(profile: profile, thunderbird_bin: @thunderbird_bin)
-        end
+        c.add_tool MailCompose.new(backend: contacts) if @allow_compose_mail
+        c.add_tool CalendarCreate.new(profile: profile) if @allow_create_calendar_event
         nil
       end
 

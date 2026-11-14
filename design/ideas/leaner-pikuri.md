@@ -43,7 +43,16 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
     downstream listeners follow the convention.
   - `InMemoryEventList` — moving it into `Testing` saves no lines and edits specs in five workshop
     gems; tidiness only.
-- `Q_dead_knobs` — ~100, kwargs nobody passes: thunderbird `thunderbird_bin:` (4 ctors), `cache_dir:`;
+- ~~`Q_dead_knobs`~~ **Done 2026-11-14:** cut `thunderbird_bin:` on Extension / MailCompose /
+  CalendarCreate (stays on `Launcher` as its test seam), `Calendar#available?` (doc claimed a role
+  it didn't play), `Watcher` `latency:`, Voikko `compounds:` (id string kept, so no rebuild),
+  `ProjectRoot` `markers:`. Kept as test seams specs pass: thunderbird `cache_dir:`, the servers'
+  `data_dir:`/`port:`/`healthcheck_timeout:`/`#endpoint`, both Extensions' `chunker:`,
+  `Workspace::Extension#workspace`, `SubAgent::Extension#personas` (specs in two repos), the
+  snapshot/ICS/Engines injection kwargs, `UrlCache::NULL`. Kept as a declaration: Filesystem
+  `trusted:` (specs in three repos). Kept `Profile#gloda?` (public probe on a class pikuri-tui
+  calls). Deferred: Chroma `tenant:`/`database:` → `Q_chroma`; Filesystem `env:` → the sandbox
+  seam row in C. Original list: thunderbird `thunderbird_bin:` (4 ctors), `cache_dir:`;
   `Server::{Qdrant,Chroma}` `data_dir:` / `port:` / `healthcheck_timeout:` + `#endpoint`;
   `Backend::Chroma` `tenant:` / `database:`; `Watcher` `latency:`; both Extensions' `chunker:`;
   Voikko `compounds:`; Filesystem `trusted:` (never `true`), `env:`; `ProjectRoot` `markers:`;

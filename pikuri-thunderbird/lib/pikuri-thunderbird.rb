@@ -9,11 +9,11 @@ require 'pikuri-core'
 # ({Pikuri::Thunderbird::Profile} discovers it) and never touches the
 # network.
 #
-# The load-bearing posture (v1): search + read are inbound-only, so an
+# The load-bearing posture: search + read are inbound-only, so an
 # agent wired with only these tools has private data + untrusted content
 # but *no egress leg* — the lethal trifecta is broken by construction, the
 # same model as +bin/pikuri-corpus+. Outbound actions (compose / create
-# event) are v2 and are always human-gated hand-offs to Thunderbird's own
+# event) are opt-in and always human-gated hand-offs to Thunderbird's own
 # UI. Threat model: +design/architecture.md+; design rationale: +design/ideas/thunderbird.md+.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 

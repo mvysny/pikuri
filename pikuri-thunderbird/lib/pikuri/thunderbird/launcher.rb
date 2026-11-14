@@ -3,7 +3,7 @@
 module Pikuri
   module Thunderbird
     # Detached launch of the user's Thunderbird — the shared mechanism behind
-    # both v2 outbound tools. Given an argument Thunderbird understands on its
+    # both outbound tools. Given an argument Thunderbird understands on its
     # command line (a +mailto:+ URI for {MailCompose}, an +.ics+ path for
     # {CalendarCreate}), it opens it in the running instance:
     #
@@ -26,7 +26,7 @@ module Pikuri
       # tool turns it into an +"Error: …"+ observation.
       class Error < StandardError; end
 
-      # @param thunderbird_bin [String] the Thunderbird executable — a PATH name
+      # @param thunderbird_bin [String] test seam — the executable, a PATH name
       #   (default +"thunderbird"+) or an absolute path.
       # @param spawn [#call, nil] test seam — a callable given the argument that
       #   returns a {Pikuri::Subprocess} result (responds to +#status+ /
@@ -44,8 +44,8 @@ module Pikuri
       # @raise [Error] if the binary is missing or the spawn fails.
       def launch(arg)
         unless resolvable?(@thunderbird_bin)
-          raise Error, "Thunderbird executable #{@thunderbird_bin.inspect} not found — " \
-                       'set thunderbird_bin: to its path.'
+          raise Error, "Thunderbird executable #{@thunderbird_bin.inspect} not found on PATH — " \
+                       'is Thunderbird installed?'
         end
 
         result = @spawn.call(arg)

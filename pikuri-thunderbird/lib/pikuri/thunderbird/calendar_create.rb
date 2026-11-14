@@ -5,7 +5,7 @@ require 'securerandom'
 
 module Pikuri
   module Thunderbird
-    # The +thunderbird_calendar_create+ tool — the v2 outbound calendar leg, and
+    # The +thunderbird_calendar_create+ tool — the outbound calendar leg, and
     # (like {MailCompose}) an egress leg that never commits anything itself. It
     # builds an +.ics+ ({IcsEvent}), stages it where a possibly-snap-confined
     # Thunderbird can read it ({Profile#outbox_dir}), and launches Thunderbird on
@@ -58,13 +58,11 @@ module Pikuri
 
       # @param profile [Profile] the discovered profile — supplies the confined
       #   staging dir ({Profile#outbox_dir}).
-      # @param thunderbird_bin [String] the Thunderbird executable (PATH name or
-      #   absolute path) for the hand-off.
       # @param launcher [Launcher, nil] test seam; +nil+ builds a real {Launcher}.
       # @return [CalendarCreate]
-      def initialize(profile:, thunderbird_bin: 'thunderbird', launcher: nil)
+      def initialize(profile:, launcher: nil)
         @profile = profile
-        @launcher = launcher || Launcher.new(thunderbird_bin: thunderbird_bin)
+        @launcher = launcher || Launcher.new
         super(
           name: 'thunderbird_calendar_create',
           description: DESCRIPTION,

@@ -73,7 +73,6 @@ describe Pikuri::Thunderbird::Calendar do
     with_calendar { |cal| assert_equal 4, cal.event_count }
     Dir.mktmpdir do |dir|
       empty = Calendar.new(calendar_dbs: [], cache_dir: dir)
-      refute empty.available?
       assert_equal 0, empty.event_count
     end
   end

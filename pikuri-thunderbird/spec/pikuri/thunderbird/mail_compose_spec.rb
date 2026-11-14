@@ -37,7 +37,8 @@ describe Pikuri::Thunderbird::MailCompose do
   end
 
   it 'Errors when the Thunderbird binary cannot be found (real launcher)' do
-    t = Pikuri::Thunderbird::MailCompose.new(thunderbird_bin: '/nonexistent/thunderbird-xyz')
+    launcher = Pikuri::Thunderbird::Launcher.new(thunderbird_bin: '/nonexistent/thunderbird-xyz')
+    t = Pikuri::Thunderbird::MailCompose.new(launcher: launcher)
     assert_match(/not found/, t.run('to' => 'a@acme.com', 'body' => 'ok').to_s)
   end
 end

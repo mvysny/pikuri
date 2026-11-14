@@ -12,7 +12,6 @@ module Pikuri
     # Thunderbird keeps as raw +ATTENDEE+/+ORGANIZER+ content lines.
     #
     #   cal = Calendar.new(calendar_dbs: profile.calendar_dbs, cache_dir: dir)
-    #   cal.available?      # any calendar store on disk?
     #   cal.event_count     # 0 → nothing cached (prompt the user to enable Offline Support)
     #   cal.search(query: 'standup', limit: 10)
     #   cal.read(event_id: hit[:event_id])
@@ -64,11 +63,6 @@ module Pikuri
         @conns = {}
         @lock = Mutex.new
       end
-
-      # @return [Boolean] whether any calendar store exists on disk (the
-      #   calendar tools register regardless — see the empty-state guidance
-      #   in {Tools} — but this gates whether a snapshot is even attempted).
-      def available? = !@sources.empty?
 
       # @return [Integer] total events cached to disk across all stores. Zero
       #   means every calendar is memory-only (Offline Support off); the

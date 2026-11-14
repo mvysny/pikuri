@@ -56,7 +56,7 @@ RSpec.describe 'Thunderbird trifecta legs' do
     end
 
     it 'tags mail_compose as an approver-gated hand-off' do
-      tool = Pikuri::Thunderbird::MailCompose.new(thunderbird_bin: '/nonexistent/tb')
+      tool = Pikuri::Thunderbird::MailCompose.new
       assert_equal Pikuri::Thunderbird::OUTBOUND_LEGS, tool.trifecta_legs
     end
   end

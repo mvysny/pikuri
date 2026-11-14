@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** removed options nothing set: `thunderbird_bin:` on `Pikuri::Thunderbird::Extension`, `MailCompose` and `CalendarCreate` (Thunderbird must be on `PATH`), `Calendar#available?`, `VectorDb::Watcher`'s `latency:` (now `Watcher::LATENCY`), `Rag::Stemmer::Voikko`'s `compounds:` (always on) and `Workspace::ProjectRoot.find`'s `markers:`.
 - **Breaking:** removed the unused `Pikuri::Agent#to_s`, `Agent#model`, `Agent::Control::Cancellable#to_s` and `Tool::Result.error`'s `detail:`. Read the model as `agent.transport.model`, and append detail to the message yourself.
 - **Breaking:** removed the unwired `Pikuri::VectorDb::LIBRARIAN` persona, and with it pikuri-vectordb's dependency on pikuri-subagents (see `D_corpus_trust_declaration` for why no corpus-quarantine persona ships). A host that wired it defines its own `Persona` with the same `tool_names`.
 - **Breaking:** removed `Pikuri::VectorDb::Tokenizer::LlamaServer` and `Tokenizer::CharHeuristic`'s `chars_per_token:`, which nothing wired; the ratio is now the constant `CharHeuristic::CHARS_PER_TOKEN`. For exact counts, pass any object with `count(text)` as `Chunker::FixedWindow`'s `tokenizer:`.

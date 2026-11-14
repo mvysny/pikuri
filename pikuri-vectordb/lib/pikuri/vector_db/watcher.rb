@@ -68,26 +68,27 @@ module Pikuri
     class Watcher
       LOGGER = Pikuri.logger_for('VectorDb::Watcher')
 
+      # +listen+ debounce window: how long filesystem events are batched
+      # before the callback fires. The corpus is expected to change rarely,
+      # so a coarse window coalesces editor save-storms at no cost.
+      #
+      # @return [Float] seconds
+      LATENCY = 10.0
+
       # @param indexer [Indexer] the indexer to drive — supplies the
       #   watch {Indexer#root}, the source-vs-directory shape via
       #   {Indexer#source}, and the per-file + reconcile entry points.
-      # @param latency [Float] +listen+ debounce window in seconds:
-      #   how long filesystem events are batched before the callback
-      #   fires. The corpus is expected to change rarely, so a coarse
-      #   value (default 10s) coalesces editor save-storms without
-      #   any cost.
       # @param listen_factory [#call, nil] dependency-injection seam
       #   for tests: +call(dir) { |modified, added, removed| ... }+
       #   returns an object responding to +#start+ / +#stop+. +nil+
       #   uses the real +Listen.to+ (required lazily — see the
       #   gemspec note).
       # @return [Watcher]
-      def initialize(indexer:, latency: 10.0, listen_factory: nil)
+      def initialize(indexer:, listen_factory: nil)
         @indexer = indexer
-        @latency = latency
         @listen_factory = listen_factory || lambda do |dir, &blk|
           require 'listen'
-          Listen.to(dir, latency: @latency, &blk)
+          Listen.to(dir, latency: LATENCY, &blk)
         end
 
         # Resolve the watch shape once, here, rather than re-stat'ing
