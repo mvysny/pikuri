@@ -21,6 +21,7 @@ require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-core'
 require 'pikuri-workspace'
+require 'pikuri-subagents'
 
 # Example-only config shared by every demo; see pikuri-chat for the why.
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
@@ -30,6 +31,7 @@ server  = examples_config['llm_server'] || 'http://localhost:8080'
 model   = examples_config['llm_model'] || 'ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'
 folder  = Dir.pwd
 private = false
+file_miner = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-files [options] [initial message...]'
@@ -38,6 +40,10 @@ parser = OptionParser.new do |opts|
   opts.on('--dir DIR', 'The folder the agent works in (default: the current directory)') { |v| folder = v }
   opts.on('--private', 'Declare the folder as holding sensitive data (adds the private leg to the printed map)') do
     private = true
+  end
+  opts.on('--file-miner', 'Let the agent delegate lookups to a read-only file_miner sub-agent ' \
+                          '(the sub-agents chapter)') do
+    file_miner = true
   end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -95,6 +101,9 @@ agent = Pikuri::Agent.new(
     confirmer: Pikuri::Workspace::Confirmer::Terminal.new,
     confirm_all_writes: true
   )
+  # Off by default so the touching-files chapter's map has no sub-agent in
+  # it before the reader has met one.
+  c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::FILE_MINER]) if file_miner
 end
 
 begin

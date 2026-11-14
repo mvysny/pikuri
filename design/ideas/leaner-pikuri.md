@@ -70,7 +70,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 |---|---|---|---|
 | ~~`Workspace::ProjectRoot`~~ | 77 | pikuri-code, tui-code | **moved 2026-11-14** to `Pikuri::Code::ProjectRoot` (workshop 77cad77, pushed); pikuri-tui-code still calls the old constant, handed off with its catch-up to pikuri `4baa2076` / `35f02e10` |
 | ~~`BundlerEnv`~~ | 68 | lsp, mcp, code | **kept 2026-11-14** — why in `D_de_bundlerized_children`; `Thunderbird::Launcher` now spawns over it too, giving it a pikuri root |
-| `FILE_MINER` persona | 56 | pikuri-code, tui-code | book subagents/security chapters lean on it |
+| ~~`FILE_MINER` persona~~ | 56 | pikuri-code, tui-code | **kept 2026-11-14** — the "drops egress" half of the security chapter's persona pairing; root: `pikuri-files --file-miner`, run in the sub-agents chapter |
 | `Parameters#required_string_array`, `EMPTY` | ~46 | tasks, code | generic, tiny — lean keep |
 | `TokenLog` status-line API | ~40 | tui, webui | could go to pikuri-conversations |
 | `Confirmer::AutoApprove`, `#confirm?` | ~32 | code, os, tui | |

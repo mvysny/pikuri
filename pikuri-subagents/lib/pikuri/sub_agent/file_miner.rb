@@ -24,9 +24,9 @@ module Pikuri
     # plant a payload, no +agent+ to delegate the attack. See +SECURITY.md+
     # §"Prompt injection" and +book/trifecta-detector.md+.
     #
-    # The tools are named by string only (no +pikuri-workspace+ require),
-    # validated against the parent at {Extension#configure} — which is why
-    # +pikuri-subagents+ has no runtime dep on +pikuri-workspace+.
+    # The tools are named by string only, resolved against the parent's own
+    # tools at {Extension#configure}, so a host may wire any implementation
+    # of them.
     #
     # @return [Persona]
     FILE_MINER = Persona.new(
