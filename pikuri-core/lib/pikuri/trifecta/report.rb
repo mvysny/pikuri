@@ -9,7 +9,7 @@ module Pikuri
     #
     #   report = Pikuri::Trifecta.walk(node)
     #   report.tree_verdict                  # => :soft
-    #   report.worst_path.map(&:label)       # => ["pikuri-computer", "RESEARCHER"]
+    #   report.worst_path.map(&:label)       # => ["assistant", "RESEARCHER"]
     #   puts report.render                   # the human-readable map
     #
     # == Implementation details
@@ -77,7 +77,7 @@ module Pikuri
       # so the caller can both attribute the finding and read its cell:
       #
       #   path = report.worst_path
-      #   path.map(&:label).join(' -> ')   # => "pikuri-computer -> RESEARCHER"
+      #   path.map(&:label).join(' -> ')   # => "assistant -> RESEARCHER"
       #   path.last.legs                   # the cell that decided the verdict
       #
       # Ties go to the node encountered first in pre-order — the parent over its
@@ -101,7 +101,7 @@ module Pikuri
       #
       #   Trifecta: soft
       #
-      #   pikuri-computer [:private, :untrusted_hard, :egress_reviewed]
+      #   assistant [:private, :untrusted_hard, :egress_reviewed]
       #     mail_compose [:private, :egress_reviewed]
       #     calculator []
       #     RESEARCHER [gate: human_reviewed] [:untrusted_hard, :egress]
@@ -124,8 +124,8 @@ module Pikuri
       # tree, and because it is the half that carries *meaning* — the map
       # deliberately carries only facts.
       #
-      #   [TRIFECTA: HARD] pikuri-code — private(read, bash) + untrusted(read,
-      #   bash) + egress(bash). An injection in what this agent reads can drive
+      #   [TRIFECTA: HARD] assistant — private(read) + untrusted(fetch) +
+      #   egress(fetch). An injection in what this agent reads can drive
       #   an exfiltration. Break a leg: sever egress (a network-off sandbox), or
       #   privilege-separate the step that reads untrusted content.
       #   See book/trifecta-detector.md in this repo.

@@ -44,9 +44,9 @@ module Pikuri
   # they *share* that one list — fine for a single linear script, not for
   # targeting a specific sub-agent's replies. Per-sub-agent scripting is a
   # future upgrade (dispatch by model id / distinct fake +api_base+).
-  # Only the LLM is faked: MCP servers are not, so a fake-backed spec leaves
-  # the MCP registry empty, or an agent wiring +Pikuri::Mcp+ spawns the real
-  # servers it configures.
+  # Only the LLM is faked: a tool's own backend is not, so an agent wiring a
+  # tool that spawns a server or reaches the network does so for real in a
+  # fake-backed spec too.
   #
   # == Streaming
   #

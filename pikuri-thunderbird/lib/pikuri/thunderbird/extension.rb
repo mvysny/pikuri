@@ -13,8 +13,8 @@ module Pikuri
     #   end
     #
     # * mail search + read + attachment read + contact search — registered
-    #   only when the Gloda index exists (the +available?+-probed gate, like
-    #   +pikuri-os+'s file-index tools). Attachment read answers a message
+    #   only when the Gloda index exists (an +available?+-probed gate).
+    #   Attachment read answers a message
     #   with no offline copy per call, so it needs no store probe of its own. Contact search is a pure read that resolves a name
     #   to addresses; it rides Gloda's presence, not the +compose:+ flag.
     # * calendar search + read — registered *whenever a profile is found*,

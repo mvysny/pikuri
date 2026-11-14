@@ -21,7 +21,7 @@ module Pikuri
     # mbox ({MessageStore}); the +mail+ gem walks to the attachment's MIME part
     # number and undoes its transfer encoding; the {Pikuri::Extractor} registry
     # turns it into text, so which formats read depends on what the host
-    # registered (pikuri-pdf, pikuri-extractors; an HTML attachment renders
+    # registered (pikuri-pdf, pikuri-workshop's office extractors; an HTML attachment renders
     # only when pikuri-web is loaded, and is raw markup otherwise).
     #
     # A forwarded mail (+message/rfc822+) reads as its headers, attachment
@@ -126,7 +126,7 @@ module Pikuri
         Pikuri::Tool::Result.error(e.message)
       end
 
-      # Gloda's type first, so pikuri-extractors can claim an office format by
+      # Gloda's type first, so an office extractor can claim its format by
       # it. On a refusal, sniff the way a local file is: the registry's
       # plain-text arm claims only +text/*+ under a content type, yet calendar
       # invites (+application/ics+), JSON and XML are text too.

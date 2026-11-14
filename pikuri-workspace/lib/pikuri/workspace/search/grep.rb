@@ -52,7 +52,7 @@ module Pikuri
       # == Truncation / exit codes
       #
       # Head-truncated to {MAX_BYTES} (head-only — grep tails carry less signal;
-      # opposite bias from {Pikuri::Code::Bash}), cut at a line boundary with a
+      # opposite bias from a shell tool, whose tail holds the error), cut at a line boundary with a
       # marker. The exit-2 error blob shares the ceiling ({.truncate_error} — rg
       # emits one diagnostic per unreadable path). Exit +0+ → results with footer;
       # +1+ → "No matches"; +2+ → +"Error: ripgrep: ..."+.

@@ -90,8 +90,8 @@ module Pikuri
   #
   # +P_one_agent+ is a fine answer, not a defect: most of what a tool knows is
   # one conversation's business. Nothing enforces it, so the doc *is* the
-  # contract. The two axes stay independent — a {Skill::Activation} locks *and*
-  # is per-agent, so "thread-safe" is no licence to share.
+  # contract. The two axes stay independent — a tool can take a lock *and* hold
+  # per-agent state, so "thread-safe" is no licence to share.
   #
   # A +Tool+ is a value object holding a +Proc+, so its posture is its
   # collaborators': each tool names the one that owns the state, which is also
@@ -178,13 +178,14 @@ module Pikuri
     attr_reader :wants_context
 
     # CamelCase display form of a *raw* tool name, for the three cases with no
-    # +Tool+ instance to ask: an MCP tool (which bypasses {Pikuri::Tool}),
+    # +Tool+ instance to ask: a raw tool from {Agent::Configurator#add_raw_tool}
+    # (an MCP server's, which bypasses {Pikuri::Tool}),
     # ruby_llm's unavailable-tool error, a replayed history.
     #
     #   Tool.display_name_for('web_search')                # => "WebSearch"
     #   Tool.display_name_for('openlibrary__search_books') # => "Openlibrary::SearchBooks"
     #
-    # +__+ is {Pikuri::Mcp::Servers}' server separator, so the halves CamelCase
+    # +__+ separates an MCP server's name from its tool's, so the halves CamelCase
     # and join with +::+; inside a half any non-alphanumeric run is a word break
     # (an MCP name may carry +-+ or +.+, which ruby_llm sanitizes to +_+).
     #
@@ -344,7 +345,7 @@ module Pikuri
     # defanging is its job too.
     #
     # @param arguments [Hash] raw tool-call arguments; keys String or Symbol
-    # @return [String] one line; +""+ renders the call bare (+EnterPlanMode+)
+    # @return [String] one line; +""+ renders the call bare (just the display name)
     def describe_call(arguments)
       key = @parameters.required.first
       return Tool.describe_arguments(arguments) if key.nil? || !arguments.is_a?(Hash)

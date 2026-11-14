@@ -27,8 +27,8 @@ module Pikuri
     #
     # The whole surface fires on the *parent agent only* — sub-agents do not
     # inherit extensions (each persona owns its toolset and prompt verbatim).
-    # See +Pikuri::Mcp::Extension+ / +Pikuri::Skill::Extension+ for worked
-    # implementations.
+    # See +Pikuri::Workspace::Extension+ / +Pikuri::Thunderbird::Extension+ (sibling
+    # gems) for worked implementations.
     module Extension
       # Install this extension on the agent being built. Keep +c+ to act on
       # the agent later — {Configurator#emit_event} from a change callback,
@@ -57,7 +57,7 @@ module Pikuri
       #   interloper); +""+ when the turn carries only attachments
       # @param attachments [Array<Pikuri::Attachment>] what the model was
       #   shown with it. Passed as data, so each extension words it as it
-      #   needs — pikuri-memory records a note naming each file, while a
+      #   needs — a memory extension records a note naming each file, while a
       #   reminder that only reacts to the turn ignores them.
       # @return [String, nil] text to inject verbatim as a system-role message
       #   after the user message, or +nil+ to inject nothing
@@ -68,14 +68,14 @@ module Pikuri
       #
       # Pull, not push: the {Agent} assembles its prompt once, at
       # construction, by concatenating the base with what every extension
-      # returns here. A section computed from live state (a resident memory
-      # persona, +MACHINE.md+ from disk) is therefore as of the conversation's
+      # returns here. A section computed from live state (the workspace's file
+      # listing, a note read from disk) is therefore as of the conversation's
       # start, and a "/clear" — a new agent — takes it again.
       #
       # No argument: read instance state populated in {#configure} (which runs
       # first). Producing that state (starting servers, probing a model)
       # belongs in +configure+; this only *reads* it (memoize an expensive
-      # one-shot at its source — +Pikuri::Os::SystemInfo#prompt_section+).
+      # one-shot at its source).
       # Sections are joined by the Agent (blank/nil dropped), in registration
       # order.
       #

@@ -302,10 +302,10 @@ module Pikuri
     # decimals) plus {Tool::Calculator::FUNCTIONS} / {Tool::Calculator::CONSTANTS},
     # so the model emits syntax it already knows.
     #
-    # Stays wired even in shells that have +bash+: it is the only *unconfirmed*
-    # float arithmetic there, since a shell's own +$((…))+ is integer-only and
-    # every interpreter that isn't must stay off the passive allowlist. See
-    # +design/decisions.md+ +D_keep_calculator+.
+    # Stays wired even beside a shell (pikuri-workshop's): it is the only
+    # *unconfirmed* float arithmetic there, since a shell's own +$((…))+ is
+    # integer-only and every interpreter that isn't must stay off the passive
+    # allowlist. See +design/decisions.md+ +D_keep_calculator+.
     #
     # Sharing: +P_stateless+ — arithmetic over the argument, no I/O, no state.
     # Hand this one constant to every agent in the VM.

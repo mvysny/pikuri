@@ -43,8 +43,7 @@ module Pikuri
       # convention assumes one active pikuri at a time.
       #
       # Podman/docker shell-outs route through {Pikuri::Subprocess.spawn} per the
-      # subprocess seam — this class is *not* the seam's exception (that's
-      # +pikuri-mcp+'s +ClientWrapper+, which owns a long-lived stdio pipe). The
+      # subprocess seam — this class is *not* the seam's exception. The
       # port publish is built +-p 127.0.0.1:<host>:<container>+, never the docker
       # default (which binds every interface and would expose the corpus to the
       # LAN) — centralized here as the single privacy enforcement point. Errors

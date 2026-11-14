@@ -7,13 +7,12 @@ module Pikuri
     # {Workspace} composite — which is what makes the read-before-edit gate
     # work: {Read} marks a path read in the same record {Edit} and
     # overwrite-{Write} consult. One registration point removes the per-host
-    # +add_tool+ boilerplate. Same opt-in shape as {Pikuri::Tasks::Extension}:
-    # the host builds the {Filesystem} and {Confirmer} and hands them over; the
-    # composite and its read record are internal.
+    # +add_tool+ boilerplate. The host builds the {Filesystem} and {Confirmer}
+    # and hands them over; the composite and its read record are internal.
     #
-    # Bash is *not* here — it isn't a read/edit/write tool and takes the raw
-    # {Filesystem} (it governs the subprocess's fs view, not the read record).
-    # It lives in {Pikuri::Code::Extension}.
+    # A shell tool is *not* here — it isn't a read/edit/write tool, and a host
+    # wiring one (pikuri-workshop's coding agent does) hands it the raw
+    # {Filesystem}, since it governs a subprocess's fs view, not the read record.
     #
     # Contributes {PROMPT_SNIPPET} — the "a decline is final" confirmation
     # guidance — so it rides the wiring of the mutating tools instead of
@@ -49,8 +48,8 @@ module Pikuri
     # A {ReadOnly} flag (when the host passes one) is threaded into {Edit}/{Write}
     # so they refuse while active — the read-only tools take no gate. The host
     # owns the flag and hands the *same* instance to whatever drives it
-    # (pikuri-code's plan mode). No flag → gate off. Covers Write/Edit only,
-    # never Bash — see {ReadOnly}.
+    # (a plan mode, say). No flag → gate off. Covers Write/Edit only, never a
+    # shell — see {ReadOnly}.
     #
     # == Usage
     #

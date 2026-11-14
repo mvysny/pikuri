@@ -14,7 +14,7 @@ require 'rainbow'
 #
 # Images only, on purpose: few local models take audio (nor do big hosted ones like
 # Claude Opus), so audio is a transcriber's job such as whisper's, and a PDF is text for
-# the `read` tool, wherever a host registers a PDF extractor (`pikuri-os` does).
+# the `read` tool, wherever a host registers a PDF extractor (`pikuri-pdf` has one).
 module ChatAttachments
   # Raised for an `@path` that can't be attached; the line is then not sent.
   class Error < StandardError; end

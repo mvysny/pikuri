@@ -16,8 +16,8 @@ module Pikuri
   # All subprocess spawning in +lib/+ goes through {.spawn}/{.run}; direct
   # +Process.spawn+ / +Open3.*+ / +system+ / backticks are bugs.
   # Grep-enforceable: +grep -rnE 'Process\.spawn|Open3\.|\bsystem\(' lib/+
-  # should hit only this file (plus the MCP-exception comment in
-  # +pikuri-mcp/lib/pikuri/mcp/servers.rb+).
+  # should hit only this file. The one exception lives downstream:
+  # pikuri-workshop's MCP client, which owns a long-lived stdio pipe.
   #
   # == Timeouts are the caller's job
   #
@@ -70,7 +70,8 @@ module Pikuri
 
     # Run +argv+ as a one-shot *filter*: feed it +stdin_data+, redirect stdout
     # to +stdout+ (an open +File+), capture stderr through a pipe, block until
-    # it exits. Built for the stdin→markdown converters (pikuri-extractors),
+    # it exits. Built for stdin→markdown converters (pikuri-workshop's
+    # pikuri-extractors runs them in a container),
     # where {.spawn}'s shape is wrong twice: it closes stdin immediately and
     # merges stderr onto stdout — fatal when stdout *is* the payload.
     #
@@ -160,7 +161,7 @@ module Pikuri
 
     # SIGTERM the whole process group without blocking for output — the stop
     # button for a *daemon* child (one the caller never {#wait}s on, e.g.
-    # {Pikuri::Memory::Mem0Server}'s socat relay). Best-effort and idempotent;
+    # a socat relay in front of a sidecar container). Best-effort and idempotent;
     # the group stays in the exit-sweep set until it dies, so a child ignoring
     # SIGTERM is re-signalled by {.cleanup!} at exit.
     #

@@ -14,10 +14,10 @@ module Pikuri
     #
     # +project_root+ is the writable containment ceiling — auto-folded into both
     # +readable+ and +writable+ (read/write anywhere under it), the base for
-    # resolving relative LLM paths, and the chdir target for {Bash}/{Grep}/
-    # {Glob}. There is no separate "cwd": a host wanting the agent in a subtree
-    # passes that subtree as +project_root+ (+bin/pikuri-code+ also +Dir.chdir+s
-    # the process there so process and workspace share one anchor). The extra
+    # resolving relative LLM paths, and the chdir target for {Search::Grep},
+    # {Search::Glob} and a co-wired shell. There is no separate "cwd": a host
+    # wanting the agent in a subtree passes that subtree as +project_root+ (and
+    # may +Dir.chdir+ the process there so process and workspace share one anchor). The extra
     # +readable+ list grants read-only roots (toolchains, caches); the extra
     # +writable+ list grants read+write roots.
     #
@@ -43,13 +43,13 @@ module Pikuri
     # {#temp} as LLM scratch space (default +false+ so specs don't pay the
     # mkdir). +alias_tmp_to_temp: true+ (only with +temp:+) rewrites +/tmp/*+
     # inputs to {#temp} before containment — the host-side counterpart to the
-    # sandbox's +--bind <temp> /tmp+, so the LLM uses one path for both.
-    # +bin/pikuri-code+ flips it on with the bubblewrap sandbox.
+    # sandbox's +--bind <temp> /tmp+, so the LLM uses one path for both. A host
+    # running its shell in a bubblewrap sandbox flips it on.
     #
     # == Subprocess environment ({#env})
     #
-    # Workspaces own an {#env} hash that subprocess tools ({Pikuri::Code::Bash})
-    # thread into {Pikuri::Subprocess.spawn}. Motivating case: the bubblewrap
+    # Workspaces own an {#env} hash that subprocess tools (a shell) thread into
+    # {Pikuri::Subprocess.spawn}. Motivating case: the bubblewrap
     # sandbox doesn't bind +~/.gitconfig+, so +git commit+ inside fails; the
     # workspace resolves the host's effective git identity at {#project_root}
     # (so +includeIf+ rules apply) and exposes +GIT_AUTHOR_*+/+GIT_COMMITTER_*+
@@ -98,7 +98,7 @@ module Pikuri
       ].map { |p| Pathname.new(p) }.freeze
 
       # @return [Pathname] project root, post-realpath — the writable
-      #   containment ceiling, relative-path base, and Bash/Grep/Glob chdir
+      #   containment ceiling, relative-path base, and shell/Grep/Glob chdir
       #   target; always in {#readable}/{#writable}.
       attr_reader :project_root
 
@@ -361,10 +361,10 @@ module Pikuri
       # still raise. For dev-container / Docker mode where the container is the
       # boundary; the denylist is defense-in-depth against prompt-injected
       # exfiltration of host credentials bind-mounted in. Pairs with +--yolo+
-      # (no Confirmer) — but combining with +Code::Bash::Sandbox::Bubblewrap+
-      # defeats the sandbox (the whole fs ends up bound in), and bash inside the
-      # sandbox bypasses the denylist anyway, so the intended combo is ALLOW_ALL
-      # + +Sandbox::NONE+ inside a container.
+      # (no Confirmer) — but combining with a bubblewrap-sandboxed shell
+      # defeats the sandbox (the whole fs ends up bound in), and a shell inside
+      # the sandbox bypasses the denylist anyway, so the intended combo is
+      # ALLOW_ALL with an unsandboxed shell inside a container.
       #
       # +project_root:+ is accepted for parity but is not a containment ceiling
       # and is NOT validated against {DENIED_PROJECT_ROOTS} (+'/'+ is legitimate
@@ -384,7 +384,7 @@ module Pikuri
         # {#denied?} for anything a tool walks to) — the default +denylist:+, so
         # an unconfigured AllowAll keeps its credential floor out of the box;
         # widen only by explicitly passing a smaller list. It is a floor, not a
-        # boundary: a co-wired {Pikuri::Code::Bash} walks around it entirely. Expanded via
+        # boundary: a co-wired shell tool walks around it entirely. Expanded via
         # +ENV['HOME']+ at load, unioned with the +/root+ variants (dev-container
         # default user). Frozen.
         DEFAULT_CREDENTIAL_DENYLIST = begin

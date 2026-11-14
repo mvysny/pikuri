@@ -32,7 +32,7 @@ module Pikuri
         #   Event::ToolResult, Event::Tokens, Event::ContextCap,
         #   Event::Cancelled, Object] a core
         #   loop-narration variant, or a gem domain event via
-        #   {Agent::Configurator#emit_event} (e.g. +Pikuri::Tasks::ListChanged+)
+        #   {Agent::Configurator#emit_event} (e.g. a task list's +ListChanged+)
         # @return [void]
         def on_event(event); end
       end

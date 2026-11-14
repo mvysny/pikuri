@@ -8,7 +8,7 @@ module Pikuri
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_listener Pikuri::Agent::Listener::Terminal.new
     #     c.add_tool     Pikuri::Tool::CALCULATOR
-    #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog, root: project_root)
+    #     c.add_extension Pikuri::Workspace::Extension.new(filesystem: fs, confirmer: confirmer)
     #   end
     #
     # Two kinds of call. *Declarations* — {#add_tool}, {#add_listener},
@@ -158,8 +158,8 @@ module Pikuri
       end
 
       # Emit a domain event onto the agent's listener stream. Core {Event}
-      # variants narrate the loop; gems define their own (e.g.
-      # +Pikuri::Tasks::ListChanged+) and emit them here. Listeners no-op on
+      # variants narrate the loop; gems define their own (e.g. a task list's
+      # +ListChanged+) and emit them here. Listeners no-op on
       # variants they don't recognize ({Listener::Base#on_event}'s default).
       #
       # Call it on the agent's thread — typically inside a tool's +execute+,

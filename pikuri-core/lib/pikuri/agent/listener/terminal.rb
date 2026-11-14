@@ -279,7 +279,7 @@ module Pikuri
         # +path+ a very long one, and only a renderer knows its width.
         #
         #   tool_call_line('Write', 'lib/shared/config.rb')  # => "Write(lib/shared/config.rb)"
-        #   tool_call_line('EnterPlanMode', '')              # => "EnterPlanMode"
+        #   tool_call_line('Status', '')                     # => "Status"
         #
         # @param display_name [String] see {Pikuri::Tool#display_name}
         # @param argument [String] see {Pikuri::Tool#describe_call}

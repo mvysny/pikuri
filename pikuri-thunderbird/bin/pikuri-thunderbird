@@ -10,8 +10,8 @@
 # *autonomous* egress — every send is a human action in Thunderbird's UI. That
 # human gate is what keeps the trifecta from closing on its own. (The
 # always-inbound, zero-egress-leg posture is still what Extension gives by
-# default (both allow_ flags off) — and what bin/pikuri-corpus /
-# bin/pikuri-memory demo; this binary opts the demo into the human-gated egress
+# default (both allow_ flags off) — and what bin/pikuri-corpus
+# demos; this binary opts the demo into the human-gated egress
 # on purpose.)
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
@@ -27,7 +27,7 @@ require 'pikuri-pdf' # PDF → text extractor (see registration below)
 # Extractor registry to read PDFs, so thunderbird_mail_attachment_read can open
 # a PDF attachment. Every attachment is a stranger's file; pikuri-pdf is pure
 # Ruby (memory-safe, no subprocess, no network), and a host wanting the
-# stronger posture registers pikuri-extractors' networkless container instead.
+# stronger posture registers pikuri-workshop's networkless extractor container instead.
 Pikuri::Extractors::PDF.register
 
 profile_dir = nil

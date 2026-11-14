@@ -26,19 +26,17 @@ module Pikuri
     # * +needs_temp_workspace+ — when +true+, {SubAgentTool} mints a
     #   fresh temp workspace per invocation and deletes it at close (see
     #   there; the persona controls neither shape nor lifecycle). Default
-    #   +false+ — child shares the parent's workspace via tool reuse.
-    #   {Pikuri::Code::GIT_REPO_RESEARCHER} is the bundled use case.
+    #   +false+ — child shares the parent's workspace via tool reuse. Meant
+    #   for a child that fetches into scratch space, such as one cloning a git
+    #   repo to read it.
     #
     # == The prompt is the whole brief
     #
-    # A child inherits no extensions, so no +<available_skills>+ block and no
-    # MCP tools reach it, and no bundled persona names +skill+ in
-    # +tool_names+ either. Put everything the child must know in
-    # +system_prompt+ — it fetches no instructions at runtime. Naming +skill+
-    # does work for a concrete case, resolving against
-    # {Pikuri::Skill::Activation::Sealed} (ungated skills only, never the
-    # parent's path promotions); why that is not the default is
-    # pikuri-workshop's +pikuri-workshop:D_no_skills_in_sub_agents+.
+    # A child inherits no extensions, so nothing an extension contributes to
+    # the prompt or the toolset reaches it. Put everything the child must know
+    # in +system_prompt+ — it fetches no instructions at runtime. (A host
+    # wiring pikuri-workshop's skills may still name +skill+ in +tool_names+;
+    # why no bundled persona does is +pikuri-workshop:D_no_skills_in_sub_agents+.)
     #
     # @example bundled researcher
     #   Pikuri::SubAgent::RESEARCHER

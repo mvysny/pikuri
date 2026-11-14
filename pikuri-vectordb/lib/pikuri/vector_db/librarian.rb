@@ -30,9 +30,8 @@ module Pikuri
     # device (chunks and full documents stay out of the parent's window) rather
     # than a security boundary. Still worth wiring for that; just not for this.
     #
-    # Opt-in via +SubAgent::Extension.new(personas: [LIBRARIAN])+; same precedent
-    # as +Pikuri::Code::GIT_REPO_RESEARCHER+ — the constant lives with the gem
-    # shipping its required tool, not in pikuri-subagents.
+    # Opt-in via +SubAgent::Extension.new(personas: [LIBRARIAN])+. The constant
+    # lives with the gem shipping its required tools, not in pikuri-subagents.
     #
     # @return [Pikuri::SubAgent::Persona]
     LIBRARIAN = Pikuri::SubAgent::Persona.new(

@@ -13,23 +13,23 @@ module Pikuri
     # posture it *couldn't* talk its way past over being told to "think step by
     # step and then start editing".
     #
-    # == What this does NOT gate: Bash
+    # == What this does NOT gate: a shell
     #
-    # This governs only {Write}/{Edit}, **not** {Pikuri::Code::Bash}. A shell
+    # This governs only {Write}/{Edit}, **not** a co-wired shell tool. A shell
     # command is Turing-complete with no reliable static "does this write" test
     # (+echo+ + redirect, +sed -i+, +>+, +dd+, a Makefile target), so we make no
-    # attempt to gate Bash and don't pretend to: a "read-only" workspace can
-    # still mutate disk through bash, subject only to bash's own confirmer. A
-    # truly inert posture must also withhold or sandbox bash; this flag is not
-    # that boundary.
+    # attempt to gate one and don't pretend to: a "read-only" workspace can
+    # still mutate disk through a shell, subject only to the shell's own
+    # confirmer. A truly inert posture must also withhold or sandbox the shell;
+    # this flag is not that boundary.
     #
     # == Two writers, one flag
     #
     # The single source of truth for "are writes disabled now". Both a host (a
-    # key binding, a slash command) and a feature on top (pikuri-code's
-    # +enter_plan_mode+/+exit_plan_mode+ via {#activate!}/{#deactivate!}) flip
-    # the *same* instance. {#on_change} lets an observer (pikuri-code re-emits it
-    # as {Pikuri::Code::PlanModeChanged}) render the posture continuously.
+    # key binding, a slash command) and a feature on top (a plan mode the model
+    # enters and leaves through {#activate!}/{#deactivate!}) flip the *same*
+    # instance. {#on_change} lets an observer (one re-emitting it as a domain
+    # event on the agent's stream) render the posture continuously.
     #
     # == Not an Agent control
     #
@@ -48,8 +48,7 @@ module Pikuri
       # Default reason clause when the host gives no +message:+. Posture-agnostic
       # — it must NOT assume plan mode (a host can engage read-only for other
       # reasons); {Write}/{Edit} splice it after their own "cannot <verb> <path>
-      # — " prefix. A driving feature (plan mode) passes its own — see
-      # {Pikuri::Code::Extension::PLAN_MODE_READONLY_MESSAGE}.
+      # — " prefix. A driving feature (plan mode) passes its own.
       #
       # @return [String]
       DEFAULT_MESSAGE = 'the workspace is read-only, so changes are disabled right now'

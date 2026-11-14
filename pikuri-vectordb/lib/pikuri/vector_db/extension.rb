@@ -54,12 +54,11 @@ module Pikuri
     #
     # == No system-prompt snippet; LIBRARIAN not auto-registered
     #
-    # Unlike {Pikuri::Tasks::Extension}, no +<vectordb_usage>+ block is appended:
+    # Unlike the workspace and sub-agent extensions, no +<vectordb_usage>+ block is appended:
     # the parent may call +vectordb_search+ directly *or* delegate to
     # {LIBRARIAN}, and a snippet favoring one would conflict with the
     # trifecta-defense argument in the mediated mode. The bundled {LIBRARIAN}
-    # persona is opt-in (same precedent as +Pikuri::Code::GIT_REPO_RESEARCHER+) —
-    # hosts wanting sub-agent recall add it via +SubAgent::Extension.new(personas:
+    # persona is opt-in — hosts wanting sub-agent recall add it via +SubAgent::Extension.new(personas:
     # [LIBRARIAN])+, keeping the +pikuri-subagents+ dependency registration-only.
     class Extension
       include Pikuri::Agent::Extension

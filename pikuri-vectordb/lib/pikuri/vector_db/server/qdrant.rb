@@ -12,10 +12,10 @@ module Pikuri
       # backend pre-pointed at it). Carries only the engine's *identity* and
       # composes a {Container} for the podman/docker work + shared rationale.
       #
-      # *Port 6333 caveat:* +pikuri-memory+'s +Mem0Server+ compose stack also
-      # publishes its own internal Qdrant on host 6333 (separate instance by
-      # design — see +design/architecture.md+), so running both at the defaults collides —
-      # pass a different +port:+ here when the mem0 stack is up.
+      # *Port 6333 caveat:* pikuri-workshop's mem0 stack (+pikuri-memory+) also
+      # publishes its own internal Qdrant on host 6333 (a separate instance by
+      # design), so running both at the defaults collides — pass a different
+      # +port:+ here when the mem0 stack is up.
       class Qdrant
         # @return [String] pinned, fully qualified qdrant image; bump it to upgrade
         #   ({#ensure_running!} recreates the container on next boot, data dir
@@ -33,7 +33,7 @@ module Pikuri
         LABEL = 'pikuri.internal=true'
 
         # @return [String] the +-v+ target {#default_data_dir} bind-mounts onto
-        #   — qdrant's documented storage root (also what +pikuri-memory+ mounts).
+        #   — qdrant's documented storage root.
         CONTAINER_PERSIST_DIR = '/qdrant/storage'
 
         # @return [Integer] default host port, qdrant's native REST

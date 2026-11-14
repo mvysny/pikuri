@@ -1268,8 +1268,8 @@ with `6371 * math.acos(math.sin(60.1699) * math.sin(41.3874) + …)` and got
 `Error: unexpected character "m"`. Unlike a long multiplication, this is not
 something the model can decompose into the four operators and retry — sine is
 not expressible in the grammar, so the only paths left were to give up or to
-invent a number. In the seven wirings that carry no `bash` (`D_keep_calculator`
-enumerates them) there is no fallback at all.
+invent a number. No pikuri wiring carries a shell (`D_keep_calculator`), so
+there is no fallback at all.
 
 **Decision.** Ship the fixed-arity real functions and constants, spelled
 exactly as Python spells them, with `math.` (and `Math.`) accepted as an
@@ -1339,7 +1339,7 @@ model already knows being rejected.
   passing degrees.
 - **Not a `D_keep_calculator` reopening.** That entry's arm (1) — an
   interpreter can never join the passive allowlist — is what makes this the
-  only unconfirmed path to a sine in a bash-carrying wiring too, so the
+  only unconfirmed path to a sine in a wiring with the workshop's shell too, so the
   function set widens the tool's lead rather than narrowing it.
 
 ---
@@ -3424,35 +3424,37 @@ second edit tool.
 
 ---
 
-## D_keep_calculator — Why keep the `calculator` tool where `bash` is already wired?
+## D_keep_calculator — Why keep a `calculator` tool when the model can add, or a shell could?
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring: *"`calculator` is a
 smell. If the model can't add, a tool won't save it; if it can, bash/python
 already exist. I'd drop it."* Neither Claude Code nor opencode ships a
 calculator, so the instinct has company. Both halves of the argument turn out
 to be properties of the harness Grok was speaking from rather than of the tool.
+That coding agent now lives in pikuri-workshop (`D_gem_placement`), and no
+pikuri wiring has a shell at all.
 
-**Decision.** Keep it, everywhere — including the three wirings that do have a
-shell.
+**Decision.** Keep it in core and wire it everywhere, including beside the
+workshop's shell.
 
 **Alternatives rejected.**
 
-- **Drop it from `pikuri-core` outright.** Nine bins wire `CALCULATOR`; only
-  three (`pikuri-code`, `pikuri-os`, `pikuri-computer`) wire a `bash`. In the
-  other six — `pikuri-chat`, `pikuri-thunderbird`, `pikuri-memory`,
-  `pikuri-corpus`, `pikuri-minions`, `pikuri-openlibrary` —
-  "bash/python already exist" is simply false, and there is no fallback at all:
-  a mail agent totalling invoice amounts, `LIBRARIAN` computing a percentage
-  over corpus hits. This is `D_directory_listing`'s asymmetry again, and the
-  same one-liner settles it: **Claude Code and opencode are single binaries
-  that always have bash; pikuri is a set of gems that frequently isn't wired
-  with one.** Composability is the product, so pikuri can't assume the shell.
-- **Drop it only from the three bash-carrying wirings** — the narrower move,
-  and the one that looks right until you read the confirmer. Three arms, in
-  order of weight.
+- **Drop it from `pikuri-core` outright.** Every pikuri bin that wires
+  `CALCULATOR` (`pikuri-chat`, `pikuri-thunderbird`, `pikuri-corpus`,
+  `pikuri-minions`, `pikuri-secretary`) is shell-less, so "bash/python already
+  exist" is simply false and there is no fallback at all: a mail agent
+  totalling invoice amounts, `LIBRARIAN` computing a percentage over corpus
+  hits. This is `D_directory_listing`'s asymmetry again, and the same one-liner
+  settles it: **Claude Code and opencode are single binaries that always have
+  bash; pikuri is a set of gems, and the shell isn't one of them.**
+  Composability is the product, so core can't assume the shell.
+- **Drop it only from wirings that add the workshop's shell** — the narrower
+  move, and the one that looks right until you read that shell's confirmer.
+  Three arms, in order of weight.
   (1) *An interpreter can never be allowlisted.* `python3`, `bc`, `awk` and
-  `expr` are absent from `Bash::PassiveCommandDetector::PASSIVE_BINARIES` and
-  must stay absent — pre-approving an interpreter is pre-approving arbitrary
+  `expr` are absent from the workshop's passive-command allowlist
+  (`Pikuri::Code::Bash::PassiveCommandDetector::PASSIVE_BINARIES`) and must
+  stay absent — pre-approving an interpreter is pre-approving arbitrary
   code execution, which is the one thing the detector exists to stop. So the
   modal prompt on `python3 -c '17.5 * 3'` is permanent by construction, not a
   gap someone patches later.
@@ -3483,11 +3485,12 @@ shell.
   leg. Grok's separate complaint about the heavy static prefix is real, but
   it's a per-wiring budget question — answered by unwiring tools a *given*
   binary doesn't need, not by deleting one from core.
-- **It stays the teaching spine of the first chapter.** `book/chat.md` uses it
-  as the first tool call a reader ever sees, `Pikuri::Testing`'s yardoc
-  examples are built on it, and `bundled_legs_spec.rb` uses it as the canonical
-  zero-leg tool that keeps the trifecta advisory quiet. Dropping it would
-  re-spine all three around a tool that has legs — a worse first example, to
+- **It stays the book's teaching spine.** `book/chat.md` uses it as the first
+  tool call a reader ever sees, `book/designing-a-tool.md` is built on it,
+  `Pikuri::Testing`'s yardoc examples are built on it, and
+  `bundled_legs_spec.rb` uses it as the canonical zero-leg tool that keeps the
+  trifecta advisory quiet. Dropping it would re-spine all four around a tool
+  that has legs — a worse first example, to
   satisfy a critique aimed at a different wiring.
 - **Revisit only if** a wiring ever gains an unconfirmed float-capable
   evaluator. By arm (1) that can't be an interpreter, so in practice it would

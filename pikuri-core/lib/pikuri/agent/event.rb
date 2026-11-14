@@ -9,7 +9,7 @@ module Pikuri
     # "Sealed" scopes the *loop-narration* vocabulary: the variants below
     # are the complete set, all emitted by {Agent}, and new chat-loop
     # observability belongs here. Gems define their own *domain* events in
-    # their own namespace (e.g. +Pikuri::Tasks::ListChanged+) and emit
+    # their own namespace (e.g. a task list's +ListChanged+) and emit
     # them via {Configurator#emit_event} onto the same stream;
     # listeners must no-op on variants they don't recognize.
     module Event
@@ -83,7 +83,7 @@ module Pikuri
       # +tool_calls+ JSON — unvalidated; the two display strings are the tool's
       # own ({Tool#display_name} / {Tool#describe_call}), so every chrome prints
       # the same line and only styles, caps and defangs it. An +argument+ of
-      # +""+ renders the call bare — +EnterPlanMode+, not +EnterPlanMode()+.
+      # +""+ renders the call bare — +Name+, not +Name()+.
       #
       # Strings rather than a +tool:+ reference a renderer could query: the
       # event must stay plain serializable +Data+, and three cases have no

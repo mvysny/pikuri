@@ -27,7 +27,7 @@ require_relative 'pikuri/version'
 module Pikuri
   # Search path for bundled system prompts. Mutable: each pikuri gem appends its
   # own +prompts/+ at boot, so +Pikuri.prompt(name)+ from a host requiring
-  # +pikuri-code+ finds +coding-system-prompt.txt+ there. Public so a downstream
+  # +pikuri-subagents+ finds its persona prompts there. Public so a downstream
   # user can read pikuri's prompts as a starting point; prefer {.prompt}.
   #
   # @return [Array<String>]

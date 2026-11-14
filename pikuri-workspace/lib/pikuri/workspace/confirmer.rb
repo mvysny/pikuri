@@ -2,9 +2,10 @@
 
 module Pikuri
   module Workspace
-    # Port for resolving a "may I do this?" confirmation to a decision —
-    # currently {Pikuri::Code::Bash}, {Write}, the +agent+ tool's delegation
-    # gate, and +web_search+'s query gate. Subclass and implement {#ask}.
+    # Port for resolving a "may I do this?" confirmation to a decision — in
+    # pikuri, {Write}, the +agent+ tool's delegation gate and +web_search+'s
+    # query gate; downstream, a shell tool's commands. Subclass and implement
+    # {#ask}.
     #
     # == The one job: resolve a {Request} to a decision
     #
@@ -29,9 +30,9 @@ module Pikuri
     # down here.
     #
     # Content classification ("is this bash command provably passive, skip the
-    # prompt?") deliberately does *not* live here — it's a tool concern
-    # ({Pikuri::Code::Bash} takes a separate +passive_detector:+ predicate,
-    # falling through to this confirmer only for commands it can't pre-approve).
+    # prompt?") deliberately does *not* live here — it's a tool concern (a
+    # shell tool takes its own "provably passive" predicate, falling through to
+    # this confirmer only for commands it can't pre-approve).
     # Keeping them apart lets one stateless chrome serve every tool.
     #
     # == The return type: {Approved} / {Rejected} / {Redirected}
@@ -199,8 +200,7 @@ module Pikuri
 
       # Approves everything unedited — the headless "opted out of dialogs"
       # stance. Request-independent, so it classifies nothing and stays a
-      # legitimate Confirmer. Used by +bin/pikuri-code --yolo+, downstream hosts'
-      # yolo modes, and specs that don't want to coordinate stdin.
+      # legitimate Confirmer. Used by hosts' yolo modes and specs that don't want to coordinate stdin.
       class AutoApprove < Confirmer
         # @param request [Request]
         # @return [Approved] always, carrying +detail+ unchanged

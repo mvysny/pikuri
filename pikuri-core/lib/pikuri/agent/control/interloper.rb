@@ -56,9 +56,9 @@ module Pikuri
       # that empties a non-empty queue (an empty-queue drain, the hot path,
       # stays silent) — with the new count, outside the lock. A host-side hook,
       # not an {Agent} listener event: the count changes on the injecting
-      # thread, off the agent-thread-confined stream. Mirrors
-      # {Pikuri::Tasks::List#on_change} but pushes the count (the interloper
-      # exposes no race-free snapshot to re-read).
+      # thread, off the agent-thread-confined stream. It pushes the count
+      # rather than signalling a change to re-read, since the interloper
+      # exposes no race-free snapshot.
       #
       # == Sub-agent semantics
       #

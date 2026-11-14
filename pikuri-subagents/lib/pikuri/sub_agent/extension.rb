@@ -5,7 +5,7 @@ module Pikuri
     # An {Pikuri::Agent::Extension} that wires the +agent+ tool onto
     # a parent agent from a list of {Persona} instances. The
     # canonical opt-in for sub-agents — same shape as
-    # {Pikuri::Skill::Extension} and {Pikuri::Mcp::Extension}.
+    # +Pikuri::Workspace::Extension+ and +Pikuri::Thunderbird::Extension+.
     #
     # == Usage
     #

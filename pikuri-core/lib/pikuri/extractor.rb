@@ -3,7 +3,8 @@
 module Pikuri
   # The format→text extraction seam: one ordered registry of extractors
   # turning an +IO+ of a recognised format (plain text in core; HTML via
-  # pikuri-web, PDF / office formats via pikuri-pdf / pikuri-extractors) into
+  # pikuri-web, PDF via pikuri-pdf, office formats via pikuri-workshop's
+  # pikuri-extractors) into
   # Markdown-flavoured UTF-8, behind two front doors:
   #
   # * {.extract} — the whole document as one String (no windowing).
@@ -138,7 +139,8 @@ module Pikuri
     # misfires on text goes at the *front* to beat a content-type claimer
     # under a lying header (+registry.unshift(X)+ — pikuri-pdf); a
     # content-type/weaker claimer inserts before the terminal entry
-    # (+registry.insert(-2, X)+ — pikuri-web's HTML, pikuri-extractors).
+    # (+registry.insert(-2, X)+ — pikuri-web's HTML, pikuri-workshop's office
+    # extractors).
     #
     # @return [Array<#matches?>] mutable, deliberately — the plug-in seam.
     def registry

@@ -38,8 +38,7 @@ module Pikuri
       #   backends).
       # * *Cosine, no conversion*: created +distance: 'Cosine'+; unlike Chroma
       #   (distance, +1 - d+), Qdrant's +score+ already *is* a similarity, passed
-      #   through untouched. (Same convention that makes mem0's ranker correct on
-      #   Qdrant and inverted on pgvector — +pikuri-memory/design/architecture.md+.)
+      #   through untouched.
       # * *Vector-dim* diverges from {InMemory} like {Chroma}, with a wrinkle:
       #   Qdrant fixes the dim at *collection creation*, so {#upsert} creates it
       #   with the first batch's size; later mismatches are HTTP 4xx →
