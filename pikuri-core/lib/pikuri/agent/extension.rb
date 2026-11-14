@@ -4,18 +4,21 @@ module Pikuri
   class Agent
     # The Extension protocol — how hosts bolt extra capabilities
     # (system-prompt sections, tools, lifecycle hooks) onto an {Agent}.
-    # Added via {Configurator#add_extension} inside the +Agent.new+ block;
-    # the Agent then drives a fixed hook set: {#configure} during the block
-    # (gets the {Configurator}), {#bind} once fully constructed and
-    # {#on_user_message} per user turn (these two get the runtime
-    # {ExtensionContext}), and {#system_prompt_snippets} once, when the prompt
-    # is assembled (no argument — reads state set in +configure+).
+    # Added via {Configurator#add_extension} inside the +Agent.new+ block,
+    # which calls {#configure} at once; the Agent then pulls
+    # {#system_prompt_snippets} when it assembles the prompt and calls
+    # {#on_user_message} on every user turn.
+    #
+    #   class Reminder
+    #     include Pikuri::Agent::Extension
+    #     def system_prompt_snippets = ["Always be polite."]
+    #   end
     #
     # An instance serves one agent, which is one conversation: build a fresh
     # one for every +Agent.new+, so per-conversation state is plain instance
     # state and nothing has to reset it; {Configurator#add_extension} refuses
-    # a reused one. A resource that legitimately outlives
-    # the conversation is built by the host and passed in.
+    # a reused one. A resource that legitimately outlives the conversation is
+    # built by the host and passed in.
     #
     # Mix this module in to inherit no-op defaults for every hook, and
     # override what you need. Not including it also works *if the class
@@ -24,48 +27,20 @@ module Pikuri
     #
     # The whole surface fires on the *parent agent only* — sub-agents do not
     # inherit extensions (each persona owns its toolset and prompt verbatim).
-    #
-    # == Example
-    #
-    #   class MyExtension
-    #     include Pikuri::Agent::Extension
-    #     def system_prompt_snippets = ["Always be polite."]
-    #     # configure / bind not overridden — inherit the empty defaults
-    #   end
-    #
     # See +Pikuri::Mcp::Extension+ / +Pikuri::Skill::Extension+ for worked
     # implementations.
     module Extension
-      # Called immediately by {Configurator#add_extension} during the
-      # +Agent.new+ block, once per instance, with the parent's
-      # {Configurator}. Default no-op; override to install *agent-agnostic*
-      # state — typically:
+      # Install this extension on the agent being built. Keep +c+ to act on
+      # the agent later — {Configurator#emit_event} from a change callback,
+      # {Configurator#add_raw_tool} from a tool's +execute+. Default no-op.
       #
-      # * tools via {Configurator#add_tool}, listeners via
-      #   {Configurator#add_listener}
-      # * parent-only +on_close+ cleanup via {Configurator#on_close}
-      # * read transport / cancellable / etc. off the Configurator
+      # A resumed conversation is {Configurator#history}, so an extension can
+      # rebuild what the transcript implies — the tools it had registered
+      # mid-conversation.
       #
-      # @param c [Configurator] the parent agent's Configurator
+      # @param c [Configurator] the agent's Configurator
       # @return [void]
       def configure(c); end
-
-      # Called by {Agent#initialize} after the block returns and the chat is
-      # fully wired, with the agent's {ExtensionContext}. Default no-op;
-      # override to install state keyed to the live agent — typically:
-      #
-      # * dynamic tools via {ExtensionContext#add_raw_tool}
-      # * domain-event wiring via {ExtensionContext#emit_event}
-      # * per-agent +on_close+ via {ExtensionContext#on_close}
-      # * stash +ctx+ if the extension's tools act on this agent later
-      #
-      # A resumed conversation is already in place here
-      # (+ctx.agent.export_history+), so an extension can rebuild what the
-      # transcript implies — the tools it had registered mid-conversation.
-      #
-      # @param ctx [ExtensionContext] capability facade for the live agent
-      # @return [void]
-      def bind(ctx); end
 
       # Optional per-turn hook fired after a user message is added to the
       # chat. Default no-op returning +nil+; override and return a {String} to
@@ -78,8 +53,6 @@ module Pikuri
       # prefix cache for everything after the edit. Stale blocks ride the
       # existing context-window machinery, not a per-turn rewrite.
       #
-      # @param ctx [ExtensionContext] the live agent whose turn this is (same
-      #   instance +bind+ received)
       # @param content [String] the user message's text (initial or
       #   interloper); +""+ when the turn carries only attachments
       # @param attachments [Array<Pikuri::Attachment>] what the model was
@@ -88,7 +61,7 @@ module Pikuri
       #   reminder that only reacts to the turn ignores them.
       # @return [String, nil] text to inject verbatim as a system-role message
       #   after the user message, or +nil+ to inject nothing
-      def on_user_message(ctx, content, attachments); end
+      def on_user_message(content, attachments); end
 
       # This extension's system-prompt contributions, as text sections.
       # Default none (+[]+); override to contribute one or more.

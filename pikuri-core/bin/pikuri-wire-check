@@ -129,7 +129,7 @@ def capture_request_bodies(captured, model)
       define_method(:on_event) do |event|
         @interloper.inject_system_message(MARKERS.keys[4]) if event.is_a?(Pikuri::Agent::Event::ToolCall)
       end
-    end.new(c.interloper))
+    end.new(c.agent.interloper))
   end
 
   agent.interloper.inject_system_message(MARKERS.keys[2])

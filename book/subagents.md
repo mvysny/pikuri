@@ -10,7 +10,7 @@ extension you can wire onto a `Pikuri::Agent`, and the demo binary
 makes the fan-out shape concrete.
 
 By the end of this chapter you'll know what a *persona* is, what a
-*pikuri extension* looks like (the `configure` + `bind` dance
+*pikuri extension* looks like (the `configure` hook
 behind the `Workspace::Extension` you wired in the touching-files
 chapter, and behind retrieval and mail later on), and what gets
 inherited vs. owned when a
@@ -135,7 +135,7 @@ The bundled `RESEARCHER` is the one you just saw fan out. Its
 prompt lives at `pikuri-subagents/prompts/persona-researcher.txt`
 — plain text, audit it if you're curious.
 
-## The Extension protocol (configure + bind)
+## The Extension protocol
 
 You met `Pikuri::Agent::Extension` implicitly when you read the
 source of `bin/pikuri-minions`:
@@ -157,12 +157,19 @@ to add capabilities to an agent. An extension implements a handful
 of hooks, all with empty defaults so each extension only writes
 the ones it needs:
 
-- **`configure(c)`** — agent-agnostic setup. Runs once during the
-  `Agent.new` block, against the `Configurator` itself (the `c`
-  yielded into the block). `SubAgent::Extension#configure`
-  validates that every persona's `tool_names` resolves against
-  tools already on `c.tools` (host-side bug — better to crash at
-  boot than at first LLM call).
+- **`configure(c)`** — setup. Runs once during the `Agent.new`
+  block, against the `Configurator` itself (the `c` yielded into
+  the block). `SubAgent::Extension#configure` validates that every
+  persona's `tool_names` resolves against tools already on
+  `c.tools` (host-side bug — better to crash at boot than at first
+  LLM call), then builds the `SubAgentTool` and installs it with
+  `c.add_raw_tool`. The tool keeps `c`: at each delegation it reads
+  the parent off `c.agent` (its tools, its current model, its
+  cancel flag) and derives the child's listeners with
+  `c.sub_agent_listeners`. That is the general trick — the
+  `Configurator` is also the extension's handle on the live agent,
+  so a change callback can `c.emit_event` long after the block
+  returned.
 - **`system_prompt_snippets`** — returns this extension's
   contributions to the system prompt as an array of strings.
   `SubAgent::Extension` returns the `<available_agents>` block here.
@@ -171,24 +178,15 @@ the ones it needs:
   conversation is a new agent, a snippet read from live state (a folder
   listing, a notes file) refreshes on every "/clear" instead of freezing
   at boot.
-- **`bind(ctx)`** — agent-keyed setup. Runs once the agent is
-  fully constructed, with the agent's
-  `Pikuri::Agent::ExtensionContext` — the capability facade for
-  everything that acts on a live agent (the agent itself is
-  readable via `ctx.agent`). `SubAgent::Extension#bind` constructs
-  the `SubAgentTool` closing over the context (for the parent's
-  `transport` / `tools` / `cancellable` / `context_window_cap` /
-  `streaming`, plus per-spawn listener derivation), then installs
-  it via `ctx.add_raw_tool`. It has to happen here, not in
-  `configure`, because the closure needs the *final* parent tool
-  list — which is only stable after every other `add_tool` has
-  run.
+- **`on_user_message(content, attachments)`** — runs on every
+  user turn; return a string and the agent appends it after the
+  turn as reference text. Memory recall rides this in the workshop.
 
 Same shape as the touching-files chapter's `Workspace::Extension`,
 and the one the retrieval and Thunderbird gems use. The secretary at
 the end of the book wires three at once.
 
-**Practical implication of the configure/bind split:** call
+**Practical implication of running `configure` at once:** call
 `c.add_extension` *after* the `c.add_tool` calls the personas
 depend on. The `tool_names` validation in `configure` runs against
 `c.tools` as of that moment; `add_tool` calls landing later go
@@ -270,8 +268,8 @@ cannot reach `web_search` or `write`, because those aren't in its
 
 ## What's next
 
-You now know the smallest extension shape (the `configure` +
-`bind` pair), and you've seen one persona in action. The next two
+You now know the smallest extension shape (one `configure`
+hook), and you've seen one persona in action. The next two
 chapters — [vectordb](vectordb.md) and [hybrid retrieval](rag.md) —
 add the capability an assistant wants most: recall over your own
 documents. The vector-DB chapter introduces a second persona —

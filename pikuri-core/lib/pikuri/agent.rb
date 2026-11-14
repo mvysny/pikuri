@@ -14,7 +14,7 @@ module Pikuri
   # 1. **Listeners** ({ListenerList} + {Listener::Base}) — pure consumers
   #    of the event stream, never writing back. The +Agent+ emits every
   #    loop-narration {Event}; extensions emit domain events through the
-  #    {ExtensionContext} handed to {Extension#bind}. No public path leads
+  #    {Configurator} handed to {Extension#configure}. No public path leads
   #    from an +Agent+ reference to emission (no +listeners+/+chat+ reader,
   #    no emit method), so holding an agent grants read access and nothing
   #    more. New sinks are added as listeners without touching {Agent}.
@@ -24,7 +24,7 @@ module Pikuri
   #    is answered. Resetting the cancel flag per turn is the host's job.
   #
   # "What fires when" is one grep for +@listeners.emit+ (loop narration)
-  # plus the capability calls in {ExtensionContext} (domain events).
+  # plus {Configurator#emit_event} (domain events).
   #
   # == One agent, one conversation
   #
@@ -221,10 +221,10 @@ module Pikuri
     #   into {Event::ThinkingDelta}/{Event::AssistantDelta}. Default +false+
     #   (only the +after_message+ bookends fire).
     # @param history [History, nil] a conversation to resume, as
-    #   {#export_history} handed it out, or +nil+ to start empty. Restored before {Extension#bind}, so an extension sees it
-    #   there via +ctx.agent.export_history+; {Event::HistoryLoaded} follows
-    #   the bind sweep. See {#restore_history} for what comes back and what
-    #   is repaired on the way in.
+    #   {#export_history} handed it out, or +nil+ to start empty. An extension
+    #   reads it as {Configurator#history}; {Event::HistoryLoaded} is emitted
+    #   once the agent is built. See {#restore_history} for what comes back
+    #   and what is repaired on the way in.
     # @yield [Configurator] the sole path for adding tools, listeners,
     #   extensions, and +on_close+ handlers — there are no parallel ctor
     #   kwargs. Optional; without it the agent has none of those.
@@ -331,9 +331,9 @@ module Pikuri
     #   (see {#initialize}'s +streaming:+).
     attr_reader :streaming
 
-    # @return [Array<Extension>] extensions bound to this agent. Each one's
-    #   +configure+ ran during the +Agent.new+ block, its +bind+ at the end
-    #   of {#initialize}. Not inherited by sub-agents.
+    # @return [Array<Extension>] extensions added to this agent, whose
+    #   +configure+ ran during the +Agent.new+ block. Not inherited by
+    #   sub-agents.
     attr_reader :extensions
 
     # @return [Integer, nil] resolved context-window cap — the
@@ -554,7 +554,7 @@ module Pikuri
     end
 
     # Release agent-owned resources: fire every handler registered via
-    # {Configurator#on_close} and {ExtensionContext#on_close} in LIFO order,
+    # {Configurator#on_close} in LIFO order,
     # so a handler that depends on an earlier one tears down first. Each runs
     # in its own +rescue+ (an exception is logged, not propagated).
     # Idempotent.
@@ -609,38 +609,29 @@ module Pikuri
     private
 
     # The failure-prone build phase, split out of {#initialize} so the
-    # constructor can wrap it in a rescue and self-heal. Funnels the
-    # +Agent.new+ block through one {Configurator} (tools, listeners,
-    # snippets, extensions, +on_close+), wires the chat, then runs the
-    # extension +bind+ sweep. The Configurator's +on_close_sink:+ is
-    # +@on_close_handlers+ itself, so a handler armed via +c.on_close+ is
-    # live the instant it's registered — what lets the rescue close a
-    # half-built agent.
+    # constructor can wrap it in a rescue and self-heal. The chat and the
+    # listener list exist before the +Agent.new+ block runs, so the
+    # {Configurator} it receives can already act on them; the block's tools
+    # and system-prompt snippets are wired once it returns. The
+    # Configurator's +on_close_sink:+ is +@on_close_handlers+ itself, so a
+    # handler armed via +c.on_close+ is live the instant it's registered —
+    # what lets the rescue close a half-built agent.
     #
     # @return [void]
     def run_configure
-      configurator = Configurator.new(
-        transport: @transport,
-        system_prompt_base: @system_prompt,
-        id: @id,
-        streaming: @streaming,
-        cancellable: @cancellable,
-        around_request: @around_request,
-        interloper: @interloper,
-        on_close_sink: @on_close_handlers
-      )
+      @chat = build_chat(@transport)
+      @listeners = ListenerList.new([])
+      configurator = Configurator.new(agent: self, chat: @chat, listeners: @listeners,
+                                      history: @history, on_close_sink: @on_close_handlers)
 
       @block&.call(configurator)
 
       @tools = configurator.tools.dup
       @sub_agent_tools = configurator.sub_agent_tools.dup
-      @listeners = ListenerList.new(configurator.listeners)
       @extensions = configurator.extensions.dup
       # Assemble now that every extension's +configure+ has run (their
       # snippets read populated state).
       @system_prompt = assemble_system_prompt
-
-      @chat = build_chat(@transport)
       @chat.with_instructions(@system_prompt)
       # One context per agent, so an opting-in +execute+ never has to nil-check
       # what it was handed.
@@ -710,22 +701,7 @@ module Pikuri
       @cap_pending = true
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
 
-      loaded = restore_history(@history) if @history
-
-      # The runtime capability facade — the ONLY object granting
-      # emission / raw-tool / close-handler capabilities; the Agent exposes
-      # no public path to them. Handed to every extension's #bind /
-      # #on_user_message. See {ExtensionContext}.
-      @extension_context = ExtensionContext.new(
-        agent: self, chat: @chat, listeners: @listeners,
-        on_close_sink: @on_close_handlers
-      )
-
-      # Bind sweep — each extension installs per-agent state now the chat is
-      # fully wired (dynamic tools, close hooks, domain-event wiring). See
-      # {Extension} for #configure vs #bind.
-      @extensions.each { |ext| ext.bind(@extension_context) }
-      @listeners.emit(loaded) if loaded
+      @listeners.emit(restore_history(@history)) if @history
     end
 
     # Put a saved conversation into the freshly built chat. Restored:
@@ -975,7 +951,7 @@ module Pikuri
     # @return [void]
     def dispatch_ext_on_user_message(content, attachments)
       @extensions.each do |ext|
-        message = ext.on_user_message(@extension_context, content, attachments)
+        message = ext.on_user_message(content, attachments)
         next unless message.is_a?(String) && !message.strip.empty?
 
         append_reference_block(message.strip)
@@ -1075,7 +1051,7 @@ module Pikuri
     #
     # Read off ruby_llm's own +Chat#tools+ table rather than {#tools}: the
     # +agent+ and +mcp_connect+ tools register through
-    # {ExtensionContext#add_raw_tool}, which deliberately keeps them out of
+    # {Configurator#add_raw_tool}, which deliberately keeps them out of
     # that list, and an index over it would miss their overrides.
     #
     # @param name [String] the tool name ruby_llm is calling.

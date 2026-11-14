@@ -3,8 +3,7 @@
 module Pikuri
   class Agent
     # Listener-list value object an {Agent} owns: wraps an +Array+ of
-    # {Listener::Base} and fans {#emit} out to each. {Agent#initialize} stores
-    # one and is the sole caller of {#emit}.
+    # {Listener::Base} and fans {#emit} out to each.
     #
     # One job: fan out. The +Agent+ wires ruby_llm's callbacks itself, the
     # context cap rides the stream as a one-shot {Event::ContextCap}, and the
@@ -17,9 +16,16 @@ module Pikuri
         @listeners = listeners.dup
       end
 
+      # @param listener [Listener::Base]
+      # @return [void]
+      def add(listener)
+        @listeners << listener
+        nil
+      end
+
       # Dispatch one event to every listener, in registration order. Exactly two
       # callers: {Agent} (loop-narration {Event}s) and
-      # {ExtensionContext#emit_event} (domain events); listeners never call it —
+      # {Configurator#emit_event} (domain events); listeners never call it —
       # the stream is one-way.
       #
       # @param event [Object] an {Agent::Event} variant or a gem domain event

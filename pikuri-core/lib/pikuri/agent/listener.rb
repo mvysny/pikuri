@@ -8,7 +8,7 @@ module Pikuri
     # {Event} variants it cares about; everything else flows through unobserved.
     #
     # These are *pure consumers*: no listener writes back into the stream
-    # (emission is the +Agent+'s and {Agent::ExtensionContext#emit_event}'s job)
+    # (emission is the +Agent+'s and {Agent::Configurator#emit_event}'s job)
     # or reaches into ruby_llm's callbacks (that's {Agent}'s). Host-facing signal
     # holders (step budget, cancel flag, input queue) are *controls* under
     # {Pikuri::Agent::Control}, not listeners — they never appear in a
@@ -32,7 +32,7 @@ module Pikuri
         #   Event::ToolResult, Event::Tokens, Event::ContextCap,
         #   Event::Cancelled, Object] a core
         #   loop-narration variant, or a gem domain event via
-        #   {Agent::ExtensionContext#emit_event} (e.g. +Pikuri::Tasks::ListChanged+)
+        #   {Agent::Configurator#emit_event} (e.g. +Pikuri::Tasks::ListChanged+)
         # @return [void]
         def on_event(event); end
       end

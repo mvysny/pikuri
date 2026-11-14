@@ -21,12 +21,52 @@ what it already says.
 
 ---
 
+## D_one_phase_extensions — Why does an extension get one `configure` hook rather than `configure` plus `bind`?
+
+**Context.** An extension used to be wired in two phases. `configure(c)` ran inside the
+`Agent.new` block against the `Configurator`, which only collected declarations; `bind(ctx)` ran
+once the agent was built, against a second object, `ExtensionContext`, which held what acts on a
+live agent — `emit_event`, `add_raw_tool`, `sub_agent_listeners`, `on_close`, the agent itself.
+The split existed because the chat and the listener list were built *after* the block, so nothing
+in `configure` could reach them.
+
+Surveying the seven `bind`s (one in pikuri-subagents, six in pikuri-workshop) showed what they
+needed: the listener list, to hook a change callback to `emit_event` (Code, LSP, Tasks, Skills);
+the chat, to `add_raw_tool` (SubAgent, MCP); the resumed conversation (MCP). Memory's `bind`
+needed nothing `configure` lacked, Skills' interloper was already on the Configurator, and the
+two extensions implementing `on_user_message(ctx, …)` both ignored `ctx`. Nothing needed the
+agent to be *finished*, only those three things to *exist*.
+
+**Decision.** Build the chat and the listener list before the block runs, and let the
+Configurator carry the capabilities: one handle, one hook. An extension keeps `c` for later, as
+it kept `ctx`; `c.history` is the conversation being resumed; `c.agent` is the agent under
+construction, whose constructor arguments are readable at once and whose tools only once
+`Agent.new` returns — which is why the `agent` tool reads the parent at each spawn rather than
+when it is built. `bind`, `ExtensionContext` and `on_user_message`'s `ctx` are gone.
+
+The Capability seam survives unchanged in substance: the `Agent` still has no public path to
+emit or add a tool, and the way to those is to be handed the Configurator. What changed is who is
+handed it — the `Agent.new` block itself now holds the capabilities an extension does, which a
+host writing the block already could reach by adding an extension.
+
+**Alternatives rejected.**
+
+- **Keeping both phases, moving the misplaced work.** Memory and Skills would shrink, but five
+  extensions still need the post-block phase, so the second object and the second hook stay for
+  what is a construction-order artefact, not a lifecycle a reader has to learn.
+- **A guard raising on `emit_event` until construction finishes.** An event emitted inside the
+  block reaches only the listeners added so far; nothing emits there (every `emit_event` sits in
+  a callback or a tool), and the guard is a state flag on every Configurator for a misuse no one
+  has made. The Configurator's yardoc says it instead.
+
+---
+
 ## D_agent_is_one_conversation — Why does a host build a new `Agent` per conversation rather than clear one or load another into it?
 
 **Context.** An `Agent` used to outlive its conversation: `clear_conversation` emptied it for a
 "/clear", and `load_history!` swapped a saved conversation in. Both reset what they knew about —
 messages, controls, the system prompt, and each extension's `on_conversation_reset` — and missed
-what an extension had grown since `bind`. MCP's `mcp_connect` registers a server's tools on the
+what an extension had grown since it was configured. MCP's `mcp_connect` registers a server's tools on the
 chat mid-conversation, so after a clear they were still offered, and a loaded conversation saw
 tools it never connected while missing the ones it had. ruby_llm *can* drop tools
 (`Chat#with_tools(nil)`), so the gap was bookkeeping: every registration would have to say which
@@ -46,10 +86,9 @@ resuming — by closing the old agent and building a new one, resuming through
 `Extension#on_conversation_reset` and no `Event::Reset`. Per-conversation state is then plain
 instance state on objects built for that agent: an extension instance serves one agent, and
 `close` tears down what it started. An extension that needs to know what the restored
-conversation did reads it in `bind`, where it is already in place
-(`ctx.agent.export_history`) — MCP re-registers the tools of servers the transcript connected,
-from its cached schemas, with no call to the server. Reconnecting does not restore what those
-servers held; see `D_history_load_repairs`.
+conversation did reads it in `configure`, as `c.history` — MCP re-registers the tools of servers
+the transcript connected, from its cached schemas, with no call to the server. Reconnecting does
+not restore what those servers held; see `D_history_load_repairs`.
 
 The price is building an agent per conversation, which is cheap for everything pikuri ships:
 tools are instances or constants, the prompt is re-assembled, the `/props` probe repeats on the
@@ -60,7 +99,7 @@ which is where the shape came from.
 
 **Alternatives rejected.**
 
-- **Conversation-scoped tool registration** (`ExtensionContext#add_conversation_tool`, dropped on
+- **Conversation-scoped tool registration** (`Configurator#add_conversation_tool`, dropped on
   a clear): fixes the tool list and leaves the server state shared, which is the part that leaks
   secrets.
 - **An `Extension#on_history_loaded(ctx, history)` hook** on a reused agent, letting MCP replay

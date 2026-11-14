@@ -321,11 +321,11 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       assert_equal Pikuri::Agent::History::INTERRUPTED_RESULT, restored.messages.last.content
     end
 
-    it 'has the conversation in place by bind, so an extension can rebuild what it implies' do
+    it 'hands the conversation to configure, so an extension can rebuild what it implies' do
       seen = nil
       ext = Class.new do
         include Pikuri::Agent::Extension
-        define_method(:bind) { |ctx| seen = ctx.agent.export_history }
+        define_method(:configure) { |c| seen = c.history }
       end.new
 
       build(history: one_message) { |c| c.add_extension(ext) }

@@ -10,7 +10,7 @@ module Pikuri
     # are the complete set, all emitted by {Agent}, and new chat-loop
     # observability belongs here. Gems define their own *domain* events in
     # their own namespace (e.g. +Pikuri::Tasks::ListChanged+) and emit
-    # them via {ExtensionContext#emit_event} onto the same stream;
+    # them via {Configurator#emit_event} onto the same stream;
     # listeners must no-op on variants they don't recognize.
     module Event
       # User input for a turn (+mid_loop: false+, the default) or a host

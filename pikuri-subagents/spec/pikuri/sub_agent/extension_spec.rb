@@ -186,7 +186,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
     end
   end
 
-  describe '#bind' do
+  describe 'the agent tool' do
     it 'registers exactly one `agent` tool on the underlying chat' do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 's') do |c|
@@ -202,7 +202,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
 
     it "does NOT add the SubAgentTool to the parent agent's @tools — it's a per-agent dynamic tool" do
       # Same convention MCP follows: dynamic per-agent tools go through
-      # ctx.add_raw_tool (i.e. directly onto @chat), not into @tools.
+      # c.add_raw_tool (i.e. directly onto @chat), not into @tools.
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
         c.add_listener recorder
@@ -215,10 +215,12 @@ RSpec.describe Pikuri::SubAgent::Extension do
     end
 
     it "forwards the parent's resolved context_window_cap to the sub-agent via its transport" do
+      configurator = nil
       agent = Pikuri::Agent.new(
         transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 12_345),
         system_prompt: 's'
       ) do |c|
+        configurator = c
         c.add_listener recorder
         c.add_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona])
@@ -244,12 +246,10 @@ RSpec.describe Pikuri::SubAgent::Extension do
         # path: dig the SubAgentTool out of the extension instance.
         ext = agent.extensions.find { |e| e.is_a?(described_class) }
         refute_nil ext
-        # The SubAgentTool is closed over by bind; we re-create one
-        # (against the agent's ExtensionContext, the shape bind
-        # received) and invoke its execute closure to assert the
-        # propagation policy.
-        ctx = agent.instance_variable_get(:@extension_context)
-        sub_tool = Pikuri::SubAgent::SubAgentTool.new(ctx, personas: ext.personas)
+        # The SubAgentTool is closed over by configure; we re-create one
+        # against the same Configurator and invoke its execute closure to
+        # assert the propagation policy.
+        sub_tool = Pikuri::SubAgent::SubAgentTool.new(configurator, personas: ext.personas)
         sub_tool.run('name' => 'researcher', 'task' => 'do the thing')
         # The cap rides the sub-agent's transport now, not a ctor kwarg.
         refute received_kwargs.key?(:context_window)

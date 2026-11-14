@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri/testing'
+
 require 'tmpdir'
 require 'fileutils'
 
@@ -7,16 +9,7 @@ RSpec.describe Pikuri::Workspace::Extension do
   let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-ws-ext-')).realpath }
   let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:confirmer)  { Pikuri::Workspace::Confirmer::AUTO_APPROVE }
-  let(:configurator) do
-    Pikuri::Agent::Configurator.new(
-      transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-      system_prompt_base: 'base',
-      id: '',
-      streaming: false,
-      cancellable: nil,
-      interloper: nil
-    )
-  end
+  let(:configurator) { Pikuri::Testing.configurator }
 
   after { FileUtils.rm_rf(root) }
 

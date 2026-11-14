@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri/testing'
+
 RSpec.describe Pikuri::SubAgent::FILE_MINER do
   it 'is a Persona record named "file_miner"' do
     assert_kind_of Pikuri::SubAgent::Persona, described_class
@@ -32,16 +34,7 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
 
     let(:tools) { %w[file_list read grep glob].map { |n| stub_tool(n) } }
 
-    let(:configurator) do
-      Pikuri::Agent::Configurator.new(
-        transport:          Pikuri::Agent::ChatTransport.new(model: 'm'),
-        system_prompt_base: 'base',
-        id:                 '',
-        streaming:          false,
-        cancellable:        nil,
-        interloper:         nil
-      )
-    end
+    let(:configurator) { Pikuri::Testing.configurator }
 
     it 'configures cleanly when file_list/read/grep/glob are present' do
       tools.each { |t| configurator.add_tool(t) }

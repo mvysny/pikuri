@@ -69,7 +69,7 @@ end
 That's the whole pattern: fresh agent, same transport as its
 parent, one turn, `close` in an `ensure`. A caption job is this
 with a different prompt. Note what it *doesn't* have — no
-`ExtensionContext`, no persona, no `Agent.new` block at all. A
+extension, no persona, no `Agent.new` block at all. A
 one-off agent with tools is usually a design mistake; if it needs
 tools it's a sub-agent, and that's the [sub-agents
 chapter](subagents.md)'s subject.

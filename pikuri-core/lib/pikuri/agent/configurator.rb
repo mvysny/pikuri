@@ -2,13 +2,8 @@
 
 module Pikuri
   class Agent
-    # Build-time collector yielded into the +Pikuri::Agent.new+ block. Hosts
-    # and {Extension}s call its methods to declare tools, listeners,
-    # +on_close+ handlers, and extension instances; {Agent#initialize} drains
-    # the collected state into the agent's wiring before returning, then
-    # discards the Configurator (it carries no runtime state). System-prompt
-    # contributions are *not* collected here — the Agent pulls them from each
-    # extension's {Extension#system_prompt_snippets} at assembly time.
+    # The one handle for wiring an {Agent}, yielded into the +Pikuri::Agent.new+
+    # block and handed to every {Extension#configure}:
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_listener Pikuri::Agent::Listener::Terminal.new
@@ -16,106 +11,83 @@ module Pikuri
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog, root: project_root)
     #   end
     #
-    # Extensions implement +configure(c)+ against this same type, so
-    # block-users and extensions share one API.
+    # Two kinds of call. *Declarations* — {#add_tool}, {#add_listener},
+    # {#add_extension}, {#on_close} — shape the agent being built. *Capabilities*
+    # — {#emit_event}, {#add_raw_tool}, {#sub_agent_listeners} — act on the live
+    # agent, so an extension keeps the Configurator and uses them later, from a
+    # callback or a tool's +execute+:
+    #
+    #   def configure(c)
+    #     @list.on_change = -> { c.emit_event(ListChanged.new(items: @list.items)) }
+    #   end
+    #
+    # == Why a handed object, not methods on Agent
+    #
+    # {Agent} has no public path to these capabilities (no +listeners+ or
+    # +chat+ reader, no emit method): holding an agent grants read access to
+    # its config and nothing more. The way to them is to be handed the
+    # Configurator — by +Agent.new+, or onward by whoever was
+    # ({Pikuri::SubAgent::SubAgentTool} keeps its extension's). The boundary is
+    # the API contract, not a mechanical seal.
     #
     # == Two tool pools: regular vs. sub-agent-only
     #
-    # {#add_tool} registers a tool the parent agent can call (lands in {#tools},
-    # handed to ruby_llm). {#add_sub_agent_tool} registers one the parent
-    # *cannot* call (lands in {#sub_agent_tools}, never sent to ruby_llm for the
-    # parent) but which {Pikuri::SubAgent::Extension}'s persona-tool-name
-    # resolution can reach. The use case is the lethal-trifecta defense: keep
-    # network tools (+web_search+ / +web_scrape+ / +fetch+) off the parent so a
-    # prompt-injected file read can't egress through it, while the +researcher+
-    # persona still reaches them via the +agent+ tool. See SECURITY.md.
+    # {#add_tool} registers a tool the parent agent can call. {#add_sub_agent_tool}
+    # registers one the parent *cannot* call, which only a sub-agent whose
+    # persona names it receives. The use case is the lethal-trifecta defense:
+    # keep network tools (+web_search+ / +web_scrape+ / +fetch+) off the parent
+    # so a prompt-injected file read can't egress through it, while the
+    # +researcher+ persona still reaches them via the +agent+ tool. See
+    # SECURITY.md.
+    #
+    # == Implementation details
+    #
+    # {#add_raw_tool} reaches the chat at once, so a raw tool added inside the
+    # block precedes the regular tools, which the Agent registers when the block
+    # returns. An event emitted inside the block reaches only the listeners
+    # added so far.
     class Configurator
-      # @return [Agent::ChatTransport] same transport the Agent will use, so an
-      #   extension can wire helpers against the same model.
-      attr_reader :transport
+      # @return [Agent] the agent being built. Its constructor arguments
+      #   (+transport+, +id+, +cancellable+, +interloper+, ...) are readable at
+      #   once; what the block declares (+tools+, +system_prompt+) only once
+      #   +Agent.new+ returns.
+      attr_reader :agent
 
-      # @return [String] the +system_prompt:+ kwarg, untouched — the base the
-      #   Agent prepends to the pulled {Extension#system_prompt_snippets}.
-      attr_reader :system_prompt_base
+      # @return [History, nil] the conversation +Agent.new(history:)+ resumes,
+      #   as passed in, or +nil+ for a fresh one — so an extension can rebuild
+      #   what the transcript implies (MCP re-registers the tools of servers it
+      #   had connected).
+      attr_reader :history
 
-      # @return [String] this agent's unique identifier; empty for the
-      #   main agent, persona-rooted (e.g. +"researcher 0"+) for sub-agents.
-      attr_reader :id
-
-      # @return [Boolean] +true+ when the agent opted into chunk-level
-      #   streaming.
-      attr_reader :streaming
-
-      # @return [Control::Cancellable, nil] cancellation control, or +nil+.
-      #   Extensions running sub-LLM calls in +configure+ share it so a user
-      #   cancel during boot propagates.
-      attr_reader :cancellable
-
-      # @return [#call, nil] the agent's +around_request:+ hook
-      #   ({Agent#around_request}), for an extension building its own agent
-      #   to pass on.
-      attr_reader :around_request
-
-      # @return [Control::Interloper] the agent's mid-loop input queue
-      #   ({Agent#interloper}).
-      attr_reader :interloper
-
-      # @return [Array<Tool>] tools added via {#add_tool}, in declaration order;
-      #   drained by {Agent#initialize} and registered with ruby_llm.
+      # @return [Array<Tool>] tools added via {#add_tool}, in declaration order.
       attr_reader :tools
 
       # @return [Array<Tool>] tools added via {#add_sub_agent_tool}, in
-      #   declaration order; drained but *not* registered with ruby_llm —
-      #   available only to sub-agents (see the class header).
+      #   declaration order.
       attr_reader :sub_agent_tools
 
-      # @return [Array<Listener::Base>] listeners added via
-      #   {#add_listener}, in declaration order. Drained by
-      #   {Agent#initialize}.
-      attr_reader :listeners
-
-      # @return [Array<Proc>] +on_close+ handlers added via
-      #   {#on_close}, in declaration order. Fired by {Agent#close}
-      #   in LIFO order with per-handler rescue.
-      attr_reader :on_close_handlers
-
-      # @return [Array<#configure>] extension instances added via
-      #   {#add_extension}, in declaration order. The Agent calls +bind+ on
-      #   each after wiring is complete.
+      # @return [Array<Extension>] extensions added via {#add_extension}, in
+      #   declaration order.
       attr_reader :extensions
 
-      # @param transport [Agent::ChatTransport]
-      # @param system_prompt_base [String]
-      # @param id [String]
-      # @param streaming [Boolean]
-      # @param cancellable [Control::Cancellable, nil]
-      # @param interloper [Control::Interloper]
-      # @param around_request [#call, nil]
-      # @param on_close_sink [Array<Proc>, nil] array {#on_close} appends to.
-      #   {Agent#initialize} passes its live +@on_close_handlers+ so a handler
-      #   armed via +c.on_close+ is reachable instantly — what lets the
-      #   constructor close a half-built agent if a later +configure+ raises.
-      #   Defaults to a fresh array (standalone/spec use).
-      def initialize(transport:, system_prompt_base:, id:, streaming:,
-                     cancellable:, interloper:, around_request: nil,
-                     on_close_sink: nil)
-        @transport = transport
-        @system_prompt_base = system_prompt_base
-        @id = id
-        @streaming = streaming
-        @cancellable = cancellable
-        @around_request = around_request
-        @interloper = interloper
-
+      # @param agent [Agent] the agent under construction
+      # @param chat [RubyLLM::Chat] its chat, the target of {#add_raw_tool}
+      # @param listeners [ListenerList] its listener list
+      # @param history [History, nil]
+      # @param on_close_sink [Array<Proc>] the agent's live +on_close+ list, so
+      #   a handler armed mid-block is there when a later +configure+ raises
+      #   and the constructor closes the half-built agent.
+      def initialize(agent:, chat:, listeners:, history:, on_close_sink:)
+        @agent = agent
+        @chat = chat
+        @listeners = listeners
+        @history = history
+        @on_close_handlers = on_close_sink
         @tools = []
         @sub_agent_tools = []
-        @listeners = []
-        @on_close_handlers = on_close_sink || []
         @extensions = []
       end
 
-      # Append a tool to the agent's static tool list.
-      #
       # @param tool [Tool]
       # @return [void]
       def add_tool(tool)
@@ -123,20 +95,14 @@ module Pikuri
         nil
       end
 
-      # Append several tools at once. Equivalent to calling {#add_tool}
-      # for each element of +tools+; declaration order is preserved.
-      #
       # @param tools [Enumerable<Tool>]
       # @return [void]
       def add_tools(tools)
-        tools.each { |t| @tools << t }
+        tools.each { |t| add_tool(t) }
         nil
       end
 
-      # Append a tool to the sub-agent-only pool. The parent LLM
-      # never sees it; only sub-agents whose persona +tool_names+
-      # include the tool's +name+ get it in their toolset. See the
-      # class header for the trifecta-defense rationale.
+      # Add a tool only sub-agents can receive; see +== Two tool pools+.
       #
       # @param tool [Tool]
       # @return [void]
@@ -145,29 +111,23 @@ module Pikuri
         nil
       end
 
-      # Append a listener to the agent's listener list.
-      #
       # @param listener [Listener::Base]
       # @return [void]
       def add_listener(listener)
-        @listeners << listener
+        @listeners.add(listener)
         nil
       end
 
-      # Append several listeners at once. Accepts any enumerable
-      # (Array, {ListenerList}, …); declaration order is preserved.
-      #
       # @param listeners [Enumerable<Listener::Base>]
       # @return [void]
       def add_listeners(listeners)
-        listeners.each { |l| @listeners << l }
+        listeners.each { |l| add_listener(l) }
         nil
       end
 
-      # Register an extension: its +configure(self)+ runs immediately (so
-      # source order matches execution order), and the instance is retained for
-      # the +bind(ctx)+ sweep at the end of {Agent#initialize}. Both hooks are
-      # required — +include Pikuri::Agent::Extension+ for no-op defaults.
+      # Register an extension and run its +configure(self)+ at once, so source
+      # order is execution order: a later extension sees what earlier ones
+      # added. +include Pikuri::Agent::Extension+ for no-op defaults.
       #
       # An instance serves one agent ({Extension}), so one already added to
       # any agent — this one included, and even after that agent closed — is
@@ -175,7 +135,7 @@ module Pikuri
       # quietly otherwise: the second agent would share the first one's
       # per-conversation state and the servers it started.
       #
-      # @param extension [Extension, #configure, #bind] extension instance
+      # @param extension [Extension, #configure] extension instance
       # @return [void]
       # @raise [ArgumentError] when +extension+ was already added to an agent
       def add_extension(extension)
@@ -195,6 +155,45 @@ module Pikuri
 
         @on_close_handlers << blk
         nil
+      end
+
+      # Emit a domain event onto the agent's listener stream. Core {Event}
+      # variants narrate the loop; gems define their own (e.g.
+      # +Pikuri::Tasks::ListChanged+) and emit them here. Listeners no-op on
+      # variants they don't recognize ({Listener::Base#on_event}'s default).
+      #
+      # Call it on the agent's thread — typically inside a tool's +execute+,
+      # landing between {Event::ToolCall} and {Event::ToolResult}.
+      #
+      # @param event [Object] an immutable event value (by convention a +Data+)
+      # @return [void]
+      def emit_event(event)
+        @listeners.emit(event)
+        nil
+      end
+
+      # Register a raw +RubyLLM::Tool+ subclass on the agent's chat, bypassing
+      # {Pikuri::Tool}'s strict validation — MCP's tools, whose schema is the
+      # server's. Usable mid-conversation (+mcp_connect+ adds a server's tools
+      # when the model asks).
+      #
+      # The tool does NOT enter {Agent#tools}, so sub-agents can't snapshot it:
+      # activation is strictly per-agent.
+      #
+      # @param ruby_llm_tool [Class] subclass of +RubyLLM::Tool+
+      # @return [void]
+      def add_raw_tool(ruby_llm_tool)
+        @chat.with_tools(ruby_llm_tool)
+        nil
+      end
+
+      # A listener list for a spawned sub-agent, via {ListenerList#for_sub_agent}.
+      #
+      # @param params [Hash{Symbol => Object}] forwarded to each listener's
+      #   +for_sub_agent+ hook (currently +id:+)
+      # @return [ListenerList]
+      def sub_agent_listeners(**params)
+        @listeners.for_sub_agent(**params)
       end
 
       # Every extension ever added, process-wide. Keyed by identity (a

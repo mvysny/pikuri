@@ -1,39 +1,47 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Agent::Configurator do
-  let(:transport) { Pikuri::Agent::ChatTransport.new(model: 'm') }
+  # Bare-minimum chat stand-in: records tools registered via +with_tools+,
+  # the only chat surface the Configurator touches.
+  let(:fake_chat_class) do
+    Class.new do
+      attr_reader :tools
 
-  def new_configurator(**overrides)
-    Pikuri::Agent::Configurator.new(
-      transport: transport,
-      system_prompt_base: 'base',
-      id: '',
-      streaming: false,
-      cancellable: nil,
-      interloper: nil,
-      **overrides
-    )
+      def initialize
+        @tools = []
+      end
+
+      def with_tools(tool)
+        @tools << tool
+        self
+      end
+    end
+  end
+
+  let(:recorder) { Pikuri::Agent::Listener::InMemoryEventList.new }
+  let(:listeners) { Pikuri::Agent::ListenerList.new([recorder]) }
+  let(:fake_chat) { fake_chat_class.new }
+  let(:fake_agent) { Object.new }
+  let(:close_sink) { [] }
+
+  def new_configurator(history: nil)
+    Pikuri::Agent::Configurator.new(agent: fake_agent, chat: fake_chat, listeners: listeners,
+                                    history: history, on_close_sink: close_sink)
   end
 
   describe '#initialize' do
-    it 'exposes the constructor inputs verbatim via attr_readers' do
-      cancellable = Pikuri::Agent::Control::Cancellable.new
-      c = new_configurator(id: 'researcher 0', streaming: true,
-                           cancellable: cancellable)
+    it 'exposes the agent and the history it was built for' do
+      history = Pikuri::Agent::History.new(messages: [])
+      c = new_configurator(history: history)
 
-      assert_equal transport, c.transport
-      assert_equal 'base', c.system_prompt_base
-      assert_equal 'researcher 0', c.id
-      assert_equal true, c.streaming
-      assert_same cancellable, c.cancellable
+      assert_same fake_agent, c.agent
+      assert_same history, c.history
     end
 
     it 'starts with empty collections' do
       c = new_configurator
       assert_equal [], c.tools
       assert_equal [], c.sub_agent_tools
-      assert_equal [], c.listeners
-      assert_equal [], c.on_close_handlers
       assert_equal [], c.extensions
     end
   end
@@ -69,22 +77,27 @@ RSpec.describe Pikuri::Agent::Configurator do
   end
 
   describe '#add_listener' do
-    it 'appends in declaration order' do
+    it "appends to the agent's listener list, after the ones already there" do
       c = new_configurator
-      c.add_listener(:l1)
-      c.add_listener(:l2)
-      assert_equal %i[l1 l2], c.listeners
+      later = Pikuri::Agent::Listener::InMemoryEventList.new
+      c.add_listener(later)
+      event = Pikuri::Agent::Event::Cancelled.new
+
+      listeners.emit(event)
+
+      assert_equal [event], recorder.events
+      assert_equal [event], later.events
     end
   end
 
   describe '#on_close' do
-    it 'collects handler blocks in declaration order' do
+    it "appends handler blocks to the agent's live sink in declaration order" do
       c = new_configurator
       a = -> { :a }
       b = -> { :b }
       c.on_close(&a)
       c.on_close(&b)
-      assert_equal [a, b], c.on_close_handlers
+      assert_equal [a, b], close_sink
     end
 
     it 'raises ArgumentError without a block' do
@@ -94,12 +107,10 @@ RSpec.describe Pikuri::Agent::Configurator do
   end
 
   describe '#add_extension' do
-    # An extension that just records what it gets, then accepts the
-    # default no-op bind from Pikuri::Agent::Extension. Mixing the
-    # module in is the canonical way to write an extension; the
-    # Configurator's contract calls #configure unconditionally so
-    # the module's defaults stop NoMethodError fires for omitted
-    # methods.
+    # An extension that just records what it gets. Mixing the module in is
+    # the canonical way to write an extension; the Configurator calls
+    # #configure unconditionally, so the module's defaults stop
+    # NoMethodError for omitted hooks.
     let(:extension_class) do
       Class.new do
         include Pikuri::Agent::Extension
@@ -182,19 +193,47 @@ RSpec.describe Pikuri::Agent::Configurator do
     end
   end
 
+  describe '#emit_event' do
+    it 'fans gem-defined domain events (any value) out to the listener list' do
+      domain_event = Data.define(:payload).new(payload: 42)
+
+      assert_nil new_configurator.emit_event(domain_event)
+      assert_equal [domain_event], recorder.events
+    end
+  end
+
+  describe '#add_raw_tool' do
+    it "registers the raw tool on the agent's chat, not in #tools" do
+      c = new_configurator
+      raw_tool = Class.new(RubyLLM::Tool)
+
+      assert_nil c.add_raw_tool(raw_tool)
+      assert_equal [raw_tool], fake_chat.tools
+      assert_equal [], c.tools
+    end
+  end
+
+  describe '#sub_agent_listeners' do
+    it 'derives a fresh ListenerList whose shared listeners flow into the parent instances' do
+      # InMemoryEventList shares by reference (a structured sink), so an
+      # event emitted on the derived list lands in the parent's recorder.
+      derived = new_configurator.sub_agent_listeners(id: 'researcher 0')
+      event = Pikuri::Agent::Event::Cancelled.new
+
+      derived.emit(event)
+
+      refute_same listeners, derived
+      assert_equal [event], recorder.events
+    end
+  end
+
   describe Pikuri::Agent::Extension do
-    it 'provides no-op default implementations of #configure and #bind' do
-      # The mixin's whole reason for being: an extension that only
-      # needs one hook can omit the other and inherit a safe no-op.
+    it 'provides no-op defaults for #configure and #on_user_message' do
       ext = Class.new { include Pikuri::Agent::Extension }.new
 
-      assert_respond_to ext, :configure
-      assert_respond_to ext, :bind
-
-      # Default impls accept the expected arguments and return nil
-      # without side effects.
       assert_nil ext.configure(:any_configurator)
-      assert_nil ext.bind(:any_agent)
+      assert_nil ext.on_user_message('hi', [])
+      assert_equal [], ext.system_prompt_snippets
     end
   end
 end

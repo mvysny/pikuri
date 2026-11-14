@@ -47,8 +47,7 @@ module Pikuri
       # extension contributes ({Pikuri::Agent::Extension#trifecta_contribution}
       # — legs no tool can declare, and a child per sub-agent persona).
       #
-      # @param agent [Pikuri::Agent] a *wired* agent (after the bind sweep, so
-      #   dynamically-added tools are present)
+      # @param agent [Pikuri::Agent] a fully built agent
       # @param label [String] name for the root node; defaults to the running
       #   program, which is what a host wants in a boot banner
       # @return [Node]
