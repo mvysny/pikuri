@@ -40,14 +40,13 @@ module Pikuri
       super(mime: mime, filename: filename, bytes: bytes.b.freeze)
     end
 
-    # ruby_llm's attachment over these bytes, for the wire.
-    #
-    # ruby_llm takes no MIME type; it re-detects one from the bytes and
-    # {#filename}, so {#mime} does not cross.
+    # ruby_llm's attachment over these bytes, for the wire. {#mime} crosses as
+    # stated, so ruby_llm detects nothing: the provider is told the type pikuri
+    # checked, never one guessed from a sender-chosen {#filename}.
     #
     # @return [RubyLLM::Attachment]
     def to_ruby_llm
-      RubyLLM::Attachment.new(StringIO.new(bytes), filename: filename)
+      RubyLLM::Attachment.new(StringIO.new(bytes), filename: filename, mime_type: mime)
     end
 
     # The line that stands in for this attachment when the model can't take

@@ -21,6 +21,7 @@ march on.
 
 - `thunderbird_mail_attachment_read` answers a PNG, JPEG, GIF or WebP attachment as the picture itself, for a vision model to see; a text-only model gets a note instead (`D_refuse_unsupported_attachments`).
 - **Breaking:** the 5 MB image cap moved from `Pikuri::Workspace::Read::MAX_IMAGE_BYTES` to `Pikuri::Attachment::MAX_IMAGE_BYTES`, so every gem attaching an image shares it; rename the constant where you read it.
+- Fix `Pikuri::Attachment#to_ruby_llm` letting ruby_llm guess the type from the file name; it now passes `mime` through, so the provider is told the type pikuri checked.
 - Fix `Pikuri::FileType.detect_mime` raising `Encoding::CompatibilityError` on a UTF-8 String holding non-ASCII; it now sniffs a binary copy of the leading bytes.
 - `thunderbird_mail_attachment_read` now reads a forwarded email (`message/rfc822`) as its sender, recipients, date, attachment list and text (`Pikuri::Thunderbird::ForwardedMail`), and `thunderbird_mail_read` lists one as `forwarded email`, noting its text may already be in the body.
 - Fix `thunderbird_mail_read` failing the turn on a body over 40 KB whose cut split a multi-byte character; the torn tail is now dropped.
