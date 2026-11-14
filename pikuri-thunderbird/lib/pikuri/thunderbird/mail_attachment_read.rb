@@ -24,8 +24,10 @@ module Pikuri
     # registered (pikuri-pdf, pikuri-extractors; an HTML attachment renders
     # only when pikuri-web is loaded, and is raw markup otherwise).
     #
-    # Refused up front: images, forwarded mails (+message/rfc822+), encrypted
-    # parts, links to online files, and detached stubs. Inbound-only, with the
+    # A forwarded mail (+message/rfc822+) reads as its headers, attachment
+    # list and text ({ForwardedMail}); its own attachments can't be opened
+    # yet. Refused up front: images, encrypted parts, links to online files,
+    # and detached stubs. Inbound-only, with the
     # same legs as +thunderbird_mail_read+: an attachment is untrusted the same
     # way a body is.
     #
@@ -52,7 +54,8 @@ module Pikuri
         - Pass the message id and the attachment's number, both as thunderbird_mail_read listed them.
         - PDFs and other documents come back as extracted text; PDFs carry `--- Page N ---` markers you can cite.
         - Use `offset` and `limit` to page; when the response ends in `Use offset=N to continue`, call again with that offset.
-        - Images, forwarded emails and encrypted attachments can't be read here.
+        - A forwarded email comes back as its headers, attachment list and text.
+        - Images and encrypted attachments can't be read here.
       DESC
 
       # @param backend [Gloda::Mail] the attachment list and folder copies.
@@ -103,7 +106,10 @@ module Pikuri
         refusal = refusal(att)
         return Pikuri::Tool::Result.error("attachment #{attachment} #{refusal}") if refusal
 
-        page = extract(attachment_bytes(store, rec, att), att.content_type, offset:, limit:)
+        bytes = attachment_bytes(store, rec, att)
+        type = att.content_type
+        bytes, type = ForwardedMail.render(bytes), 'text/plain' if type == 'message/rfc822'
+        page = extract(bytes, type, offset:, limit:)
         Pikuri::Tool::Result.page(page, name: 'attachment')
       rescue Unreadable, MessageStore::Error => e
         Pikuri::Tool::Result.error(e.message)
@@ -138,7 +144,6 @@ module Pikuri
       def self.refusal(att)
         type = att.content_type
         if att.external then 'is a link to an online file, not stored in the message.'
-        elsif type == 'message/rfc822' then "is a forwarded email, which can't be opened yet; open it in Thunderbird."
         elsif type.start_with?('image/') then "is an image, which can't be read yet."
         elsif ENCRYPTED_TYPES.include?(type) then "is encrypted, so there is no text to read."
         end

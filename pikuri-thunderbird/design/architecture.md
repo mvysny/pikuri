@@ -349,12 +349,21 @@ A complete, pre-decoded search index. Tables that matter:
   leaf of the stored message (root `1`, children `1.1`, `1.2`, …); `contentType`
   beats the part's own header (7 parts said `application/octet-stream` where
   Gloda, going by the file name, said `text/csv` etc.); `size` is the decoded
-  size for every binary part, but `-1` when unknown, `0` for every
-  `message/rfc822`, and a few percent off for text. `isExternal` marks a part
+  size for every binary part, but `-1` when unknown, a few percent off for
+  text, and noise for a `message/rfc822`: `0` for every one on the IMAP
+  account, an unrelated number on the POP3 testbed (604 for a forward whose
+  decoded size is 2665). `isExternal` marks a part
   whose bytes are at a remote URL — never set on IMAP, and **not** the flag
   for a detached attachment (that is a `text/x-moz-deleted` part). The FTS
   column `c2attachmentNames` **omits forwarded mails**, which is why the
-  listing numbers this list instead.
+  listing numbers this list instead — yet it *carries* the names of the
+  attachments inside a forward, which this list omits (testbed, 159), so a
+  search can find a mail by an attachment name its listing never shows.
+- **What `attachmentInfos` leaves out** (testbed, 159): an image an HTML part
+  shows by `cid:` inside `multipart/related` — under `alternative` or as the
+  mail's root — is not listed at all; an image attached outright, or
+  `inline` under `multipart/mixed`, is. A forward's text body, by contrast,
+  is appended to the outer message's `c0body` with no separator.
 - Ignore: `imConversations*`, `ext_mimeTypes`.
 
 **The mozporter sharp edge.** Both FTS tables use Mozilla's custom `mozporter`

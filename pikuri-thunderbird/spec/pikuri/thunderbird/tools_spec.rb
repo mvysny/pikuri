@@ -152,6 +152,24 @@ describe 'pikuri-thunderbird tools' do
         g.close
       end
     end
+
+    it 'truncates a long body on a character boundary, so the result stays valid UTF-8' do
+      Dir.mktmpdir do |dir|
+        path = make_gloda(dir)
+        db = SQLite3::Database.new(path)
+        # 'a' first puts every 2-byte 'ä' on an odd offset: a byte cut at 40 KB tears one.
+        db.execute("INSERT INTO messagesText_content VALUES (2,?,'Pitkä','','a@x','me@x')", ["a#{'ä' * 30_000}"])
+        db.execute("INSERT INTO messages VALUES (2,1,0,'<long@x>',0,'{}')")
+        db.close
+        g = Pikuri::Thunderbird::Gloda.new(gloda_path: path, cache_dir: File.join(dir, 'gc'))
+
+        out = Pikuri::Thunderbird::MailRead.new(backend: mail(g)).run('message_id' => '<long@x>').to_s
+
+        assert out.valid_encoding?
+        assert_includes out, "ää\n\n… [truncated; message longer than 40 KB] …"
+        g.close
+      end
+    end
   end
 
   describe 'thunderbird_calendar_search' do

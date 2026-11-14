@@ -21,6 +21,10 @@ module Pikuri
       #   50k-char body would swamp the context).
       MAX_BODY = 40 * 1024
 
+      # @return [String] follows the listing when it holds a forwarded email.
+      FORWARD_NOTE = "  (A forwarded email's text may also appear in the body below; read the attachment " \
+                     'for its sender, date and attachments.)'
+
       # @return [String] opencode-shape description.
       DESCRIPTION = <<~DESC
         Read one local Thunderbird message in full (headers, decoded plain-text body, numbered attachment list).
@@ -56,13 +60,16 @@ module Pikuri
         return Pikuri::Tool::Result.error("no message found with id #{message_id.inspect}.") unless rec
 
         attachments = rec[:attachments]
+        listing = attachments.empty? ? ' (none)' : "\n#{attachment_listing(attachments)}"
+        # Gloda appends a forward's text to the outer body with no separator.
+        listing += "\n#{FORWARD_NOTE}" if attachments.any? { _1.content_type == 'message/rfc822' }
         message = <<~MSG.chomp
           Subject: #{rec[:subject]}
           From: #{rec[:from]}
           To: #{rec[:to]}
           Date: #{DateHelpers.short_datetime(rec[:date])}
           Folder: #{rec[:folder]}
-          Attachments:#{attachments.empty? ? ' (none)' : "\n#{attachment_listing(attachments)}"}
+          Attachments:#{listing}
 
           #{body(rec[:body])}
         MSG
@@ -71,29 +78,38 @@ module Pikuri
       end
 
       # The numbered listing, also quoted back by +thunderbird_mail_attachment_read+
-      # for a wrong index. Gloda's size is shown only when known: it is +-1+ for
-      # some inline images and +0+ for a forwarded mail.
+      # for a wrong index. Gloda's size is shown only when known (+-1+ for some
+      # inline images), and never for a forwarded mail, where it is noise.
       #
       #   attachment_listing(rec[:attachments])
       #   # =>   1. invoice.pdf (application/pdf, 1.4 MB)
+      #   #      2. Fwd.eml (forwarded email)
       #
       # @param attachments [Array<Gloda::Attachment>]
       # @return [String] one indented line per attachment, numbered from 1.
       def self.attachment_listing(attachments)
         attachments.each_with_index.map do |a, i|
           # The name is sender-authored; a newline in it would forge a line.
-          details = [a.content_type, (Pikuri::Tool.format_bytes(a.size) if a.size.positive?),
-                     ('online link, not stored' if a.external)].compact.join(', ')
+          details = if a.content_type == 'message/rfc822'
+                      'forwarded email'
+                    else
+                      [a.content_type, (Pikuri::Tool.format_bytes(a.size) if a.size.positive?),
+                       ('online link, not stored' if a.external)].compact.join(', ')
+                    end
           "  #{i + 1}. #{a.name.gsub(/[[:cntrl:]]/, ' ')} (#{details})"
         end.join("\n")
       end
 
+      # A byte cut can split a multi-byte character, and an invalid UTF-8
+      # string fails the JSON encoding of the whole request, so the torn
+      # tail is scrubbed away.
+      #
       # @return [String] the body, truncated with a marker if over {MAX_BODY}.
       def self.body(text)
         text = text.to_s
         return text if text.bytesize <= MAX_BODY
 
-        "#{text.byteslice(0, MAX_BODY)}\n\n… [truncated; message longer than #{MAX_BODY / 1024} KB] …"
+        "#{text.byteslice(0, MAX_BODY).scrub('')}\n\n… [truncated; message longer than #{MAX_BODY / 1024} KB] …"
       end
       private_class_method :body
     end

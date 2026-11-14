@@ -53,6 +53,51 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
       Content-Type: text/x-moz-deleted; name="Deleted: old.pdf"
 
       You deleted an attachment from this message.
+      --B
+      Content-Type: image/jpeg; name="photo.jpg"
+
+      not read
+      --B
+      Content-Type: message/rfc822
+      Content-Disposition: attachment; filename="ForwardedMessage.eml"
+
+      From: =?UTF-8?Q?Lea_M=C3=A4kinen?= <lea@example.com>
+      To: Tomas <tomas@example.com>
+      Cc: ilse@example.com
+      Subject: =?UTF-8?Q?Hakemus:_kehitt=C3=A4j=C3=A4?=
+      Date: Mon, 9 Nov 2026 22:14:00 +0000
+      Message-ID: <inner@x>
+      Content-Type: multipart/mixed; boundary="C"
+
+      --C
+      Content-Type: multipart/alternative; boundary="D"
+
+      --D
+      Content-Type: text/plain; charset=iso-8859-1
+      Content-Transfer-Encoding: quoted-printable
+
+      My CV is attached, caf=E9.
+      --D
+      Content-Type: multipart/related; boundary="E"
+
+      --E
+      Content-Type: text/html; charset=utf-8
+
+      <p>My CV is attached.</p><img src="cid:logo@x">
+      --E
+      Content-Type: image/png
+      Content-Disposition: inline; filename="logo.png"
+      Content-ID: <logo@x>
+
+      png
+      --E--
+      --D--
+      --C
+      Content-Type: application/pdf; name="cv.pdf"
+      Content-Disposition: attachment; filename="cv.pdf"
+
+      %PDF-
+      --C--
       --B--
     MSG
   end
@@ -126,12 +171,28 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
     end
   end
 
-  it 'refuses a detached stub, an image, a forwarded mail and an online link' do
+  it 'refuses a detached stub, an image and an online link' do
     with_tools do |tool, _|
       assert_includes read(tool, 4).content, 'detached or deleted'
       assert_includes read(tool, 5).content, 'attachment 5 is an image'
-      assert_includes read(tool, 6).content, 'attachment 6 is a forwarded email'
       assert_includes read(tool, 7).content, 'attachment 7 is a link to an online file'
+    end
+  end
+
+  it "reads a forwarded email as its headers, attachments and text, listing what Gloda would" do
+    with_tools do |tool, _|
+      lines = read(tool, 6).content.lines.map { _1.sub(/\A *\d+\t/, '').chomp }
+
+      assert_equal ['Subject: Hakemus: kehittäjä',
+                    'From: "Lea Mäkinen" <lea@example.com>',
+                    'To: Tomas <tomas@example.com>',
+                    'Cc: ilse@example.com',
+                    "Date: #{Time.utc(2026, 11, 9, 22, 14).getlocal.strftime('%Y-%m-%d %H:%M')}",
+                    'Attachments (open them in Thunderbird):',
+                    '  - cv.pdf (application/pdf, 5 B)',
+                    '',
+                    'My CV is attached, café.'], lines.first(9)
+      refute_includes lines.join, 'logo.png' # a cid: image is body, as Gloda has it
     end
   end
 
@@ -165,7 +226,8 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
 
         assert_includes out, "Attachments:\n  1. notes.txt (text/plain, 24 B)\n  2. invite.ics (application/ics, 40 B)"
         assert_includes out, '  5. photo.jpg (image/jpeg)'
-        assert_includes out, '  6. ForwardedMessage.eml (message/rfc822)'
+        assert_includes out, "  6. ForwardedMessage.eml (forwarded email)\n  7. cloud.pdf"
+        assert_includes out, "\n  (A forwarded email's text may also appear in the body below;"
         assert_includes out, '  7. cloud.pdf (application/pdf, online link, not stored)'
       end
     end

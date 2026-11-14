@@ -15,8 +15,9 @@ module Pikuri
       #
       # * +name+ — +String+, sender-authored.
       # * +content_type+ — +String+, lowercased.
-      # * +size+ — +Integer+ decoded bytes, but +-1+ when unknown and +0+ for
-      #   every +message/rfc822+ part; display it, never enforce it.
+      # * +size+ — +Integer+ decoded bytes, but +-1+ when unknown and
+      #   meaningless for a +message/rfc822+ part (+0+ on IMAP, an unrelated
+      #   number on a local store); display it, never enforce it.
       # * +part+ — +String+ MIME part number, Thunderbird numbering: root +"1"+,
       #   children +"1.1"+, +"1.2"+, …
       # * +external+ — +Boolean+, the bytes live at a remote URL, not in the
