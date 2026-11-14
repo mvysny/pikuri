@@ -1,11 +1,11 @@
 # Book 1 rework: one track that ends on the secretary
 
-Status: **done, 2026-11-13**, bar two loose ends: the `~/.bashrc` transcript (under *New chapters*) and the
-optional `wire.md` paragraph (under *The sweep*). The workshop split (2026-11-12) took the
+Status: **done, 2026-11-13**, bar one loose end: the optional `wire.md` paragraph (under
+*The sweep*). The workshop split (2026-11-12) took the
 chapters about running code you didn't write to book 2; book 1 now runs as one track ending on
 [the secretary](secretary.md), and its ToC is `book/README.md`.
 
-**To pick up:** settle the two loose ends, then graduate this file.
+**To pick up:** settle the loose end, then graduate this file.
 
 ## Approach
 
@@ -84,10 +84,9 @@ chapters). Some are legitimate links to book 2.
   `pikuri-workspace/bin/pikuri-files`, not a flag on `pikuri-chat`, which stays the book's
   simplest program (owner, 2026-11-13). Seen in its transcript: a model passing `~/.bashrc` gets
   *not found* (relative to the folder) rather than *outside the workspace*, since `~` isn't
-  expanded. `Q_tilde` settled 2026-11-14: the workspace now expands a leading `~` / `~/`, so
-  that read is refused as *outside the workspace*. **Left:** re-shoot that transcript on the
-  testbed and rewrite the paragraph after it (`book/touching-files.md`, "Here is a model
-  running into the edge"), which still tells the old *not found* story.
+  expanded. Settled 2026-11-14: the workspace now expands a leading `~` / `~/`; the
+  transcript is re-shot (the model now writes the full path itself, 4 runs of 4) and the
+  chapter tells the `~` story in prose.
 
 ## The sweep
 

@@ -114,23 +114,26 @@ in your home folder:
 
 ```
 > Also check my ~/.bashrc for an alias called trip.
-→ Read(~/.bashrc)
-= Error: file not found: ~/.bashrc (relative paths resolve against /home/alex/trip)
-→ Glob(**/.bashrc)
-= Found 0 files
+→ Read(/home/alex/.bashrc)
+= Error: path '/home/alex/.bashrc' is outside the workspace (roots: /home/alex/trip)
 …
-- The real `~/.bashrc` lives outside this workspace, so it isn't reachable from here.
+I can't access that — `~/.bashrc` lives at `/home/alex/.bashrc`, which is outside the workspace I'm allowed to read (`/home/alex/trip`). The tools refuse anything outside that folder.
 ```
 
-The refusal held, but notice how: the model wrote `~/.bashrc`, and
-`~` is a shell's shorthand for your home folder, not something a
-file path means. So the tool read it as a folder literally named
-`~` inside the workspace, and answered *not found* rather than
-*outside the workspace*. The model got there in the end, but by a
-detour. The error does name the folder paths resolve against, which
-is what let it work out where it stood. A message that names the
-thing that's wrong is what a model recovers from, as the
+One call, and the model stopped. The refusal named both the path it
+asked for and the folder it may use, which is all it needed to tell
+you why rather than go hunting the folder for a copy. A message that
+names the thing that's wrong is what a model recovers from, as the
 designing-a-tool chapter found with the calculator.
+
+The model doesn't always write the path out in full, though. `~` is
+a shell's shorthand for your home folder, and a model writes
+`~/.bashrc` out of habit. An earlier run did exactly that, back when
+the workspace read `~` as a folder of that name inside the trip
+folder: the answer was *not found* instead of *outside the
+workspace*, and the model searched the folder for a `.bashrc` before
+it worked out where it stood. So the workspace now expands a leading
+`~` the way a shell would, and `~/.bashrc` gets the refusal above.
 
 A workspace can also be the whole machine, for an assistant whose
 job is your computer. Then nothing is "outside", and a fixed list of
