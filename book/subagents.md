@@ -201,13 +201,11 @@ A sub-agent isn't a clone of its parent. The split:
 - **`transport`** — the same `ChatTransport`, so the parent and
   all its children hit the same LLM server with the same model
   identifier. One connection, one bill, one set of rate-limit
-  headers.
+  headers. The context-window cap and the modalities are stated on
+  it, so they come along too.
 - **`cancellable`** — the same `Cancellable` flag. One Ctrl+C at
   the boss's prompt cancels the boss *and* every minion below it,
   at the next tool-call boundary.
-- **`context_window_cap`** — the cap detected once when the parent
-  was constructed (via `llama_probe_url` or ruby_llm's registry).
-  Children inherit it rather than re-probing.
 - **`streaming`** flag — propagated so the whole tree streams or
   doesn't, consistently.
 - **`listeners`** — but routed through

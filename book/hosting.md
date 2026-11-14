@@ -222,12 +222,13 @@ measured, not assumed, because releasing at the first byte would
 gate nothing at all. The `agent` tool hands its children the
 parent's hook, so the whole tree queues in one line.
 
-How many slots does your server have? You don't have to guess: the
-same `/props` document pikuri reads for the context window reports
-it.
+How many slots does your server have? You don't have to guess:
+llama.cpp's `/props` document reports it, beside the context window
+(on a router, ask `/props?model=<id>`).
 
-```ruby
-Pikuri::Agent::ContextWindowDetector.detect(transport, openai_base: transport.api_base).total_slots # => 4
+```
+$ curl -s http://localhost:8080/props | jq .total_slots
+4
 ```
 
 Does it matter? Measured against a live llama.cpp router, three
@@ -454,8 +455,8 @@ If you're building a host, the short version:
    `Thread.current`.
 2. **Two doors in from other threads** — `Cancellable` and
    `Interloper`. Everything else is your serialization problem.
-3. **Size your inference server once**, per server, and let the
-   `/props` probe do it when it can. Cancellation only works on a
+3. **Size your inference server once**, per server, from what its
+   `/props` reports. Cancellation only works on a
    request queued in *your* process.
 4. **Split tool construction** — shared instances at boot,
    `P_one_agent` tools per agent. Read the `Sharing:` line before

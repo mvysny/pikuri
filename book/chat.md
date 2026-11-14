@@ -270,9 +270,13 @@ wires.
 
 The model has to be able to see: a `-hf` model on
 `llama-server` downloads its vision projector by itself, but one
-started with `--no-mmproj-auto` can't, and pikuri asks the server
-first, so you get `Not sent: … takes no vision input` instead of a
-failed turn.
+started with `--no-mmproj-auto` can't. `pikuri-chat` doesn't ask the
+server which one it is talking to, so a blind model's server answers
+the picture with an error, and the picture stays in the conversation
+— start `pikuri-chat` afresh. A host that knows its model is blind
+says so on the transport, `modalities: { vision: false }`, and gets
+`Not sent: … takes no vision input` instead, before anything goes
+out.
 
 A picture is not free. It goes into the context window like text
 does: on Ornith-1.5 about one token per 32×32 pixels, capped at

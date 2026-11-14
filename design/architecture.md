@@ -46,9 +46,8 @@ first entry in each shows its shape.
 **A turn** ({Pikuri::Agent#run_loop}, one thread, unbounded in tool calls):
 
 1. `run_loop` applies a pending model switch, resets `Cancellable`, drains any queued
-   `Interloper` message and appends the user turn itself. Then, on the first turn after
-   construction or a switch, it has `ContextWindowDetector` probe the server's `/props` unless
-   the transport states both the cap and the modalities (`D_deferred_cap_probe`). It runs the extensions' `on_user_message` and only
+   `Interloper` message and appends the user turn itself. The cap and the modalities are what the
+   transport states; the agent never asks the server (`D_deferred_cap_probe`). It runs the extensions' `on_user_message` and only
    then calls `RubyLLM::Chat#complete` — never `#ask`, which bundles append and complete
    atomically and leaves no seam to inject between. ruby_llm owns the iteration from here
    (`D_no_step_limit`).

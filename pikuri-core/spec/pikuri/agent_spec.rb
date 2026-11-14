@@ -8,9 +8,7 @@ RSpec.describe Pikuri::Agent do
   # calls, +add_message+ calls). Pins the agent-level wiring
   # without going anywhere near a real provider.
   #
-  # Minimal +RubyLLM::Chat#model+ stand-in. Cap detection no longer
-  # reads it (the probe keys off the transport + global config — see
-  # {Pikuri::Agent::ContextWindowDetector}), but a real Chat exposes
+  # Minimal +RubyLLM::Chat#model+ stand-in: a real Chat exposes
   # +#model+ (carrying a +provider+ slug +run_loop+'s empty-turn split
   # keys off), so the fake mirrors that. Built per-instance so a spec can
   # flip +fake_chat.model.provider+ without leaking across examples;
@@ -276,7 +274,7 @@ RSpec.describe Pikuri::Agent do
       assert_equal 32_768, cap_events.first.cap
     end
 
-    describe 'context-window detection' do
+    describe 'the stated cap' do
       let(:token_log) { Pikuri::Agent::Listener::TokenLog.new }
 
       def wire_token_log(c)
@@ -284,29 +282,21 @@ RSpec.describe Pikuri::Agent do
         c.add_listener token_log
       end
 
-      it 'pushes the explicit cap onto every TokenLog via the ContextCap event' do
-        # The transport has no :openai provider, so the probe never runs;
-        # the transport's context_window is used verbatim.
+      it 'pushes the stated cap onto every TokenLog via the ContextCap event' do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 32_768),
                           system_prompt: 's') { |c| wire_token_log(c) }
 
         assert_equal 32_768, token_log.context_window_cap
       end
 
-      it 'exposes the resolved cap via #context_window_cap' do
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 8_192),
-                                  system_prompt: 's') { |c| wire_token_log(c) }
+      it 'announces no cap when the transport states none, and a turn announces nothing more' do
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.from_openai_server(
+          server: 'http://127.0.0.1:9', model: 'm'
+        ), system_prompt: 's') { |c| wire_token_log(c) }
+        agent.run_loop(user_message: 'hi')
 
-        assert_equal 8_192, agent.context_window_cap
-      end
-
-      it 'leaves cap nil when there is no explicit cap and the probe does not apply' do
-        # Non-:openai transport → ContextWindowDetector returns nil
-        # without probing, and the transport carries no context_window.
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                  system_prompt: 's') { |c| wire_token_log(c) }
-
-        assert_nil agent.context_window_cap
+        caps = recorder.events.grep(Pikuri::Agent::Event::ContextCap)
+        assert_equal [nil], caps.map(&:cap)
         assert_nil token_log.context_window_cap
       end
     end
@@ -345,12 +335,12 @@ RSpec.describe Pikuri::Agent do
         assert_equal 'm', agent.model
       end
 
-      it "drops the old model's modalities at the switch, before this turn's probe" do
+      it "shows a ModelSwitched listener the new model's modalities" do
         seen = []
         agent = nil
         spy = Class.new(Pikuri::Agent::Listener::Base) do
           define_method(:on_event) do |event|
-            seen << agent.modalities if event.is_a?(Pikuri::Agent::Event::ModelSwitched)
+            seen << agent.transport.modalities if event.is_a?(Pikuri::Agent::Event::ModelSwitched)
           end
         end.new
         agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', modalities: { vision: false }),
@@ -362,18 +352,31 @@ RSpec.describe Pikuri::Agent do
         assert_equal [{ vision: true }], seen
       end
 
-      it 'switches when only the context_window differs, re-emitting the cap' do
+      it 'adopts a transport differing only in stated facts without switching, emitting ContextCap alone' do
         agent = build_agent
         recorder.events.clear
-        # Same model, different cap: a cap-only change is a real switch
-        # (the transport is structurally different) and re-resolves the
-        # cap — proof the window travels with the transport.
-        agent.run_loop(user_message: 'hi',
-                       transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 64_000))
+        restated = Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 64_000,
+                                                    modalities: { vision: false })
+        agent.run_loop(user_message: 'hi', transport: restated)
 
-        assert_equal 64_000, agent.context_window_cap
+        assert_nil fake_chat.model_switches
+        assert_nil fake_chat.contexts
+        assert_same restated, agent.transport
         assert_equal 64_000, token_log.context_window_cap
-        assert recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) && e.cap == 64_000 }
+        refute(recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) })
+        assert_equal [Pikuri::Agent::Event::ContextCap, Pikuri::Agent::Event::UserTurn],
+                     recorder.events.map(&:class).first(2)
+      end
+
+      it "refuses an attachment by a fact update's modalities on the same turn" do
+        agent = build_agent
+        png = Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'x')
+
+        assert_raises(Pikuri::Agent::UnsupportedAttachmentError) do
+          agent.run_loop(user_message: 'look', attachments: [png],
+                         transport: agent.transport.with(modalities: { vision: false }))
+        end
+        assert_equal({ vision: false }, agent.transport.modalities)
       end
 
       it 'emits ModelSwitched then a fresh ContextCap on a switch' do
@@ -404,28 +407,23 @@ RSpec.describe Pikuri::Agent do
                          context_window: 2_000_000
                        ))
 
-        assert_equal 2_000_000, agent.context_window_cap
         assert_equal 2_000_000, token_log.context_window_cap
       end
 
-      it 'drops the cap to nil when switching to a capless transport the probe cannot resolve' do
+      it 'drops the cap to nil when switching to a capless transport' do
         agent = build_agent
-        # The new transport carries no cap and (api_base nil → global
-        # openai_api_base nil) the probe does not apply, so the boot
-        # model's 8_192 must NOT linger: the cap is per-model now.
+        # The boot model's 8_192 must NOT linger: the cap is per-model.
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
                          model: 'big', provider: :openai, assume_model_exists: true
                        ))
 
-        assert_nil agent.context_window_cap
+        assert_nil agent.transport.context_window
         assert_nil token_log.context_window_cap
       end
 
       it 'routes a cross-server switch through with_context then with_model' do
         agent = build_agent
-        # Explicit cap so the switch's cap resolution stays off the
-        # network (the cross-server target would otherwise be probed).
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
                          model: 'big', provider: :openai, assume_model_exists: true,
@@ -592,79 +590,6 @@ RSpec.describe Pikuri::Agent do
 
         assert_raises(ArgumentError) { agent.run_loop(user_message: 'hi', attachments: [raw]) }
         assert_equal [], fake_chat.added_messages
-      end
-    end
-
-    describe 'the first-turn /props probe' do
-      # The probe answers only once a llama.cpp router has loaded the model,
-      # so a host rendering the transcript from UserTurn must not wait on it.
-      before do
-        @original_detect = Pikuri::Agent::ContextWindowDetector.method(:detect)
-        seen = @seen_at_probe = []
-        events = recorder.events
-        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
-          seen.concat(events.map(&:class))
-          Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1)
-        end
-        chat = fake_chat
-        fake_chat.define_singleton_method(:complete) do |&_|
-          fire(:after_message, chat.add_assistant('hi'))
-        end
-      end
-
-      after do
-        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect, @original_detect)
-      end
-
-      it 'emits UserTurn before the probe, and the probed ContextCap before Tokens' do
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(
-                                    model: 'm', provider: :openai, api_base: 'http://llama:8080/v1'
-                                  ),
-                                  system_prompt: 's') { |c| c.add_listener recorder }
-        recorder.events.clear
-        agent.run_loop(user_message: 'hello?')
-
-        assert_includes @seen_at_probe, Pikuri::Agent::Event::UserTurn
-        kinds = recorder.events.map(&:class)
-        assert_equal [Pikuri::Agent::Event::UserTurn, Pikuri::Agent::Event::ContextCap],
-                     kinds.first(2)
-        assert kinds.index(Pikuri::Agent::Event::ContextCap) < kinds.index(Pikuri::Agent::Event::Tokens)
-        assert_equal 16_384, agent.context_window_cap
-        assert_equal({}, agent.modalities)
-      end
-
-      it 'probes before UserTurn when the turn carries attachments, to refuse them in time' do
-        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
-          Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1,
-                                                          modalities: { vision: false })
-        end
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(
-                                    model: 'm', provider: :openai, api_base: 'http://llama:8080/v1'
-                                  ),
-                                  system_prompt: 's') { |c| c.add_listener recorder }
-        image = Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png')
-
-        assert_raises(Pikuri::Agent::UnsupportedAttachmentError) { agent.run_loop(attachments: [image]) }
-        assert_equal({ vision: false }, agent.modalities)
-        assert_equal [], fake_chat.added_messages
-      end
-
-      it 'skips the probe only when both cap and modalities are stated' do
-        probes = []
-        Pikuri::Agent::ContextWindowDetector.define_singleton_method(:detect) do |*, **|
-          probes << :probe
-          Pikuri::Agent::ContextWindowDetector::Props.new(n_ctx: 16_384, total_slots: 1)
-        end
-        stated = Pikuri::Agent::ChatTransport.new(model: 'm', provider: :openai,
-                                                  api_base: 'http://llama:8080/v1', context_window: 8192)
-
-        Pikuri::Agent.new(transport: stated, system_prompt: 's').run_loop(user_message: 'a')
-        assert_equal 1, probes.size
-
-        child = Pikuri::Agent.new(transport: stated.with(modalities: {}), system_prompt: 's')
-        child.run_loop(user_message: 'b')
-        assert_equal 1, probes.size
-        assert_equal({}, child.modalities)
       end
     end
 

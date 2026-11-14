@@ -50,7 +50,8 @@ module Pikuri
     end
 
     # The line that stands in for this attachment when the model can't take
-    # it ({Agent#modalities}), so the model learns why it sees nothing:
+    # it ({Agent::ChatTransport#modalities}), so the model learns why it sees
+    # nothing:
     #
     #   png.withheld_note('model m takes no vision input')
     #   # => "[shot.png not shown: model m takes no vision input]"

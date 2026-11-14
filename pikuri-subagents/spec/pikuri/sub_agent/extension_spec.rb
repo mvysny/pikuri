@@ -214,7 +214,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       refute(tools.any? { |t| t.is_a?(Pikuri::SubAgent::SubAgentTool) })
     end
 
-    it "forwards the parent's resolved context_window_cap to the sub-agent via its transport" do
+    it "hands the sub-agent the parent's transport, stated cap included" do
       configurator = nil
       agent = Pikuri::Agent.new(
         transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 12_345),
@@ -251,8 +251,6 @@ RSpec.describe Pikuri::SubAgent::Extension do
         # assert the propagation policy.
         sub_tool = Pikuri::SubAgent::SubAgentTool.new(configurator, personas: ext.personas)
         sub_tool.run('name' => 'researcher', 'task' => 'do the thing')
-        # The cap rides the sub-agent's transport now, not a ctor kwarg.
-        refute received_kwargs.key?(:context_window)
         assert_equal 12_345, received_kwargs[:transport].context_window
       ensure
         Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }

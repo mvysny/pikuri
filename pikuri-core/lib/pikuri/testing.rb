@@ -68,14 +68,10 @@ module Pikuri
     #
     # @param model [String] model id the fake reports (any string; the fake
     #   server "knows" it)
-    # @param context_window [Integer] baked onto the transport as its stated
-    #   cap, so {Agent#context_window_cap} is known from construction. With
-    #   +modalities+ also stated, the +/props+ probe is skipped; otherwise it
-    #   dials for real, since the scripted adapter serves only the chat, and
-    #   against the default +.invalid+ host fails fast and degrades to +nil+.
+    # @param context_window [Integer, nil] baked onto the transport as its
+    #   stated cap
     # @param modalities [Hash{Symbol => Boolean}, nil] baked onto the transport
-    #   as stated, like +context_window+; the default +{}+ refuses nothing.
-    #   +nil+ leaves it to the probe.
+    #   as stated, like +context_window+; the default +{}+ refuses nothing
     # @param api_base [String] the transport's base URL. Never dialed (the
     #   adapter answers), but a host may key display/config off it — pass the
     #   base of the connection this fake impersonates so a UI resolves its name.

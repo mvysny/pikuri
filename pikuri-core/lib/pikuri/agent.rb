@@ -153,7 +153,12 @@ module Pikuri
     # the host can simply let the user retry. Sending it instead would cost far
     # more than one failed turn: the server answers HTTP 500, ruby_llm retries
     # that three times, and the image then stays in the history, failing every
-    # later turn the same way. See {#modalities}.
+    # later turn the same way.
+    #
+    # The verdict is the transport's stated {ChatTransport#modalities}: only a
+    # +false+ for the attachment's kind refuses it (+image/*+ → +:vision+,
+    # +audio/*+ → +:audio+, +video/*+ → +:video+), so unstated means it goes
+    # out. A tool's refused attachment becomes a note in its result instead.
     class UnsupportedAttachmentError < StandardError
       # @return [Pikuri::Attachment] the refused attachment
       attr_reader :attachment
@@ -275,9 +280,16 @@ module Pikuri
       end
     end
 
-    # @return [ChatTransport] the resolved transport this agent was built
-    #   with — the model/provider/connection every +RubyLLM.chat+ from this
-    #   agent uses (main chat, sub-agents).
+    # The model the next turn talks to, and what is stated about it:
+    #
+    #   agent.transport.context_window   # => 32768, or nil when unstated
+    #   agent.transport.modalities       # => {vision: false}, or nil when unstated
+    #
+    # The agent never probes the server, so these are exactly what the host
+    # stated, at construction or on a later +run_loop(transport:)+.
+    #
+    # @return [ChatTransport] with its +model+ filled from
+    #   +RubyLLM.config.default_model+ when it was +nil+
     attr_reader :transport
 
     # @return [Array<Tool>] tool list in declaration order. These are the
@@ -336,30 +348,6 @@ module Pikuri
     #   sub-agents.
     attr_reader :extensions
 
-    # @return [Integer, nil] resolved context-window cap — the
-    #   {ChatTransport#context_window} if given, else the
-    #   {ContextWindowDetector} probe; +nil+ when neither yields one. Until
-    #   the first {#run_loop} only a stated cap is known, since the probe
-    #   waits for the turn (see {#run_loop}'s "Resolving the cap").
-    attr_reader :context_window_cap
-
-    # Which input kinds the model accepts, resolved like {#context_window_cap}:
-    # the {ChatTransport#modalities} if given, else the {ContextWindowDetector}
-    # probe, else +{}+.
-    #
-    #   agent.modalities   # => {vision: false, video: false, audio: false}
-    #
-    # An attachment is refused only on a +false+ for its kind (+image/*+ →
-    # +:vision+, +audio/*+ → +:audio+, +video/*+ → +:video+); a missing key is
-    # unknown and goes out, leaving any error to the provider. {#run_loop}
-    # raises {UnsupportedAttachmentError} for a refused user attachment, and a
-    # tool's refused attachment is replaced by a note in its result.
-    #
-    # @return [Hash{Symbol => Boolean}, nil] +nil+ until the first {#run_loop}
-    #   unless the transport states them
-    #   ({ChatTransport#with_detected_modalities} does, without a turn)
-    attr_reader :modalities
-
     # Final assistant message content for the most recent {#run_loop} — the
     # last +:assistant+ message in the underlying chat's history. +nil+ until
     # one has been produced.
@@ -399,33 +387,20 @@ module Pikuri
     #
     # == Switching models mid-conversation
     #
-    # A +transport:+ differing from the current one switches the chat to it
-    # (via {#apply_transport!}), emits {Event::ModelSwitched}, and leaves the
-    # cap to be re-resolved below. The switch is
-    # confined to the top of this method because the chat is
+    # A +transport:+ naming another model or connection switches the chat to
+    # it (via {#apply_transport!}) and emits {Event::ModelSwitched}, then a
+    # fresh {Event::ContextCap}. One that differs only in its stated facts —
+    # +context_window+, +modalities+ — is the same model, newly described: the
+    # agent adopts it and emits the {Event::ContextCap} alone. That is how a
+    # host that probes the server hands the agent what it learnt:
+    #
+    #   agent.run_loop(user_message: text, transport: transport.with(context_window: 32_768))
+    #
+    # The switch is confined to the top of this method because the chat is
     # single-thread-confined — a background thread mutating the connection
     # mid-completion would tear an in-flight stream. The conversation is
     # *not* re-baselined: same conversation, new model, so message count and
     # running context size carry over. +nil+ keeps the current model.
-    #
-    # == Resolving the cap
-    #
-    # The +/props+ probe runs here, on the first turn after construction or
-    # after a switch, never in {#initialize}: against a llama.cpp router,
-    # +/props?model=<id>+ loads that model, and a host that switches before
-    # its first turn would load one it never talks to. Here the turn's real
-    # transport is already applied, so a construct-then-switch costs one probe,
-    # for the model actually used. It runs before the first request, so the
-    # fresh {Event::ContextCap} precedes every {Event::Tokens}. A Ctrl+C
-    # during a cold load trips the check right after it. It runs after the
-    # {EmptyTurnError} guard, since a turn that sends nothing has nothing to
-    # budget. It runs after the {Event::UserTurn}, too: the probe waits out a
-    # cold model load, and a host that renders its transcript from +UserTurn+
-    # would show the user's message only once the model is up. See
-    # +design/decisions.md+ +D_deferred_cap_probe+. A turn with attachments is
-    # the exception: the probe runs before the +UserTurn+, because it also
-    # resolves {#modalities}, which must refuse an attachment before it enters
-    # the history.
     #
     # == Repairing an unwound tool batch
     #
@@ -450,16 +425,16 @@ module Pikuri
     #   no +attachments+ runs a bare turn (see above)
     # @param attachments [Array<Pikuri::Attachment>] files shown to the model
     #   with the request, e.g. a screenshot
-    # @param transport [ChatTransport, nil] when non-+nil+ and structurally
-    #   different, switch to it before the turn; +nil+ keeps the model
+    # @param transport [ChatTransport, nil] the transport this turn and later
+    #   ones use (see above); +nil+ keeps the current one
     # @raise [Control::Cancellable::Cancelled] if cancelled mid-turn (an
     #   {Event::Cancelled} is emitted first)
     # @raise [EmptyTurnError] on a blank turn against a prompt-only
     #   conversation when the provider carries +:system+ outside +messages+
     #   (see above)
     # @raise [ArgumentError] if an attachment is not a {Pikuri::Attachment}
-    # @raise [UnsupportedAttachmentError] if {#modalities} refuses an
-    #   attachment; nothing is appended
+    # @raise [UnsupportedAttachmentError] if the transport's stated
+    #   modalities refuse an attachment; nothing is appended
     # @return [nil] after a turn runs
     def run_loop(user_message: nil, attachments: [], transport: nil)
       unless attachments.all?(Pikuri::Attachment)
@@ -485,12 +460,9 @@ module Pikuri
         raise EmptyTurnError, @chat.model.provider
       end
 
-      unless attachments.empty?
-        detect_and_emit_context_cap! if @cap_pending
-        attachments.each do |a|
-          reason = attachment_refusal(a)
-          raise UnsupportedAttachmentError.new(a, reason) if reason
-        end
+      attachments.each do |a|
+        reason = attachment_refusal(a)
+        raise UnsupportedAttachmentError.new(a, reason) if reason
       end
 
       # Append and emit the user turn before the extension dispatch, so any
@@ -504,7 +476,6 @@ module Pikuri
         track_message(@chat.add_message(message))
         @listeners.emit(Event::UserTurn.new(content: text.to_s, attachments: attachments, mid_loop: false))
       end
-      detect_and_emit_context_cap! if @cap_pending
       # The turn's first cancellation point: a plain non-streaming turn with no
       # +around_request+ has no other before its request goes out.
       @cancellable&.check!
@@ -693,13 +664,7 @@ module Pikuri
                         ))
       end
 
-      # Only a stated cap goes on the stream now, so a listener has one before
-      # the first turn; the probe waits for that turn (see {#run_loop}'s
-      # "Resolving the cap").
-      @context_window_cap = @transport.context_window
-      @modalities = @transport.modalities
-      @cap_pending = true
-      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+      @listeners.emit(Event::ContextCap.new(cap: @transport.context_window))
 
       @listeners.emit(restore_history(@history)) if @history
     end
@@ -766,61 +731,39 @@ module Pikuri
         .join("\n\n")
     end
 
-    # Resolve the context-window cap and announce it as an
-    # {Event::ContextCap}. The transport's explicit +context_window+ wins over
-    # the probed +n_ctx+, and its +modalities+ over the probed ones, into
-    # {#modalities}; the probe is skipped when both are stated. The cap rides
-    # {ChatTransport}, so a switch resolves the *new* transport's cap. Called
-    # from {#run_loop} once per construction or switch, whatever the probe
-    # answered: a failed probe is not retried every turn, which would charge a
-    # server without +/props+ a 404 per turn.
-    #
-    # @return [void]
-    def detect_and_emit_context_cap!
-      @cap_pending = false
-      props = if @transport.context_window && @transport.modalities
-                ContextWindowDetector::Props::NONE
-              else
-                # Probe the server this transport targets: after a cross-server
-                # switch the chat points at +@transport.api_base+, but the
-                # global config still names the old server.
-                ContextWindowDetector.detect(@transport,
-                                             openai_base: @transport.api_base || RubyLLM.config.openai_api_base)
-              end
-      @context_window_cap = @transport.context_window || props.n_ctx
-      # +{}+ rather than +nil+ once resolved, whatever the probe said: a
-      # sub-agent inherits it as stated, so it does not probe again.
-      @modalities = @transport.modalities || props.modalities || {}
-      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
-    end
-
-    # The {#modalities} key an attachment's MIME family needs, in llama.cpp's
-    # vocabulary. A family not listed here (a PDF) is never refused.
+    # The {ChatTransport#modalities} key an attachment's MIME family needs, in
+    # llama.cpp's vocabulary. A family not listed here (a PDF) is never refused.
     MODALITY_BY_MEDIA_TYPE = { 'image' => :vision, 'audio' => :audio, 'video' => :video }.freeze
     private_constant :MODALITY_BY_MEDIA_TYPE
 
-    # Why the model can't take +attachment+, per {#modalities}.
+    # Why the model can't take +attachment+, per the transport's stated
+    # modalities.
     #
     # @param attachment [Pikuri::Attachment]
     # @return [String, nil] the reason, e.g. "model X takes no vision input";
-    #   +nil+ when it may go out, including whenever acceptance is unknown
+    #   +nil+ when it may go out, including whenever acceptance is unstated
     def attachment_refusal(attachment)
       modality = MODALITY_BY_MEDIA_TYPE[attachment.mime.to_s.split('/').first]
-      return nil unless modality && @modalities&.[](modality) == false
+      return nil unless modality && @transport.modalities&.[](modality) == false
 
       "model #{@transport.model} takes no #{modality} input"
     end
 
-    # Switch the chat to +transport+ when it differs from the current one.
-    # Called only from the top of {#run_loop} (see its "Switching models"
-    # section for the thread-confinement reason). Mirrors {#initialize}'s
-    # +nil+-model fill before the structural compare, so a transport
+    # Adopt +transport+ for this turn on: a switch when it names another model
+    # or connection, a fact update when only +context_window+ / +modalities+
+    # differ. Called only from the top of {#run_loop} (see its "Switching
+    # models" section for the thread-confinement reason). Mirrors
+    # {#initialize}'s +nil+-model fill before comparing, so a transport
     # deferring to the default model doesn't switch spuriously.
-    # +Chat#with_model+ keeps history and callbacks. Emits
-    # {Event::ModelSwitched} and marks the cap for {#run_loop} to re-resolve
-    # right after. The new
-    # transport's +params+ replace the old one's, so a switch cannot leave a
-    # thinking-off kwarg on a connection that never asked for one.
+    #
+    # A fact update touches nothing but +@transport+ and emits the new
+    # {Event::ContextCap}: the chat, its connection and the history's
+    # thinking all belong to the same model as before.
+    #
+    # A switch goes through +Chat#with_model+, which keeps history and
+    # callbacks, and emits {Event::ModelSwitched} then {Event::ContextCap}.
+    # The new transport's +params+ replace the old one's, so a switch cannot
+    # leave a thinking-off kwarg on a connection that never asked for one.
     #
     # Because the history is kept, every turn in it is now potentially from
     # another model, so {#strip_foreign_thinking!} runs before the event —
@@ -843,16 +786,15 @@ module Pikuri
       return if filled == @transport
 
       old = @transport
-      @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
-      @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
-      @chat.with_provider_options(filled.params)
       @transport = filled
-      # The old model's reading must not outlive it: a ModelSwitched listener
-      # reads the new transport's, or nil until this turn's probe.
-      @modalities = filled.modalities
-      strip_foreign_thinking!
-      @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
-      @cap_pending = true
+      unless filled.with(context_window: old.context_window, modalities: old.modalities) == old
+        @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
+        @chat.with_model(filled.model, provider: filled.provider, assume_model_exists: filled.assume_model_exists)
+        @chat.with_provider_options(filled.params)
+        strip_foreign_thinking!
+        @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
+      end
+      @listeners.emit(Event::ContextCap.new(cap: filled.context_window))
     end
 
     # Build the chat for +transport+ — always through a dedicated
@@ -1319,8 +1261,8 @@ module Pikuri
     #   (+mid_loop: true+), then run the {Extension#on_user_message} dispatch
     #   (so mid-loop injections are prefetched + recorded like initial turns).
     #   The dispatch runs *after* the append so an injected +<memory-context>+
-    #   lands right behind the turn it annotates. An attachment {#modalities}
-    #   refuses is withheld with a {Pikuri::Attachment#withheld_note} in the
+    #   lands right behind the turn it annotates. An attachment the stated
+    #   {ChatTransport#modalities} refuse is withheld with a {Pikuri::Attachment#withheld_note} in the
     #   text, never raised: this runs inside the turn, which a raise would end.
     #   The +UserTurn+ carries what was sent, notes included; the extension
     #   dispatch gets the user's own text (+""+ on an attachment-only item)

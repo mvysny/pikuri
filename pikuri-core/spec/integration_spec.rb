@@ -44,15 +44,6 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
       [200, { 'Content-Type' => 'application/json' }, JSON.generate(response)]
     end
 
-    # The :openai transport triggers {Pikuri::Agent::ContextWindowDetector}'s
-    # /props probe at the first turn (derived from openai_api_base). Answer it
-    # like a real llama.cpp single-model server so the realistic full path —
-    # cap detection included — runs without a NotFound from the test adapter.
-    test_stubs.get('/props') do
-      [200, { 'Content-Type' => 'application/json' },
-       JSON.generate('default_generation_settings' => { 'n_ctx' => 32_768 })]
-    end
-
     stubs = test_stubs
     @original_faraday_new = Faraday.method(:new)
     original = @original_faraday_new

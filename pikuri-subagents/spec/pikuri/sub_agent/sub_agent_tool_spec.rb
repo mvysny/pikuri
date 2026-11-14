@@ -6,9 +6,8 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   # on +ask+, and exposes +tools+ for assertions. Keeps sub-agent specs
   # network-free.
   #
-  # +RubyLLM::Model+ stand-in just so +Pikuri::Agent#initialize+
-  # can read +@chat.model.context_window+ and +@chat.model.id+ for
-  # +ContextWindowDetector+.
+  # +RubyLLM::Model+ stand-in just so +Pikuri::Agent+ can read
+  # +@chat.model.id+.
   fake_model = Struct.new(:context_window, :id).new(nil, 'm')
 
   let(:fake_chat_class) do
@@ -294,9 +293,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
   describe 'sub-agent naming and control derivation' do
     # Capture every kwarg handed to Pikuri::Agent.new so the spec can
-    # read the generated +id:+ / +cancellable:+ (the context-window cap
-    # rides +transport.context_window+ now, not a ctor kwarg) without
-    # having to introspect a built Pikuri::Agent.
+    # read the generated +id:+ / +cancellable:+ without having to introspect a built Pikuri::Agent.
     def with_captured_agent_new
       received = []
       original_new = Pikuri::Agent.method(:new)

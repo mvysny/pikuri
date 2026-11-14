@@ -66,8 +66,8 @@ module Pikuri
         # model can't see: this runs on the host's thread with no agent, and
         # raising at the drain would end the running turn over a picture. The
         # drain withholds it instead, with a note in the text the model reads
-        # ({Agent#modalities}). A host wanting an error up front checks
-        # +agent.modalities+ before injecting.
+        # ({ChatTransport#modalities}). A host wanting an error up front checks
+        # +agent.transport.modalities+ before injecting.
         #
         # @param content [String, nil] the user's text; may be blank only when
         #   +attachments+ are given

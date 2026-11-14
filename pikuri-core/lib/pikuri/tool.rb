@@ -426,8 +426,9 @@ module Pikuri
     #
     #   [shot.png not shown: model Qwen3.8-Dense-text takes no vision input]
     #
-    # The tool never knows: the model's capabilities are the agent's
-    # ({Agent#modalities}), and a tool returning an image need not ask.
+    # The tool never knows: the model's capabilities are stated on the
+    # agent's transport ({Agent::ChatTransport#modalities}), and a tool
+    # returning an image need not ask.
     #
     # @param context [ExecuteContext] passed to {#run} on every call; see the
     #   +== Cancellation+ section.

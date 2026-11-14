@@ -485,15 +485,14 @@ it out when `complete` raises, so every *later* turn resends the image and fails
 `/clear`. A blind model that `read`s a PNG breaks the conversation the same way, through the tool
 result.
 
-**Decision.** Ask the server first. `/props?model=<id>` — the request the cap probe already makes
-(`D_deferred_cap_probe`) — carries `modalities: {vision:, video:, audio:}`; `Agent#modalities`
-holds it, and only a reported `false` refuses. A user attachment raises
-`UnsupportedAttachmentError` before anything is appended; a tool's is swapped for a note in its
-result, at the one wrapper every tool crosses, so no tool asks. The check matches a MIME family
-to a modality, so nothing in core says "image". A host that needs the answer before the first
-turn — to refuse an `@path` as it is typed — calls `ChatTransport#with_detected_modalities`,
-which reads the router's `GET /v1/models` (`input_modalities`, `["text","image"]`) and, on a
-single-model `llama-server` that lists none, a bare `/props`.
+**Decision.** Refuse before sending what the transport says the model can't take.
+`ChatTransport#modalities` speaks llama.cpp's `/props` vocabulary, `{vision:, video:, audio:}`,
+and only a stated `false` refuses. A user attachment raises `UnsupportedAttachmentError` before
+anything is appended; a tool's is swapped for a note in its result, at the one wrapper every tool
+crosses, so no tool asks. The check matches a MIME family to a modality, so nothing in core says
+"image". Core never asks the server (`D_deferred_cap_probe`): the host states the modalities, or
+pikuri-workshop's `pikuri-conversations` fills them in from the router's `GET /v1/models` or
+`/props`.
 
 **Alternatives rejected.**
 
@@ -503,15 +502,11 @@ single-model `llama-server` that lists none, a bare `/props`.
   500 is right for the transient faults it was built for.
 - **Take the message back out after a failed `complete`.** A 500 doesn't say which part caused
   it, so pikuri would be guessing, and the retries have run by then anyway.
-- **The router's `GET /v1/models` as the turn's own source.** It answers without loading the
-  model (measured: 1–22 ms, an unloaded model stays unloaded), which is why the up-front lookup
-  uses it. But a single-model `llama-server` lists no `architecture` (measured on build 8681),
-  and the turn pays the `/props` hop for the cap anyway, so the turn keeps `/props`.
 - **`RubyLLM::Model#supports?(:vision)`**, ruby_llm's registry — empty for a local model, as
   for the context window (`D_context_window_sources`).
 
-**Consequences.** A server that reports nothing refuses nothing: a hosted provider's own error
-still speaks, retries included. With `--hf-repo`, llama.cpp fetches the projector on its own, so
+**Consequences.** Unstated refuses nothing: a bin or a hosted provider with no stated
+modalities still meets the server's own error, retries included. With `--hf-repo`, llama.cpp fetches the projector on its own, so
 vision is a model's default; `no-mmproj = true` in a router preset becomes `--no-mmproj-auto`
 and is how to get a blind model to test against.
 
@@ -701,45 +696,50 @@ The verified storage facts are in `pikuri-thunderbird/design/architecture.md`
   mails (deferred) need RFC 2047 header decoding stdlib lacks, so the walker
   would be thrown away; the `mail` gem is parse-only here.
 
-## D_deferred_cap_probe — Why does the `/props` probe wait for the first turn rather than run in `Agent.new`?
+## D_deferred_cap_probe — Why doesn't `Agent` probe the server for its context window and modalities?
 
-**Context.** Against a llama.cpp router, `/props?model=<id>` is not a lookup:
-the router spins up that model's instance to answer it. pikuri-tui and
-pikuri-web build their agent at startup with the configured default model,
-and a user who picks another model before typing anything paid a cold load of
-the default for nothing — the switch already waits for `run_loop` (the chat is
-thread-confined), but the construction probe did not.
+**Context.** `Agent` used to ask llama.cpp's `/props` for the cap and the modalities, on the first
+turn after construction or a switch — never in `Agent.new`, because on a router `/props?model=<id>`
+spins up that model, and a host that switches before its first turn paid a cold load of a model it
+never used. That made the probe grow: a router re-probe, a bearer key for `llama-server
+--api-key`, the router's `/v1/models` so a host could refuse an image before the turn, an ordering
+rule against `UserTurn` so a host rendering it didn't hold the message off screen through a cold
+load. The next asks were more servers — vLLM's `max_model_len`, Ollama's `/api/show`.
 
-**Decision.** `Agent.new` announces only the transport's stated cap, and
-`run_loop` probes once per construction or switch, after the switch is applied
-and before the first request. The probe now targets the transport the turn
-really uses, so a construct-then-switch costs one probe, for the chosen model.
-A `ContextCap` still precedes every `Tokens`. A probe that fails is not retried
-next turn, or a server with no `/props` would draw a 404 on every turn. The
-probe runs after the turn's `UserTurn` is emitted and before the extension
-dispatch. pikuri-web renders the user's message *from* `UserTurn`, and a probe
-ahead of it held the message off screen for the whole cold load. No
-`on_user_message` reads the cap, so the dispatch could go either side of the
-probe; it stays after it so that every `ContextCap` comes before any
-`SystemInjected` the dispatch emits.
+**Decision.** `Agent` never probes. Its cap is `ChatTransport#context_window`, its modalities
+`ChatTransport#modalities`, as the host states them; unstated is `nil`, shown as no cap, and
+refuses no attachment. `ContextCap` goes out at construction and on every `run_loop(transport:)`
+that switches model *or* only restates those facts — a transport differing only in
+`context_window` / `modalities` is the same model, so it rebuilds no connection, strips no
+thinking and emits no `ModelSwitched`. That fact-only path is how a host that probes hands the
+agent what it learnt. The probe itself moved to pikuri-workshop's `pikuri-conversations` gem,
+which already owns the request throttle the probe's `total_slots` sizes, keeps the
+wait-for-the-turn rule above, and caches per server and model across conversations.
+
+It fails the placement test (`D_gem_placement`): llama.cpp-specific HTTP whose future is more
+servers is a feature, not explaining better. And no single bin needs it: the cap is a cosmetic
+readout — pikuri ships no budget line and no compaction that would act on it
+(`D_context_window_sources` says why it must be trustworthy or `nil`) — and an unknown modality
+already goes out.
 
 **Alternatives rejected.**
 
-- **Hosts build the agent lazily.** Both hosts need the agent before the first
-  turn — a resumed conversation, extension binding — so each would have to
-  stand in for it on every one of those paths, twice over, and pikuri-chat,
-  pikuri-code and the rest would keep probing eagerly.
-- **A public "resolve the cap now" method** for a host that wants the cap shown
-  at once. A UI thread calling it blocks for up to `READ_TIMEOUT`, and no host
-  needs it yet.
+- **Keep the detector in core as a utility a bin calls at boot.** Every deployment would read
+  llama.cpp-only HTTP for a denominator, and the detector's growth would keep landing in core.
+- **Keep probing on the first turn, in `Agent`.** Every agent probes for itself, so a host with
+  many conversations, or a sub-agent with an unstated cap, re-asks the same server; nothing in an
+  agent outlives it to cache the answer, and the slot count it learns is for a throttle core no
+  longer has (`D_llm_request_throttle`).
+- **An `Agent#transport=` writer for the switch.** `pikuri-conversations` validates a turn's
+  attachments before handing `run_loop` the picked transport, so the switch is never lost to a
+  turn that dies before its top; a second door to the same switch earns nothing yet.
 
 **Consequences.**
 
-- **A capless transport shows no cap until the first turn** — a status line
-  reads `ctx 12k`, not `12k/16k`, on a resumed conversation. A stated cap still
-  shows at once.
-- **The first turn carries the probe's latency** — on a router, the cold load
-  the chat request would otherwise have paid.
+- **A bin that states no cap shows none** — `ctx=8.4k`, no denominator — rather than a guess.
+- **A bin that states no modalities sends an image to a blind model**, and the server's 500
+  speaks, retries and a poisoned history included (`D_refuse_unsupported_attachments`). A host
+  that knows its models states them on the transport.
 
 ## D_tripwire_bar — Why only five tripwire checks, and why does a new invariant not get one?
 
@@ -4249,17 +4249,18 @@ are the thing being looked for. The guard's character is unchanged — a
 paste / dumb-attack guard, not an exfil control; widening the alphabets
 raises the attacker's cost by one token of prompt.
 
-## D_context_window_sources — Why read the context window from the `/props` probe rather than ruby_llm's model registry?
+## D_context_window_sources — Why does the context window come only from the transport, never from ruby_llm's model registry?
 
 **Context.** A context-window cap is only worth emitting if a host can *act*
 on it — warn, compact, or switch models before
 `RubyLLM::ContextLengthExceededError`. So the number has to be trustworthy
 without a caveat attached.
 
-**Decision.** Two sources only: llama.cpp's non-standard `/props` probe (the
-server's *launched* `n_ctx`, i.e. the real window) and an explicit
-{Pikuri::Agent::ChatTransport#context_window}. Anything else resolves to
-`nil` — an honest "we don't know."
+**Decision.** One source in pikuri: {Pikuri::Agent::ChatTransport#context_window},
+stated by the host — or filled in by a host that asks llama.cpp's
+non-standard `/props` for the server's *launched* `n_ctx`, i.e. the real
+window, which pikuri-workshop's `pikuri-conversations` does
+(`D_deferred_cap_probe`). Unstated is `nil` — an honest "we don't know."
 
 **Alternatives rejected.**
 
@@ -4273,9 +4274,8 @@ server's *launched* `n_ctx`, i.e. the real window) and an explicit
   fallback that lies is indistinguishable from one that works until it
   silently truncates.
 
-**Consequences.** Non-llama.cpp servers get no cap unless the host passes
-`context_window:` on the transport — deliberate, and why the detector's
-failure path is a debug log rather than a raise.
+**Consequences.** A bin that states no cap shows none — `ctx=8.4k`, no
+denominator — deliberately, rather than the registry's guess.
 
 ---
 

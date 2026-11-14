@@ -161,9 +161,9 @@ a count.
 - **pikuri**: delegates to ruby_llm. `bin/pikuri-chat` / `pikuri-code` / `pikuri-os`
   configure the OpenAI provider for the local llama.cpp server (`openai_api_base` +
   `assume_model_exists: true`); switching to Anthropic / Gemini / Bedrock / Ollama is a one-block
-  edit, no pikuri-side code change. `Agent::ContextWindowDetector` resolves the context-window cap
-  at construction from override → ruby_llm registry → llama.cpp `/props` probe, so `TokenLog`
-  renders `ctx=<used>/<cap>` against the right ceiling.
+  edit, no pikuri-side code change. The context-window cap is what `ChatTransport#context_window`
+  states, so `TokenLog` renders `ctx=<used>/<cap>` against it; probing llama.cpp's `/props` for it
+  is pikuri-workshop's (`D_deferred_cap_probe`).
 - **ruby_llm**: provider-per-class
   (`lib/ruby_llm/providers/{openai,anthropic,gemini,bedrock,ollama,...}/`). The tool schema stays
   canonical and per-provider adapters wrap it. **[src]**
@@ -621,7 +621,7 @@ Closing that gap is the whole portable half of grok-build's template machinery.
 
 | | Message store | Event stream | Streaming deltas | Token bookkeeping |
 | --- | --- | --- | --- | --- |
-| pikuri | inherits ruby_llm's `Chat#messages` | sealed `Agent::Event` hierarchy: `UserTurn(mid_loop)`, `Thinking`, `Assistant`, `ThinkingDelta`, `AssistantDelta`, `ToolCall`, `ToolResult`, `Tokens`, `ContextCap`, `Cancelled` — all flow through one `Listener::Base#on_event` entry point | opt-in via `Agent.new(streaming: true)`; per-chunk `*Delta` events alongside message-level bookends | `Tokens` event carries `input`/`output`/`cached`/`cache_creation`/`thinking`/`model_id`; `Listener::TokenLog` tracks running context-window size; `Event::ContextCap` carries the detected cap from `ContextWindowDetector` |
+| pikuri | inherits ruby_llm's `Chat#messages` | sealed `Agent::Event` hierarchy: `UserTurn(mid_loop)`, `Thinking`, `Assistant`, `ThinkingDelta`, `AssistantDelta`, `ToolCall`, `ToolResult`, `Tokens`, `ContextCap`, `Cancelled` — all flow through one `Listener::Base#on_event` entry point | opt-in via `Agent.new(streaming: true)`; per-chunk `*Delta` events alongside message-level bookends | `Tokens` event carries `input`/`output`/`cached`/`cache_creation`/`thinking`/`model_id`; `Listener::TokenLog` tracks running context-window size; `Event::ContextCap` carries the transport's stated cap |
 | ruby_llm | plain Array of `Message` objects (no log wrapper) | three registered callbacks (`after_message`, `before_tool_call`, `after_tool_result`); structured events not exposed | yes, optional via block | per-message `tokens` field on `Message`; no running aggregate |
 | langchainrb | `messages` (Array of provider-specific `Messages::*Message`); `add_message_callback` proc fires on every append | none beyond the two callbacks (`add_message_callback`, `tool_execution_callback`) | per-LLM block at `Assistant.new(...) { ... }` | running totals on `Assistant`: `total_prompt_tokens` / `total_completion_tokens` / `total_tokens` |
 | pi | TypeScript discriminated union; custom message types extensible via declaration merging | `EventStream<AgentEvent>` | yes | per-event |
@@ -1024,8 +1024,8 @@ than adopted.
   is a four-field record (`name`, `description`, `tool_names`, `system_prompt`); spawning runs the
   persona's prompt verbatim with the subset of `parent.tools` whose name appears in
   `persona.tool_names`, reusing the parent's tool *instances* so workspace and confirmer wiring
-  travels along. The child's loop is unbounded, as the parent's is; `transport`, `cancellable`,
-  `context_window_cap` and `streaming` travel through unchanged. Listeners propagate via the
+  travels along. The child's loop is unbounded, as the parent's is; `transport` (stated cap
+  included), `cancellable` and `streaming` travel through unchanged. Listeners propagate via the
   duck-typed `for_sub_agent(id:)` convention; controls do not use that hook — the policy is inlined
   in `SubAgentTool#execute` (shared parent `Cancellable` by reference, `nil` `Interloper`).
   Extensions are not inherited. Recursion is structurally impossible: no bundled persona lists

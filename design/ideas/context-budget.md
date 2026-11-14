@@ -34,8 +34,8 @@ below).
 
 The number exists; it just points at the human.
 
-- {Pikuri::Agent#context_window_cap} (`pikuri-core/lib/pikuri/agent.rb:214`),
-  resolved once at construction, emitted as `Event::ContextCap`.
+- {Pikuri::Agent::ChatTransport#context_window}, stated by the host, emitted as
+  `Event::ContextCap` at construction and on every switch.
 - `Event::Tokens` per assistant message (`agent.rb:653`) — input, cached,
   cache_creation, output.
 - {Pikuri::Agent::Listener::TokenLog} computes exactly the wanted number:
@@ -193,8 +193,8 @@ not a formality.
 
 ### Unknown cap ⇒ no line at all
 
-Per `D_context_window_sources`, the cap is `nil` for anything but
-llama.cpp or an explicit `ChatTransport#context_window`. A threshold
+Per `D_context_window_sources`, the cap is `nil` unless the host states
+`ChatTransport#context_window` (or its own `/props` probe fills it in). A threshold
 feature needs a denominator, so with no cap there is no band to cross and
 nothing to emit. Never invent a denominator, and never emit a bare "56k
 used so far" as a consolation prize — that's the inert middle-band line

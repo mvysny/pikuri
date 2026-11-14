@@ -39,8 +39,8 @@ module Pikuri
         # @return [Integer]
         attr_reader :context_window_size
 
-        # Model's context-window cap, or +nil+ if no source supplied one (see
-        # {Agent::ContextWindowDetector}). When set, +ctx+ renders as
+        # Model's context-window cap, or +nil+ if the transport states none
+        # ({Agent::ChatTransport#context_window}). When set, +ctx+ renders as
         # +<used>/<cap>+. Picked off the one-shot {Event::ContextCap}; a bare
         # instance (tests, {#for_sub_agent}) defaults to +nil+.
         #
