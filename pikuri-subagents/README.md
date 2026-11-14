@@ -66,7 +66,7 @@ fan-out-biased system prompt.
 ## Further reading
 
 - **Narrative walkthrough:** [the sub-agents chapter of the pikuri guide](../book/subagents.md) — the `Persona` record,
-  the `configure` + `bind` Extension protocol, what gets inherited
+  the Extension protocol, what gets inherited
   vs. owned when a parent spawns a child, and the
   privilege-separation story.
 - **API reference:** browse the YARD docs at

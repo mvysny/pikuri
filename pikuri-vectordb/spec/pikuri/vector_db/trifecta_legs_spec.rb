@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri/testing'
+
 require 'spec_helper'
 require 'tmpdir'
 require 'fileutils'
@@ -33,11 +35,7 @@ RSpec.describe 'vectordb tool trifecta legs' do
   # The real Configurator, so the legs asserted below are the ones the
   # extension actually registers rather than hand-graded copies.
   def tools(**flags)
-    c = Pikuri::Agent::Configurator.new(
-      transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-      system_prompt_base: 'base', id: '', streaming: false,
-      cancellable: nil, interloper: nil
-    )
+    c = Pikuri::Testing.configurator
     extension(**flags).configure(c)
     c.tools.to_h { |t| [t.name, t] }
   end

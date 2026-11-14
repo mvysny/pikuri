@@ -28,7 +28,8 @@ first entry in each shows its shape.
   of the {Pikuri::Agent::Event} stream and never write back; **Controls**
   ({Pikuri::Agent::Control::Cancellable}, `Control::Interloper`) are host-facing signal holders the
   agent reads at fixed boundaries. A live `Agent` reference is read-only — everything that *acts*
-  on a wired agent is on {Pikuri::Agent::ExtensionContext}, handed only to `Extension#bind`.
+  on a wired agent is on its {Pikuri::Agent::Configurator}, handed only to the `Agent.new` block
+  and `Extension#configure` (`D_one_phase_extensions`).
 - `ruby_llm` sits under `Agent` and nowhere else. A connection rides an
   {Pikuri::Agent::ChatTransport} → a per-chat `RubyLLM::Context`, never a process-global
   `RubyLLM.configure`, so N agents in one VM can hold N different models.

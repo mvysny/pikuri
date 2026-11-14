@@ -188,7 +188,7 @@ RSpec.describe Pikuri::Agent do
 
       assert_equal [], agent.tools
       # No public listeners reader (the API is sealed — see
-      # ExtensionContext); the banner is the observable surface.
+      # Configurator); the banner is the observable surface.
       assert_includes agent.to_s, 'listeners=[]'
     end
 
@@ -539,7 +539,7 @@ RSpec.describe Pikuri::Agent do
 
           attr_reader :calls
 
-          def on_user_message(_ctx, content, attachments)
+          def on_user_message(content, attachments)
             (@calls ||= []) << [content, attachments]
             nil
           end
@@ -1061,7 +1061,7 @@ RSpec.describe Pikuri::Agent do
         ext = Class.new do
           include Pikuri::Agent::Extension
 
-          define_method(:on_user_message) { |_ctx, content, attachments| calls << [content, attachments] && nil }
+          define_method(:on_user_message) { |content, attachments| calls << [content, attachments] && nil }
         end.new
         @agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'blind', modalities: { vision: false }),
                                    system_prompt: 's') { |c| c.add_extension ext }
@@ -1119,8 +1119,8 @@ RSpec.describe Pikuri::Agent do
 
   describe 'Extension#on_user_message dispatch' do
     # An extension that records every on_user_message call and returns a
-    # configurable prefetch block. Includes Extension so configure/bind are
-    # no-ops and on_user_message is the only behaviour under test.
+    # configurable prefetch block. Includes Extension so configure is a
+    # no-op and on_user_message is the only behaviour under test.
     let(:recording_extension_class) do
       Class.new do
         include Pikuri::Agent::Extension
@@ -1132,8 +1132,8 @@ RSpec.describe Pikuri::Agent do
           @calls = []
         end
 
-        def on_user_message(ctx, content, attachments = [])
-          @calls << [ctx, content]
+        def on_user_message(content, attachments = [])
+          @calls << content
           @attachments = attachments
           @block
         end
@@ -1149,12 +1149,7 @@ RSpec.describe Pikuri::Agent do
 
       agent.run_loop(user_message: 'where do I live?')
 
-      assert_equal 1, ext.calls.size
-      # The hook receives the agent's ExtensionContext (same one bind
-      # got), with the live agent readable off it.
-      assert_kind_of Pikuri::Agent::ExtensionContext, ext.calls[0][0]
-      assert_same agent, ext.calls[0][0].agent
-      assert_equal 'where do I live?', ext.calls[0][1]
+      assert_equal ['where do I live?'], ext.calls
       # The user message first, then the recalled block at the tail — wrapped,
       # and a :user message like every other injection.
       assert_equal(
@@ -1225,7 +1220,7 @@ RSpec.describe Pikuri::Agent do
 
       fake_chat.fire(:after_message, Struct.new(:role, :tool_call_id).new(:tool, 'call_1'))
 
-      assert_equal 'interloped question', ext.calls[0][1]
+      assert_equal ['interloped question'], ext.calls
       assert_equal(
         [
           { role: :user, content: 'interloped question' },
@@ -1492,40 +1487,44 @@ RSpec.describe Pikuri::Agent do
       assert_equal "base\n\nreal", fake_chat.instructions
     end
 
-    it 'runs extension.configure during the block and extension.bind once after construction' do
-      events = []
-      ext_class = Class.new do
-        include Pikuri::Agent::Extension
-        define_method(:configure) { |c| events << [:configure, c.is_a?(Pikuri::Agent::Configurator)] }
-        define_method(:bind) { |ctx| events << [:bind, ctx.is_a?(Pikuri::Agent::ExtensionContext)] }
-      end
-
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's') do |c|
-        c.add_listener recorder
-        c.add_extension(ext_class.new)
-      end
-
-      assert_equal [[:configure, true], [:bind, true]], events
-    end
-
-    it 'hands #bind an ExtensionContext whose #agent is the live, fully wired agent' do
+    it 'runs extension.configure during the block, handing it the Configurator for the agent being built' do
       seen = nil
       ext_class = Class.new do
         include Pikuri::Agent::Extension
-        define_method(:bind) { |ctx| seen = ctx }
+        define_method(:configure) { |c| seen = c }
       end
 
+      handed = nil
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
-        c.add_listener recorder
+        handed = c
         c.add_extension(ext_class.new)
       end
 
+      assert_same handed, seen
       assert_same agent, seen.agent
     end
 
-    it "extensions that include Extension and override only #configure inherit a no-op #bind" do
+    it 'lets an extension act on the built agent later through the Configurator it kept' do
+      kept = nil
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        define_method(:configure) { |c| kept = c }
+      end
+      domain_event = Data.define(:payload).new(payload: 1)
+
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's') do |c|
+        c.add_extension(ext_class.new)
+        c.add_listener recorder
+      end
+      kept.emit_event(domain_event)
+
+      # The listener was added after the extension, yet hears the event.
+      assert_equal domain_event, recorder.events.last
+    end
+
+    it "extensions that include Extension and override only #configure inherit no-op hooks" do
       # Documents why Pikuri::Agent::Extension is a mixin with empty
       # defaults: extensions can override just the hooks they need.
       configured = false
@@ -1560,22 +1559,6 @@ RSpec.describe Pikuri::Agent do
       agent.close
 
       assert_equal %i[second_registered first_registered], order
-    end
-
-    it 'fires ExtensionContext#on_close handlers (registered at bind time) in LIFO too' do
-      order = []
-      ext_class = Class.new do
-        include Pikuri::Agent::Extension
-        define_method(:bind) do |ctx|
-          ctx.on_close { order << :a }
-          ctx.on_close { order << :b }
-        end
-      end
-      agent = build_agent { |c| c.add_extension(ext_class.new) }
-
-      agent.close
-
-      assert_equal %i[b a], order
     end
 
     it 'is idempotent — subsequent closes are no-ops' do

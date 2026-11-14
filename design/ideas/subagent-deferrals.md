@@ -76,11 +76,10 @@ a persona referencing an unwired tool just disappears.
 
 ## Extension re-propagation
 
-Sub-agents no longer inherit extensions (MCP / Skills). Two-phase
-`configure`/`bind` collapses to "called once on the parent only." If a
-persona later needs MCP-backed tools, the redesign starts from scratch —
-likely a Persona field declaring which extensions the child also wires
-in, plus rebuilding the two-phase split.
+Sub-agents no longer inherit extensions (MCP / Skills); `configure` is
+called once, on the parent only. If a persona later needs MCP-backed
+tools, the redesign starts from scratch — likely a Persona field
+declaring which extensions the child also wires in.
 
 ## Per-persona `model:`
 

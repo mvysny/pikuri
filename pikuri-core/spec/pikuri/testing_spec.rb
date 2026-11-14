@@ -213,7 +213,7 @@ RSpec.describe Pikuri::Testing do
           define_method(:on_event) do |event|
             @interloper.inject_system_message('reference text') if event.is_a?(Pikuri::Agent::Event::ToolCall)
           end
-        end.new(c.interloper))
+        end.new(c.agent.interloper))
       end
 
       agent.run_loop(user_message: 'What is 2 + 2?')

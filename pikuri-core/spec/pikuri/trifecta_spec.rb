@@ -262,8 +262,7 @@ RSpec.describe Pikuri::Agent::Extension do
     # guarded by respond_to? rather than by name like every other hook.
     duck = Class.new do
       def configure(c); end
-      def bind(ctx); end
-      def on_user_message(ctx, content, attachments); end
+      def on_user_message(content, attachments); end
       def system_prompt_snippets = []
     end.new
     refute_respond_to duck, :trifecta_contribution

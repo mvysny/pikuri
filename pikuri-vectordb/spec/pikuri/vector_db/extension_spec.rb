@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pikuri/testing'
+
 require 'spec_helper'
 require 'tmpdir'
 require 'fileutils'
@@ -9,16 +11,7 @@ describe Pikuri::VectorDb::Extension do
   # Real Configurator — same shape pikuri-tasks's
   # extension_spec uses. Easier to spec wiring against the real
   # type than a stub.
-  let(:configurator) do
-    Pikuri::Agent::Configurator.new(
-      transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-      system_prompt_base: 'base',
-      id: '',
-      streaming: false,
-      cancellable: nil,
-      interloper: nil
-    )
-  end
+  let(:configurator) { Pikuri::Testing.configurator }
 
   let(:root) { Pathname.new(Dir.mktmpdir('pikuri-vectordb-ext-')).realpath }
   let(:backend) { Pikuri::VectorDb::Backend::InMemory.new }

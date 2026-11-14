@@ -108,6 +108,20 @@ module Pikuri
       )
     end
 
+    # The {Agent::Configurator} of a throwaway agent, for a spec that drives an
+    # extension's +configure+ by hand and reads back what it registered:
+    #
+    #   c = Pikuri::Testing.configurator
+    #   Pikuri::Workspace::Extension.new(filesystem: fs, confirmer: confirmer).configure(c)
+    #   c.tools.map(&:name)   # => ["read", "write", ...]
+    #
+    # @return [Agent::Configurator]
+    def self.configurator
+      captured = nil
+      Agent.new(transport: fake_transport, system_prompt: '') { |c| captured = c }
+      captured
+    end
+
     # An anonymous +Faraday::Adapter+ subclass that serves +responses+ in order,
     # one per HTTP request. Closes over the (mutable) list, so the queue drains
     # across the several requests of one conversation regardless of how Faraday

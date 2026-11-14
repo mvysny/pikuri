@@ -26,14 +26,6 @@ module Pikuri
     # the lethal-trifecta defense for network tools — see SECURITY.md
     # §"Defense: capability boundaries via sub-agents").
     #
-    # The MCP-shape configure/bind split: +configure(c)+ validates every
-    # persona's +tool_names+ against tools already on the Configurator (a
-    # host-side bug to catch at boot, not first LLM call) and contributes
-    # the +<available_agents>+ snippet; +bind(ctx)+ constructs the
-    # {SubAgentTool} over the parent's {Pikuri::Agent::ExtensionContext}.
-    # Sub-agents don't inherit extensions, so +bind+ fires for the parent
-    # only.
-    #
     # The constructor raises on two personas sharing a +name+ (they'd be
     # indistinguishable to the model and a quiet config bug) — fail fast
     # rather than silently shadow.
@@ -72,11 +64,10 @@ module Pikuri
       attr_reader :personas
 
       # Validate every persona's +tool_names+ against the union of the
-      # Configurator's regular and sub-agent-only tool pools, then append
-      # the +<available_agents>+ snippet. So: call +c.add_extension+ *after*
-      # the +c.add_tool+ / +c.add_sub_agent_tool+ calls the personas depend
-      # on, or the validation won't find them. (The +SubAgentTool+ itself
-      # is installed in {#bind}, which needs the live parent to close over.)
+      # Configurator's regular and sub-agent-only tool pools — a host bug
+      # caught at boot, not at the first delegation — then register the
+      # {SubAgentTool}. So: call +c.add_extension+ *after* the +c.add_tool+ /
+      # +c.add_sub_agent_tool+ calls the personas depend on.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @raise [ArgumentError] if any persona references a
@@ -96,26 +87,13 @@ module Pikuri
                 "Currently registered: #{have.inspect}."
         end
 
+        c.add_raw_tool(SubAgentTool.new(c, personas: @personas, confirmer: @confirmer).to_ruby_llm_tool)
         nil
       end
 
       # @return [Array<String>] the +<available_agents>+ catalog built
       #   from the wired persona list (fixed for the agent's lifetime).
       def system_prompt_snippets = [SubAgentTool.available_agents_snippet(@personas)]
-
-      # Construct the {SubAgentTool} over the parent's
-      # {Pikuri::Agent::ExtensionContext} and register it. Goes through
-      # {Pikuri::Agent::ExtensionContext#add_raw_tool} because the tool's
-      # +execute+ closure captures the parent's tool list, which is final
-      # only by the time +bind+ runs.
-      #
-      # @param ctx [Pikuri::Agent::ExtensionContext]
-      # @return [void]
-      def bind(ctx)
-        sub_tool = SubAgentTool.new(ctx, personas: @personas, confirmer: @confirmer)
-        ctx.add_raw_tool(sub_tool.to_ruby_llm_tool)
-        nil
-      end
 
       # One child node per persona, resolving +tool_names+ against +tools+
       # exactly as {SubAgentTool} does at dispatch — the extension that owns
