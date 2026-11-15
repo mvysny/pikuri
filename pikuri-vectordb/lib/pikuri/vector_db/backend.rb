@@ -2,12 +2,12 @@
 
 module Pikuri
   module VectorDb
-    # Namespace for vector-store backends. Three ship: {InMemory} (pure-Ruby
+    # Namespace for vector-store backends. Two ship: {InMemory} (pure-Ruby
     # cosine, RAM-only — the audit-friendly educational default, pairs with
-    # {Server::InMemory}); {Qdrant} (the *recommended* persistent option — see
-    # +pikuri-vectordb/design/architecture.md+ for the survey — pairs with {Server::Qdrant});
-    # and {Chroma} (the alternative persistent option, pairs with
-    # {Server::Chroma}).
+    # {Server::InMemory}) and {Qdrant} (the persistent option — see
+    # +pikuri-vectordb/design/architecture.md+ for why Qdrant — pairs with
+    # {Server::Qdrant}). Another engine is one more class behind the protocol
+    # below.
     #
     # == Backend protocol
     #

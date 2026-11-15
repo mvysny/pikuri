@@ -6,8 +6,7 @@ module Pikuri
   module VectorDb
     module Server
       # Lifecycle engine for one named, disposable podman/docker container with persistent
-      # bind-mounted data — the shared machinery {Server::Qdrant} and
-      # {Server::Chroma} compose. The supervisor carries the engine's identity
+      # bind-mounted data, composed by {Server::Qdrant}. The supervisor carries the engine's identity
       # (image pin, name, persist/heartbeat paths) as constructor parameters;
       # this class does the podman/docker work: create/recreate/remove, publish the
       # port, heartbeat-poll until ready.

@@ -3,21 +3,20 @@
 The settled design rationale that fits neither the user-facing guide
 chapter ([`book/vectordb.md`](../../book/vectordb.md))
 nor the per-class YARD headers. Currently it holds one thing: the
-backend-engine survey behind the decision to add a Qdrant backend
-alongside Chroma, and to recommend Qdrant as the persistent default.
+backend-engine survey behind Qdrant as the one persistent engine, and
+why Chroma was dropped.
 
 ## Backend engines: Chroma vs Qdrant (survey 2026-06-02)
 
 Point-in-time comparison — star counts, versions, and image sizes move;
-verify before depending. Context: `pikuri-vectordb` shipped
-`Backend::Chroma` + `Server::Chroma` first; `pikuri-memory`'s mem0 stack
+verify before depending. Context: `pikuri-vectordb` shipped a Chroma
+backend + supervisor first; `pikuri-memory`'s mem0 stack
 independently runs **Qdrant** (chosen there for correctness — see
 [`pikuri-memory/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-memory/design/architecture.md) §"Why Qdrant,
 not pgvector"). Two gems, two self-managed vector databases, two
 engines. The decision this survey backs: **converge the preferred
-engine on Qdrant, keep Chroma as a supported alternative, let the user
-pick.** The `Backend` seam is duck-typed precisely so this is a wiring
-choice, not a rewrite.
+engine on Qdrant.** The `Backend` seam is duck-typed precisely so this
+is a wiring choice, not a rewrite.
 
 ### Side-by-side
 
@@ -55,7 +54,7 @@ Chroma launched publicly in February 2023 and has had one major
 architectural event since — the 1.0 Rust-core rewrite (2025), which
 replaced the Python core ("[4× faster](https://www.trychroma.com/project/1.0.0)"
 by their own announcement) and, earlier, a v1→v2 REST API break that
-`Backend::Chroma`'s yardoc documents hand-navigating. Two data points,
+pikuri's Chroma client had to navigate by hand. Two data points,
 same direction: Qdrant's wire surface has been the steadier one to
 build a thin hand-rolled Faraday client against.
 
@@ -112,13 +111,12 @@ when the corpus grows 100×" is a fair question for a default.
 
 From pikuri's seat: identical. Both are exactly one pinned container,
 one `127.0.0.1`-published port, one bind-mounted data dir, one HTTP
-heartbeat — `Server::Chroma` already proves the supervisor shape, and a
-`Server::Qdrant` is a near-mechanical clone of it. Chroma's famous
+heartbeat — the two supervisors were near-mechanical clones. Chroma's famous
 `pip install chromadb` embedded mode is Python-only and unreachable
 from Ruby; pikuri's equivalent of that zero-setup tier is
 `Backend::InMemory`, which stays the default regardless of this survey.
 
-The one felt difference is client-side, from writing `Backend::Chroma`:
+The one felt difference is client-side, from writing the Chroma client:
 Chroma's v2 API nests collections under tenant/database path segments
 and addresses them by UUID (name → id lookup first), and has already
 broken compatibility once (v1→v2). Qdrant's REST is flat and
@@ -127,18 +125,17 @@ name-addressed — `PUT /collections/{name}`, `PUT .../points`,
 A thin hand-rolled Faraday client (the audit-friendly shape both
 backends use) has less to get wrong against Qdrant.
 
-## Verdict: prefer Qdrant, keep Chroma
+## Verdict: Qdrant; Chroma dropped
 
-**Qdrant becomes the recommended persistent backend** (`Backend::Qdrant`
-+ `Server::Qdrant`); **Chroma stays supported** (`Backend::Chroma` +
-`Server::Chroma`, already written and verified); **`Backend::InMemory`
-stays the educational default.** The user picks — the `Backend`
-protocol is duck-typed for exactly this.
+**Qdrant is the persistent backend** (`Backend::Qdrant` +
+`Server::Qdrant`); **`Backend::InMemory` stays the educational
+default.** Another engine is one more class behind the duck-typed
+`Backend` protocol.
 
-Why Qdrant gets the recommendation, in pikuri-specific order:
+Why Qdrant, in pikuri-specific order:
 
 1. **One engine across the monorepo.** `pikuri-memory`'s mem0 stack
-   already runs Qdrant, verified end-to-end. Recommending Qdrant here
+   already runs Qdrant, verified end-to-end. Choosing Qdrant here
    means a user running memory + vectordb has one vector-database
    technology to learn, audit, and trust — and one image on disk —
    instead of two. (Instances stay separate; only the engine
@@ -150,10 +147,16 @@ Why Qdrant gets the recommendation, in pikuri-specific order:
 3. **Lighter and roomier.** Less than half the image size, and
    quantization + on-disk vectors as the growth story.
 
-Why Chroma stays: it's done, verified, and the most widely recognized
-name in the space — a reader arriving from any RAG tutorial knows it,
-which has real value in a project that doubles as a tour. Keeping it
-costs nothing but its (already written) line count.
+**Why not keep Chroma as a supported alternative** (it shipped as one
+until 2026-11-15, ~540 lines + ~620 of specs, reachable only from
+`pikuri-corpus --chroma`)? "Already written, costs nothing but its line
+count" didn't hold: every `Backend` protocol change (`Chunker::Piece`
+line ranges, `replace_source`) and every image bump was paid twice, and
+Chroma is the engine whose API has already broken once. Its one asset,
+name recognition from RAG tutorials, is worth a sentence in the book,
+not a second engine — `InMemory` ↔ `Qdrant` already demonstrates the
+swappable seam. A host that wants Chroma writes one more `Backend`
+class, or recovers the old one from git history.
 
 **Cross-gem pin invariant:** `Server::Qdrant::IMAGE` (this gem) and
 `Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE` should reference the

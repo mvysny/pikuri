@@ -6,7 +6,7 @@ module Pikuri
   module VectorDb
     module Backend
       # Pure-Ruby vector store — the educational default backend, the "small
-      # enough to audit" first stop before users promote to {Qdrant} / {Chroma}
+      # enough to audit" first stop before users promote to {Qdrant}
       # for persistence. Holds a Hash from chunk id to +[Chunk, vector]+;
       # +#query+ scores cosine similarity against every stored vector, O(n) per
       # query — fine for thousands of chunks (a notes folder), slow for millions.
@@ -24,8 +24,8 @@ module Pikuri
       # replaces/deletes). The lock's load-bearing job is {#replace_source}: it
       # holds the monitor across the delete-then-upsert so a concurrent +#query+
       # never sees the zero-chunk gap. +Monitor+ not +Mutex+ because
-      # +#replace_source+ re-enters via +#delete_by_source+ + +#upsert+. Chroma
-      # / Qdrant need no client-side lock — the server serializes.
+      # +#replace_source+ re-enters via +#delete_by_source+ + +#upsert+. Qdrant
+      # needs no client-side lock — the server serializes.
       #
       # Cosine (not dot product) so the backend works whether or not the embedder
       # pre-normalizes; the readable two-pass {#cosine} is intentional over a

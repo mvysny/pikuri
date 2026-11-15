@@ -8,13 +8,21 @@ module Pikuri
   module VectorDb
     module Backend
       # Thin Faraday HTTP client against a self-hosted Qdrant server (1.x REST,
-      # 1.8+), the *recommended* persistent backend (see
-      # +pikuri-vectordb/design/architecture.md+ for the Chroma-vs-Qdrant survey). Same
-      # duck-typed {Backend} protocol as {InMemory} / {Chroma}. Hand-rolled for
-      # the same reasons as {Chroma}; the 1.x REST surface is stable, so the
-      # track-by-hand cost is lower. Bring your own via +Qdrant.new(host:, port:,
-      # collection:)+, or let {Server::Qdrant.ensure_running} supervise a
-      # container — same server-vs-client split as {Server::Chroma} / {Chroma}.
+      # 1.8+), the persistent backend (see +pikuri-vectordb/design/architecture.md+
+      # for why Qdrant). Same duck-typed {Backend} protocol as {InMemory} (same
+      # method names, return shapes, and +ArgumentError+ contract on empty input
+      # / non-positive +top_k+; the vector-dim contract diverges — see below).
+      # Hand-rolled rather than a client-gem dep so the wire protocol stays
+      # auditable in one readable file; the 1.x REST surface is stable, so
+      # tracking it by hand is cheap.
+      #
+      # Two ways to get one: **bring your own** — +Qdrant.new(host:, port:,
+      # collection:)+ against an existing deployment (this class is purely the
+      # HTTP client); or **let pikuri manage it** — {Server::Qdrant.ensure_running}'s
+      # +#client(collection:)+ returns a +Qdrant+ pointed at a supervised
+      # container. Container lifecycle and HTTP wire protocol share nothing, so
+      # each is its own class.
+      #
       # Endpoints used are all under +/collections/{name}+ (+exists+, +PUT+ to
       # create, +points+ upsert, +points/search+, +points/count+,
       # +points/delete+, +points/scroll+, +DELETE+).
@@ -33,21 +41,25 @@ module Pikuri
       #
       # * *Payload*: Qdrant has no separate document store, so everything beyond
       #   the vector lives in the point payload — {RESERVED_PAYLOAD_KEYS} carry
-      #   the fixed fields, +metadata+ is merged alongside with the same
-      #   stringify/symbolize normalization as {Chroma} (identical chunk across
-      #   backends).
-      # * *Cosine, no conversion*: created +distance: 'Cosine'+; unlike Chroma
-      #   (distance, +1 - d+), Qdrant's +score+ already *is* a similarity, passed
-      #   through untouched.
-      # * *Vector-dim* diverges from {InMemory} like {Chroma}, with a wrinkle:
-      #   Qdrant fixes the dim at *collection creation*, so {#upsert} creates it
-      #   with the first batch's size; later mismatches are HTTP 4xx →
-      #   +RuntimeError+.
+      #   the fixed fields, +metadata+ is merged alongside. JSON round-trips
+      #   Symbol keys to Strings, so {#upsert} stringifies and {#query}
+      #   re-symbolizes — a queried {Chunk} looks identical to one stored in
+      #   {InMemory}.
+      # * *Cosine, no conversion*: created +distance: 'Cosine'+; Qdrant's +score+
+      #   already *is* a similarity on {InMemory}'s scale, passed through
+      #   untouched.
+      # * *Vector-dim* diverges from {InMemory}: Qdrant fixes the dim at
+      #   *collection creation*, so {#upsert} creates it with the first batch's
+      #   size; a later mismatch is HTTP 4xx → +RuntimeError+, not the
+      #   +ArgumentError+ InMemory raises. Same loud-failure shape; not worth
+      #   parsing Qdrant's error envelope to coerce the class.
       # * *No payload indexes* (deliberate): every filtered call is an exact
       #   scan that works unindexed, milliseconds at pikuri's 10³–10⁵ scale.
       class Qdrant
-        # Rows per +/scroll+ page in {#sources_with_hashes} — caps the boot
-        # manifest read (cf. {Chroma::MANIFEST_PAGE_SIZE}).
+        # Rows per +/scroll+ page in {#sources_with_hashes} — caps the parse
+        # working set of the boot manifest on a large corpus (one row per file,
+        # so a 50k-file corpus is ~50 localhost round trips, not one multi-MB
+        # response). Small corpora finish in one page.
         MANIFEST_PAGE_SIZE = 1_000
 
         # Payload keys reserved for the {Chunk}'s fixed fields; user metadata
@@ -56,8 +68,9 @@ module Pikuri
 
         # @param host [String]
         # @param port [Integer]
-        # @param collection [String] Qdrant collection name (engine-specific, so
-        #   it lives here, not on +VectorDb::Extension+ — cf. {Chroma}).
+        # @param collection [String] Qdrant collection name — an engine-specific
+        #   identifier, so it lives here, not on +VectorDb::Extension+ (a no-op
+        #   for {InMemory}).
         # @param connection [Faraday::Connection, nil] DI point for tests.
         # @return [Qdrant]
         # @raise [ArgumentError] on empty +host+ or empty +collection+.
@@ -122,7 +135,7 @@ module Pikuri
           raise ArgumentError, "top_k must be positive (got #{top_k})" if top_k <= 0
 
           # Never upserted → no collection → semantic answer is
-          # "no hits" (same short-circuit as Chroma).
+          # "no hits".
           return [] unless collection_exists?
 
           body = request_json(:post, "#{collection_path}/points/search", {
@@ -198,11 +211,16 @@ module Pikuri
           nil
         end
 
-        # Replace all chunks for one +source+: delete the old set,
-        # then upsert the new one. The incremental-reindex unit.
-        # Two HTTP calls, so not transactional — same divergence
-        # from {InMemory}, same mitigation, as documented on
-        # {Chroma#replace_source}.
+        # Replace all chunks for one +source+: delete the old set, then upsert
+        # the new (the incremental-reindex unit, {Indexer#reindex_file!}).
+        #
+        # *Not transactional* (the InMemory divergence): two HTTP calls, so a
+        # +#query+ between them can see the source with zero chunks — a window
+        # {InMemory#replace_source} closes with its monitor but Qdrant can't. The
+        # {Indexer} mitigates the common failure by embedding *before* calling
+        # here, so an embedder outage never reaches this and the old chunks stay.
+        # Delete-then-upsert, not the reverse — the reverse would delete the
+        # just-written chunks.
         #
         # @param source [String] the {Chunk#source} being replaced.
         # @param chunks [Array<Chunk>] the new chunk set.
@@ -219,8 +237,8 @@ module Pikuri
         # The boot-sweep reference: +source+ → stored content hash, one payload
         # row per *file* (filter +ordinal == 0+), projected to +source+/+hash+,
         # vectors excluded, paged by Qdrant's own scroll cursor
-        # (+next_page_offset+ — no client-side offset arithmetic, unlike
-        # {Chroma}). Assumes the manifest isn't mutating mid-read; the {Watcher}
+        # (+next_page_offset+ — no client-side offset arithmetic). Assumes the
+        # manifest isn't mutating mid-read; the {Watcher}
         # drives it from its single worker thread.
         #
         # @return [Hash{String => String, nil}] +source+ → content hash. Empty
@@ -338,9 +356,8 @@ module Pikuri
         end
 
         # JSON request helper shared by every points/* call.
-        # Centralises the error shape and Faraday::Error wrapping
-        # (Chroma's +post_json+, generalised over the verb —
-        # Qdrant upserts via PUT). 202 is qdrant's "accepted, not
+        # Centralises the error shape and Faraday::Error wrapping,
+        # over any verb (Qdrant upserts via PUT). 202 is qdrant's "accepted, not
         # yet applied" for non-+wait+ writes.
         def request_json(method, path, body)
           response = @connection.public_send(method, path) do |req|

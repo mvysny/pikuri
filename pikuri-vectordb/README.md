@@ -76,18 +76,13 @@ one-line change:
   over `Array<Float>`, ~40 lines, reads in one sitting. RAM-only:
   everything reloads from sources on every boot.
 - `Backend::Qdrant` — thin Faraday HTTP client against a
-  self-hosted [Qdrant](https://qdrant.tech). **The recommended
-  persistent backend** — [`design/architecture.md`](design/architecture.md) has the engine
+  self-hosted [Qdrant](https://qdrant.tech), the persistent
+  backend — [`design/architecture.md`](design/architecture.md) has the engine
   survey behind the pick.
-- `Backend::Chroma` — the supported
-  [ChromaDB](https://www.trychroma.com) alternative, identical
-  wiring.
 
-Each persistent engine pairs with a `Server::*` supervisor that
-runs it as a self-managed podman/docker container (podman when it's
-installed): pinned image, a
-container name pikuri owns (`pikuri-internal-qdrant` /
-`pikuri-internal-chroma`), data bind-mounted under
+`Server::Qdrant` runs it as a self-managed podman/docker container
+(podman when it's installed): pinned image, a
+container name pikuri owns (`pikuri-internal-qdrant`), data bind-mounted under
 `~/.cache/pikuri/` so the corpus survives container recreation.
 
 ```ruby
@@ -143,7 +138,7 @@ A single recall agent over `book/` (the pikuri guide itself)
 with **no egress** — its tools are the three above plus
 `calculator`; no web search, no fetch, no bash. The corpus stands
 in for private data, and an agent that can read it must not also be
-able to send it out. `--qdrant` / `--chroma` persist the index
+able to send it out. `--qdrant` persists the index
 across runs, `--watch` keeps it live, `--no-reranker` drops the
 reranker requirement. The guide's
 [the vector-DB chapter](../book/vectordb.md) is the full walkthrough.
@@ -189,8 +184,8 @@ Depends on `pikuri-core` and `listen` (filesystem events for the
 - **Guide chapter:** [Agentic search and the vector
   DB](../book/vectordb.md) — concepts, model setup, the
   no-egress argument, `--qdrant --watch` day-to-day shape.
-- **Design notes:** [`design/architecture.md`](design/architecture.md) — the Chroma-vs-Qdrant
-  engine survey.
+- **Design notes:** [`design/architecture.md`](design/architecture.md) — the engine survey
+  behind Qdrant.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-vectordb> (once published),
   or run `bundle exec yard` in this directory for a local copy.

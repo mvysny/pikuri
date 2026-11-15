@@ -14,7 +14,6 @@ describe Pikuri::VectorDb::Backend::Qdrant do
   UUID_A = '86f7e437-faa5-a7fc-e15d-1ddcb9eaeaea' # SHA1('a')
   UUID_B = 'e9d71f5e-e7c9-2d6d-c9e9-2ffdad17b8bd' # SHA1('b')
 
-  # Same Faraday::Adapter::Test stub pattern as the Chroma spec.
   def build_connection(&block)
     stubs = Faraday::Adapter::Test::Stubs.new(&block)
     Faraday.new do |f|

@@ -5,7 +5,7 @@ topical retrieval over a local corpus, wired onto an `Agent` via
 `c.add_extension Pikuri::VectorDb::Extension.new(backend:, source:)`.
 The hybrid half (a keyword index beside the vectors) shipped separately
 as `pikuri-rag`; see `design/decisions.md` `D_rag_gem`.
-Per-piece rationale (Extension / Backend `InMemory`+`Qdrant`+`Chroma` /
+Per-piece rationale (Extension / Backend `InMemory`+`Qdrant` /
 Embedder / Reranker / Chunker / `bin/pikuri-corpus`) lives
 in the gem's YARD headers, the inventory in [`../AGENTS.md`](../../AGENTS.md),
 and [`../pikuri-vectordb/design/architecture.md`](../../pikuri-vectordb/design/architecture.md); the

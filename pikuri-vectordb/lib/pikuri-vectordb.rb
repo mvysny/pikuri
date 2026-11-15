@@ -12,7 +12,7 @@ module Pikuri
   # Namespace for the local-corpus vector search feature. The host wires it via
   # {Extension} (+c.add_extension+); the {Indexer} orchestrates sources → text →
   # {Chunker} → {Embedder} → +Backend#upsert+; a swappable +Backend+
-  # ({Backend::InMemory} / {Backend::Qdrant} / {Backend::Chroma}) stores and
+  # ({Backend::InMemory} / {Backend::Qdrant}) stores and
   # queries; the optional {Reranker::LlamaServer} is a quality knob. The
   # +Tools/+ directory ({Tools::Search} / {Tools::Read} / {Tools::Reindex}) *is*
   # the gem's LLM-facing surface.

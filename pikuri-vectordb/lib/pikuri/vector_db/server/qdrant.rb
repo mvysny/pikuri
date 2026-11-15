@@ -7,8 +7,7 @@ module Pikuri
   module VectorDb
     module Server
       # Supervisor for a self-managed Qdrant podman/docker container — pairs with
-      # {Backend::Qdrant} exactly as {Server::Chroma} pairs with
-      # {Backend::Chroma} (this class owns the *process*; {#client} returns a
+      # {Backend::Qdrant} (this class owns the *process*; {#client} returns a
       # backend pre-pointed at it). Carries only the engine's *identity* and
       # composes a {Container} for the podman/docker work + shared rationale.
       #
@@ -29,7 +28,7 @@ module Pikuri
         #   (see {Container}).
         CONTAINER_NAME = 'pikuri-internal-qdrant'
 
-        # @return [String] container label (same as {Server::Chroma::LABEL}).
+        # @return [String] container label.
         LABEL = 'pikuri.internal=true'
 
         # @return [String] the +-v+ target {#default_data_dir} bind-mounts onto

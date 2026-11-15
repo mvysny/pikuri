@@ -20,7 +20,7 @@ describe Pikuri::VectorDb::Server::Qdrant do
   after { FileUtils.remove_entry(data_dir) }
 
   # Unregister built servers from the process-global Finalizers
-  # after each example — same hygiene as the Server::Chroma spec.
+  # after each example.
   let(:built_servers) { [] }
   after { built_servers.each { |s| Pikuri::Finalizers.unregister(s) } }
 

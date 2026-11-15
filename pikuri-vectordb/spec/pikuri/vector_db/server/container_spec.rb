@@ -5,8 +5,8 @@ require 'faraday'
 
 # The generic container-lifecycle behaviour — reuse-or-recreate,
 # healthcheck polling, loud boot / quiet teardown — is tested here
-# once, against arbitrary engine parameters. The Server::Chroma /
-# Server::Qdrant specs only cover their engine-specific wiring.
+# once, against arbitrary engine parameters. The Server::Qdrant spec
+# only covers its engine-specific wiring.
 describe Pikuri::VectorDb::Server::Container do
   include_context 'container stub'
 

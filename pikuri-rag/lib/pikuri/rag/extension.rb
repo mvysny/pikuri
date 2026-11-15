@@ -43,7 +43,7 @@ module Pikuri
     #
     # * {Pikuri::VectorDb::Backend::InMemory} → +":memory:"+. Both stores
     #   reload from the corpus every boot, which is the teaching shape.
-    # * Qdrant / Chroma → a file under {Pikuri::Paths.cache}, keyed by the
+    # * Qdrant → a file under {Pikuri::Paths.cache}, keyed by the
     #   collection name, so the two persist together.
     #
     # A mismatch is *correct* rather than broken — {Backend::Hybrid}'s

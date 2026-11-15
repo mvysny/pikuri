@@ -17,7 +17,7 @@ module Pikuri
     # lifetime is the host *process*. The host constructs it once around the
     # same {Indexer} every agent's {Extension} shares:
     #
-    #   server = Pikuri::VectorDb::Server::Chroma.ensure_running
+    #   server = Pikuri::VectorDb::Server::Qdrant.ensure_running
     #   backend = server.client(collection: 'notes')
     #   ext = Pikuri::VectorDb::Extension.new(backend: backend, source: '~/notes')
     #   # ... build agents with `ext` ...
@@ -45,7 +45,7 @@ module Pikuri
     # == Teardown drains the in-flight job
     #
     # The Watcher registers with {Pikuri::Finalizers} *last* (after the host's
-    # {Server::Chroma}), so LIFO closes it *first*. {#close} stops the listener,
+    # {Server::Qdrant}), so LIFO closes it *first*. {#close} stops the listener,
     # then joins the worker, which finishes its in-flight job and exits — the
     # load-bearing ordering that guarantees no {Backend#replace_source} is still
     # writing when the container goes down. Still-queued jobs are abandoned; the
@@ -131,7 +131,7 @@ module Pikuri
         subscribe
         @worker = Thread.new { work_loop }
         # Register LAST so LIFO teardown closes the Watcher before the
-        # Server::Chroma the host registered earlier — see the class yardoc.
+        # Server::Qdrant the host registered earlier — see the class yardoc.
         @finalizer_handle = Pikuri::Finalizers.register(self)
         self
       end

@@ -22,7 +22,7 @@ module Pikuri
     # Pikuri's cache root: +$XDG_CACHE_HOME/pikuri+ or +~/.cache/pikuri+.
     #
     # Shared across ALL pikuri processes and PERSISTENT (survives exit) — the
-    # home for state meant to be reused: the URL cache, mem0 / Qdrant / Chroma
+    # home for state meant to be reused: the URL cache, mem0 / Qdrant
     # server data. For scratch private to *this* process that should vanish when
     # it exits, use {.new_temp}; reaching for +cache+ + a fixed subdir is how two
     # concurrent processes end up overwriting each other's files.

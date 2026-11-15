@@ -103,7 +103,7 @@ boot sweep instead of booting to a silently empty `rag_search_keywords`.
 
 `store:` on the extension is the keyword index's SQLite path,
 `":memory:"` by default. Pair it with the backend: in-memory with
-in-memory, a file under `Pikuri::Paths.cache` with Qdrant or Chroma. A
+in-memory, a file under `Pikuri::Paths.cache` with Qdrant. A
 mismatch is *correct* thanks to the rule above, only slower — a full
 re-embed at every boot.
 

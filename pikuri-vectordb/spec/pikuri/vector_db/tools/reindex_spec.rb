@@ -75,7 +75,7 @@ describe Pikuri::VectorDb::Tools::Reindex do
 
   describe '#execute error path' do
     it 'returns "Error: ..." when the indexer raises a RuntimeError' do
-      indexer = stub_indexer(raise_with: 'Backend::Chroma: HTTP 503 ...')
+      indexer = stub_indexer(raise_with: 'Backend::Qdrant: HTTP 503 ...')
       observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer).to_s
 
       assert_match(/^Error: reindex failed:/, observation)

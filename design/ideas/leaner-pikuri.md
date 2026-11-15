@@ -51,7 +51,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   `Workspace::Extension#workspace`, `SubAgent::Extension#personas` (specs in two repos), the
   snapshot/ICS/Engines injection kwargs, `UrlCache::NULL`. Kept as a declaration: Filesystem
   `trusted:` (specs in three repos). Kept `Profile#gloda?` (public probe on a class pikuri-tui
-  calls). Deferred: Chroma `tenant:`/`database:` → `Q_chroma`; Filesystem `env:` → the sandbox
+  calls). Deferred: Chroma `tenant:`/`database:` → `Q_chroma` (moot, Chroma dropped); Filesystem `env:` → the sandbox
   seam row in C. Original list: thunderbird `thunderbird_bin:` (4 ctors), `cache_dir:`;
   `Server::{Qdrant,Chroma}` `data_dir:` / `port:` / `healthcheck_timeout:` + `#endpoint`;
   `Backend::Chroma` `tenant:` / `database:`; `Watcher` `latency:`; both Extensions' `chunker:`;
@@ -109,9 +109,11 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 
 ## D. ROOT, but one flag or one bin — capability calls
 
-- `Q_chroma` — Chroma backend + server, ~540 lib + 620 spec; only `pikuri-corpus --chroma`. Its
-  design case is "costs nothing but its (already written) line count". Leaves `Server::Container`
-  with Qdrant alone.
+- ~~`Q_chroma`~~ **Dropped 2026-11-15** (~540 lib + 620 spec, only `pikuri-corpus --chroma`). The
+  "costs nothing" case didn't hold — every `Backend` change and image bump was paid twice; why-not
+  in `pikuri-vectordb/design/architecture.md` §Verdict. `Server::Container` kept with Qdrant as its
+  one user (cohesive, inlining saves nothing). Moots `tenant:`/`database:` from `Q_dead_knobs`.
+  Workshop: `pikuri-memory/lib/pikuri/memory/mem0_server.rb:15` says "`Server::Chroma`-shaped".
 - `Q_pikuri_corpus` — `pikuri-corpus` + `VectorDb::Extension` + `vectordb_search` wrapper, ~300;
   secretary and briefing go through rag. Dropping makes vectordb the pure primitive the module map
   says it is.

@@ -12,7 +12,7 @@ module Pikuri
     #
     # Whole-corpus entry points: {#index_all!} (unconditional), {#reindex!}
     # (nuke-and-reload), {#index_if_empty!} (boot-time — InMemory always
-    # indexes, Chroma only on first boot / after a manual reindex).
+    # indexes, Qdrant only on first boot / after a manual reindex).
     # One-file-at-a-time, driven by the {Watcher} daemon: {#reindex_file!},
     # {#remove_file!}, and {#reconcile_plan} (the boot sweep — a plan, not an
     # action).
@@ -38,7 +38,7 @@ module Pikuri
     #
     # An embedder failure mid-run propagates and aborts (caller is internal
     # pikuri code, not the LLM — "errors are loud"), leaving the backend partial.
-    # Recourse is {#reindex!}. InMemory resets on restart anyway; only Chroma
+    # Recourse is {#reindex!}. InMemory resets on restart anyway; only Qdrant
     # persists partial state, and a fresh reindex recovers cleanly.
     class Indexer
       LOGGER = Pikuri.logger_for('VectorDb::Indexer')
@@ -159,7 +159,7 @@ module Pikuri
 
       # Index only if the backend is currently empty. The boot-time
       # entry point — InMemory backends always re-index (RAM-only);
-      # Chroma backends only re-index on first boot or after a
+      # Qdrant backends only re-index on first boot or after a
       # manual +reindex!+.
       #
       # @return [Integer] total chunks indexed (0 if backend was
@@ -177,7 +177,7 @@ module Pikuri
       # {Backend#replace_source} (the atomic unit the {Watcher} drives on a
       # modify/add event). The embed happens *before* the backend write, so an
       # embedder outage raises here leaving the prior chunks untouched (see
-      # {Backend::Chroma#replace_source}). A file that no longer yields text
+      # {Backend::Qdrant#replace_source}). A file that no longer yields text
       # (emptied, now-binary, vanished) is treated as a removal — its stale
       # chunks drop and nothing is written, so no orphans linger.
       #
@@ -237,7 +237,7 @@ module Pikuri
       # and live events share one last-intent-wins path (and teardown can
       # interrupt between files). Uniform across backends with no +is_a?+:
       # InMemory reports an empty manifest at boot (RAM reset) so every file
-      # reads as new; Chroma reports its persisted manifest so only changed
+      # reads as new; Qdrant reports its persisted manifest so only changed
       # files return — which also closes the downtime gap (changes made while no
       # {Watcher} ran are invisible to filesystem events but caught by the diff).
       #

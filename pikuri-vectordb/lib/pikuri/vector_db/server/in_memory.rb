@@ -6,12 +6,12 @@ module Pikuri
   module VectorDb
     module Server
       # The null supervisor — the in-process implementation of the Server
-      # protocol ({.ensure_running} / {#client} / {#close}) that {Qdrant} and
-      # {Chroma} implement over podman/docker. No container, no process: it owns the
+      # protocol ({.ensure_running} / {#client} / {#close}) that {Qdrant}
+      # implements over podman/docker. No container, no process: it owns the
       # {Backend::InMemory} stores' *lifetime* the way the podman/docker supervisors own
       # a *container*, which is what lets +bin/pikuri-corpus+ pick a Server
       # class, call +ensure_running.client(...)+, and close it identically for
-      # all three engines.
+      # both engines.
       #
       # +#client(collection:)+ memoizes one store per collection name (same name
       # → same store, so the {Watcher} and agent share one index), guarded by a

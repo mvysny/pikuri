@@ -364,14 +364,12 @@ summaries below tell you what each owns.
   Pins the return shape to `Array<Array<Float>>` (the indexer
   always wants the batched form) and lets tests inject a fake
   `#embed` without monkey-patching ruby_llm.
-- **Backend** (`Backend::InMemory` / `Backend::Qdrant` /
-  `Backend::Chroma`) — stores chunks alongside vectors and answers
-  nearest-neighbour queries. `InMemory` is pure-Ruby cosine over
-  `Array<Float>`, ~40 lines, reads in one sitting; the other two
-  are thin Faraday HTTP clients against a self-hosted server —
-  [Qdrant](https://qdrant.tech) (the recommended persistent
-  engine) or [ChromaDB](https://www.trychroma.com) (a supported
-  alternative). Same duck-typed interface
+- **Backend** (`Backend::InMemory` / `Backend::Qdrant`) — stores
+  chunks alongside vectors and answers nearest-neighbour queries.
+  `InMemory` is pure-Ruby cosine over `Array<Float>`, ~40 lines,
+  reads in one sitting; `Qdrant` is a thin Faraday HTTP client
+  against a self-hosted [Qdrant](https://qdrant.tech) server, the
+  persistent engine. Same duck-typed interface
   (`#upsert` / `#query` / `#delete_all` / `#count`), so swapping
   between them is a one-line change.
 - **Reranker** (`Reranker::LlamaServer`) — optional. Speaks `POST
@@ -622,18 +620,17 @@ compose stack), point
 `Backend::Qdrant.new(host:, port:, collection:)` at it directly
 and skip the supervisor.
 
-**Why Qdrant?** [ChromaDB](https://www.trychroma.com) — the
-vector store most RAG tutorials reach for — is equally supported
-(`Backend::Chroma` + `Server::Chroma`, identical wiring), and
-either engine answers top-k over a personal-sized corpus in
-single-digit milliseconds. Qdrant gets the recommendation because
+**Why Qdrant?** [ChromaDB](https://www.trychroma.com), the
+vector store most RAG tutorials reach for, would do the job just as
+well: either engine answers top-k over a personal-sized corpus in
+single-digit milliseconds. pikuri picked Qdrant because
 its REST surface has held stable since 2023 (Chroma has one
-breaking API revision on record), its server image is less than
+breaking API revision on record) and its server image is less than
 half the size. The full
 side-by-side survey lives in
 [`pikuri-vectordb/design/architecture.md`](../pikuri-vectordb/design/architecture.md).
-`pgvector` and others would be similarly thin Faraday clients;
-they're deferred until a concrete need shows up.
+A Chroma, `pgvector` or other backend would be one more thin
+Faraday client; they're deferred until a concrete need shows up.
 
 ## Putting it together: `--qdrant --watch`
 
@@ -653,8 +650,7 @@ The flags are independent and stack cleanly:
 - **`--qdrant`** swaps the in-RAM `Backend::InMemory` for the
   self-managed Qdrant container from the previous section, so the
   embeddings persist on disk across runs. (Needs `podman` or
-  `docker` on `PATH`. `--chroma` does the same with the ChromaDB
-  alternative.)
+  `docker` on `PATH`.)
 - **`--watch`** starts the background `Watcher`: it walks the source
   once on boot and then reindexes individual files as they change,
   so you never run `vectordb_reindex` by hand again.

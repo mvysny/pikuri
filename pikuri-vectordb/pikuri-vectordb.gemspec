@@ -18,9 +18,8 @@ Gem::Specification.new do |spec|
     exactness ("invoice #4471") need a keyword index beside the
     vectors, which is +pikuri-rag+ — it decorates whatever backend
     you pass here. Ships a swappable backend (a
-    pure-Ruby +Backend::InMemory+ for teaching, plus thin
-    +Backend::Qdrant+ / +Backend::Chroma+ HTTP clients for
-    persistence — Qdrant recommended), a chunker, an
+    pure-Ruby +Backend::InMemory+ for teaching, plus a thin
+    +Backend::Qdrant+ HTTP client for persistence), a chunker, an
     embedder wrapper over +RubyLLM.embed+, and an optional
     +Reranker::LlamaServer+ that speaks +/v1/rerank+ against a
     cross-encoder model. Text extraction goes through
