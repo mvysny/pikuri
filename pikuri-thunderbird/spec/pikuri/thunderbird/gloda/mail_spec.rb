@@ -99,6 +99,22 @@ describe Pikuri::Thunderbird::Gloda::Mail do
     end
   end
 
+  it 'shows a deduped hit from the copy whose body was downloaded' do
+    with_mail do |mail|
+      # Both <e@x> copies match on the subject; the headers-only one, a
+      # shorter document, outranks the other.
+      hits = mail.search(query: 'quarterly', limit: 10)
+
+      assert_equal ['<e@x>'], hits.map { |h| h[:message_id] }
+      assert_equal 'All Mail', hits.first[:folder]
+      assert_includes hits.first[:snippet], 'attached'
+
+      listed = mail.search(query: '', limit: 10, subject: 'Quarterly').first
+      assert_equal 'All Mail', listed[:folder]
+      assert_equal 'the report is attached', listed[:snippet]
+    end
+  end
+
   it 'ORs query words (recall-first): any word can match' do
     with_mail do |mail|
       ids = mail.search(query: 'invoice lunch', limit: 10).map { |h| h[:message_id] }

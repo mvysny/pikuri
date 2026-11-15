@@ -23,6 +23,12 @@ module Pikuri
       # everything). {#search} over-fetches and dedups by +headerMessageID+
       # (falling back to a +gloda:<id>+ handle when absent) *before* the top-N
       # cap, so duplicates can't eat result slots.
+      #
+      # A deduped hit keeps its best copy's rank but shows a copy whose body
+      # Gloda saw, when the over-fetch holds one. All Mail is often synced
+      # headers-only, and a headers-only copy outranks its downloaded twin on
+      # a subject match (bm25 favours the shorter document), so without this
+      # the hit would name All Mail and carry an empty snippet.
       class Mail
         # @return [Integer] over-fetch multiple before dedup+cap (so Gmail
         #   label duplicates don't shrink recall).
@@ -152,7 +158,7 @@ module Pikuri
           append_filters(clauses, binds, from:, to:, subject:, after:, before:, folder:)
           db.execute(<<~SQL, binds + [fetch])
             SELECT m.headerMessageID, m.id, m.date, c.c1subject, c.c3author, c.c4recipients,
-                   fl.name, snippet(fts, 0, '', '', ' … ', 12)
+                   fl.name, snippet(fts, 0, '', '', ' … ', 12), c.c2attachmentNames IS NOT NULL
             FROM fts
             JOIN messages m ON m.id = fts.rowid
             JOIN messagesText_content c ON c.docid = fts.rowid
@@ -170,7 +176,7 @@ module Pikuri
           append_filters(clauses, binds, from:, to:, subject:, after:, before:, folder:)
           db.execute(<<~SQL, binds + [fetch])
             SELECT m.headerMessageID, m.id, m.date, c.c1subject, c.c3author, c.c4recipients,
-                   fl.name, substr(c.c0body, 1, 180)
+                   fl.name, substr(c.c0body, 1, 180), c.c2attachmentNames IS NOT NULL
             FROM messages m
             JOIN messagesText_content c ON c.docid = m.id
             LEFT JOIN folderLocations fl ON fl.id = m.folderID
@@ -223,21 +229,25 @@ module Pikuri
         end
 
         # @param rows [Array<Array>] raw rows.
-        # @return [Array<Hash>] hit hashes, deduped by handle, order preserved.
+        # @return [Array<Hash>] hit hashes, deduped by handle, in the order
+        #   each handle first appears; a hit is its first downloaded copy, or
+        #   its first copy when none is.
         def dedup(rows)
           seen = {}
           rows.each do |row|
+            downloaded = row.last == 1
             hit = row_to_hit(row)
-            seen[hit[:message_id]] ||= hit
+            kept = seen[hit[:message_id]]
+            seen[hit[:message_id]] = [hit, downloaded] if kept.nil? || (downloaded && !kept.last)
           end
-          seen.values
+          seen.values.map(&:first)
         end
 
         # @param row [Array] +[headerMessageID, id, date_us, subject, author,
-        #   recipients, folder, snippet]+
+        #   recipients, folder, snippet, downloaded]+
         # @return [Hash]
         def row_to_hit(row)
-          header_msgid, id, date_us, subject, author, recipients, folder, snippet = row
+          header_msgid, id, date_us, subject, author, recipients, folder, snippet, = row
           {
             message_id: header_msgid && !header_msgid.empty? ? header_msgid : "gloda:#{id}",
             date: to_time(date_us), from: Gloda.strip_undefined(author),
