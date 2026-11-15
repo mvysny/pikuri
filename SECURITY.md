@@ -133,28 +133,13 @@ your mail and calendar read-only, and anything outbound (a reply, an
 invite) opens Thunderbird's compose window with the draft filled in.
 You see the actual bytes and click Send yourself; the agent cannot.
 
-**Credential floor under a whole-host workspace.** When the
-workspace is `Filesystem::AllowAll`, every path resolves *except* a
-default denylist: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.docker`,
-`~/.kube`, `~/.netrc`, `/etc/shadow` (and the `/root` variants).
-Denied paths are refused by `read`/`write`/`edit`, rendered as
-`[denied]` by `file_list`, and dropped from `grep`/`glob` results.
-Symlinks are resolved before the test, so a `decoy → ~/.ssh` planted
-inside the workspace is caught.
-
-It is a **floor, not a boundary**: a co-wired shell (pikuri-workshop's
-`bash`) bypasses it entirely. And a host may pass `denylist: []` to
-drop it, when something else (a network-severed sandbox) is the real
-boundary and half a floor would be theater rather than defense.
-
-> **Fixed 2026-08-15, and worth naming because it shipped broken:**
-> the denylist gated only paths the *model supplied* to a `resolve_`
-> call. A path a tool **walked** to on its own reached no such call,
-> so `grep 'BEGIN PRIVATE KEY' ~` returned the bytes `read` refused
-> to open, and `glob '**/*'` listed the key filenames. Every
-> enumerating tool now consults `Filesystem#denied?` on its own
-> results. If you ran a pre-0.0.8 session with a whole-host workspace
-> over a home directory, assume anything under the denylist was reachable.
+**A host's denylist covers the paths a tool walks to.** pikuri's
+workspace is scoped to the folders you name, so it denies nothing
+inside them. A host that opens the whole disk (pikuri-workshop's OS
+assistant) adds a denylist (`~/.ssh`, `~/.aws`, …), and pikuri's
+`file_list`, `glob` and `grep` check every path they find on their
+own against it: `~/.ssh` shows as `[denied]`, and `grep 'BEGIN
+PRIVATE KEY' ~` doesn't return the key that `read` refuses to open.
 
 > **Five worked attacks** are walked end to end in
 > [the security chapter of the guide](book/security.md), including

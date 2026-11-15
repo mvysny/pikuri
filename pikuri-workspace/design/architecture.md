@@ -12,13 +12,12 @@ already homed and does **not** live here:
   this gem's [`AGENTS.md`](../../AGENTS.md).
 - The **reader-level posture** — reads-are-safe / writes-need-a-human,
   confirm-every-writable-write, the unwritable short-circuit, no
-  sensitive-path list, `AllowAll` + empty denylist behind a container —
+  sensitive-path list —
   is the book's OS-assistant chapter and the coding-agent chapter.
-- Every **per-symbol contract** (the containment walk, the `AllowAll`
-  credential denylist, ripgrep argv + truncation, strict-match Edit) is the owning class's YARD header.
-- The `AllowAll` × `Sandbox` interplay (why `ALLOW_ALL` + `Sandbox::NONE`
-  only inside a container) belongs to the Sandbox owner —
-  [`../pikuri-code/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-code/design/architecture.md).
+- Every **per-symbol contract** (the containment walk, the walked-path
+  denylist hook, ripgrep argv + truncation, strict-match Edit) is the owning class's YARD header.
+- The whole-host `AllowAll` and its interplay with `Sandbox` live in
+  pikuri-workshop; the walked-path hook they rely on is `D_walked_path_denylist`.
 
 ## The read-before-edit gate
 

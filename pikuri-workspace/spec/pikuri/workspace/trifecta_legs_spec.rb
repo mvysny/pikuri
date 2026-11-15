@@ -26,23 +26,6 @@ RSpec.describe 'Workspace trifecta legs' do
     end
   end
 
-  describe 'Filesystem::AllowAll' do
-    it 'accepts private:, where a whole-host workspace is exactly where it is meant' do
-      assert Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root, private: true).private?
-    end
-
-    it 'refuses trusted: outright — the flag cannot be honest over the whole host' do
-      error = assert_raises(ArgumentError) do
-        Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root, trusted: true)
-      end
-      assert_includes error.message, 'not representable'
-    end
-
-    it 'reports untrusted even when nothing was declared' do
-      refute Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root).trusted?
-    end
-  end
-
   describe 'the reading tools' do
     %w[read grep glob].each do |tool_name|
       describe tool_name do

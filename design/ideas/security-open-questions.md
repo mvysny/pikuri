@@ -79,7 +79,7 @@ the table:
   `~/.claude/skills` on a workspace declared trusted, and `read` vouches
   for bytes nobody vouched for — the vouched-for-island problem
   `Filesystem#trusted?` warns about, arriving through the back door;
-  `Filesystem` already raises on `AllowAll` + `trusted:` for the same
+  pikuri-workshop's `AllowAll` already raises on `trusted:` for the same
   reason. Latent: `bin/pikuri-code` cannot reach it, since
   `ToolchainPaths` keeps its workspace honestly untrusted whatever the
   user answers. It binds the first host whose readable set *is* the

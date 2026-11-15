@@ -2329,7 +2329,7 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
   Symmetry is not evidence.
 - **Refuse non-text sources under `trusted: true`** (raise, or skip with a
   warning). Rejected: pikuri refuses a declaration only where it *cannot* be
-  honest — `Filesystem::AllowAll` rejects `trusted:` because a whole-host reach
+  honest — pikuri-workshop's `Filesystem::AllowAll` rejects `trusted:` because a whole-host reach
   is never all user-authored — and a user-authored PDF *can* be honest. A
   refusal on file extension also buys false safety (a text file hides an
   injection perfectly well with zero-width characters or an HTML comment; the
@@ -3979,7 +3979,7 @@ workshop's shell.
 
 ## D_walked_path_denylist — Why two denylist layers, with the cheap one never the guarantee?
 
-**Context.** `AllowAll`'s credential denylist (`~/.ssh`, `~/.aws`, …,
+**Context.** The whole-host `Filesystem::AllowAll`'s credential denylist (`~/.ssh`, `~/.aws`, …,
 `/etc/shadow`) was enforced in exactly one place: `resolve_for_read` /
 `resolve_for_write`. Those only ever see a path the **model supplied**. A path
 a tool **walked** to on its own reaches no `resolve_` call — so, measured
@@ -4001,10 +4001,18 @@ denylist" — false for two of its own tools.
 1. **`Filesystem#denied?` on every walked result** — the guarantee. Base
    `Filesystem` returns `false` (a scoped workspace contains by its
    readable/writable ceiling instead); `AllowAll` symlink-resolves the
-   candidate and tests containment against the same denylist
-   `resolve_unrestricted` uses.
+   candidate and tests containment against the same denylist its
+   `resolve_` calls use.
 2. **`rg --glob '!<rel>'` pruning** via `Filesystem#denied_roots` — an
    optimization, so rg never walks a subtree whose results would be discarded.
+
+**The seam outlives its implementer here.** `AllowAll` moved to pikuri-workshop
+on 2026-11-15 — a whole-disk filesystem is not safe on your host as-is
+(`D_gem_placement`) — so nothing in pikuri overrides `denied?` any more. The
+calls stay: the walking tools are pikuri's, a host can only add a denylist by
+subclassing `Filesystem`, and a tool that forgot the check would leak under
+that host with no code of its own at fault. `denylist_spec.rb` stubs `denied?`
+to keep both layers pinned.
 
 **Layer 2 is never load-bearing**, and that is the point of writing it down: it
 goes silently partial whenever a denied root sits outside the search root, and
@@ -4184,7 +4192,7 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   `Skill::Catalog::Base` would read as a command being a kind of skill.
 - **Left open:** folding home skill roots into a workspace's `readable:` while
   declaring that workspace trusted is the vouched-for-island problem arriving
-  through the back door — `Filesystem` raises on `AllowAll` + `trusted:` for
+  through the back door — pikuri-workshop's `AllowAll` raises on `trusted:` for
   the same reason. `pikuri-code` cannot reach it (its workspace is untrusted
   regardless), so it binds the first host whose readable set is the project
   root. See `design/ideas/security-open-questions.md`.
@@ -4291,7 +4299,7 @@ Rejected, all of them consequences of wanting a second level:
   useful to an OS-helper agent; `~/work/my/pikuri` is a repo. `$HOME` at depth
   1 clears the cap, so nothing needs the special case. (Narrower still than it
   looked: `Filesystem::Restricted` *refuses* a `/home/*` project root outright,
-  so only the `AllowAll` hosts can be rooted there at all.)
+  so only pikuri-workshop's `AllowAll` hosts can be rooted there at all.)
 - **A constructor flag, default off, on in `pikuri-code`.** At ~90 tokens
   median it is cheap enough to be unconditional, and a flag is a thing a host
   forgets to set. The premise: if a harness wires the workspace, it wants to

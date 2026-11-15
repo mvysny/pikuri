@@ -6,7 +6,7 @@ require 'fileutils'
 RSpec.describe Pikuri::Workspace::Search::Utils do
   # A scoped Filesystem denies nothing, so these assert the refusal's shape;
   # the denylist's effect on the listing is covered in denylist_spec.rb.
-  let(:filesystem) { Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, denylist: []) }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd) }
 
   def refusal_for(root, verb:)
     described_class.oversized_root_refusal(root, filesystem: filesystem, verb: verb)

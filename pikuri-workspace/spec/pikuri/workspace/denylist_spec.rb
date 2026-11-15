@@ -3,24 +3,33 @@
 require 'tmpdir'
 require 'fileutils'
 
-# The credential denylist across every tool that can surface a path.
+# The walked-path denylist across every tool that can surface a path.
 #
-# `resolve_for_read` only ever sees a path the *model* supplied, so for a long
-# time it was the whole guard — and `grep 'BEGIN PRIVATE KEY'` returned what
-# `read` refused to open, because a path the tool *walked* to reaches no
-# `resolve_` call. Each tool below gets the same three questions, so a fifth
+# `resolve_for_read` only ever sees a path the *model* supplied, so a path a
+# tool *walked* to (a listing row, an rg hit) must pass `Filesystem#denied?`
+# before it is reported — otherwise `grep 'BEGIN PRIVATE KEY'` returns what
+# `read` refused to open. Each tool below gets the same questions, so a fifth
 # path-walking tool is a copied block rather than a fresh think.
-RSpec.describe 'credential denylist' do
+RSpec.describe 'walked-path denylist' do
   let(:home) { Pathname.new(Dir.mktmpdir('pikuri-denylist-')).realpath }
   let(:root) { home + 'proj' }
 
-  # AllowAll is the only Filesystem with a denylist; a scoped one contains by
-  # its readable/writable ceiling instead. DEFAULT_CREDENTIAL_DENYLIST is
-  # home-anchored, so the in-workspace .ssh is listed explicitly here.
+  # pikuri's scoped Filesystem denies nothing; a whole-host host overrides
+  # +denied?+ / +denied_roots+. Stub that override the way such a host
+  # implements it — symlink-resolved, so the decoys below are caught.
   let(:filesystem) do
-    Pikuri::Workspace::Filesystem::AllowAll.new(
-      project_root: root, denylist: [home + '.ssh', root + '.ssh']
-    )
+    fs = Pikuri::Workspace::Filesystem.new(project_root: root)
+    denylist = [home + '.ssh', root + '.ssh']
+    fs.define_singleton_method(:denied_roots) { denylist }
+    fs.define_singleton_method(:denied?) do |path|
+      real = begin
+        Pathname.new(path).realpath
+      rescue SystemCallError
+        Pathname.new(path).expand_path.cleanpath
+      end
+      denylist.any? { |d| real == d || real.to_s.start_with?("#{d}#{File::SEPARATOR}") }
+    end
+    fs
   end
   let(:workspace) { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
 
@@ -30,7 +39,7 @@ RSpec.describe 'credential denylist' do
     FileUtils.mkdir_p(root)
     File.write(root + 'ok.txt', 'BEGIN PRIVATE KEY is mentioned here too')
     # A denylisted subtree reachable *without* leaving the workspace root, and
-    # the two symlink decoys that motivate resolving before testing.
+    # the two symlink decoys a listing would otherwise follow.
     FileUtils.mkdir_p(root + '.ssh')
     File.write(root + '.ssh/inner_key', "-----BEGIN PRIVATE KEY-----\ninner\n")
     File.symlink(home + '.ssh', root + 'decoy_dir')
@@ -39,32 +48,11 @@ RSpec.describe 'credential denylist' do
 
   after { FileUtils.rm_rf(home) }
 
-  describe 'Filesystem#denied?' do
-    it 'resolves symlinks before testing, so a decoy inside the workspace is caught' do
-      assert filesystem.denied?(root + 'decoy_dir')
-      assert filesystem.denied?(root + 'decoy_file')
-    end
+  it 'is always false on a scoped Filesystem, which has no denylist' do
+    scoped = Pikuri::Workspace::Filesystem.new(project_root: root)
 
-    it 'is false for ordinary paths' do
-      refute filesystem.denied?(root + 'ok.txt')
-    end
-
-    it 'is always false on a scoped Filesystem, which has no denylist' do
-      scoped = Pikuri::Workspace::Filesystem.new(project_root: root)
-
-      refute scoped.denied?(root + '.ssh/inner_key')
-      assert_empty scoped.denied_roots
-    end
-  end
-
-  describe 'read' do
-    it 'refuses a denied path' do
-      result = Pikuri::Workspace::Read.read(workspace: workspace, path: '.ssh/inner_key',
-                                            offset: 1, limit: 100).to_s
-
-      assert_includes result, 'denied credential location'
-      refute_includes result, 'BEGIN PRIVATE KEY'
-    end
+    refute scoped.denied?(root + '.ssh/inner_key')
+    assert_empty scoped.denied_roots
   end
 
   describe 'file_list' do
@@ -81,12 +69,6 @@ RSpec.describe 'credential denylist' do
       assert_includes result, "decoy_dir/  #{Pikuri::Workspace::Listing::DENIED}"
       assert_includes result, "decoy_file  #{Pikuri::Workspace::Listing::DENIED}"
       refute_includes result, 'id_rsa'
-    end
-
-    it 'refuses when pointed straight at a denied path' do
-      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: '.ssh', depth: 1).to_s
-
-      assert_includes result, 'denied credential location'
     end
   end
 
@@ -155,27 +137,6 @@ RSpec.describe 'credential denylist' do
 
       refute_includes result, 'inner_key'
       refute_includes result, 'secret'
-    end
-  end
-
-  describe 'an empty denylist stays empty' do
-    # pikuri-os / pikuri-computer pass denylist: [] deliberately (bash under
-    # FullFsNoNet sees the disk anyway, so a half-denylist would be theater).
-    # This fix must not quietly re-close that door.
-    let(:filesystem) do
-      Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root, denylist: [])
-    end
-
-    it 'lists and searches credential paths as ordinary ones' do
-      listing = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 2).to_s
-      grepped = Pikuri::Workspace::Search::Grep.search(
-        workspace: workspace, pattern: 'BEGIN PRIVATE KEY', path: nil, glob: nil,
-        case_insensitive: false, output_mode: 'files_with_matches'
-      ).to_s
-
-      assert_includes listing, 'inner_key'
-      assert_includes grepped, 'inner_key'
-      refute filesystem.denied?(root + '.ssh/inner_key')
     end
   end
 end

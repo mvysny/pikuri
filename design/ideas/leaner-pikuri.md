@@ -88,7 +88,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | `TokenLog` `status_line` / `on_status_line` / `context_window_size` | ~40 | tui, webui | ✓ `D_token_log_status_line` |
 | `modalities` + attachment refusal | ~110 | conversations, tui, webui | ✓ `D_refuse_unsupported_attachments` |
 | reference block | ~50 | skills, memory (pikuri: wire-check only) | ✓ `D_reference_text_as_user_turn` |
-| denylist walk in grep/glob/listing | ~80 | code/tui-code `--yolo`, lsp | ✓ `D_walked_path_denylist`; `AllowAll` (~150) itself could move |
+| denylist walk in grep/glob/listing | ~80 | code/tui-code `--yolo`, lsp | ✓ `D_walked_path_denylist` (now also why the seam outlives its implementer). `AllowAll` (~140 lib + ~200 spec) **removed 2026-11-15** for the workshop to take from git history (pikuri-code's sandbox, pikuri-os and pikuri-tui's computer app still call it) |
 | `Control::Handoff` | 75 | none yet | ✓ `D_confirmer_sees_the_cancel` |
 | mid-conversation model switch | ~95 | conversations, tui | ✓ `D_model_switch_in_place` (2026-11-14); no pikuri bin demos it. Trimmed: context rebuilt on every switch, `ChatTransport#connection_overrides?` gone |
 | Subprocess `env:` / `terminate` / `io` | ~20 | `env:` ROOT (`Thunderbird::Launcher`) + code, mem0; `terminate`/`io` mem0's relay | ✓ `env:` → `D_de_bundlerized_children`; daemon-child shape → `Subprocess`'s `== Daemon children` yardoc (2026-11-14; too small for a `D_`) |
@@ -105,8 +105,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | `Contribution` `label:`/`legs:` | ~15 | mcp, command | ✓ `Trifecta::Contribution` yardoc (a raw-tool surface has no leg surface); `D_write_custody_axis` cites it as the host's way to add a leg pikuri can't see (2026-11-15) |
 | `Tool#display_name` override | ~10 | lsp | ✓ `D_tool_summary_lines` + `Tool#display_name` yardoc — a plain overridable method with a mechanical default (2026-11-15) |
 
-`Q_seam_justifications` — **done 2026-11-15:** every C row has a written why or was dropped. Left
-open: whether `AllowAll` (~150, denylist row) moves to the workshop.
+`Q_seam_justifications` — **done 2026-11-15:** every C row has a written why or was dropped.
 
 ## D. ROOT, but one flag or one bin — capability calls
 

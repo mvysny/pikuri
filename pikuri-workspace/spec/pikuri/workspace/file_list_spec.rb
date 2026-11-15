@@ -70,10 +70,10 @@ RSpec.describe Pikuri::Workspace::FileList do
     end
 
     # The oversized-root guard is Search::Utils'; this only pins that FileList
-    # consults it, since an AllowAll workspace can be pointed at $HOME.
+    # consults it, since a +readable:+ root can reach $HOME.
     it 'refuses an oversized root and hands back entries to pick from' do
-      allow_all = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
-      ws = Pikuri::Workspace::Workspace.new(filesystem: allow_all)
+      broad = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [Dir.home])
+      ws = Pikuri::Workspace::Workspace.new(filesystem: broad)
 
       result = described_class.list(workspace: ws, path: Dir.home, depth: 1).to_s
 

@@ -65,8 +65,8 @@ tools route through `#resolve_for_write(path)` + the Confirmer's
 - **Narrative walkthrough:** the "Workspace seam" and "Confirmer
   seam" sections of
   [the coding-agent chapter of the pikuri guide](https://github.com/mvysny/pikuri-workshop/blob/master/book/code.md) — what
-  each kwarg of `Filesystem.new` controls, when to use the
-  `AllowAll` variant, and how the seams fit alongside `Sandbox`.
+  each kwarg of `Filesystem.new` controls and how the seams fit
+  alongside `Sandbox`.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-workspace> (once published),
   or run `bundle exec yard` in this directory for a local copy.

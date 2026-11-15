@@ -8,8 +8,8 @@ module Pikuri
       module Utils
         # Guard against a search/list rooted at +/+, the user's whole home dir,
         # or any parent of home (+/home+, which holds *every* user's home) —
-        # each walks an enormous tree and, under an +AllowAll+ workspace, floods
-        # rg with unreadable-path diagnostics the model pays context for. The
+        # each walks an enormous tree and, under a +readable:+ root that broad,
+        # floods rg with unreadable-path diagnostics the model pays context for. The
         # refused set is home and everything at-or-above it: blocking +~+ while
         # waving through its strictly-broader parent +/home+ would be no guard
         # at all. Refused regardless of any glob: rg traverses the tree *before*

@@ -226,22 +226,18 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       assert_equal 'Error: path not found: does/not/exist', result
     end
 
-    it 'refuses an oversized root (home / filesystem root) under AllowAll' do
-      # AllowAll lets a path escape to anywhere; / and $HOME are the
-      # pathological roots that flood the search with traversal errors.
-      allow_all = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
-      ws = Pikuri::Workspace::Workspace.new(filesystem: allow_all)
+    it 'refuses an oversized root (the home folder) reachable through a readable root' do
+      broad = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [Dir.home])
+      ws = Pikuri::Workspace::Workspace.new(filesystem: broad)
 
-      [Dir.home, '/'].each do |danger|
-        result = described_class.search(
-          workspace: ws, pattern: 'x', path: danger, glob: nil,
-          case_insensitive: false, output_mode: 'content'
-        ).to_s
-        assert result.start_with?('Error: refusing to search'), "got #{result[0, 80].inspect}"
-        assert_includes result, 'too broad'
-        # The refusal hands back a listing to narrow into, not a dead-end.
-        assert_includes result, 'Pick one of its entries'
-      end
+      result = described_class.search(
+        workspace: ws, pattern: 'x', path: Dir.home, glob: nil,
+        case_insensitive: false, output_mode: 'content'
+      ).to_s
+      assert result.start_with?('Error: refusing to search'), "got #{result[0, 80].inspect}"
+      assert_includes result, 'too broad'
+      # The refusal hands back a listing to narrow into, not a dead-end.
+      assert_includes result, 'Pick one of its entries'
     end
   end
 

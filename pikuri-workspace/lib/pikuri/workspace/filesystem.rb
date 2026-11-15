@@ -97,8 +97,8 @@ module Pikuri
       # bytes are the norm, and a hostile README reaches the model verbatim.
       # Claim it only when the trusted area is the tool's *entire* reachable set
       # — a vouched-for island inside a broad root buys nothing, since the tool
-      # can still reach everything else. That is why {AllowAll} refuses the flag
-      # outright rather than merely discouraging it.
+      # can still reach everything else. So a whole-host subclass should refuse
+      # the flag outright rather than merely discourage it.
       #
       # Distinct from the trust-this-directory question a host may ask at boot:
       # that one asks whether a hostile +.gitattributes+ can *execute code*, this
@@ -157,7 +157,9 @@ module Pikuri
       # path a tool **walked** to on its own (a {Listing} row, an +rg+ hit),
       # which no +resolve_+ call ever sees. A scoped Filesystem has no
       # denylist — containment is the readable/writable ceiling — so this is
-      # always +false+ here; {AllowAll} overrides it.
+      # always +false+ here; a whole-host subclass with a credential denylist
+      # overrides it, symlink-resolving +path+ first so a +decoy → ~/.ssh+
+      # link inside the workspace is caught.
       #
       # @param path [String, Pathname]
       # @return [Boolean]
@@ -217,149 +219,6 @@ module Pikuri
         return File.join(Dir.home, path[2..]) if path.start_with?('~/')
 
         path
-      end
-
-      # Unrestricted variant of {Filesystem}: every path resolves, except paths
-      # under +denylist:+ (default {DEFAULT_CREDENTIAL_DENYLIST} — +~/.ssh+,
-      # +~/.aws+, +~/.gnupg+, +~/.docker+, +~/.kube+, +~/.netrc+, +/etc/shadow+)
-      # still raise. For dev-container / Docker mode where the container is the
-      # boundary; the denylist is defense-in-depth against prompt-injected
-      # exfiltration of host credentials bind-mounted in. Pairs with +--yolo+
-      # (no Confirmer) — but combining with a bubblewrap-sandboxed shell
-      # defeats the sandbox (the whole fs ends up bound in), and a shell inside
-      # the sandbox bypasses the denylist anyway, so the intended combo is
-      # ALLOW_ALL with an unsandboxed shell inside a container.
-      #
-      # +project_root:+ is accepted for parity but is not a containment ceiling
-      # and is NOT validated against {DENIED_PROJECT_ROOTS} (+'/'+ is legitimate
-      # in a container); it still anchors relative paths and the chdir target.
-      #
-      # == Denylist semantics
-      #
-      # Each entry is realpath'd lazily at check time when it exists (so a
-      # symlink +/tmp/decoy → ~/.ssh/id_rsa+ is caught), else falls back to a
-      # literal-prefix match (blocks the agent *creating* a credential dir the
-      # user lacks). Pass a reduced or empty +denylist:+ to widen access — but
-      # only behind an outer egress boundary, since bash bypasses it anyway.
-      # Prefer the parameter over subclassing.
-      class AllowAll < Filesystem
-        # Default credential floor even ALLOW_ALL refuses (read *and* write, and
-        # {#denied?} for anything a tool walks to) — the default +denylist:+, so
-        # an unconfigured AllowAll keeps its credential floor out of the box;
-        # widen only by explicitly passing a smaller list. It is a floor, not a
-        # boundary: a co-wired shell tool walks around it entirely. Expanded via
-        # +ENV['HOME']+ at load, unioned with the +/root+ variants (dev-container
-        # default user). Frozen.
-        DEFAULT_CREDENTIAL_DENYLIST = begin
-          homes = [ENV.fetch('HOME', nil), '/root'].compact.uniq
-          per_home = %w[.ssh .aws .gnupg .docker .kube .netrc]
-          user_paths = homes.flat_map { |h| per_home.map { |p| File.join(h, p) } }
-          (user_paths + %w[/etc/shadow]).map { |p| Pathname.new(p) }.uniq.freeze
-        end
-
-        # @param project_root [String, Pathname] surface-level root; not
-        #   validated against {DENIED_PROJECT_ROOTS}.
-        # @param denylist [Array<String, Pathname>] paths refused for read or
-        #   write (symlink-resolved descendant match); default
-        #   {DEFAULT_CREDENTIAL_DENYLIST}. Reduce — or +[]+ — ONLY behind an
-        #   outer boundary (kernel-severed/confirmed egress, or a container);
-        #   emptying it without one re-opens credential exfiltration.
-        # @param private [Boolean] as in {Filesystem#private?}. Accepted, and
-        #   usually right: a whole-host workspace is exactly where someone means
-        #   it.
-        # @param trusted [Boolean] must be +false+; see {Filesystem#trusted?}.
-        # @raise [ArgumentError] if +trusted: true+ — the flag cannot be honest
-        #   when the reachable set is the whole host.
-        def initialize(project_root: Dir.pwd, denylist: DEFAULT_CREDENTIAL_DENYLIST,
-                       private: false, trusted: false)
-          # Unrepresentable rather than merely inadvisable: the reachable set is
-          # the whole host, so no human can vouch for every byte in it.
-          raise ArgumentError, 'trusted: is not representable on AllowAll — scope the workspace instead' if trusted
-
-          @project_root = Pathname.new(project_root).realpath
-
-          @private = private
-          @trusted = false
-
-          @denylist = denylist.map { |p| Pathname.new(p) }.uniq.freeze
-
-          # Advertise "everything is in scope" via the accessor surface so
-          # callers inspecting +readable+/+writable+ (prompt rendering, Bubblewrap
-          # binds) see the intended semantics; actual containment is the denylist.
-          @writable = [Pathname.new('/').realpath]
-          @readable = @writable.dup
-        end
-
-        # @param path [String, Pathname]
-        # @return [Pathname]
-        # @raise [Error] if the resolved path lands under the credential denylist.
-        def resolve_for_read(path)
-          resolve_unrestricted(path)
-        end
-
-        # @param path [String, Pathname]
-        # @return [Pathname]
-        # @raise [Error] if the resolved path lands under the credential denylist.
-        def resolve_for_write(path)
-          resolve_unrestricted(path)
-        end
-
-        # The walked-path gate (see {Filesystem#denied?}). Symlink-resolves
-        # +path+ first, so a +decoy → ~/.ssh+ inside the workspace is caught
-        # even though nothing ever handed it to a +resolve_+ call.
-        #
-        # @param path [String, Pathname]
-        # @return [Boolean]
-        def denied?(path)
-          !denying_root(normalize(path)).nil?
-        end
-
-        # @return [Array<Pathname>]
-        def denied_roots = @denylist
-
-        private
-
-        # @param resolved [Pathname] symlink-resolved absolute path
-        # @return [Pathname, nil] the denylist entry containing +resolved+
-        def denying_root(resolved)
-          @denylist.find do |denied|
-            candidate = denied.exist? ? denied.realpath : denied
-            resolved == candidate ||
-              resolved.to_s.start_with?(candidate.to_s + File::SEPARATOR)
-          end
-        end
-
-        # @return [Pathname] symlink-resolved; falls back to a lexical cleanup
-        #   for a path that doesn't exist (the agent creating a credential dir
-        #   the user lacks must still be blocked).
-        def normalize(path)
-          Pathname.new(path).realpath
-        rescue SystemCallError
-          Pathname.new(path).expand_path.cleanpath
-        end
-
-        def resolve_unrestricted(path)
-          path = expand_home(path)
-          pn = Pathname.new(path)
-          pn = @project_root + pn unless pn.absolute?
-          cleaned = pn.cleanpath
-
-          existing = cleaned
-          existing = existing.parent until existing.exist? || existing.parent == existing
-          base = existing.realpath
-          resolved = base + cleaned.relative_path_from(existing)
-
-          # +resolved+ is already realpath-based, so it goes to the shared
-          # containment test directly rather than through {#denied?}.
-          if (denied = denying_root(resolved))
-            raise Error,
-                  "path '#{path}' resolves under a denied credential location " \
-                  "('#{denied}') — this AllowAll's denylist blocks it. " \
-                  'Reduce denylist: only behind an outer egress boundary.'
-          end
-
-          resolved
-        end
       end
     end
   end
