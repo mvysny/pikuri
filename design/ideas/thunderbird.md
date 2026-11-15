@@ -12,9 +12,8 @@ answered, it graduates the same way and this note shrinks again.
 
 ## Related
 
-- [`private-context-taint.md`](private-context-taint.md) +
-  [`more-confirmers.md`](more-confirmers.md) — the "human as *author*, not
-  *approver*" seat compose relies on.
+- [`private-context-taint.md`](private-context-taint.md) — the "human as
+  *author*, not *approver*" seat compose relies on.
 
 ## Open validation questions
 

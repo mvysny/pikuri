@@ -110,6 +110,12 @@ module Pikuri
     # OpenAI tool-call shape. Use for raw textual payloads (JSON, CSV,
     # +robots.txt+, source files); use {Web::SCRAPE} for rendered pages.
     #
+    # No confirmer may ever auto-approve a URL that "looks clean": a secret
+    # leaves through a bare path (+paste.example/SECRET+), a subdomain (the DNS
+    # lookup alone reaches the attacker's nameserver) or a spotless paste-site
+    # URL the attacker reads back. Even a confirmer showing the whole URL makes
+    # this +human_reviewed+, never safe: the model still picks the host.
+    #
     # Sharing: +P_shared_benign+ — no per-agent state, but {Fetch::CACHE} is
     # process-wide (and on disk, so cross-process too): agent B's +fetch+ can
     # be answered from agent A's download within the TTL. See

@@ -418,6 +418,31 @@ leave; a prompt saying "send a reply to the bank?" doesn't. The
 [trifecta chapter](trifecta-detector.md) turns that into its test
 for whether a gate counts at all.
 
+Nor are all gates equally strong, even when they all show the
+bytes. Three things set how hard you actually look, and they
+compound. **How often it asks:** the forty-first shell command of
+a task gets a reflexive "y"; a once-a-session prompt gets read.
+**Whether you can read it:** a mail's recipient and body are plain
+language, a shell pipeline often isn't, so even a fresh approval
+of one is weak. **How much it weighs:** a sent mail can't be
+recalled, so people re-read it; a web search feels like reading,
+so it gets waved through. Roughly, weakest to strongest: book 2's
+shell, a search, a compose window. The trifecta chapter refuses to
+grade this, because attention can't be measured and so mustn't
+soften a verdict, but it's worth knowing where yours runs thin.
+
+Even the compose window has a soft spot. You re-read a mail to
+make it *good* (right person, no typos, right tone), not to hunt
+for a smuggled secret. That catches `to: attacker@evil.example`
+and gibberish; it misses a customer number worked into a plausible
+sentence, a Bcc, or `rnicrosoft.com`. A finished, polished draft
+makes it worse: it turns you from the writer into a proofreader,
+one "looks good, send" away. So the machine takes what the eye
+can't see (the compose guard drops a recipient with invisible or
+non-ASCII characters before the window opens, and flags a domain
+you've never mailed) and leaves you the visible look-alike, which
+is what a careful re-read is good at.
+
 > **Partly shipped.** The confirmer is no longer binary: a
 > confirmation returns an approval carrying the payload to act on
 > (which the human may have *edited* first, as with a search
@@ -428,7 +453,7 @@ for whether a gate counts at all.
 > shipped** is the fatigue half: the secretary still asks on every
 > write and every search. The plan (motivation in
 > [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md),
-> "Structured action context on the `Request`") is to ask only on
+> "ask less, and headline the consequence") is to ask only on
 > the consequential, and when it *does* ask, headline the
 > consequence rather than echo every byte the eye slides over. Rare,
 > but excellent. Until that lands, the rule is manual: read what's
