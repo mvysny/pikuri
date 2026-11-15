@@ -1,7 +1,6 @@
 # pikuri-workspace — AGENTS.md
 
-The filesystem and confirmation seams, the file tools built on them, and the
-`ReadOnly` gate. Owns `Workspace` / `Filesystem` / `Confirmer`, three seams *consumed* by other gems
+The filesystem and confirmation seams and the file tools built on them. Owns `Workspace` / `Filesystem` / `Confirmer`, three seams *consumed* by other gems
 (`agent` and `web_search` take a `Confirmer`; in pikuri-workshop, `Bash` takes a `Confirmer` and the bare
 `Filesystem`, and the LSP tool renders walked paths) — their `AGENTS.md` point here and never restate.
 

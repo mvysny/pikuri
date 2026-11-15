@@ -479,46 +479,6 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
   end
 
-  describe 'read-only gate' do
-    let(:read_only) { Pikuri::Workspace::ReadOnly.new }
-
-    it 'refuses an edit while read-only is active, leaving the file untouched' do
-      write_file('foo.rb', "alpha\nbeta\n")
-      read_only.activate!
-
-      result = described_class.edit(cancellable: never, workspace: workspace, read_only: read_only,
-                                    path: 'foo.rb', old_string: 'beta',
-                                    new_string: 'BETA', replace_all: false).to_s
-
-      assert_match(/read-only/, result)
-      assert_equal "alpha\nbeta\n", (root + 'foo.rb').binread
-    end
-
-    it "surfaces the flag's custom reason in the refusal" do
-      write_file('foo.rb', "alpha\nbeta\n")
-      custom = Pikuri::Workspace::ReadOnly.new(message: 'plan mode is on; call exit_plan_mode')
-      custom.activate!
-
-      result = described_class.edit(cancellable: never, workspace: workspace, read_only: custom,
-                                    path: 'foo.rb', old_string: 'beta',
-                                    new_string: 'BETA', replace_all: false).to_s
-
-      assert_match(/cannot edit foo\.rb — plan mode is on; call exit_plan_mode/, result)
-    end
-
-    it 'edits normally once read-only is deactivated' do
-      write_file('foo.rb', "alpha\nbeta\n")
-      read_only.activate!
-      read_only.deactivate!
-
-      result = described_class.edit(cancellable: never, workspace: workspace, read_only: read_only,
-                                    path: 'foo.rb', old_string: 'beta',
-                                    new_string: 'BETA', replace_all: false).to_s
-
-      assert_equal 'Edited foo.rb: replaced 1 occurrence.', result
-    end
-  end
-
   describe '.edit with a confirmer (confirm-all-writes posture)' do
     def deciding(decision)
       requests = []

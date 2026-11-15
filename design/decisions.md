@@ -3880,8 +3880,8 @@ second edit tool.
   exists, so it must not be reworded back into a bare "add more context".
 - **The rename gap (a) is untouched and still open.** A word-boundary
   `replace_all` was never part of this fork. `sed` via `bash` is *not* the
-  fallback: it escapes both the read-before-edit gate and the `ReadOnly`
-  gate (plan mode covers Write/Edit, not bash), so routing renames through
+  fallback: it escapes the read-before-edit gate and any posture that
+  covers Write/Edit but not bash (a plan mode), so routing renames through
   the shell routes them around the posture.
 - **One thing the field cannot tell us, recorded so nobody re-derives it as
   new.** All four harnesses target models with reliable *parallel* tool
@@ -4234,8 +4234,8 @@ listing* — and says nothing about it in its description.
   host wiring the file tools without the coding gem would have no way to see
   a directory — the lower gem's completeness hanging on a gem above it; and
   `Bash` takes the bare `Filesystem`, not the `Workspace` composite, so
-  `bash ls` bypasses `resolve_for_read` and routes orientation through
-  `ReadOnly`'s one admitted hole. **The asymmetry in one line: Claude Code is
+  `bash ls` bypasses `resolve_for_read` and routes orientation around
+  every gate the file tools carry. **The asymmetry in one line: Claude Code is
   one binary that always has bash; `pikuri-workspace` is a gem that
   frequently isn't wired with one.** Composability is pikuri's product, so
   pikuri can't assume the shell.

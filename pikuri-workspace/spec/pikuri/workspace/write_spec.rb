@@ -318,47 +318,6 @@ RSpec.describe Pikuri::Workspace::Write do
     end
   end
 
-  describe 'read-only gate' do
-    let(:read_only) { Pikuri::Workspace::ReadOnly.new }
-
-    it 'refuses a new-file write while read-only is active, touching nothing' do
-      read_only.activate!
-
-      result = described_class.write(cancellable: never, workspace: workspace, confirmer: confirmer,
-                                     read_only: read_only, path: 'hello.txt',
-                                     content: "alpha\n").to_s
-
-      assert_match(/read-only/, result)
-      refute (root + 'hello.txt').exist?
-    end
-
-    it 'refuses before consulting the confirmer on an overwrite' do
-      write_file('foo.rb', "old\n")
-      read_only.activate!
-      # confirmer with no queued answers raises if consulted
-      guard = build_confirmer
-
-      result = described_class.write(cancellable: never, workspace: workspace, confirmer: guard,
-                                     read_only: read_only, path: 'foo.rb',
-                                     content: "new\n").to_s
-
-      assert_match(/read-only/, result)
-      assert_empty guard.requests
-      assert_equal "old\n", (root + 'foo.rb').read
-    end
-
-    it 'writes normally once read-only is deactivated' do
-      read_only.activate!
-      read_only.deactivate!
-
-      result = described_class.write(cancellable: never, workspace: workspace, confirmer: confirmer,
-                                     read_only: read_only, path: 'hello.txt',
-                                     content: "alpha\n").to_s
-
-      assert_equal 'Created hello.txt (6 bytes)', result
-    end
-  end
-
   describe '.write confirm_all_writes' do
     def deciding(decision)
       requests = []

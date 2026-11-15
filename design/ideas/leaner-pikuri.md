@@ -97,14 +97,14 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | Interloper `:user` kind, `on_change`/`pending?`/`size` | ~65 | conversations | ✓ `D_mid_turn_user_message` (2026-11-14); no pikuri bin can demo it (readline between turns) |
 | bare turn / `EmptyTurnError` | ~10 | conversations, skills | ✓ bare turn → `run_loop` yardoc + `D_mid_turn_user_message`; `EmptyTurnError` dropped (~45), why-not in `D_reference_text_as_user_turn`; pikuri-tui's arm removed (tui e2f7298, not pushed; its specs unrun — bundle not installed) |
 | `on_user_message` hook | ~41 | memory, code | ✓ `D_on_user_message_hook` (2026-11-14) |
-| `ReadOnly` gate + slots in Write/Edit/Extension | ~150 | code plan mode, os, tui | ✗ |
+| ~~`ReadOnly` gate + slots in Write/Edit/Extension~~ | ~330 with specs | code plan mode, os, tui | **dropped 2026-11-15** — a second write gate beside `Filesystem#resolve_for_write`, which already refuses with a model-facing `Filesystem::Error`; the workshop re-adapts plan mode in its own shape when it catches up (pikuri-code, pikuri-os and pikuri-tui's `code`/`computer` apps still call it) |
 | Filesystem temp/tmp-alias, env/git identity | ~118 | code bash sandbox | ✗ |
 | temp workspace for sub-agents (`with_workspace` ×4, mint, `needs_temp_workspace`) | ~105 | GIT_REPO_RESEARCHER | ✗ |
 | delegation confirmer gate (subagents) | ~35 | os, computer, tui | ✗ |
 | `Configurator#history`, `Contribution` legs, `display_name` override | ~30 | mcp, command, lsp | ✗ |
 
 ✗ = no dedicated `D_` found (passing mentions not all read). `Q_seam_justifications` — write `D_`s
-for all, or first ask which a pikuri bin should exercise (streaming, `ReadOnly`).
+for all, or first ask which a pikuri bin should exercise.
 
 ## D. ROOT, but one flag or one bin — capability calls
 

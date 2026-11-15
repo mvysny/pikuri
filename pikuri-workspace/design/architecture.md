@@ -15,8 +15,7 @@ already homed and does **not** live here:
   sensitive-path list, `AllowAll` + empty denylist behind a container —
   is the book's OS-assistant chapter and the coding-agent chapter.
 - Every **per-symbol contract** (the containment walk, the `AllowAll`
-  credential denylist, ripgrep argv + truncation, strict-match Edit,
-  `ReadOnly`'s thread-safety) is the owning class's YARD header.
+  credential denylist, ripgrep argv + truncation, strict-match Edit) is the owning class's YARD header.
 - The `AllowAll` × `Sandbox` interplay (why `ALLOW_ALL` + `Sandbox::NONE`
   only inside a container) belongs to the Sandbox owner —
   [`../pikuri-code/design/architecture.md`](https://github.com/mvysny/pikuri-workshop/blob/master/pikuri-code/design/architecture.md).

@@ -43,14 +43,6 @@ module Pikuri
     # Taken once per agent, so a "/clear" — a new agent — refreshes it and
     # nothing else does.
     #
-    # == Read-only gate
-    #
-    # A {ReadOnly} flag (when the host passes one) is threaded into {Edit}/{Write}
-    # so they refuse while active — the read-only tools take no gate. The host
-    # owns the flag and hands the *same* instance to whatever drives it
-    # (a plan mode, say). No flag → gate off. Covers Write/Edit only, never a
-    # shell — see {ReadOnly}.
-    #
     # == Usage
     #
     #   Pikuri::Agent.new(...) do |c|
@@ -97,18 +89,15 @@ module Pikuri
       # @param filesystem [Filesystem] path resolution / sandboxing; wrapped in a
       #   fresh {Workspace} (empty read record).
       # @param confirmer [Confirmer] consulted by {Write} before an overwrite.
-      # @param read_only [ReadOnly, nil] when set, threaded into {Edit}/{Write}
-      #   so they refuse while active; +nil+ (default) leaves the gate off.
       # @param confirm_all_writes [Boolean] the host's write posture: +true+ (the
       #   OS-helper posture) confirms every writable write/edit with a diff and
       #   short-circuits unwritable targets; +false+ (default) keeps the classic
       #   policy. {Write} takes it directly; {Edit} infers the posture from
       #   whether a confirmer was passed, so this reaches Edit as
       #   +confirmer+-or-+nil+. See book/os-assistant.md.
-      def initialize(filesystem:, confirmer:, read_only: nil, confirm_all_writes: false)
+      def initialize(filesystem:, confirmer:, confirm_all_writes: false)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer
-        @read_only = read_only
         @confirm_all_writes = confirm_all_writes
       end
 
@@ -123,8 +112,6 @@ module Pikuri
           end
         end
 
-        # The read-only flag (when supplied) is threaded into the two mutators;
-        # the read-only tools take no gate. +nil+ disables it.
         c.add_tool Read.new(workspace: @workspace)
         c.add_tool Search::Grep.new(workspace: @workspace)
         c.add_tool Search::Glob.new(workspace: @workspace)
@@ -132,10 +119,9 @@ module Pikuri
         # Edit takes no posture flag: a non-nil confirmer *is* its
         # confirm-all-writes posture (see {Edit}), so +confirm_all_writes+
         # reaches Edit as confirmer-or-nil.
-        c.add_tool Edit.new(workspace: @workspace, read_only: @read_only,
-                            confirmer: @confirm_all_writes ? @confirmer : nil)
+        c.add_tool Edit.new(workspace: @workspace, confirmer: @confirm_all_writes ? @confirmer : nil)
         c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer,
-                             read_only: @read_only, confirm_all_writes: @confirm_all_writes)
+                             confirm_all_writes: @confirm_all_writes)
         nil
       end
 

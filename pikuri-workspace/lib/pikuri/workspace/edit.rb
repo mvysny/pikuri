@@ -60,7 +60,7 @@ module Pikuri
     #
     # Sharing: +P_one_agent+ — the "not read this conversation" refusal reads
     # one {Workspace}'s record, so sharing an instance widens *whose* read
-    # counts. As {Write} for the {ReadOnly} flag.
+    # counts.
     class Edit < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.
@@ -82,15 +82,12 @@ module Pikuri
       # @param workspace [Workspace] captured for path resolution and the
       #   read-before-edit gate; edits route through +resolve_for_write+ (Edit
       #   modifies, so the write-set) and the gate consults +read?+.
-      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?}, every
-      #   edit is refused *before* any filesystem touch — the hard half of the
-      #   read-only posture. +nil+ (default) disables the gate.
       # @param confirmer [Confirmer, nil] non-nil opts Edit into the
       #   confirm-all-writes posture (every writable edit confirms with a diff,
       #   unwritable targets short-circuit). +nil+ (default) keeps Edit
       #   promptless (see "Confirmer is optional").
       # @return [Edit]
-      def initialize(workspace:, read_only: nil, confirmer: nil)
+      def initialize(workspace:, confirmer: nil)
         super(
           name: 'edit',
           description: DESCRIPTION,
@@ -120,7 +117,7 @@ module Pikuri
           },
           wants_context: true,
           execute: ->(path:, old_string:, new_string:, context:, replace_all: false, occurrence: nil) {
-            Edit.edit(workspace: workspace, read_only: read_only, confirmer: confirmer,
+            Edit.edit(workspace: workspace, confirmer: confirmer,
                       path: path, old_string: old_string, new_string: new_string,
                       replace_all: replace_all, occurrence: occurrence,
                       cancellable: context.cancellable)
@@ -147,8 +144,6 @@ module Pikuri
       # @param occurrence [Integer, nil] 1-based index of the single match to
       #   replace, lifting the uniqueness requirement; +nil+ (default) keeps
       #   it. Mutually exclusive with +replace_all+.
-      # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
-      #   (default +nil+ for direct callers/specs).
       # @param confirmer [Confirmer, nil] see {#initialize} (default +nil+).
       # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
       #   turn's token, for the confirmation.
@@ -157,9 +152,7 @@ module Pikuri
       #   decline. The counts are exact without a differ: the replaced text and
       #   its substitute are both arguments.
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
-                    cancellable:, occurrence: nil, read_only: nil, confirmer: nil)
-        return Tool::Result.error("cannot edit #{path} — #{read_only.message}") if read_only&.active?
-
+                    cancellable:, occurrence: nil, confirmer: nil)
         if old_string.empty?
           return Tool::Result.error('old_string is empty; use the write tool to create or overwrite a file.')
         end

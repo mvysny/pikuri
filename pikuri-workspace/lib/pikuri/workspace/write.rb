@@ -49,8 +49,7 @@ module Pikuri
     #
     # Sharing: +P_one_agent+ — it consults one {Workspace}'s read record. The
     # {Confirmer} is the sharper limit, though: {Confirmer::Terminal} cannot
-    # serve two agents at once (see its own +== Sharing+), and a shared
-    # {ReadOnly} makes read-only a VM-wide posture rather than this agent's.
+    # serve two agents at once (see its own +== Sharing+).
     class Write < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.
@@ -73,15 +72,12 @@ module Pikuri
       # @param confirmer [Confirmer] consulted (via {WriteGate}) before an
       #   overwrite with non-identical content, and — under +confirm_all_writes+
       #   — before new-file writes too.
-      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?}, every
-      #   write is refused *before* any filesystem touch — the hard half of the
-      #   read-only posture. +nil+ (default) disables the gate.
       # @param confirm_all_writes [Boolean] scopes which writes are gated
       #   (overwrites always confirm regardless). +true+ (OS-helper posture)
       #   also confirms the new-file branch and short-circuits an unwritable
       #   target without prompting; +false+ (default) writes new files silently.
       # @return [Write]
-      def initialize(workspace:, confirmer:, read_only: nil, confirm_all_writes: false)
+      def initialize(workspace:, confirmer:, confirm_all_writes: false)
         super(
           name: 'write',
           description: DESCRIPTION,
@@ -97,7 +93,7 @@ module Pikuri
           wants_context: true,
           execute: ->(path:, content:, context:) {
             Write.write(workspace: workspace, confirmer: confirmer,
-                        read_only: read_only, confirm_all_writes: confirm_all_writes,
+                        confirm_all_writes: confirm_all_writes,
                         path: path, content: content, cancellable: context.cancellable)
           },
           # No legs: no file bytes enter the model's context (the observation is
@@ -119,8 +115,6 @@ module Pikuri
       # @param confirmer [Confirmer]
       # @param path [String] raw path from the LLM
       # @param content [String] bytes to write
-      # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
-      #   (default +nil+ for direct callers/specs).
       # @param confirm_all_writes [Boolean] see {#initialize} (default +false+).
       # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
       #   turn's token, for the confirmation.
@@ -129,10 +123,7 @@ module Pikuri
       #   confirmer's decline. The line counts rather than a diff: pikuri has no
       #   in-process differ (a diff-capable chrome renders the
       #   {Confirmer::Change} itself).
-      def self.write(workspace:, confirmer:, path:, content:, cancellable:, read_only: nil,
-                     confirm_all_writes: false)
-        return Tool::Result.error("cannot write #{path} — #{read_only.message}") if read_only&.active?
-
+      def self.write(workspace:, confirmer:, path:, content:, cancellable:, confirm_all_writes: false)
         resolved = workspace.resolve_for_write(path)
 
         if resolved.exist?
