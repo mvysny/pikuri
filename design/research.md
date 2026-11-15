@@ -1075,7 +1075,7 @@ external validation of the persona model here.
 Where grok-build goes further and pikuri deliberately does not: **resumability** (a follow-up costs
 one delta instead of a re-run) and **worktree isolation** (parallel children editing the same repo
 without colliding). Both are the same trade opencode's `task` makes — real capability for a session
-store's worth of machinery. `GIT_REPO_RESEARCHER` already does the throwaway-workspace half for the
+store's worth of machinery. pikuri-workshop's `GIT_REPO_RESEARCHER` does the throwaway-workspace half for the
 read-only case; the worktree variant is what a *writing* sub-agent would need, and pikuri has none.
 
 ### Bundled persona inventory

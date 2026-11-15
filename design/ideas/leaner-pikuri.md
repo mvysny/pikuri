@@ -99,7 +99,7 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | `on_user_message` hook | ~41 | memory, code | ✓ `D_on_user_message_hook` (2026-11-14) |
 | ~~`ReadOnly` gate + slots in Write/Edit/Extension~~ | ~330 with specs | code plan mode, os, tui | **dropped 2026-11-15** — a second write gate beside `Filesystem#resolve_for_write`, which already refuses with a model-facing `Filesystem::Error`; the workshop re-adapts plan mode in its own shape when it catches up (pikuri-code, pikuri-os and pikuri-tui's `code`/`computer` apps still call it) |
 | ~~Filesystem temp/tmp-alias, env/git identity~~ | ~350 with specs | code bash sandbox | **dropped 2026-11-15** — sandbox plumbing; the workshop mints its playground via `Paths.new_temp` + `writable:`, aliases `/tmp` in a `Filesystem` wrapper, resolves git identity in `Bash` (pikuri-code's `Bash`/`Sandbox`/`GitClone` and pikuri-tui's code app still call it). Settles the `Filesystem env:` deferral from `Q_dead_knobs` |
-| temp workspace for sub-agents (`with_workspace` ×4, mint, `needs_temp_workspace`) | ~105 | GIT_REPO_RESEARCHER | ✗ |
+| ~~temp workspace for sub-agents (`with_workspace` ×4, mint, `needs_temp_workspace`)~~ | ~105 + ~150 spec | GIT_REPO_RESEARCHER | **dropped 2026-11-15** — a second propagation hook beside `for_sub_agent`, for one workshop persona. The workshop rebuilds it as its own spawning tool (~25 lines of `SubAgentTool` repeated) or asks back for "persona-owned tools" (`subagent-deferrals.md`); `GitClone#with_workspace`, `GIT_REPO_RESEARCHER` and pikuri-tui's code app still call it |
 | delegation confirmer gate (subagents) | ~35 | os, computer, tui | ✗ |
 | `Configurator#history`, `Contribution` legs, `display_name` override | ~30 | mcp, command, lsp | ✗ |
 

@@ -3,7 +3,7 @@
 module Pikuri
   module SubAgent
     # A named bundle of "what kind of agent is this": the tools it may
-    # use, the system prompt it runs under, and the per-task step budget.
+    # use and the system prompt it runs under.
     # Hosts hand instances to {Extension}'s +personas:+ kwarg; the LLM
     # picks one by +name:+ when calling the +agent+ tool. The persona is
     # the source of truth for the child's identity — a child gets the
@@ -23,12 +23,6 @@ module Pikuri
     #   uses, so their workspace/confirmer wiring comes along for free.
     # * +system_prompt+ — full prompt, replaces the parent's (no append,
     #   no inheritance).
-    # * +needs_temp_workspace+ — when +true+, {SubAgentTool} mints a
-    #   fresh temp workspace per invocation and deletes it at close (see
-    #   there; the persona controls neither shape nor lifecycle). Default
-    #   +false+ — child shares the parent's workspace via tool reuse. Meant
-    #   for a child that fetches into scratch space, such as one cloning a git
-    #   repo to read it.
     #
     # == The prompt is the whole brief
     #
@@ -41,19 +35,6 @@ module Pikuri
     # @example bundled researcher
     #   Pikuri::SubAgent::RESEARCHER
     #   # => #<data Pikuri::SubAgent::Persona name="researcher", ...>
-    class Persona < Data.define(:name, :description, :tool_names, :system_prompt, :needs_temp_workspace)
-      # @param needs_temp_workspace [Boolean] see class header.
-      #   Default +false+.
-      def initialize(needs_temp_workspace: false, **rest)
-        super(needs_temp_workspace: needs_temp_workspace, **rest)
-      end
-
-      # Predicate-style alias for {#needs_temp_workspace}; reads
-      # more naturally at call sites
-      # (+if persona.needs_temp_workspace?+).
-      #
-      # @return [Boolean]
-      alias_method :needs_temp_workspace?, :needs_temp_workspace
-    end
+    class Persona < Data.define(:name, :description, :tool_names, :system_prompt); end
   end
 end

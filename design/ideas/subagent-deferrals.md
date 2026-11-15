@@ -16,38 +16,6 @@ Related:
   privilege-separation unit the shipped detector measures (one map node per
   persona, via `Extension#trifecta_contribution`).
 
-## Workspace modes
-
-The persona record today has a narrow `needs_temp_workspace:` boolean
-(used by `Pikuri::Code::GIT_REPO_RESEARCHER`) but no broader
-`workspace_mode:` field. File-miner and Researcher work fine on
-`inherit` semantics — child reuses parent's `Filesystem`-bound tool
-instances by reference, no reconstruction. The interesting modes
-from the original proposal stay queued:
-
-- `inherit` — current behavior; what's implicit when the field is
-  absent.
-- `readonly` — derived `Filesystem` where every parent root is
-  readable, none writable. No clones, no extracts.
-- `readonly_with_temp` — same plus a fresh `temp:` scratchpad as the
-  only writable spot (git-clone / unzip / `mvn dependency:sources`).
-  Generalizes `needs_temp_workspace: true` from a single-purpose
-  boolean to a composable mode — `GIT_REPO_RESEARCHER` becomes the
-  first user once this lands and stops being a special case.
-
-Adding these means promoting `needs_temp_workspace:` to a
-`workspace_mode:` enum on the `Persona` record (default
-`:inherit`) and a
-`Pikuri::Workspace::Filesystem.scoped_readonly_from(parent, with_temp:)`
-primitive in `pikuri-workspace`. The fs-touching tools all take
-`Filesystem` via constructor today, so the reconstruction is
-mechanical — but `bash` would also need `Confirmer::AUTO_APPROVE`
-in those modes (the user already approved by picking the persona;
-every command still flows through `Event::ToolCall` for audit).
-fs-readonly doesn't stop network exfil or fork bombs, so a
-`sandbox:` frontmatter key composing with `Code::Bash::Sandbox::Bubblewrap`
-is the eventual follow-up.
-
 ## Persona-owned tools
 
 Letting a `Persona` carry its own tool *instances*, rather than naming ones
@@ -59,9 +27,12 @@ the parent's LLM while a persona's `tool_names` still reaches it
 
 What would earn this is a child needing a tool **configured differently**
 from the parent's, not merely hidden from it: a `Read` over a narrower
-`Filesystem`, a `Bash` with a tighter sandbox. That is the workspace-modes
-item above wanting per-persona reconstruction, so the two land together or
-not at all.
+`Filesystem`, a `Bash` with a tighter sandbox. pikuri-workshop's
+`GIT_REPO_RESEARCHER` is that case: its file tools and `git_clone` share a
+fresh temp workspace per invocation. pikuri carried a one-purpose version
+(`Persona#needs_temp_workspace` plus a `with_workspace` hook on four file
+tools) until 2026-11-15, and dropped it because no pikuri persona used it. If
+the workshop asks for it back, this is the general shape to build.
 
 ## Catalog / `.md` discovery
 

@@ -1625,7 +1625,7 @@ live on {Pikuri::Tool::Result}: **structural, never excerpted** and
   and they are local-only like `id` / `kind` (`D_history_local_ids`).
 - **`describe_call:` as a constructor kwarg rather than an overridable
   method.** 33 of the 34 shipped tools are `Pikuri::Tool` *subclasses*,
-  `for_sub_agent` / `with_workspace` are the precedent, and two overrides
+  `for_sub_agent` is the precedent, and two overrides
   need the tool's own state (the `task_*` tools look a title up in the
   `List` they hold, which a kwarg lambda could only reach by closing over
   it).

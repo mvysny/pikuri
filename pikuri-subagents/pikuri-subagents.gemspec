@@ -47,11 +47,7 @@ Gem::Specification.new do |spec|
   # +tool_names+ (+web_search+, +web_scrape+, +fetch+) resolve against
   # whatever the host wires, so pikuri-web is the host's dependency.
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
-  # pikuri-workspace ships +Pikuri::Workspace::Filesystem+, which
-  # +SubAgentTool+ constructs directly when a +Persona+ sets
-  # +needs_temp_workspace: true+. The persona only carries the
-  # boolean signal; the workspace's shape (project_root + the
-  # OS-toolchain readable list) is fixed in {SubAgentTool} so
-  # personas stay declarative.
+  # pikuri-workspace ships +Pikuri::Workspace::Confirmer+, which
+  # +SubAgentTool+ asks before a delegation when the host wires one.
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

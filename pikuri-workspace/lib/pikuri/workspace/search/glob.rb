@@ -61,7 +61,7 @@ module Pikuri
       #
       # Sharing: +P_one_agent+ — as {Pikuri::Workspace::FileList}: no state of
       # its own, but the {Pikuri::Workspace::Workspace} it searches is one
-      # agent's tree. +with_workspace+ rebinds a copy.
+      # agent's tree.
       class Glob < Pikuri::Tool
         # @return [Integer] hard byte cap on combined rg output. Same value as
         #   {Grep::MAX_BYTES}; re-declared rather than cross-referenced because
@@ -124,16 +124,6 @@ module Pikuri
               egress_payload_review: :no_egress
             )
           )
-        end
-
-        # A new {Glob} bound to +workspace+. Used by
-        # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
-        # +workspace_factory:+, so paths resolve against the sub-agent's root.
-        #
-        # @param workspace [Workspace]
-        # @return [Glob]
-        def with_workspace(workspace)
-          self.class.new(workspace: workspace)
         end
 
         # Validate inputs, resolve the path, spawn rg, mtime-sort, head-truncate,

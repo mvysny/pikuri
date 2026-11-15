@@ -63,8 +63,7 @@ module Pikuri
     #
     # Sharing: +P_one_agent+ — every successful read marks the path on its
     # {Workspace}, which *is* the read-before-edit gate's state, so a shared
-    # instance would let one agent's read unlock another's {Edit}. +with_workspace+
-    # rebinds a copy when a sub-agent needs a different tree.
+    # instance would let one agent's read unlock another's {Edit}.
     class Read < Pikuri::Tool
       # These alias the +PAGE_*+ constants on {Pikuri::Extractor} (one source of
       # truth, shared with +VectorDb::Tools::Read+).
@@ -134,17 +133,6 @@ module Pikuri
             egress_payload_review: :no_egress
           )
         )
-      end
-
-      # A new {Read} bound to +workspace+. Used by
-      # {Pikuri::SubAgent::SubAgentTool} when a persona needs a fresh (temp)
-      # workspace, so paths resolve against the right root and reads land in
-      # that workspace's ledger.
-      #
-      # @param workspace [Workspace]
-      # @return [Read]
-      def with_workspace(workspace)
-        self.class.new(workspace: workspace)
       end
 
       # Resolve +path+ against +workspace+, refuse directories/binaries/missing

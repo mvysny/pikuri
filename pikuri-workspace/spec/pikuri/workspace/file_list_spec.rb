@@ -108,18 +108,4 @@ RSpec.describe Pikuri::Workspace::FileList do
       assert_empty schema[:required]
     end
   end
-
-  describe '#with_workspace' do
-    it 'rebinds to another workspace so sub-agent paths resolve there' do
-      other_root = Pathname.new(Dir.mktmpdir('pikuri-file-list-other-')).realpath
-      FileUtils.mkdir_p(other_root + 'elsewhere')
-      other = Pikuri::Workspace::Workspace.new(
-        filesystem: Pikuri::Workspace::Filesystem.new(project_root: other_root)
-      )
-
-      assert_equal 'elsewhere/  [empty]', tool.with_workspace(other).run({}).to_s
-    ensure
-      FileUtils.rm_rf(other_root)
-    end
-  end
 end

@@ -30,8 +30,7 @@ module Pikuri
     #
     # Sharing: +P_one_agent+ — it never touches the read record, so nothing
     # races; what makes it one agent's is the {Workspace} it enumerates, since
-    # that is one agent's project view (a sub-agent's clone differs).
-    # +with_workspace+ rebinds a copy.
+    # that is one agent's project view.
     class FileList < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.
@@ -89,16 +88,6 @@ module Pikuri
       # @return [String]
       def describe_call(arguments)
         Pikuri::Tool.one_line((arguments['path'] || arguments[:path] || '.').to_s)
-      end
-
-      # A new {FileList} bound to +workspace+. Used by
-      # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
-      # +workspace_factory:+, so paths resolve against the sub-agent's root.
-      #
-      # @param workspace [Workspace]
-      # @return [FileList]
-      def with_workspace(workspace)
-        self.class.new(workspace: workspace)
       end
 
       # Resolve +path+, refuse a file / missing / oversized root, render.

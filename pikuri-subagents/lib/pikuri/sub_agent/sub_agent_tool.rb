@@ -1,15 +1,10 @@
 # frozen_string_literal: true
 
-require 'fileutils'
-require 'pathname'
-require 'tmpdir'
-
 module Pikuri
   module SubAgent
     # The +agent+ tool, a {Pikuri::Tool} subclass. When the parent agent
     # calls it, the +execute+ closure spawns a fresh {Pikuri::Agent}
-    # configured per the named {Persona} (its tools, system prompt, step
-    # budget), runs the sub-agent's loop on a clean message history, then
+    # configured per the named {Persona} (its tools and system prompt), runs the sub-agent's loop on a clean message history, then
     # returns only the sub-agent's final assistant message as the parent's
     # next observation.
     #
@@ -40,11 +35,9 @@ module Pikuri
     # whole tree) or on its own context window — which starts empty, so a
     # child that will not stop exhausts that window rather than the parent's.
     #
-    # Two duck-typed hooks let a *tool* differ inside the child, applied in
-    # this order: +with_workspace(ws)+, only when the persona minted a temp
-    # workspace, then a no-arg +for_sub_agent+, for a tool holding state the
-    # child must see a narrower version of. A tool defining neither travels
-    # down as the same instance the parent holds.
+    # A tool holding state the child must see a narrower version of defines a
+    # no-arg +for_sub_agent+, and the child gets what it returns. A tool
+    # without one travels down as the same instance the parent holds.
     #
     # No extension inheritance: the parent's {Pikuri::Agent#extensions} are
     # *not* threaded into the child. Personas are self-contained — one that
@@ -63,16 +56,6 @@ module Pikuri
     # instance could hand two children the same +"researcher 0"+. Children run
     # inline on the caller's thread, so a fan-out here is sequential today.
     class SubAgentTool < Pikuri::Tool
-      # OS-toolchain prefixes folded into the +readable:+ list of a
-      # per-invocation temp workspace (when +persona.needs_temp_workspace?+),
-      # filtered to existing dirs at mint time. +/usr+ so file tools and
-      # sandboxed subprocesses find the language binaries; +/opt+ catches
-      # third-party installs. Per-user toolchain managers (+~/.rbenv+,
-      # mise, …) are deliberately excluded — a temp-workspace persona has
-      # no project to build with the user's selections, and pulling in
-      # dotfiles would leak version metadata into its context.
-      TEMP_WORKSPACE_READABLE = %w[/usr /opt].freeze
-
       # Description shown to the LLM. Generic over personas; the
       # persona-specific picker info lives in the +<available_agents>+
       # snippet ({.available_agents_snippet}).
@@ -163,29 +146,6 @@ module Pikuri
             sub_listeners = c.sub_agent_listeners(id: sub_id)
             sub_tools = (parent.tools + parent.sub_agent_tools).select { |t| persona.tool_names.include?(t.name) }
 
-            # Per-invocation workspace mint, when the persona set
-            # +needs_temp_workspace: true+: a fresh Dir.mktmpdir as
-            # +project_root+ (plus {TEMP_WORKSPACE_READABLE}) wrapped in a
-            # fresh Workspace with its own empty read record, deleted via
-            # the sub-agent's +on_close+. Tools responding to +#with_workspace+
-            # are rebuilt onto it so paths resolve against the right root;
-            # stateless tools pass through unchanged.
-            session_temp_root = nil
-            if persona.needs_temp_workspace?
-              session_temp_root = Dir.mktmpdir("pikuri-#{persona.name}-")
-              session_workspace = Pikuri::Workspace::Workspace.new(
-                filesystem: Pikuri::Workspace::Filesystem.new(
-                  project_root: Pathname.new(session_temp_root),
-                  readable: TEMP_WORKSPACE_READABLE.select { |p| File.directory?(p) }
-                )
-              )
-              sub_tools = sub_tools.map do |t|
-                t.respond_to?(:with_workspace) ? t.with_workspace(session_workspace) : t
-              end
-            end
-
-            # Last, so a rebuild above is what gets narrowed: a tool holding
-            # state the child must not see hands over a narrower copy here.
             sub_tools = sub_tools.map { |t| t.respond_to?(:for_sub_agent) ? t.for_sub_agent : t }
 
             # Read at spawn, not at construction: the parent may have switched
@@ -200,7 +160,6 @@ module Pikuri
             ) do |sc|
               sc.add_tools(sub_tools)
               sc.add_listeners(sub_listeners)
-              sc.on_close { FileUtils.remove_entry(session_temp_root) if File.directory?(session_temp_root) } if session_temp_root
             end
             begin
               sub.run_loop(user_message: task)
