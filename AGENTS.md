@@ -77,7 +77,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams, the file tools, `bin/pikuri-files`. Rules: `pikuri-workspace/AGENTS.md`
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: read-only inbound tools, human-gated outbound hand-offs. Rules: `pikuri-thunderbird/AGENTS.md`
 - `pikuri-subagents` — the `agent` tool, the `Persona` record, the bundled personas, `bin/pikuri-minions`. Rules: `pikuri-subagents/AGENTS.md`
-- `pikuri-vectordb` — the retrieval *primitive*: topical vector search over a local corpus + `bin/pikuri-corpus`.
+- `pikuri-vectordb` — the retrieval *primitive*: vector-only search over a local corpus, wired on its own or under rag, + `bin/pikuri-corpus`.
 - `pikuri-rag` — the retrieval *system* on that primitive: hybrid vector + FTS5 search + `bin/pikuri-briefing`. Rules: `pikuri-rag/AGENTS.md`
 - `book/` — "the book", also "the guide"; `book/README.md` is the ToC and the single source of truth for chapter order.
 - `assets/` — **Kuri**, the pika mascot (`kuri.svg` master, `kuri.png` raster); drawing + anatomy rule in `D_kuri_mascot`.

@@ -114,9 +114,14 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   in `pikuri-vectordb/design/architecture.md` §Verdict. `Server::Container` kept with Qdrant as its
   one user (cohesive, inlining saves nothing). Moots `tenant:`/`database:` from `Q_dead_knobs`.
   Workshop: `pikuri-memory/lib/pikuri/memory/mem0_server.rb:15` says "`Server::Chroma`-shaped".
-- `Q_pikuri_corpus` — `pikuri-corpus` + `VectorDb::Extension` + `vectordb_search` wrapper, ~300;
-  secretary and briefing go through rag. Dropping makes vectordb the pure primitive the module map
-  says it is.
+- ~~`Q_pikuri_corpus`~~ **Decided 2026-11-15: keep** `pikuri-corpus`, `VectorDb::Extension` and
+  `vectordb_search` (~300; secretary and briefing go through rag), and keep vectordb and rag two
+  gems. The split is the book's order: rag adds only FTS5 and fusion on a box the reader already
+  knows, and a merged gem would teach both at once and make every retrieval user read the hybrid
+  half (**Readable in an evening**). `pikuri-corpus` is the vectordb chapter's one runnable agent,
+  and the one place `private:`/`trusted:` are flags you flip to watch the verdict move. The audit
+  read "primitive" as "library-only"; it means vector-only vs rag's hybrid *system* — the AGENTS.md
+  module-map line now says so.
 - `Q_voikko` — `Stemmer::Voikko`, 74; only `pikuri-briefing --finnish`.
 - Brave + Exa (~410, config-file only) — keep. Thunderbird real-data hardening (~400: blob spotter,
   Google calendar quirks, forwarded mail, image attachments, multi-account store) — keep.
