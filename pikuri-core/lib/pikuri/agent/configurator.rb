@@ -210,12 +210,11 @@ module Pikuri
       # stand, because a compacted conversation is still the same
       # conversation. The incoming messages get {Agent}'s resume repairs.
       #
-      # So +history+ must be *this* conversation, shortened. Handing it a
-      # different one gives that conversation everything this one built up —
-      # the logged-in browser an MCP server holds included — which is the
-      # leak building a new {Agent} per conversation exists to prevent
-      # (+design/decisions.md+ +D_agent_is_one_conversation+). Nothing checks
-      # this beyond the shape below; the name is the guard.
+      # So +history+ must be *this* conversation, shortened: handed a
+      # different one, that conversation inherits everything this one built
+      # up, the logged-in browser behind an MCP server included. Nothing
+      # checks this beyond the shape below; the name is the guard. See
+      # +design/decisions.md+ +D_compaction_in_place+.
       #
       # Shape it must keep, enforced:
       #

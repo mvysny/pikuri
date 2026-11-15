@@ -95,8 +95,10 @@ Plus: one pikuri-driven tools-free re-ask of the child with the schema on
 mismatch. This used to lean on {Pikuri::Agent::Synthesizer} as machinery that
 "already exists" — it was deleted with the step limit (`D_no_step_limit`), so
 the nested tools-free re-ask is now something this note would have to build.
-Its shape is recorded in `design/ideas/context-overflow-behavior.md` §The deleted
-summarizer.
+Its code is at commit `d0efb6c10df0`
+(`pikuri-core/lib/pikuri/agent/synthesizer.rb`); its prompt, message walk and
+construction traps are written up in pikuri-workshop's
+`design/ideas/context-overflow.md` §The deleted summarizer.
 
 ## Where the guarantee lives
 

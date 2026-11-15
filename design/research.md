@@ -654,10 +654,10 @@ sealed hierarchy is the upgrade pi and opencode have and Ruby otherwise lacks. T
 listeners (`Terminal`, `InMemoryEventList`, `TokenLog`) are examples of the shape a
 new sink would take, not "the" listener.
 
-On compaction, pikuri's answer today is `exit 1` in a `bin/` script
-(`design/ideas/context-overflow-behavior.md`) — a demo shortcut, not a library position. The
-memory-flush *ordering* is the piece worth remembering when that changes, because pikuri-memory's
-capture step has exactly the same before-or-after question.
+On compaction, core ships the actuator and no policy; the policy is pikuri-workshop's
+(`D_compaction_in_place`). The memory-flush *ordering* is the piece worth remembering when that
+policy is written, because pikuri-memory's capture step has exactly the same before-or-after
+question.
 
 ## R_synthetic_user_turns — grok-build's injection channel: every synthetic turn is a user turn
 
@@ -1131,8 +1131,8 @@ elsewhere is letting `bash` (with `git`) reach inside a sandbox, where the perso
 that into one privilege-separated delegation with no `bash` in scope. Pikuri covers `explore` three
 times over and covers neither `plan` nor `general-purpose`; "planner = read-only + intent-shaping"
 is now four-for-four across the projects that ship personas at all, and pikuri has not committed
-either way. opencode's hidden-housekeeping trick is worth knowing if compaction ever lands
-(`design/ideas/context-overflow-behavior.md`) — pikuri's one equivalent, a hard-coded
+either way. opencode's hidden-housekeeping trick is worth knowing for a compaction policy
+(`D_compaction_in_place`) — pikuri's one equivalent, a hard-coded
 step-exhaustion synthesizer, went with the step limit (`D_no_step_limit`). Per-persona model pinning
 is deferred in `design/ideas/subagent-deferrals.md`, since it needs `ChatTransport` variations per
 sub-agent.

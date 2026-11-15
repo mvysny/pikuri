@@ -21,6 +21,53 @@ what it already says.
 
 ---
 
+## D_compaction_in_place — Why does core ship a compaction actuator but no compaction?
+
+**Context.** Overflow is the last ceiling on a turn (`D_no_step_limit`), and every `bin/` script
+answers `RubyLLM::ContextLengthExceededError` with `exit 1`. What to do instead is a policy with
+no settled answer: the trigger (a threshold, or reacting to the raise), the summarizer, what must
+never be pruned, and whether the interactive agent wants any of it, since an operator watching
+`TokenLog` usually ends the session first and hands off through a file. Whatever the policy is, it
+needs one thing from core that only core can give: a way to make the conversation shorter
+without ending it.
+
+**Decision.** Core ships the actuator, {Pikuri::Agent::Configurator#replace_compacted_history}.
+It swaps the messages for a shorter version of the same conversation and leaves everything
+else where it stands: tools, MCP connections and the servers behind them, every extension's
+state, listeners, the system prompt, the transport. The policy is a pikuri-workshop extension that
+keeps its `c` and calls it, from `Extension#on_user_message` or between turns. Core holds no
+policy enum and no threshold; `D_no_step_limit` already reversed the one precedent for those.
+
+This is not the `load_history!` that `D_agent_is_one_conversation` removed. That decision draws its
+line at a conversation boundary, because state a conversation built — a logged-in browser behind
+MCP — must not reach a different one. A compaction crosses no boundary, so that state belongs to
+it. The rebuild path is actually *wrong* for compaction: `close` + `Agent.new(history:)` drops
+read-marks, promoted skills and the task list, restarts every MCP server, and MCP re-registers
+tools only from the `mcp_connect` calls still in the transcript — a summary that drops one quietly
+loses those tools.
+
+It lives on the Configurator because a live `Agent` is read-only (the Capability seam) and tools
+reach the agent; `Agent#set_history` would let any tool rewrite the conversation. The name is
+the guard against handing it a *different* conversation, which would leak exactly what
+`D_agent_is_one_conversation` stops: telling a compaction from another conversation would be a
+filter. What is enforced is the shape no provider reports clearly — the current last message
+stays last under its id, so no point outside a tool batch strands ruby_llm's next step; every tool
+result follows the turn that made its call; and nothing happens while a batch is open, since
+ruby_llm still holds its calls.
+
+**Alternatives rejected.**
+
+- **ruby_llm's `Chat#with_compaction`** (2.2.0): provider-side — Anthropic and OpenAI condense the
+  span into an opaque block, OpenRouter drops messages from the middle. Nothing of it exists on
+  llama.cpp, and a feature that only works against a hosted provider breaks the privacy promise
+  even when nobody turns it on.
+- **Close and resume with a shortened history**: the rebuild path above, which loses session state
+  and can lose tools.
+- **A compaction policy in core** (an `on_context_overflow:` enum, a `Control`): unearned until a
+  policy has been argued out and run, and the arguing belongs where the hosts that need one live.
+
+---
+
 ## D_on_user_message_hook — Why does an extension annotate a user turn by returning text from a hook?
 
 **Context.** `Extension#on_user_message(content, attachments)` may return a string, which the
@@ -555,8 +602,7 @@ instance state on objects built for that agent: an extension instance serves one
 conversation did reads it in `configure`, as `c.history` — MCP re-registers the tools of servers
 the transcript connected, from its cached schemas, with no call to the server. Reconnecting does
 not restore what those servers held; see `D_history_load_repairs`. A compaction crosses no
-boundary, so it shortens the messages in place and everything else stays
-(`Configurator#replace_compacted_history`).
+boundary, so it shortens the messages in place; see `D_compaction_in_place`.
 
 The price is building an agent per conversation, which is cheap for everything pikuri ships:
 tools are instances or constants, the prompt is re-assembled, the `/props` probe repeats on the
@@ -1457,12 +1503,10 @@ in a local. That whole wrinkle is gone; `unanswered_results` loses an arm and
 **Consequences.**
 
 - Overflow is now the *only* ceiling on an autonomous leg, which promotes
-  `design/ideas/context-overflow-behavior.md` from "compaction is a convenience" to
-  "this is the last backstop". That note's argument for its autonomous legs now
-  rests on the sub-agent alone.
-- `Control` holds two *signals* and no budget, so
-  `design/ideas/context-budget.md`'s proposed token control can no longer cite a
-  sibling as precedent — noted in both notes.
+  compaction from a convenience to the last backstop. Core ships the actuator and
+  the policy is pikuri-workshop's (`D_compaction_in_place`).
+- `Control` holds two *signals* and no budget, so a proposed token control can no
+  longer cite a sibling as precedent.
 - `on_exhausted:` was the repo's one worked example of a two-valued policy enum
   in core, and it went as unearned. A future `on_context_overflow:` therefore
   has to justify itself from scratch; that reversal is recorded where the

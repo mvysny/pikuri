@@ -91,3 +91,15 @@ sub-agent. Deferred.
 
 Originally floated and deferred; the escape hatch (ship a `general`
 persona) still works if it ever matters.
+
+## A child's context overflow ends the parent's turn
+
+`SubAgentTool` lets a child's `RubyLLM::ContextLengthExceededError`
+propagate. The parent's `run_loop` `ensure` answers the dangling `agent`
+call with `Error: …`, then re-raises, so the whole parent turn dies (and a
+`bin/` script exits). Per "errors are loud", a failure the LLM can react
+to should come back as a tool error instead, e.g. "the sub-agent ran out
+of context before answering; give it a narrower task", and the parent
+carries on. This is the one overflow case on pikuri's side; compacting a
+child mid-turn is policy and belongs to pikuri-workshop
+(`D_compaction_in_place`).
