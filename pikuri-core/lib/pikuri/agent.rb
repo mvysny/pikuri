@@ -519,8 +519,7 @@ module Pikuri
       @chat = build_chat(@transport)
       @listeners = ListenerList.new([])
       configurator = Configurator.new(agent: self, chat: @chat, listeners: @listeners,
-                                      history: @history, on_close_sink: @on_close_handlers,
-                                      history_replacer: method(:replace_compacted_history))
+                                      history: @history, on_close_sink: @on_close_handlers)
 
       @block&.call(configurator)
 

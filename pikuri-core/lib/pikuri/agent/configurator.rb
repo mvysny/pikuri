@@ -78,15 +78,12 @@ module Pikuri
       # @param on_close_sink [Array<Proc>] the agent's live +on_close+ list, so
       #   a handler armed mid-block is there when a later +configure+ raises
       #   and the constructor closes the half-built agent.
-      # @param history_replacer [#call] the agent's private swap behind
-      #   {#replace_compacted_history}, called with the {History}
-      def initialize(agent:, chat:, listeners:, history:, on_close_sink:, history_replacer:)
+      def initialize(agent:, chat:, listeners:, history:, on_close_sink:)
         @agent = agent
         @chat = chat
         @listeners = listeners
         @history = history
         @on_close_handlers = on_close_sink
-        @history_replacer = history_replacer
         @tools = []
         @sub_agent_tools = []
         @extensions = []
@@ -233,7 +230,8 @@ module Pikuri
       # @raise [RuntimeError] inside the +Agent.new+ block, or while a tool
       #   batch is open (from a tool's +execute+)
       def replace_compacted_history(history)
-        @history_replacer.call(history)
+        # Private on Agent, so holding an agent doesn't grant it.
+        @agent.send(:replace_compacted_history, history)
         nil
       end
 
