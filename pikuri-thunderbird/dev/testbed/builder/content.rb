@@ -25,20 +25,28 @@ module Pikuri
       # @param converter [Converter]
       def initialize(today:, tzid:, converter:)
         facts = Facts.new(today: today)
+        @owner = facts.email(:owner)
         @calendar = Calendar.new(facts: facts, tzid: tzid)
         @documents = Documents.new(facts: facts, converter: converter)
         @scenes = Scenes.new(facts: facts, calendar: @calendar, documents: @documents, converter: converter)
         @noise = Noise.new(facts: facts)
       end
 
-      # @return [Hash{String => Array<Mail::Message>}] mbox name to messages.
+      # @return [Hash{String => Hash{String => Array<Mail::Message>}}] login
+      #   (the account's address) to folder to messages; the noise is the
+      #   owner's.
       def folders
-        @folders ||= @scenes.folders.merge(@noise.folders) { |_, scenes, noise| scenes + noise }
+        @folders ||= @scenes.folders.merge(@owner => @noise.folders) do |_, scenes, noise|
+          scenes.merge(noise) { |_, a, b| a + b }
+        end
       end
 
       # @return [Integer] one per copy: a message in two folders counts twice,
       #   as Gloda gives it two rows.
-      def message_count = folders.values.sum(&:size)
+      def message_count = folders.values.sum { |by_folder| by_folder.values.sum(&:size) }
+
+      # @return [Array<String>] see {Scenes#dropped}.
+      def dropped = @scenes.dropped
 
       # @return [Integer]
       def event_count = @calendar.event_count

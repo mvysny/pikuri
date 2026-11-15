@@ -64,10 +64,17 @@ module Pikuri
           FileUtils.mkdir_p(File.dirname(file))
           File.binwrite(file, bytes)
         end
+        # The first account's store, empty: on a real install it exists long
+        # before a second account on the same host is added, which is what
+        # makes Thunderbird name that one's store 127.0.0-1.1. On a fresh
+        # profile neither exists, and both accounts got the same directory.
+        FileUtils.mkdir_p(File.join(@target.profile_dir, 'ImapMail', UserJs::IMAP_HOST))
         dovecot = Dovecot.start(messages: under(inputs, IMAP_PREFIX))
-        headers_only = HEADERS_ONLY.to_h { [_1, @content.folders.fetch(_1, []).size] }
+        imap = imap_folders.transform_values(&:size)
+        headers_only = imap.keys.select { |key| HEADERS_ONLY.include?(key.split('/', 2).last) }
         seconds = Indexer.new(profile_dir: @target.profile_dir, messages: @content.message_count,
-                              headers_only: headers_only, events: @content.event_count, log: @log).run!
+                              imap_folders: imap, headers_only: headers_only, dropped: @content.dropped,
+                              events: @content.event_count, log: @log).run!
         store(tarball)
         seconds
       ensure
@@ -75,27 +82,37 @@ module Pikuri
       end
 
       # @return [Hash{String => String}] every input, by path: +profile/…+ is
-      #   written into the profile, +imap/<folder>/<n>+ is one message
+      #   written into the profile, +imap/<login>/<folder>/<n>+ is one message
       #   {Dovecot} serves.
       def inputs
         # The calendar sits in the profile itself, where a snap Thunderbird
         # can read it (the snap can't read hidden dirs in $HOME).
         ics = File.join(@target.profile_dir, 'demo.ics')
-        local, imap = @content.folders.partition { |name, _| LOCAL_FOLDERS.include?(name) }
+        local = @content.folders.values.flat_map { |folders| folders.slice(*LOCAL_FOLDERS).to_a }
+                        .group_by(&:first).transform_values { |pairs| pairs.flat_map(&:last) }
         profile = local.to_h { |name, messages| [File.join(LOCAL_DIR, name), Mbox.render(messages)] }
                        .merge('demo.ics' => @content.ics, 'user.js' => UserJs.render(ics_path: ics))
-        served = imap.flat_map do |name, messages|
-          # The IMAP inbox is INBOX, as every server names it. Numbered in
-          # date order, so the UIDs dovecot assigns are too.
-          folder = name == 'Inbox' ? 'INBOX' : name
+        served = imap_folders.flat_map do |key, messages|
+          # Numbered in date order, so the UIDs dovecot assigns are too.
           messages.sort_by { |m| m.date.to_time }.each_with_index.map do |message, i|
-            [format('%<folder>s/%<n>04d', folder: folder, n: i + 1), message.encoded]
+            [format('%<key>s/%<n>04d', key: key, n: i + 1), message.encoded]
           end
         end
         profile.transform_keys { PROFILE_PREFIX + _1 }.merge(served.to_h.transform_keys { IMAP_PREFIX + _1 })
       end
 
       private
+
+      # @return [Hash{String => Array<Mail::Message>}] each IMAP folder, as
+      #   +<login>/<server name>+, to its messages. The inbox is INBOX, as
+      #   every server names it.
+      def imap_folders
+        @content.folders.flat_map do |login, folders|
+          folders.except(*LOCAL_FOLDERS).map do |name, messages|
+            ["#{login}/#{name == 'Inbox' ? 'INBOX' : name}", messages]
+          end
+        end.to_h
+      end
 
       # @param inputs [Hash{String => String}] from {#inputs}.
       # @param prefix [String]

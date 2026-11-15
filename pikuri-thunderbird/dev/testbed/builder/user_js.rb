@@ -11,7 +11,11 @@ module Pikuri
     # The account is IMAP, like most real ones (the owner's Gmail and iCloud
     # among them), syncing from {Dovecot} on loopback; its offline store lands
     # under +ImapMail/127.0.0.1/+. Its login is an address, as Gmail's is, so
-    # its folder URIs carry the +%40+ a real one does. Local Folders holds an
+    # its folder URIs carry the +%40+ a real one does. A second account, the
+    # personal one, is on the same host and names no store directory, so
+    # Thunderbird picks one as it does for an account added in its wizard:
+    # +ImapMail/127.0.0-1.1/+ (the name taken, it inserts +-1+ before what it
+    # reads as an extension, as +imap.gmail-1.com+). Local Folders holds an
     # archive, so the +Mail/+ store is real too. Outside a build nothing
     # listens on the port, so the account never checks mail on its own; the
     # SMTP host is RFC 2606-reserved, so a Send clicked by mistake fails.
@@ -93,8 +97,9 @@ module Pikuri
       # @return [Hash{String => Object}]
       def self.account_prefs
         imap = "imap://#{Dovecot::USER.sub('@', '%40')}@#{IMAP_HOST}"
+        personal = "imap://#{Dovecot::PERSONAL_USER.sub('@', '%40')}@#{IMAP_HOST}"
         {
-          'mail.accountmanager.accounts' => 'account1,account2',
+          'mail.accountmanager.accounts' => 'account1,account3,account2',
           'mail.accountmanager.defaultaccount' => 'account1',
           'mail.accountmanager.localfoldersserver' => 'server2',
           'mail.account.account1.identities' => 'id1',
@@ -120,6 +125,24 @@ module Pikuri
           'mail.server.server1.login_at_startup' => false,
           'mail.server.server1.check_new_mail' => false,
           'mail.server.server1.autosync_offline_stores' => false,
+          'mail.account.account3.identities' => 'id2',
+          'mail.account.account3.server' => 'server3',
+          'mail.identity.id2.fullName' => 'Alex Novak',
+          'mail.identity.id2.useremail' => Dovecot::PERSONAL_USER,
+          'mail.identity.id2.smtpServer' => 'smtp1',
+          'mail.identity.id2.valid' => true,
+          'mail.identity.id2.fcc_folder' => "#{personal}/Sent",
+          'mail.server.server3.type' => 'imap',
+          'mail.server.server3.hostname' => IMAP_HOST,
+          'mail.server.server3.port' => Dovecot::PORT,
+          'mail.server.server3.userName' => Dovecot::PERSONAL_USER,
+          'mail.server.server3.name' => Dovecot::PERSONAL_USER,
+          'mail.server.server3.socketType' => 0,
+          'mail.server.server3.authMethod' => 3,
+          'mail.server.server3.using_subscription' => false,
+          'mail.server.server3.login_at_startup' => false,
+          'mail.server.server3.check_new_mail' => false,
+          'mail.server.server3.autosync_offline_stores' => false,
           'mail.server.server2.type' => 'none',
           'mail.server.server2.hostname' => 'Local Folders',
           'mail.server.server2.userName' => 'nobody',

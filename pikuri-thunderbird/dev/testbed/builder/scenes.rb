@@ -28,11 +28,11 @@ module Pikuri
         @converter = converter
       end
 
-      # @return [Hash{String => Array<Mail::Message>}] folder to messages.
+      # @return [Hash{String => Hash{String => Array<Mail::Message>}}] login
+      #   (the account's address) to folder to messages.
       def folders
         @folders ||= begin
-          scenes = YAML.safe_load(@facts.render(File.read(PATH)))
-          ids = scenes.to_h { |s| [s['id'], "#{s['id']}@#{domain(s['from'])}"] }
+          ids = scenes.to_h { |s| [s['id'], message_id(s)] }
           by_id = scenes.to_h { |s| [s['id'], s] }
           built = {}
           # On demand: a forward needs the message it carries, which may be a forward too.
@@ -41,20 +41,36 @@ module Pikuri
           # A scene in two folders is one message with two copies, as a Gmail
           # label makes.
           scenes.reject { |s| s['folder'] == 'none' }
-                .flat_map { |s| Array(s['folder'] || 'Inbox').map { |folder| [folder, s] } }
-                .group_by(&:first)
-                .transform_values { |pairs| pairs.map { |_, s| built.fetch(s['id']) } }
+                .group_by { |s| @facts.email(s['account'] || 'owner') }
+                .transform_values do |list|
+                  list.flat_map { |s| Array(s['folder'] || 'Inbox').map { |folder| [folder, s] } }
+                      .group_by(&:first)
+                      .transform_values { |pairs| pairs.map { |_, s| built.fetch(s['id']) } }
+                end
         end
       end
 
+      # @return [Array<String>] the Message-IDs, without angle brackets, of
+      #   the scenes whose offline copy the build deletes after the index.
+      def dropped = scenes.select { _1['dropped'] }.map { message_id(_1) }
+
       private
+
+      # @return [Array<Hash>] the scene file, after ERB.
+      def scenes
+        @scenes ||= YAML.safe_load(@facts.render(File.read(PATH)))
+      end
+
+      # @param scene [Hash]
+      # @return [String] its Message-ID without angle brackets.
+      def message_id(scene) = "#{scene['id']}@#{domain(scene['from'])}"
 
       # @param build [Proc] scene id → its built message.
       # @return [Mail::Message, Mime::Raw]
       def message(scene, ids, build)
         message = Mail.new
         message.from = @facts.person(scene['from'])
-        message.to = Array(scene['to'] || 'owner').map { |k| @facts.person(k) }
+        message.to = Array(scene['to'] || scene['account'] || 'owner').map { |k| @facts.person(k) }
         message.cc = scene['cc'].map { |k| @facts.person(k) } if scene['cc']
         days, hhmm = scene['at']
         message.date = Demo.local_time(@facts.date(days), hhmm)

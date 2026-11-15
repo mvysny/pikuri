@@ -30,14 +30,17 @@ module Pikuri
       # The demo account's login.
       USER = 'alex@novak.example'
 
+      # The second account's, on the same host: Alex's personal address.
+      PERSONAL_USER = 'alex.novak@kotiposti.example'
+
       # The password the static passdb takes; Thunderbird gets it over
       # Marionette, never from a file.
       PASSWORD = 'demo'
 
-      # @param messages [Hash{String => String}] +"<folder>/<name>"+ to one
-      #   message's bytes; the folder +INBOX+ is the inbox, a nested one is
-      #   +/+-separated (+[Gmail]/All Mail+), and names sort in the order the
-      #   UIDs should follow.
+      # @param messages [Hash{String => String}] +"<login>/<folder>/<name>"+
+      #   to one message's bytes; the folder +INBOX+ is the inbox, a nested
+      #   one is +/+-separated (+[Gmail]/All Mail+), and names sort in the
+      #   order the UIDs should follow.
       # @return [Dovecot] a running server.
       # @raise [RuntimeError] when the port is taken or dovecot doesn't come up.
       def self.start(messages:)
@@ -88,16 +91,17 @@ module Pikuri
       # @return [String]
       def log = File.join(@dir, 'dovecot.log')
 
-      # Maildir++: INBOX is the root's +cur/+, a folder +Sent+ is +.Sent/cur/+,
-      # +[Gmail]/All Mail+ is +.[Gmail].All Mail/cur/+. No +:2,+ flag letters,
-      # so every message arrives unread.
+      # Maildir++, one per login: INBOX is +<login>/cur/+, a folder +Sent+ is
+      # +<login>/.Sent/cur/+, +[Gmail]/All Mail+ is +<login>/.[Gmail].All
+      # Mail/cur/+. No +:2,+ flag letters, so every message arrives unread.
       #
       # @param mail [String]
       # @return [void]
       def write_maildir(mail)
         @messages.each do |path, bytes|
-          folder, _, name = path.rpartition('/')
-          dir = File.join(mail, folder == 'INBOX' ? '' : ".#{folder.tr('/', '.')}")
+          login, rest = path.split('/', 2)
+          folder, _, name = rest.rpartition('/')
+          dir = File.join(mail, login, folder == 'INBOX' ? '' : ".#{folder.tr('/', '.')}")
           %w[cur new tmp].each { FileUtils.mkdir_p(File.join(dir, _1)) }
           file = File.join(dir, 'cur', "#{name}.pikuri-demo:2,")
           File.binwrite(file, bytes)
@@ -128,6 +132,8 @@ module Pikuri
         end
       end
 
+      # Any login with the password gets in, to its own Maildir.
+      #
       # Rootless: every internal and login process runs as the caller, the
       # login process isn't chrooted (that needs root), and only the plain
       # IMAP listener is on (+imaps+ would want port 993). Folders nest with
@@ -135,7 +141,7 @@ module Pikuri
       # carries the +\Sent+ special-use flag, as Gmail's and iCloud's do, and
       # +[Gmail]/All Mail+ and +[Gmail]/Starred+ Gmail's +\All+ and +\Flagged+.
       #
-      # @param mail [String] the Maildir.
+      # @param mail [String] the directory of the per-login Maildirs.
       # @return [String]
       def render(mail)
         user = Etc.getpwuid(Process.uid).name
@@ -161,12 +167,12 @@ module Pikuri
             fields {
               uid = #{Process.uid}
               gid = #{Process.gid}
-              home = #{@dir}/home
+              home = #{@dir}/home/%{user}
             }
           }
 
           mail_driver = maildir
-          mail_path = #{mail}
+          mail_path = #{mail}/%{user}
           namespace inbox {
             inbox = yes
             separator = /

@@ -653,12 +653,26 @@ no identity, so Gloda would have no "me", no Sent folder and no correspondence g
 Folders holds an `Archive` (CI mail older than 90 days), so `Mail/` is a real store too. Every
 domain is RFC 2606-reserved, so a Send clicked by mistake fails.
 
+A second account, Alex's personal `alex.novak@kotiposti.example`, sits on the same dovecot (a
+`mail.yml` scene's `account:`). Its `user.js` names no store directory, so Thunderbird picks
+one, as for an account added in its wizard: the name taken, it inserts `-1` before what it reads
+as an extension, `ImapMail/127.0.0-1.1/` (`imap.gmail-1.com` for a second Gmail), recorded only
+in `prefs.js`. It picks so only when the first account's directory exists, as on a real install
+it long has; on a fresh profile neither did, and both accounts got `127.0.0.1/`, so the builder
+creates that one, empty.
+
 **Gmail's folder shape, without Gmail.** Dovecot nests folders with `/` and serves
 `[Gmail]/All Mail` (`\All`) and `[Gmail]/Starred` (`\Flagged`) under a non-selectable `[Gmail]`;
 a `mail.yml` scene filed in two folders is two copies with one Message-ID, as a Gmail label
 makes. All Mail is synced headers-only, as many keep it, so the testbed holds a message whose
 read prefers its downloaded copy (INBOX's, or Starred's), one with no body at all, and an mbox
 at `ImapMail/127.0.0.1/[Gmail].sbd/Starred`.
+
+**"Not stored on this computer"** is a scene too (`dropped: true`): after the index, the
+build deletes its copy through the store's own `folder.msgStore.deleteMessages`, which sets the
+expunged bit in its mbox's `X-Mozilla-Status`. Gloda listens to folders, not to the store, so it
+keeps the row and its text, and the attachment read finds no live copy. After the quit the
+builder checks the bit landed. Editing the mbox itself would break the rule above.
 
 **The IMAP server: a rootless dovecot, up only during a build** (`builder/dovecot.rb`). An IMAP
 folder's `.msf` and its UIDs come from the server's replies, so the mail has to be downloaded
@@ -698,13 +712,14 @@ script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
   `MailServices.imap.discoverAllFolders`, then per folder `setFlag(Offline)` and
   `downloadAllForOffline`, which selects the folder, syncs its headers and fetches every body;
   a headers-only folder gets `clearFlag(Offline)` (discovery sets it from the server's
-  `offline_download`) and `updateFolderWithListener`, then a wait until its `.msf` holds every
-  header.
+  `offline_download`) and `updateFolderWithListener` instead.
   An account from `user.js` lacks the Offline flag on INBOX (the account wizard's "keep
-  messages on this computer" sets it), and without it INBOX's bodies are never fetched. A
-  separate `updateFolderWithListener` first is a trap: its listener heard the discovery URL end,
-  the download found the folder busy, and fetched nothing without an error. So the step checks
-  every header carries the Offline flag.
+  messages on this computer" sets it), and without it INBOX's bodies are never fetched. A sync's
+  listener can hear an earlier URL end, and the step then finds the folder busy and does
+  nothing, without an error: a separate `updateFolderWithListener` before the download did so,
+  and so did the second account's first INBOX download, which passed a "no header lacks its
+  body" check on zero headers. So each folder is synced again until it holds as many headers as
+  the builder wrote there, each with its body (or, headers-only, none).
 - **A dropped mbox is never picked up on its own:** with mail checks off nothing opens a
   folder, so no `.msf` appears and Gloda's sweep skips it (four minutes, zero rows). The index
   step reparses each Local Folders folder (`getDatabaseWithReparse`, which throws
@@ -745,7 +760,7 @@ a later timer would slip past a build that lasts seconds.
 That needs inputs that repeat: the `mail` gem's random multipart boundaries are replaced by ones
 derived from the Message-ID, zips get fixed times, and LibreOffice output (which stamps a fresh
 date and ID into every PDF) is cached by source digest, under `Paths.cache/demo-home/` so the
-demo home's own build reuses it. Measured on 159: 194 messages sync and index in
+demo home's own build reuses it. Measured on 159: 201 message copies sync and index in
 ~9 s, a cached build takes 2 s.
 
 **The guard.** Every demo directory carries a `.pikuri-demo` marker. The build refuses while
@@ -753,6 +768,7 @@ either root holds an unmarked profile, or while Thunderbird runs, and checks the
 own guard (`~/Documents` non-empty and unmarked) before writing anything; it never deletes
 anything unmarked and never stops a Thunderbird it didn't start.
 
-**Not covered:** Gmail's own IMAP extension (`X-GM-EXT-1`), a copy gone from the offline store
-after Gloda indexed it, and the `-1` directory of a second account on one host;
-`design/ideas/thunderbird-testbed-imap-scenes.md`.
+**Not covered:** Gmail's own IMAP extension, `X-GM-EXT-1`, and so Thunderbird's Gmail-only
+paths (one offline body shared across labels). Dovecot can't stand in: advertising the
+capability (`imap_capability`) would make Thunderbird fetch `X-GM-MSGID`/`X-GM-LABELS`, which
+dovecot answers with BAD.

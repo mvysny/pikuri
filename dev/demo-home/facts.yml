@@ -31,6 +31,10 @@ people:
   fake_kettle: { name: Kettle & Co. Accounts, email: accounts@kettle-co-payments.example }
   # A look-alike of the bank's domain: an l for the i.
   fake_bank: { name: Northwind Bank Security, email: security@northwlnd-bank.example }
+  tahti: { name: Hammasklinikka Tähti, email: ajanvaraus@tahti-klinikka.example }
+  # Alex's own personal address, at the same mail provider as the work one:
+  # the testbed's second account.
+  owner_personal: { name: Alex Novak, email: alex.novak@kotiposti.example }
 
 # The invoice the reminder mail and Documents/Finance/invoice-4471.pdf share.
 invoice:

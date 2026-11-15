@@ -2,11 +2,13 @@
 # the secretary chapter happen. ERB over facts.yml (as f) first, then YAML.
 #
 #   id:           Message-ID's local part; the sender's domain is appended
+#   account:      the people key whose address is the mailbox's login: owner
+#                 (default) or owner_personal, a second account on the same host
 #   folder:       Inbox (default), Sent, Finance, [Gmail]/All Mail, [Gmail]/Starred,
 #                 or none (exists only inside a forward); a list files one message
 #                 in each, as Gmail's labels do. All Mail is synced headers-only.
 #   at:           [days from the build day, 'HH:MM'] local time
-#   from/to/cc:   people keys from facts.yml (owner is Alex)
+#   from/to/cc:   people keys from facts.yml (owner is Alex); to defaults to account
 #   reply_to:     ids of the thread so far, oldest first (In-Reply-To + References)
 #   body / html:  text part / HTML part; both make multipart/alternative
 #   related:      the HTML's inline images, by Content-ID
@@ -23,6 +25,8 @@
 #   forward:      id of a message (often folder: none), attached as message/rfc822
 #   raw:          mail/<file>.eml, a hand-written MIME tree (ERB too) in place of
 #                 body/html: a shape another client writes and the mail gem can't
+#   dropped:      true deletes its offline copy after the index, behind Gloda's
+#                 back: Gloda keeps the text, the attachment is "not stored"
 
 # --- The invoice: the cross-source answer (the PDF is in Documents/Finance).
 # Labelled Finance too: two copies, both downloaded, which search and read dedup.
@@ -596,3 +600,54 @@
     Aino Virtanen
   attachments:
     - document: Housing/lease-agreement.pdf
+
+# --- Alex's personal account, a second one on the same mail host: Thunderbird
+# stores it in ImapMail/127.0.0.1-1/, which only prefs.js maps to the account.
+- id: dentist-confirmation
+  account: owner_personal
+  at: [-10, '13:05']
+  from: tahti
+  subject: 'Appointment confirmed: <%= f.day(f.dentist.day) %> at <%= f.dentist.time %>'
+  body: |
+    Dear Alex Novak,
+
+    your check-up with <%= f.dentist.doctor %> is confirmed for <%= f.day(f.dentist.day) %> at
+    <%= f.dentist.time %>. Please fill in the attached pre-visit form and bring it with you,
+    together with your referral for the wisdom tooth x-ray.
+
+    <%= f.dentist.clinic %>
+  attachments:
+    - name: pre-visit-form.txt
+      type: text/plain
+      text: |
+        PRE-VISIT FORM, <%= f.dentist.clinic %>
+
+        Name:
+        Date of birth:
+        Medication in use:
+        Allergies:
+        Changes in health since your last visit:
+
+# --- Gone from the offline store after Gloda indexed it (dropped): the read
+# still shows Gloda's text, the attachment is "not stored on this computer".
+- id: expenses-october
+  dropped: true
+  at: [-14, '15:45']
+  from: ilse
+  subject: Expenses for October
+  body: |
+    Hi Alex,
+
+    October's expenses are attached for your approval: EUR 412.80 in all,
+    most of it the train tickets to Tampere.
+
+    Ilse
+  attachments:
+    - name: expenses-october.csv
+      type: text/csv
+      text: |
+        date,what,eur
+        2026-10-06,Train Helsinki-Tampere return,96.40
+        2026-10-20,Train Helsinki-Tampere return,96.40
+        2026-10-21,Printer toner,140.00
+        2026-10-27,Client lunch,80.00
