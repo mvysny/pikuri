@@ -471,8 +471,14 @@ is **mbox** (extensionless files, `file(1)` "Mailbox text"), under
   inside a *body* (a forwarded mail) is skipped; the few Message-IDs seen twice
   in one mbox were byte-identical copies, so the first live one wins.
 - **Coverage:** all 1088 attachment-bearing IMAP messages were in the offline
-  store with full bodies; an account syncing headers only would answer "not
-  stored on this computer" per call.
+  store with full bodies. A message whose body was never offline doesn't reach
+  this store at all: Gloda indexes it from headers alone, with `c0body` NULL
+  and no `attachmentInfos`, even with the server reachable (testbed, 159: 14
+  attachment mails in a folder with its Offline flag cleared), so pikuri shows
+  an empty body and no attachments rather than "not stored on this
+  computer". Downloading the folder later makes Gloda re-index them with body
+  and attachment list. "Not stored" is left for a copy gone from the offline
+  store after Gloda indexed it with a body.
 - **Read live, without a snapshot:** an mbox has no SQLite-style lock, and a
   multi-GB copy per read is absurd. Thunderbird appends new mail and compacts
   by renaming a new file over the old, so one fd held for the whole scan stays

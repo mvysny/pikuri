@@ -15,9 +15,10 @@ module Pikuri
     #   store.raw_message(message_id: rec[:message_id], folder_uris: rec[:folder_uris])
     #   # => "Received: …\r\nMessage-ID: <…>\r\n…" (binary), or nil if no copy is stored
     #
-    # +nil+ is the ordinary "not stored on this computer" answer: an account
-    # with offline sync off, a size-limited sync, or a copy compacted away
-    # since Gloda indexed it. This class never fetches a message over IMAP.
+    # +nil+ is the "not stored on this computer" answer: a copy gone from the
+    # offline store since Gloda indexed it. A message whose body was never
+    # offline doesn't get here: Gloda indexed it from its headers alone, with
+    # no attachments to ask for. This class never fetches a message over IMAP.
     #
     # == Implementation details
     #
