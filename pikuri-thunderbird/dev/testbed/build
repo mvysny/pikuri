@@ -10,9 +10,11 @@
 # ~/Documents too, with the same --today, since the mail's attachments are
 # those documents. Every domain is RFC 2606-reserved, so no real mail is
 # ever in it. A real headless Thunderbird builds the stores pikuri reads,
-# from the mbox and .ics files this writes; the profile is registered as
-# Thunderbird's default, so pikuri finds it on its own and the hand-offs
-# open in it.
+# from the mbox and .ics files this writes and the IMAP account it syncs
+# from a dovecot this runs on 127.0.0.1:10143 for the build's duration; the
+# profile is registered as Thunderbird's default, so pikuri finds it on its
+# own and the hand-offs open in it. The packages it needs: "Setting up the
+# dev VM" in pikuri-thunderbird/design/architecture.md.
 #
 #   pikuri-thunderbird/dev/testbed/build            # restores the cached profile when it matches
 #   pikuri-thunderbird/dev/testbed/build --rebuild  # index afresh

@@ -3,7 +3,7 @@
 module Pikuri
   module Demo
     # Renders a folder of messages as an mbox the way Thunderbird keeps a
-    # POP3 folder: a +From - <date>+ separator per message, CRLF line ends,
+    # local folder: a +From - <date>+ separator per message, CRLF line ends,
     # and a body line that starts with +From + escaped as +>From +.
     module Mbox
       # @param messages [Array<Mail::Message>]

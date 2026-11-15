@@ -282,7 +282,8 @@ Caveat: all of this is one real install (snap; Gmail + iCloud IMAP; CalDAV
 calendars); the attachment facts were re-probed on it at Thunderbird 157
 (2026-10), against the Gmail account. The specs run against synthetic fixtures
 built to this schema; the testbed (§ below) adds a profile a real Thunderbird
-159 built — but a POP3 one, so the `ImapMail/` path and on-demand IMAP
+159 built, with an IMAP account synced from a local dovecot — generic IMAP,
+not Gmail's labels-as-folders, and with every body offline, so on-demand IMAP
 attachments are still checked only on that one install.
 
 ### Profile & install roots
@@ -365,9 +366,9 @@ A complete, pre-decoded search index. Tables that matter:
   beats the part's own header (7 parts said `application/octet-stream` where
   Gloda, going by the file name, said `text/csv` etc.); `size` is the decoded
   size for every binary part, but `-1` when unknown, a few percent off for
-  text, and noise for a `message/rfc822`: `0` for every one on the IMAP
-  account, an unrelated number on the POP3 testbed (604 for a forward whose
-  decoded size is 2665). `isExternal` marks a part
+  text, and noise for a `message/rfc822`: `0` for every one on the Gmail
+  account, an unrelated non-zero number on the testbed's dovecot account (526
+  to 6941, Thunderbird 159). `isExternal` marks a part
   whose bytes are at a remote URL — never set on IMAP, and **not** the flag
   for a detached attachment (that is a `text/x-moz-deleted` part). The FTS
   column `c2attachmentNames` **omits forwarded mails**, which is why the
@@ -621,12 +622,46 @@ allowlist). Browser/telemetry cruft (`places.sqlite`, `cookies.sqlite`,
 so: `D_thunderbird_testbed`. The scripts' headers say how to run them; this is the picture
 across them.
 
+**Setting up the dev VM.** Ubuntu packages only, plus the Thunderbird snap Ubuntu ships:
+
+```
+sudo snap install thunderbird
+sudo apt install xvfb ffmpeg libreoffice dovecot-imapd
+sudo systemctl disable --now dovecot.service dovecot.socket
+```
+
+`xvfb` and `ffmpeg` serve `session --display` and its screenshot; LibreOffice renders the demo
+documents (`dev/demo-home/`); dovecot is the IMAP server below. Ubuntu's package enables and
+starts the system dovecot on install, listening on 143 and 993 on every interface; the testbed
+never uses it (it runs its own), hence the `disable --now`, which stops it, keeps it off at
+boot, and stops socket activation from waking it. `ss -ltn | grep -E ':(143|993)\b'` printing
+nothing confirms it.
+
 **We write the inputs, Thunderbird writes its stores.** The builder writes only what
-Thunderbird reads as input — `user.js`, mbox files, an `.ics` — and a real headless Thunderbird
-builds `prefs.js`, the `.msf` summaries, Gloda and `calendar-data/cache.sqlite` from them. The
-account is a POP3 one that never connects (`alex@novak.example`), not Local Folders: Local
-Folders has no identity, so Gloda would have no "me", no Sent folder and no correspondence
-graph. Every domain is RFC 2606-reserved, so a Send clicked by mistake fails.
+Thunderbird reads as input — `user.js`, mbox files, an `.ics`, and the mail an IMAP server
+serves — and a real headless Thunderbird builds `prefs.js`, the IMAP offline store, the `.msf`
+summaries, Gloda and `calendar-data/cache.sqlite` from them. Alex's account is IMAP
+(`alex@novak.example`, the login an address as on Gmail, so its folder URIs carry `%40`),
+synced from a dovecot on loopback into `ImapMail/127.0.0.1/`; it is not Local Folders, which has
+no identity, so Gloda would have no "me", no Sent folder and no correspondence graph. Local
+Folders holds an `Archive` (CI mail older than 90 days), so `Mail/` is a real store too. Every
+domain is RFC 2606-reserved, so a Send clicked by mistake fails.
+
+**The IMAP server: a rootless dovecot, up only during a build** (`builder/dovecot.rb`). An IMAP
+folder's `.msf` and its UIDs come from the server's replies, so the mail has to be downloaded
+for real (why a real server: `D_thunderbird_testbed`). Dovecot 2.4 (Ubuntu's; most guides online
+are 2.3 syntax) runs as the caller with `chroot =` on the login service, only the plain `imap`
+listener (port 10143, fixed because it is in `user.js` and so in the cache key), a static
+passdb whose password Thunderbird gets over Marionette, and every file in one fresh `/tmp`
+directory, since a socket path over 108 bytes fails. It serves **Maildir**, not mbox: its mbox
+driver rewrites the file to add `X-UID`, which failed on the CRLF mbox ("Sync failed for mbox"),
+and Thunderbird took the failed body fetch as success. A Maildir file is never rewritten, and
+its mtime is the message's `INTERNALDATE`.
+
+After the build nothing listens on 10143, so the account has `check_new_mail`,
+`login_at_startup` and `autosync_offline_stores` off; a session on the cached profile opens no
+connection at all (20 s under `MOZ_LOG`, 2026-11-15). Clicking an IMAP folder in a `--display`
+session would try to connect and fail.
 
 **The demo world** is the repo root's `dev/demo-home/`: one facts file (`facts.yml`) and the
 demo `~/Documents` (`documents/`) rendered from it. The testbed reads both — the scene mail
@@ -646,13 +681,23 @@ script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
 - The wire is length-prefixed JSON over TCP (`len:[0, id, "Name", {params}]`, reply
   `len:[1, id, error, result]`); `builder/marionette.rb` is the whole client. One WebDriver
   session at a time, so a client must `DeleteSession` before the next can connect.
+- **The IMAP sync is driven too**, since with mail checks off nothing connects:
+  `MailServices.imap.discoverAllFolders`, then per folder `setFlag(Offline)` and
+  `downloadAllForOffline`, which selects the folder, syncs its headers and fetches every body.
+  An account from `user.js` lacks the Offline flag on INBOX (the account wizard's "keep
+  messages on this computer" sets it), and without it INBOX's bodies are never fetched. A
+  separate `updateFolderWithListener` first is a trap: its listener heard the discovery URL end,
+  the download found the folder busy, and fetched nothing without an error. So the step checks
+  every header carries the Offline flag.
 - **A dropped mbox is never picked up on its own:** with mail checks off nothing opens a
   folder, so no `.msf` appears and Gloda's sweep skips it (four minutes, zero rows). The index
-  step reparses each folder (`getDatabaseWithReparse`, which throws
-  `NS_ERROR_NOT_INITIALIZED` to mean "reparse started") and then queues it
+  step reparses each Local Folders folder (`getDatabaseWithReparse`, which throws
+  `NS_ERROR_NOT_INITIALIZED` to mean "reparse started") and then queues every folder
   (`GlodaMsgIndexer.indexFolder(folder, {force: true})`); `indexFolder` alone indexes
   nothing. Done is detected by count, not by Gloda's internals: the builder knows it wrote N
-  messages and counts a copy of the Gloda DB until it holds N.
+  messages and counts a copy of the Gloda DB until it holds N with a body — an IMAP message
+  Gloda reaches before its body is offline is indexed from its headers alone, and counts too
+  early.
 - A clean quit is a script that resolves and then dispatches
   `Services.startup.quit(eAttemptQuit)`: about two seconds, the WAL stores checkpointed, and
   open compose windows discarded without a prompt.
@@ -675,22 +720,23 @@ no window manager, so windows stack; clicking goes through Marionette, not the s
 makes. `strace` can't follow into a snap without root (snap-confine is setuid), so the check is
 Mozilla's logging: `MOZ_LOG="nsHostResolver:5,nsSocketTransport:5,nsHttp:3"
 MOZ_LOG_FILE=~/snap/thunderbird/common/moz.log dev/testbed/build --rebuild` showed no
-DNS lookup and no HTTP channel, only Marionette's loopback socket (2026-11-13, 159). Re-run it
-after a Thunderbird upgrade; a fetch on a later timer would slip past a build that lasts seconds.
+DNS lookup and no HTTP channel, only Marionette's loopback socket and, since the IMAP account,
+dovecot's `127.0.0.1:10143` (2026-11-15, 159). Re-run it after a Thunderbird upgrade; a fetch on
+a later timer would slip past a build that lasts seconds.
 
 **Byte-stable inputs, so the cache hits.** The indexed profile is tarred under
 `Paths.cache/thunderbird-testbed/`, keyed by Thunderbird's version and a digest of every input.
 That needs inputs that repeat: the `mail` gem's random multipart boundaries are replaced by ones
 derived from the Message-ID, zips get fixed times, and LibreOffice output (which stamps a fresh
 date and ID into every PDF) is cached by source digest, under `Paths.cache/demo-home/` so the
-demo home's own build reuses it. Measured on 159: 183 messages index in
-~7 s, a build takes 10 s, a cached one 2 s.
+demo home's own build reuses it. Measured on 159: 194 messages sync and index in
+~9 s, a cached build takes 2 s.
 
 **The guard.** Every demo directory carries a `.pikuri-demo` marker. The build refuses while
 either root holds an unmarked profile, or while Thunderbird runs, and checks the demo home's
 own guard (`~/Documents` non-empty and unmarked) before writing anything; it never deletes
 anything unmarked and never stops a Thunderbird it didn't start.
 
-**Not covered:** IMAP. The account is POP3, so `MessageStore`'s `ImapMail/` path (where
-`messageKey` is the UID) and attachments IMAP fetches on demand are untested here; a second
-account against a local dovecot is `design/ideas/thunderbird-testbed-imap.md`.
+**Not covered:** Gmail's own IMAP (labels as folders, `X-GM-EXT-1`), a message in two
+folders, a folder synced headers-only, and the `-1` directory of a second account on one host;
+`design/ideas/thunderbird-testbed-imap-scenes.md`.

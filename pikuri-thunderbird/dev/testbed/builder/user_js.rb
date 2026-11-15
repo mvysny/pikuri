@@ -8,12 +8,17 @@ module Pikuri
     # for, and the prefs that keep a first run quiet. Thunderbird reads it at
     # every start and folds it into its own +prefs.js+.
     #
-    # The account is a POP3 one that never connects, not Local Folders: Local
-    # Folders has no identity, so Gloda would have no "me", no Sent folder and
-    # no correspondence graph. A POP3 account keeps plain mbox under
-    # +Mail/pop.novak.example/+, which the builder fills. Every host is
-    # RFC 2606-reserved, so a Send clicked by mistake fails.
+    # The account is IMAP, like most real ones (the owner's Gmail and iCloud
+    # among them), syncing from {Dovecot} on loopback; its offline store lands
+    # under +ImapMail/127.0.0.1/+. Its login is an address, as Gmail's is, so
+    # its folder URIs carry the +%40+ a real one does. Local Folders holds an
+    # archive, so the +Mail/+ store is real too. Outside a build nothing
+    # listens on the port, so the account never checks mail on its own; the
+    # SMTP host is RFC 2606-reserved, so a Send clicked by mistake fails.
     module UserJs
+      # Where {Dovecot} listens; also the IMAP store's directory name.
+      IMAP_HOST = '127.0.0.1'
+
       # Stands in for Mozilla's own servers in the quiet prefs' URLs.
       DUMMY_HOST = 'pikuri-dummy.invalid'
 
@@ -87,6 +92,7 @@ module Pikuri
 
       # @return [Hash{String => Object}]
       def self.account_prefs
+        imap = "imap://#{Dovecot::USER.sub('@', '%40')}@#{IMAP_HOST}"
         {
           'mail.accountmanager.accounts' => 'account1,account2',
           'mail.accountmanager.defaultaccount' => 'account1',
@@ -98,15 +104,22 @@ module Pikuri
           'mail.identity.id1.useremail' => 'alex@novak.example',
           'mail.identity.id1.smtpServer' => 'smtp1',
           'mail.identity.id1.valid' => true,
-          'mail.identity.id1.fcc_folder' => 'mailbox://alex@pop.novak.example/Sent',
-          'mail.server.server1.type' => 'pop3',
-          'mail.server.server1.hostname' => 'pop.novak.example',
-          'mail.server.server1.userName' => 'alex',
+          'mail.identity.id1.fcc_folder' => "#{imap}/Sent",
+          'mail.server.server1.type' => 'imap',
+          'mail.server.server1.hostname' => IMAP_HOST,
+          'mail.server.server1.port' => Dovecot::PORT,
+          'mail.server.server1.userName' => Dovecot::USER,
           'mail.server.server1.name' => 'alex@novak.example',
-          'mail.server.server1.directory-rel' => '[ProfD]Mail/pop.novak.example',
+          'mail.server.server1.directory-rel' => "[ProfD]ImapMail/#{IMAP_HOST}",
+          'mail.server.server1.socketType' => 0, # plain: loopback, and dovecot has no certificate
+          'mail.server.server1.authMethod' => 3, # cleartext password
+          # Every folder, not only subscribed ones: nothing subscribes on a
+          # fresh dovecot.
+          'mail.server.server1.using_subscription' => false,
+          # The build syncs and downloads itself; afterwards there is no server.
           'mail.server.server1.login_at_startup' => false,
           'mail.server.server1.check_new_mail' => false,
-          'mail.server.server1.download_on_biff' => false,
+          'mail.server.server1.autosync_offline_stores' => false,
           'mail.server.server2.type' => 'none',
           'mail.server.server2.hostname' => 'Local Folders',
           'mail.server.server2.userName' => 'nobody',

@@ -24,12 +24,17 @@ module Pikuri
         @random = Random.new(2026)
       end
 
+      # @return [Integer] CI mail older than this many days was archived to
+      #   Local Folders, the way people move old mail off the server.
+      ARCHIVED_AFTER_DAYS = 90
+
       # @return [Hash{String => Array<Mail::Message>}] folder to messages.
       def folders
         @folders ||= begin
-          inbox = ci + parcels + newsletters + statements + receipts
+          archive, recent_ci = ci.partition { |m| m.date.to_date < @facts.today - ARCHIVED_AFTER_DAYS }
+          inbox = recent_ci + parcels + newsletters + statements + receipts
           list_inbox, list_sent = cycling_list
-          { 'Inbox' => inbox + list_inbox, 'Sent' => list_sent }
+          { 'Inbox' => inbox + list_inbox, 'Sent' => list_sent, 'Archive' => archive }
         end
       end
 

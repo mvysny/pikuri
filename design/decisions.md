@@ -686,13 +686,19 @@ on the dev VM was the owner's real one, and testing the secretary against it put
 session logs and transcripts — a medical appointment reminder among them. That profile was
 deleted from the VM the same day.
 
-**Decision.** A dev-only testbed, `dev/thunderbird-testbed/`, on a machine with no Thunderbird
+**Decision.** A dev-only testbed, `pikuri-thunderbird/dev/testbed/`, on a machine with no Thunderbird
 data of its own. We write only Thunderbird's *inputs* (`user.js`, mbox, `.ics`), and a real
 headless Thunderbird builds its own stores from them, so pikuri is tested against what
 Thunderbird really writes. The demo profile is Thunderbird's only, default profile, so
 auto-discovery and the hand-offs run for real. It serves whoever develops pikuri — capturing the
 book's transcripts, agents testing the tools — and nobody else: a reader runs pikuri on their own
 mail. How it works: `pikuri-thunderbird/design/architecture.md` § The testbed.
+
+The demo account is **IMAP, synced from a real IMAP server** (a dovecot on loopback, up only
+during a build), because most users' mail, the owner's included, is IMAP, and specs on fixtures
+cover `ImapMail/` only as we believe it to be. An IMAP folder's `.msf` and UIDs come from the
+server's replies and a reparse means a refetch, so mbox dropped into `ImapMail/` (the trick
+that serves Local Folders) doesn't carry over.
 
 **Alternatives rejected.**
 
@@ -711,6 +717,16 @@ mail. How it works: `pikuri-thunderbird/design/architecture.md` § The testbed.
 - **A stub `thunderbird` that logs what a hand-off would open.** Reading the compose window
   back from a real Thunderbird over Marionette tests what Thunderbird parsed, not what pikuri
   meant to send.
+- **A POP3 account (the first testbed).** It covered `Mail/` only, the path the fewest users
+  are on.
+- **Filling an IMAP account through Thunderbird alone, no server.** Every call that puts mail
+  into an IMAP folder becomes an IMAP `APPEND`; offline, Thunderbird queues it as a pending
+  operation behind a placeholder message with a made-up key. That profile is wrong exactly where
+  it matters — placeholder keys, not UIDs; pending-operation state; an offline store written by
+  another code path — a state no real profile is in.
+- **An IMAP server of our own.** Thunderbird's fake one (`Imapd.sys.mjs`) lives in its source
+  tree's tests, not in the snap; a Ruby one would be a protocol server (UID FETCH,
+  BODYSTRUCTURE, …) to write and debug just to feed a test, and never quite a real one.
 
 ## D_no_metagem — Why is there no `gem install pikuri` that brings in every gem?
 

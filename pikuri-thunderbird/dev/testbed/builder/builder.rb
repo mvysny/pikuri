@@ -7,19 +7,28 @@ require 'open3'
 module Pikuri
   module Demo
     # Builds a demo Thunderbird profile: we write only what Thunderbird reads
-    # as *input* (+user.js+, mbox files, an +.ics+), and a real headless
-    # Thunderbird builds its own stores from it (+prefs.js+, the +.msf+
-    # summaries, Gloda, +calendar-data/cache.sqlite+). We never write
-    # Thunderbird's own schemas, so pikuri is tested against what Thunderbird
-    # really writes, not against our reading of it.
+    # as *input* (+user.js+, an +.ics+, mbox files — Local Folders' in the
+    # profile, the IMAP account's in {Dovecot}), and a real headless
+    # Thunderbird builds its own stores from it (+prefs.js+, the IMAP offline
+    # store, the +.msf+ summaries, Gloda, +calendar-data/cache.sqlite+). We
+    # never write Thunderbird's own schemas, so pikuri is tested against what
+    # Thunderbird really writes, not against our reading of it.
     #
     # The indexed profile is cached as a tarball, so an agent gets a fresh
     # copy in a second. The key is Thunderbird's version plus a digest of
     # every input: the dates move with +--today+, so a profile built for
     # another day is a different profile. One tarball is kept.
     class Builder
-      # The POP3 account's mail directory, under the profile.
-      MAIL_DIR = File.join('Mail', 'pop.novak.example')
+      # Local Folders' mail directory, under the profile.
+      LOCAL_DIR = File.join('Mail', 'Local Folders')
+
+      # The content's folders that live in Local Folders; the rest are the
+      # IMAP account's.
+      LOCAL_FOLDERS = %w[Archive].freeze
+
+      # {#inputs}' path prefixes: written into the profile, or served by {Dovecot}.
+      PROFILE_PREFIX = 'profile/'
+      IMAP_PREFIX = 'imap/'
 
       # @param target [Target]
       # @param content [Content]
@@ -46,27 +55,49 @@ module Pikuri
           return nil
         end
 
-        inputs.each do |path, bytes|
+        under(inputs, PROFILE_PREFIX).each do |path, bytes|
           file = File.join(@target.profile_dir, path)
           FileUtils.mkdir_p(File.dirname(file))
           File.binwrite(file, bytes)
         end
+        dovecot = Dovecot.start(messages: under(inputs, IMAP_PREFIX))
         seconds = Indexer.new(profile_dir: @target.profile_dir, messages: @content.message_count,
                               events: @content.event_count, log: @log).run!
         store(tarball)
         seconds
+      ensure
+        dovecot&.stop
       end
 
-      # @return [Hash{String => String}] profile-relative path to bytes.
+      # @return [Hash{String => String}] every input, by path: +profile/…+ is
+      #   written into the profile, +imap/<folder>/<n>+ is one message
+      #   {Dovecot} serves.
       def inputs
         # The calendar sits in the profile itself, where a snap Thunderbird
         # can read it (the snap can't read hidden dirs in $HOME).
         ics = File.join(@target.profile_dir, 'demo.ics')
-        mail = @content.folders.to_h { |name, messages| [File.join(MAIL_DIR, name), Mbox.render(messages)] }
-        mail.merge('demo.ics' => @content.ics, 'user.js' => UserJs.render(ics_path: ics))
+        local, imap = @content.folders.partition { |name, _| LOCAL_FOLDERS.include?(name) }
+        profile = local.to_h { |name, messages| [File.join(LOCAL_DIR, name), Mbox.render(messages)] }
+                       .merge('demo.ics' => @content.ics, 'user.js' => UserJs.render(ics_path: ics))
+        served = imap.flat_map do |name, messages|
+          # The IMAP inbox is INBOX, as every server names it. Numbered in
+          # date order, so the UIDs dovecot assigns are too.
+          folder = name == 'Inbox' ? 'INBOX' : name
+          messages.sort_by { |m| m.date.to_time }.each_with_index.map do |message, i|
+            [format('%<folder>s/%<n>04d', folder: folder, n: i + 1), message.encoded]
+          end
+        end
+        profile.transform_keys { PROFILE_PREFIX + _1 }.merge(served.to_h.transform_keys { IMAP_PREFIX + _1 })
       end
 
       private
+
+      # @param inputs [Hash{String => String}] from {#inputs}.
+      # @param prefix [String]
+      # @return [Hash{String => String}] the inputs under +prefix+, without it.
+      def under(inputs, prefix)
+        inputs.filter_map { |path, bytes| [path.delete_prefix(prefix), bytes] if path.start_with?(prefix) }.to_h
+      end
 
       # @param inputs [Hash{String => String}]
       # @return [String]

@@ -37,7 +37,7 @@ gloda_names = lambda do |message_id|
   json && (JSON.parse(json)[infos_id] || []).map(&:first)
 end
 
-mboxes = Dir[File.join(profile, Pikuri::Demo::Builder::MAIL_DIR, '*')].select { File.file?(_1) && File.extname(_1).empty? }
+mboxes = Dir[File.join(profile, '{ImapMail,Mail}', '**', '*')].select { File.file?(_1) && File.extname(_1).empty? }
 messages = mboxes.flat_map { File.binread(_1).split(/\r\n(?=From - )/) }
                  .map { Mail.new(_1.sub(/\AFrom - [^\r\n]*\r\n/, '')) }
 
