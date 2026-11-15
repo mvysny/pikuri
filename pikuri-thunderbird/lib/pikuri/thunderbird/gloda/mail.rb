@@ -73,11 +73,19 @@ module Pikuri
         # Gmail fans one message out over its labels, and any copy carries the
         # same attachment bytes.
         #
+        # +downloaded+ is whether Gloda saw the message's body. It parses the
+        # MIME only for a message in a local folder or one whose IMAP body is
+        # offline; any other it indexes from headers alone, leaving body and
+        # attachment names NULL — where a parsed message with no text or no
+        # attachments has an empty string (+IndexMsg.sys.mjs+, Thunderbird
+        # 159). So +attachments+ empty means "none" only when +downloaded+.
+        # Of a message's copies, one Gloda saw the body of is read first.
+        #
         # @param message_id [String] the {#search} handle (an RFC +Message-ID+
         #   or a +gloda:<id>+ fallback).
         # @return [Hash, nil] +{message_id:, date:, from:, to:, subject:,
         #   folder:, folder_uris: Array<String>, attachments: Array<Attachment>,
-        #   body:}+, or +nil+ if not found.
+        #   body:, downloaded: Boolean}+, or +nil+ if not found.
         # @raise [NoMatchingPatternError] on an +attachmentInfos+ entry of a
         #   shape Gloda never wrote.
         def read(message_id:)
@@ -87,12 +95,12 @@ module Pikuri
             row = db.execute(<<~SQL, [bind]).first
               SELECT m.id, m.headerMessageID, m.date,
                      c.c0body, c.c1subject, c.c3author, c.c4recipients,
-                     fl.name, fl.folderURI, m.jsonAttributes
+                     fl.name, fl.folderURI, m.jsonAttributes, c.c2attachmentNames IS NOT NULL
               FROM messages m
               JOIN messagesText_content c ON c.docid = m.id
               LEFT JOIN folderLocations fl ON fl.id = m.folderID
               WHERE #{where} AND m.deleted = 0
-              ORDER BY m.date DESC
+              ORDER BY c.c2attachmentNames IS NULL, m.date DESC
               LIMIT 1
             SQL
             next unless row
@@ -115,12 +123,12 @@ module Pikuri
           end
           return nil unless row
 
-          id, header_msgid, date_us, body, subj, author, recipients, folder, folder_uri, json = row
+          id, header_msgid, date_us, body, subj, author, recipients, folder, folder_uri, json, downloaded = row
           {
             message_id: header_msgid && !header_msgid.empty? ? header_msgid : "gloda:#{id}",
             date: to_time(date_us), from: author, to: recipients, subject: subj,
             folder: folder, folder_uris: [folder_uri, *uris].compact.uniq,
-            attachments: attachments(json, attr_id), body: body.to_s
+            attachments: attachments(json, attr_id), body: body.to_s, downloaded: downloaded == 1
           }
         end
 

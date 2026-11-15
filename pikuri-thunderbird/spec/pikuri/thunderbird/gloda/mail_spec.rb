@@ -57,6 +57,16 @@ describe Pikuri::Thunderbird::Gloda::Mail do
     # docid 5: header-less → gloda:5 handle
     text.execute(5, 'another invoice with no header id', 'NoID', '', 'Dave', 'me@example.com')
     msg.execute(5, 1, D4.to_i * 1_000_000, '', 0)
+    # docid 6 + 7: <e@x>, headers only in INBOX (body and attachment names
+    # NULL, as Gloda leaves a message it never saw the body of), downloaded
+    # in All Mail
+    text.execute(6, nil, 'Quarterly report', nil, 'Erin', 'me@example.com')
+    msg.execute(6, 1, D1.to_i * 1_000_000, '<e@x>', 0)
+    text.execute(7, 'the report is attached', 'Quarterly report', 'report.pdf', 'Erin', 'me@example.com')
+    msg.execute(7, 2, D1.to_i * 1_000_000, '<e@x>', 0)
+    # docid 8: <f@x>, headers only and nowhere else
+    text.execute(8, nil, 'Photos', nil, 'Frank', 'me@example.com')
+    msg.execute(8, 1, D1.to_i * 1_000_000, '<f@x>', 0)
 
     db.execute('UPDATE messages SET jsonAttributes = ? WHERE id = 1',
                [JSON.generate('7' => [['invoice.pdf', 'Application/PDF', 84_000, '1.2', nil, false],
@@ -140,6 +150,29 @@ describe Pikuri::Thunderbird::Gloda::Mail do
       assert_equal 'application/pdf', atts.first.content_type
       assert_equal ['1.2', 84_000, false], [atts.first.part, atts.first.size, atts.first.external]
       assert_empty mail.read(message_id: '<b@x>')[:attachments]
+    end
+  end
+
+  it 'tells a message Gloda saw the body of from one indexed from headers alone' do
+    with_mail do |mail|
+      assert mail.read(message_id: '<a@x>')[:downloaded]
+      assert mail.read(message_id: '<b@x>')[:downloaded], 'an empty attachment list is still a seen body'
+
+      rec = mail.read(message_id: '<f@x>')
+      refute rec[:downloaded]
+      assert_equal '', rec[:body]
+      assert_empty rec[:attachments]
+    end
+  end
+
+  it 'reads the copy whose body was downloaded, over a headers-only one' do
+    with_mail do |mail|
+      rec = mail.read(message_id: '<e@x>')
+
+      assert rec[:downloaded]
+      assert_equal 'All Mail', rec[:folder]
+      assert_equal 'the report is attached', rec[:body]
+      assert_equal 'imap://me@x/[Gmail]/All Mail', rec[:folder_uris].first
     end
   end
 

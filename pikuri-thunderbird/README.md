@@ -26,8 +26,11 @@ sent mail to. See [`design/architecture.md`](design/architecture.md).
 - Linux, with Thunderbird installed (snap or apt).
 - For mail search: Thunderbird's global search index (Gloda) enabled — the
   default.
-- For attachments: mail kept on this computer ("Keep messages for this
-  account on this computer", the IMAP default). A PDF needs a PDF reader
+- For full messages and attachments: mail kept on this computer ("Keep
+  messages in all folders for this account on this computer" under the
+  account's Synchronization & Storage, the IMAP default). A message Thunderbird
+  holds only the headers of shows as headers, and the tool tells the model
+  which setting to change. A PDF needs a PDF reader
   registered — the demo registers pikuri-pdf. An HTML attachment reads as raw
   markup unless pikuri-html is loaded — the demo loads it. For calendar: events must be cached to disk (a local calendar, or
   a network calendar with "Offline Support" turned on).

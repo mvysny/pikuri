@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `thunderbird_mail_read` and `thunderbird_mail_attachment_read` on a message Thunderbird holds only the headers of: instead of an empty body and "no attachments", they say so and name the offline-storage setting to change; `Gloda::Mail#read` gains `downloaded:` and prefers a downloaded copy.
 - Add `Pikuri::Agent::Configurator#replace_compacted_history`, which swaps a conversation for a shorter version of itself while tools, MCP connections and extension state stay as they are, and emits the new `Event::HistoryCompacted`.
 - **Breaking:** removed `Pikuri::Agent::EmptyTurnError`; a blank turn on a fresh chat now goes to the provider, and Anthropic or Bedrock answer it with their own 400 (`D_reference_text_as_user_turn`). Drop any `rescue` of it.
 - **Breaking:** removed `Pikuri::Agent::Event::Transient`; `Listener::Terminal` prints every domain event as one line and no longer redraws one in place (`D_domain_events`). Drop the `include`, and emit a progress sequence's start and end rather than each update.

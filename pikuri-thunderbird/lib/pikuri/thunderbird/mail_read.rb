@@ -33,6 +33,19 @@ module Pikuri
       CUT_NOTE = "[The message may continue past this point: Thunderbird's search index keeps only about " \
                  'the first 20 KB of its text. Ask the user to open it in Thunderbird for the rest.]'
 
+      # @return [String] stands in for the body and the attachment list of a
+      #   message Thunderbird keeps only the headers of (an IMAP account or
+      #   folder not kept offline, or a message past its size or age limit);
+      #   see {Gloda::Mail#read}'s +downloaded+. It names the settings as
+      #   Thunderbird 159 labels them (+am-offline.dtd+), so the model can tell
+      #   the user what to change.
+      NOT_DOWNLOADED_NOTE = "[Thunderbird has downloaded only this message's headers, so its text and " \
+                            "attachments can't be read here. Ask the user to turn on \"Keep messages in all " \
+                            'folders for this account on this computer" in the account\'s "Synchronization & ' \
+                            'Storage" settings (or select this folder under "Advanced…" there), and to lift any ' \
+                            'size or age limit set there that excludes this message; once Thunderbird has ' \
+                            'downloaded it, read it again.]'
+
       # @return [String] follows the listing when it holds a forwarded email.
       FORWARD_NOTE = "  (A forwarded email's text may also appear in the body below; read the attachment " \
                      'for its sender, date and attachments.)'
@@ -72,9 +85,15 @@ module Pikuri
         return Pikuri::Tool::Result.error("no message found with id #{message_id.inspect}.") unless rec
 
         attachments = rec[:attachments]
-        listing = attachments.empty? ? ' (none)' : "\n#{attachment_listing(attachments)}"
-        # Gloda appends a forward's text to the outer body with no separator.
-        listing += "\n#{FORWARD_NOTE}" if attachments.any? { _1.content_type == 'message/rfc822' }
+        if !rec[:downloaded]
+          listing = ' unknown'
+        elsif attachments.empty?
+          listing = ' (none)'
+        else
+          listing = "\n#{attachment_listing(attachments)}"
+          # Gloda appends a forward's text to the outer body with no separator.
+          listing += "\n#{FORWARD_NOTE}" if attachments.any? { _1.content_type == 'message/rfc822' }
+        end
         message = <<~MSG.chomp
           Subject: #{rec[:subject]}
           From: #{rec[:from]}
@@ -83,7 +102,7 @@ module Pikuri
           Folder: #{rec[:folder]}
           Attachments:#{listing}
 
-          #{body(rec[:body])}
+          #{rec[:downloaded] ? body(rec[:body]) : NOT_DOWNLOADED_NOTE}
         MSG
         Pikuri::Tool::Result.new(content: message,
                                  summary: "Read #{Pikuri::Tool.format_bytes(message.bytesize)}")

@@ -136,9 +136,12 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
       INSERT INTO folderLocations VALUES (1,'#{folder_uri}',0,'INBOX',50);
       INSERT INTO messagesText_content VALUES (1,'See attached.','Files','','Alice <a@example.com>','me@example.com');
       INSERT INTO messagesText_content VALUES (2,'No id here.','Old','','Bob','me@example.com');
+      -- Headers only: Gloda never saw the body, so body and attachment names are NULL.
+      INSERT INTO messagesText_content VALUES (3,NULL,'Photos',NULL,'Carol','me@example.com');
     SQL
     db.execute('INSERT INTO messages VALUES (1,1,1600000000000000,?,0,?)', ['att@x', JSON.generate('51' => infos)])
     db.execute('INSERT INTO messages VALUES (2,1,1600000000000000,?,0,?)', ['', JSON.generate('51' => infos)])
+    db.execute('INSERT INTO messages VALUES (3,1,1600000000000000,?,0,?)', ['hdr@x', '{}'])
     db.close
 
     File.write(File.join(dir, 'prefs.js'), <<~JS)
@@ -286,6 +289,18 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
     with_tools(stored: false) do |tool, _|
       assert_includes read(tool, 1).content, "isn't stored on this computer"
       assert_includes read(tool, 1, id: 'gloda:2').content, 'no Message-ID header'
+    end
+  end
+
+  it 'says to keep the account offline when Thunderbird downloaded only the headers' do
+    with_tools do |tool, mail_read|
+      out = mail_read.run('message_id' => 'hdr@x').content
+
+      assert_includes out, "Attachments: unknown\n"
+      assert out.end_with?(Pikuri::Thunderbird::MailRead::NOT_DOWNLOADED_NOTE)
+      result = read(tool, 1, id: 'hdr@x')
+      assert result.error?
+      assert_includes result.content, 'Keep messages in all folders for this account on this computer'
     end
   end
 

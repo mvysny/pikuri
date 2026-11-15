@@ -111,6 +111,8 @@ module Pikuri
         rec = backend.read(message_id:)
         return Pikuri::Tool::Result.error("no message found with id #{message_id.inspect}.") unless rec
 
+        return Pikuri::Tool::Result.error(MailRead::NOT_DOWNLOADED_NOTE) unless rec[:downloaded]
+
         list = rec[:attachments]
         return Pikuri::Tool::Result.error('this message has no attachments.') if list.empty?
 
