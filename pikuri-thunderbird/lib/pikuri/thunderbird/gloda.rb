@@ -63,6 +63,24 @@ module Pikuri
     class Gloda
       LOGGER = Pikuri.logger_for('Thunderbird::Gloda')
 
+      # A literal +undefined+ right after an address, closing +>+ or bare.
+      UNDEFINED_AFTER_ADDRESS = /(>|@[^\s<>,;"']+) undefined\b/
+
+      # Removes the literal +undefined+ Gloda writes after every address in
+      # +c3author+ / +c4recipients+ but the owner's own as author:
+      #
+      #   Gloda.strip_undefined('Mira <mira@lumo.example> undefined, bob@x.example undefined')
+      #   # => "Mira <mira@lumo.example>, bob@x.example"
+      #
+      # The model would echo or interpret it, and it costs tokens per address.
+      # Only the word right after an address goes, so a person named
+      # "Undefined" survives. A +LIKE+ filter on the raw column needs no
+      # stripping: the suffix never stops a substring from matching.
+      #
+      # @param cell [String, nil] a +c3author+ or +c4recipients+ value.
+      # @return [String, nil] +cell+ without the suffix; +nil+ stays +nil+.
+      def self.strip_undefined(cell) = cell&.gsub(UNDEFINED_AFTER_ADDRESS, '\1')
+
       # @param gloda_path [String] path to +global-messages-db.sqlite+.
       # @param cache_dir [String] private 0700 dir for the snapshot copy. Must
       #   be this instance's alone — see the +== Sharing+ section.

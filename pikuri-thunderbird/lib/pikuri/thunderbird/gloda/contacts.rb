@@ -170,7 +170,7 @@ module Pikuri
           rows.each do |author, recipients, priority|
             sent = (priority == SENT_PRIORITY)
             [author, recipients].each do |cell|
-              extract(cell, needles).each do |address, name|
+              extract(Gloda.strip_undefined(cell), needles).each do |address, name|
                 rec = agg[address]
                 rec[:count] += 1
                 rec[:sent] += 1 if sent
@@ -190,10 +190,10 @@ module Pikuri
         # matched the *message* (recall, OR of terms), this keeps only the
         # *entry* that matches every term (precision), while still scanning
         # every email token in a kept entry (a cell can hold several matching
-        # recipients). Tolerates the real-data noise: missing brackets, a
-        # literal +undefined+ name, quoted nicknames.
+        # recipients). Tolerates the real-data noise: missing brackets, quoted
+        # nicknames.
         #
-        # @param cell [String, nil]
+        # @param cell [String, nil] with {Gloda.strip_undefined} applied.
         # @param needles [Array<String>] lower-cased query terms.
         # @return [Array<Array(String, String)>] +[address_downcased, name]+
         #   per email token found (name +""+ when none survives cleaning).
@@ -223,10 +223,10 @@ module Pikuri
         end
 
         # @param text [String, nil]
-        # @return [String] +text+ with brackets/quotes and a literal
-        #   +undefined+ removed and whitespace collapsed.
+        # @return [String] +text+ with brackets/quotes removed and whitespace
+        #   collapsed.
         def clean_name(text)
-          text.to_s.gsub(/[<>"]/, ' ').gsub(/\bundefined\b/, ' ').gsub(/\s+/, ' ').strip
+          text.to_s.gsub(/[<>"]/, ' ').gsub(/\s+/, ' ').strip
         end
 
         # Pick the most-seen non-empty display name and compute the final score.

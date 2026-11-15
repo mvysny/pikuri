@@ -126,7 +126,8 @@ module Pikuri
           id, header_msgid, date_us, body, subj, author, recipients, folder, folder_uri, json, downloaded = row
           {
             message_id: header_msgid && !header_msgid.empty? ? header_msgid : "gloda:#{id}",
-            date: to_time(date_us), from: author, to: recipients, subject: subj,
+            date: to_time(date_us), from: Gloda.strip_undefined(author),
+            to: Gloda.strip_undefined(recipients), subject: subj,
             folder: folder, folder_uris: [folder_uri, *uris].compact.uniq,
             attachments: attachments(json, attr_id), body: body.to_s, downloaded: downloaded == 1
           }
@@ -239,8 +240,8 @@ module Pikuri
           header_msgid, id, date_us, subject, author, recipients, folder, snippet = row
           {
             message_id: header_msgid && !header_msgid.empty? ? header_msgid : "gloda:#{id}",
-            date: to_time(date_us), from: author, to: recipients,
-            subject: subject, folder: folder, snippet: snippet.to_s.strip
+            date: to_time(date_us), from: Gloda.strip_undefined(author),
+            to: Gloda.strip_undefined(recipients), subject: subject, folder: folder, snippet: snippet.to_s.strip
           }
         end
 

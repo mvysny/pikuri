@@ -49,7 +49,9 @@ describe Pikuri::Thunderbird::Gloda::Mail do
                  'Alice <alice@example.com>', 'me@example.com')
     msg.execute(2, 2, D1.to_i * 1_000_000, '<a@x>', 0)
     # docid 3: unrelated
-    text.execute(3, 'lunch plans tomorrow', 'Lunch', '', 'Bob <bob@example.com>', 'me@example.com')
+    # Gloda's literal "undefined" after every address but the owner's
+    text.execute(3, 'lunch plans tomorrow', 'Lunch', '', 'Bob <bob@example.com> undefined',
+                 'me@example.com undefined, Undefined Smith <smith@example.com> undefined')
     msg.execute(3, 1, D2.to_i * 1_000_000, '<b@x>', 0)
     # docid 4: deleted (must never surface)
     text.execute(4, 'secret invoice deleted stuff', 'Old', '', 'Carol', 'me@example.com')
@@ -127,6 +129,18 @@ describe Pikuri::Thunderbird::Gloda::Mail do
       # folder filter narrows to the All-Mail copy
       folders = mail.search(query: 'invoice', limit: 10, folder: 'All Mail').map { |h| h[:folder] }
       assert_equal ['All Mail'], folders
+    end
+  end
+
+  it "strips Gloda's literal undefined from author and recipients, in search and read" do
+    with_mail do |mail|
+      hit = mail.search(query: 'lunch', limit: 10, from: 'bob').first
+      rec = mail.read(message_id: '<b@x>')
+
+      [hit, rec].each do |h|
+        assert_equal 'Bob <bob@example.com>', h[:from]
+        assert_equal 'me@example.com, Undefined Smith <smith@example.com>', h[:to]
+      end
     end
   end
 

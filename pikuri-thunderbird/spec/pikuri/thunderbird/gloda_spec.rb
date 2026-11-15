@@ -46,6 +46,15 @@ describe Pikuri::Thunderbird::Gloda do
     end
   end
 
+  it 'strips the literal undefined only right after an address' do
+    assert_equal 'Mira <mira@lumo.example>, bob@x.example',
+                 Gloda.strip_undefined('Mira <mira@lumo.example> undefined, bob@x.example undefined')
+    assert_equal 'Undefined <u@x.example>', Gloda.strip_undefined('Undefined <u@x.example> undefined')
+    assert_equal 'me@x.example', Gloda.strip_undefined('me@x.example')
+    assert_equal 'Martin <m@x.example> Martin Vyšný', Gloda.strip_undefined('Martin <m@x.example> Martin Vyšný')
+    assert_nil Gloda.strip_undefined(nil)
+  end
+
   it 'reports availability by the index file existing' do
     with_gloda { |gloda| assert gloda.available? }
     Dir.mktmpdir do |dir|

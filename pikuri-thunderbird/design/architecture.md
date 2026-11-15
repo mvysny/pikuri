@@ -334,12 +334,12 @@ A complete, pre-decoded search index. Tables that matter:
   recipient-novelty check, reads `c4recipients` of Sent-folder messages instead
   (on the testbed the look-alike `northwlnd-bank.example` and the attacker's
   `kettle-co-payments.example` now warn, `lumo-studio.example` doesn't).
-- **A literal `undefined` in the author/recipient text.** Thunderbird 159
-  writes `Mira Koskinen <mira@lumo-studio.example> undefined` into
+- **A literal `undefined` in the author/recipient text.** Gloda writes
+  `Mira Koskinen <mira@lumo-studio.example> undefined` into
   `c3author` / `c4recipients` for every address but the owner's own as
   author (the owner as a recipient gets it too), probably an address-book
-  field for a contact that isn't in the address book. The readers pass it on
-  today; stripping it is `design/ideas/gloda-undefined-author.md`.
+  field for a contact that isn't in the address book. Both views strip it
+  through {Pikuri::Thunderbird::Gloda.strip_undefined}.
 - **Gloda keeps at most ~20 KB of each body part.** It indexes with
   `saneBodySize` (`MAX_SANE_BODY_PART_SIZE = 20 * 1024`,
   `MimeMessageEmitter.sys.mjs`), so a longer body is cut mid-sentence
