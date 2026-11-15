@@ -120,6 +120,22 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       assert_equal extra_read + 'data.txt', ws.resolve_for_read((extra_read + 'data.txt').to_s)
     end
 
+    it 'resolves anywhere under a / readable root' do
+      whole_disk = described_class.new(project_root: root, readable: ['/'])
+      File.write(extra_read + 'data.txt', 'x')
+
+      assert_equal extra_read + 'data.txt', whole_disk.resolve_for_read((extra_read + 'data.txt').to_s)
+      assert_equal Pathname.new('/'), whole_disk.resolve_for_read('/')
+    end
+
+    it 'does not treat a sibling sharing a name prefix as inside a root' do
+      sibling = Pathname.new("#{extra_read}-sibling")
+      FileUtils.mkdir_p(sibling)
+      assert_raises(Pikuri::Workspace::Filesystem::Error) { ws.resolve_for_read((sibling + 'x').to_s) }
+    ensure
+      FileUtils.rm_rf(sibling)
+    end
+
     it 'rejects writes into the read-only extra root' do
       err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         ws.resolve_for_write((extra_read + 'newfile.txt').to_s)

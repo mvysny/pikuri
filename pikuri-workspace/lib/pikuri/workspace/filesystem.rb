@@ -192,8 +192,9 @@ module Pikuri
         existing = existing.parent until existing.exist? || existing.parent == existing
         base = existing.realpath
 
-        matched = roots.find { |r| base == r || base.to_s.start_with?(r.to_s + File::SEPARATOR) }
-        unless matched
+        # Component-wise, not a string-prefix test against +root + "/"+: that
+        # one turns a +/+ root into +"//"+ and matches nothing beneath it.
+        unless roots.any? { |r| base.ascend.include?(r) }
           raise Error, "path '#{path}' is outside the workspace " \
                        "(roots: #{roots.map(&:to_s).join(', ')})"
         end
