@@ -56,9 +56,9 @@ module Pikuri
     #
     # +stemmer:+ decides what a word is indexed and searched under. The
     # default, {Stemmer::Identity}, leaves it to FTS5's English +porter+. For
-    # Finnish, add the +voikko+ gem to the host and pass
+    # Finnish, add pikuri-workshop's +pikuri-stemmers+ and pass
     #
-    #   stemmer: Pikuri::Rag::Stemmer::Voikko.new(::Voikko.new(language: 'fi'))
+    #   stemmer: Pikuri::Stemmers::Voikko.new(::Voikko.new(language: 'fi'))
     #
     # Changing the stemmer of a file-backed +store:+ empties the keyword index
     # at boot, and the next index run refills both stores, re-embedding the

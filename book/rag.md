@@ -168,8 +168,9 @@ collapse to one term and a search for the singular finds the plural.
 Porter knows only English, and it works by chopping suffixes off. That
 fails for a language like Finnish, where *katu* (street) is *kadulla*
 "on the street" and *kadun* "of the street": the stem changes inside the
-word. So `pikuri-rag` can stem in Ruby before SQLite sees a word, and
-for Finnish it uses Voikko, a dictionary that *analyses* each word
+word. So `pikuri-rag` can stem in Ruby before SQLite sees a word, with
+whatever stemmer you hand it. For Finnish, pikuri-workshop's
+`pikuri-stemmers` uses Voikko, a dictionary that *analyses* each word
 instead and returns its dictionary form. It also splits compounds, so a
 search for *kone* (machine) finds a note about a *tietokone* (computer).
 The gem's README shows how to switch it on.

@@ -4,9 +4,10 @@ module Pikuri
   module Rag
     # Stemmers: what a word is indexed and searched under, computed in Ruby
     # before FTS5 sees the text, so the table stays plain FTS5 and the
-    # stemmer swaps without touching SQL.
+    # stemmer swaps without touching SQL. Here the Finnish one from
+    # pikuri-workshop's +pikuri-stemmers+:
     #
-    #   stemmer = Pikuri::Rag::Stemmer::Voikko.new(::Voikko.new(language: 'fi'))
+    #   stemmer = Pikuri::Stemmers::Voikko.new(::Voikko.new(language: 'fi'))
     #   stemmer.stems('tietokoneella')         # => ["tietokone"]                  a query word
     #   stemmer.index_stems('tietokoneella')   # => ["tietokone", "tieto", "kone"] a document word
     #   stemmer.id                             # => "voikko-fi+compounds"

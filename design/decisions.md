@@ -1084,7 +1084,7 @@ pikuri targets is known to.
 
 ---
 
-## D_ruby_stemming — Why stem in Ruby, Finnish through Voikko, with compounds split only into the index?
+## D_ruby_stemming — Why stem in Ruby behind a duck, with compounds split only into the index, and ship no language here?
 
 **Context.** `D_rag_gem` shipped `porter`, English only, and named the seam for the rest: a
 `stemmer:` duck. Finnish came first, and it inflects and compounds: unstemmed, `rag_search_keywords katu`
@@ -1092,45 +1092,31 @@ misses *kadulla*, and *kone* misses *tietokoneella*. Stock FTS5 has no other ste
 prebuilt `sqlite3` gem cannot load a tokenizer extension.
 
 **Decision.** A {Pikuri::Rag::Stemmer} runs in Ruby on both sides of a plain FTS5 table, with
-`porter` kept after it, so English in a mixed corpus still stems: Voikko answers a word it does
-not know with itself. {Pikuri::Rag::Stemmer::Voikko} indexes dictionary forms through the MIT
-`voikko` gem, FFI to the distro's libvoikko and `voikko-fi`. Measured over the 28 catalogs in
-`/usr/share/locale/fi/` (16 319 tokens; libvoikko 4.3.3, voikko-fi 2.5): 30% of distinct words
-unknown, mostly English and names; 1.08 base forms per word; `porter` over base forms merges 4
-lemma groups of 2 278, one wrongly (*tulos* / *tulo*); 41 000 words/s, so no cache. Compound
-parts are indexed beside the whole lemma but never searched for: *kone* finds *tietokone*, and
-`rag_search_keywords tietokone` stays exact. An index records its stemmer's id and schema version, and on a
-mismatch empties itself for `Hybrid`'s both-stores rule to refill.
+`porter` kept after it, so English in a mixed corpus still stems as long as the stemmer answers a
+word it does not know with itself. The duck has two stemming methods: `index_stems` is a superset
+of `stems`, so compound parts are indexed beside the whole lemma but never searched for — *kone*
+finds *tietokone*, and `rag_search_keywords tietokone` stays exact. An index records its stemmer's
+id and schema version, and on a mismatch empties itself for `Hybrid`'s both-stores rule to refill.
+pikuri ships only `Stemmer::Identity`. Finnish is pikuri-workshop's `pikuri-stemmers`
+(`pikuri-workshop:D_voikko_stemmer`): each language is a native library and a dictionary the host
+installs, and the next ones (Hunspell for Slovak and Czech, Snowball for a language with no
+dictionary) are more features — `D_gem_placement`.
 
 **Alternatives rejected.**
 
-- **Snowball** (`libstemmer0d`) strips suffixes instead of analysing: *kadulla* and *kadun*
-  become *kadu* while *katu* stays, and it is erratic on exactly the words Voikko does not know
-  (*nokian* → *nokia*, *nokia* → *nok*), so it is no fallback either. It stays the candidate for
-  a language with no dictionary, and Hunspell, which has none for Finnish, for Slovak and Czech.
-- **`WORDBASES` for the parts** gives roots rather than parts (*yritys* → *yrittää*) and drops
-  some (*versionhallintajärjestelmää* loses *hallinta*). `Voikko::Analysis#morphemes` cuts by
-  `STRUCTURE` instead, and each part is analysed again.
 - **Splitting the query too** would make `rag_search_keywords tietokone` list every note mentioning *kone*.
 - **Raising on a mismatch.** `Rag::Extension.new` opens the store, so the host would not boot and
   the `rag_reindex` the message named would be unreachable. The rebuild instead costs one full
   re-embed per stemmer change.
-- **A stemming container**, Voikko, Hunspell and Snowball behind JSON on stdio, run
-  `--network=none` like `pikuri-extractors`. Convenience, not security: a stemmer is C fed
-  untrusted text, but one word at a time, a far smaller surface than whole-file parsers, and
-  SQLite already tokenizes the same corpus in-process. Build it when provisioning dictionaries
-  across machines hurts, or once a stemmer reads more than a word.
+- **Keeping the Finnish stemmer in pikuri-rag.** Its one root was a `pikuri-briefing --finnish`
+  flag, and a language-per-native-library gem only grows.
 
 **Consequences.**
 
-- No pikuri gem depends on `voikko` at runtime: the host injects an open handle, so pikuri stays
-  MIT beside GPL-2 `voikko-fi`, and CI needs no libvoikko. pikuri-rag takes it as a development
-  dependency for its specs; `bin/pikuri-briefing --finnish` is the host.
+- No pikuri gem depends on a stemming library, and CI installs none; the seam's consumer is
+  `pikuri-stemmers`.
 - The keyword file roughly doubles, `stems` stored beside `text`.
-- A `voikko-fi` upgrade does not rebuild: it shifts a few words, and libvoikko exposes no
-  dictionary version to record.
-- Unmeasured on a real corpus: the bm25 cost of the indexed parts, and how often `porter`
-  merges Finnish lemmas wrongly.
+- Unmeasured on a real corpus: the bm25 cost of the indexed parts.
 
 ---
 

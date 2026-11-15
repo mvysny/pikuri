@@ -171,8 +171,8 @@ describe Pikuri::Rag::Backend::Fts5 do
   end
 
   describe 'stemming' do
-    # Index side splits the compound, query side does not — the shape
-    # Stemmer::Voikko answers.
+    # Index side splits the compound, query side does not — the shape a
+    # compound-splitting stemmer answers.
     let(:stemmer) do
       Object.new.tap do |s|
         s.define_singleton_method(:id) { 'test' }

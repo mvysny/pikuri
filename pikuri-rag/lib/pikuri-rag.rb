@@ -38,8 +38,8 @@ module Pikuri
   # same question with different promises.
   #
   # *Stemming is English by default*, being FTS5's built-in +porter+:
-  # "meetings" matches "meeting". Finnish is {Stemmer::Voikko}, passed to
-  # {Extension} as +stemmer:+; other languages are not stemmed yet.
+  # "meetings" matches "meeting". Another language is a {Stemmer} passed to
+  # {Extension} as +stemmer:+; pikuri-workshop's +pikuri-stemmers+ has Finnish.
   #
   # The threat model is +pikuri-vectordb+'s, unchanged — same corpus, same
   # +private:+ / +trusted:+ declaration ({Pikuri::VectorDb::Extension#trusted?}

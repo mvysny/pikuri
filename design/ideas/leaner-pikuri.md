@@ -122,7 +122,12 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
   and the one place `private:`/`trusted:` are flags you flip to watch the verdict move. The audit
   read "primitive" as "library-only"; it means vector-only vs rag's hybrid *system* — the AGENTS.md
   module-map line now says so.
-- `Q_voikko` — `Stemmer::Voikko`, 74; only `pikuri-briefing --finnish`.
+- ~~`Q_voikko`~~ **Moved 2026-11-15** to pikuri-workshop's new `pikuri-stemmers` as
+  `Pikuri::Stemmers::Voikko`, with `pikuri-briefing --finnish` and the `voikko` dev dependency
+  dropped. A gem per family, not per language: each language's library stays the host's
+  dependency, injected as a handle, and its README names what to install. The `stemmer:` duck
+  stays in pikuri-rag, its why in `D_ruby_stemming`; the Voikko analysis went to
+  `pikuri-workshop:D_voikko_stemmer`.
 - Brave + Exa (~410, config-file only) — keep. Thunderbird real-data hardening (~400: blob spotter,
   Google calendar quirks, forwarded mail, image attachments, multi-account store) — keep.
 

@@ -107,27 +107,24 @@ in-memory, a file under `Pikuri::Paths.cache` with Qdrant. A
 mismatch is *correct* thanks to the rule above, only slower — a full
 re-embed at every boot.
 
-## Stemming: English, and Finnish on request
+## Stemming: English, and other languages through `stemmer:`
 
 Out of the box the keyword leg uses FTS5's built-in `porter` stemmer, so
-"meetings" matches "meeting" in English. For Finnish notes, install
-`libvoikko1` and `voikko-fi` from your distro, add the `voikko` gem
-(0.2 or later) to your Gemfile, and pass a stemmer:
+"meetings" matches "meeting" in English. Another language is a stemmer
+passed as `stemmer:`. Finnish is in pikuri-workshop's
+[`pikuri-stemmers`](https://github.com/mvysny/pikuri-workshop/tree/master/pikuri-stemmers),
+whose README says what each language needs installed:
 
 ```ruby
 Pikuri::Rag::Extension.new(
   backend: ..., source: '~/notes',
-  stemmer: Pikuri::Rag::Stemmer::Voikko.new(Voikko.new(language: 'fi'))
+  stemmer: Pikuri::Stemmers::Voikko.new(Voikko.new(language: 'fi'))
 )
 ```
 
-A search for "katu" then finds the note that says "kadulla", and "kone"
-finds "tietokoneella". English words keep their stemming alongside.
-`bin/pikuri-briefing --finnish` does exactly this.
-
 Switching stemmers on a saved index empties it at the next start, and
-the next index run re-embeds every note. Other languages are not stemmed
-yet. Why it works this way: `design/decisions.md` `D_ruby_stemming`.
+the next index run re-embeds every note. Why it works this way:
+`design/decisions.md` `D_ruby_stemming`.
 
 ## Try it
 
@@ -163,9 +160,3 @@ declaration, same inbound-only posture (no tool here has an egress
 leg), same membership gate on the reader. The keyword index is a
 second copy of text the vector store already holds, in a SQLite file
 the same user owns. See `pikuri-vectordb/design/architecture.md`.
-
-One addition with the Finnish stemmer: the distro's libvoikko, C code,
-reads every word of your notes and of every search the model writes,
-inside the pikuri process. It sees one word at a time, and SQLite
-already reads the same words in the same process, so this adds little;
-`D_ruby_stemming` has the argument.
