@@ -16,7 +16,7 @@ already homed and does **not** live here:
   is the book's OS-assistant chapter and the coding-agent chapter.
 - Every **per-symbol contract** (the containment walk, the walked-path
   denylist hook, ripgrep argv + truncation, strict-match Edit) is the owning class's YARD header.
-- The whole-host `AllowAll` and its interplay with `Sandbox` live in
+- The whole-host `Code::WholeDisk` and its interplay with `Sandbox` live in
   pikuri-workshop; the walked-path hook they rely on is `D_walked_path_denylist`.
 
 ## The read-before-edit gate

@@ -779,6 +779,19 @@ every agent needs belongs in a gem. The web tools were the first to leave: they 
 in and most send bytes out, so they went to `pikuri-web`, and core keeps `calculator` as its one
 example tool.
 
+A reachability audit (2026-11-14/15, roots = the `bin/` scripts plus every gem's `lib/`) set what
+"never grown speculatively" means for code already in:
+
+- **A seam with a downstream consumer stays, but only with a written why** (a `D_` or its yardoc);
+  one with no consumer anywhere is unused code. A seam where only the workshop implements it stays
+  when pikuri's own tools call it (`D_walked_path_denylist`).
+- **A knob a spec passes is a test seam and stays**; a knob nothing sets goes, and so does a
+  feature with no root unless a bin is its natural home. A bin flag added only to give a feature a
+  root is wiring for the map's sake.
+- **What a downstream gem alone needs, and isn't safe on your host as-is, moves to the workshop**
+  rather than being kept for it (`Filesystem::AllowAll`, plan mode, the sub-agent temp workspace,
+  the Finnish stemmer).
+
 ---
 
 ## D_page_text_by_handle — Why does a result's page text come back in the search itself, read by handle?
@@ -810,6 +823,9 @@ not a live fetch. DuckDuckGo has no text, so its rows get no handle.
 - **Brave's query-biased `/web/search` excerpt as the snippet.** The best for picking a row, but a
   second request; in text mode the snippet only steers which row to read, so it is the page's
   meta description, else the start of its first chunk.
+- **Page text on Exa only**, dropping Brave's LLM Context mode (~115 lines). Exa trains on
+  queries where Brave only logs, so that is the wrong engine to keep for a private-data node
+  (**Privacy first**).
 
 **Consequences.** On the map, `read` + a page-text search + `web_read_cached` is soft where `read`
 + search + `web_scrape` is loud. The pairing alone is silent, and behind a sub-agent boundary both
@@ -2160,6 +2176,12 @@ on. The two extensions are mutually exclusive on one agent.
   another wrapper" became true rather than aspirational. The `Sharing:`
   postures got sharper too — the lock lives in the store that needs it, and
   `Hybrid` holds no state.
+- **Merging the two gems, or cutting `pikuri-vectordb` to a library** (dropping
+  `VectorDb::Extension`, `vectordb_search` and `bin/pikuri-corpus`, whose only users
+  are each other). The split is the book's order — rag adds FTS5 and fusion on a box
+  the reader already knows — and a merged gem would teach both at once and make every
+  retrieval user read the hybrid half. `pikuri-corpus` is the vectordb chapter's one
+  runnable agent, and the one place `private:` / `trusted:` are flags to flip.
 - **One tool with a `mode:` flag** instead of `rag_search` + `rag_search_keywords`.
   Rejected: the two make different promises (relevance ordering vs.
   completeness) with different output shapes (snippets vs. a listing), and
@@ -2315,7 +2337,7 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
   Symmetry is not evidence.
 - **Refuse non-text sources under `trusted: true`** (raise, or skip with a
   warning). Rejected: pikuri refuses a declaration only where it *cannot* be
-  honest — pikuri-workshop's `Filesystem::AllowAll` rejects `trusted:` because a whole-host reach
+  honest — pikuri-workshop's `Code::WholeDisk` rejects `trusted:` because a whole-host reach
   is never all user-authored — and a user-authored PDF *can* be honest. A
   refusal on file extension also buys false safety (a text file hides an
   injection perfectly well with zero-width characters or an HTML comment; the
@@ -2364,7 +2386,7 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
   `private` is true if any root claims it — and because `TrifectaLegs` is
   declared once at tool construction, the legs are computed from the source
   list at `#configure`. Design that API with the per-source flag in it from day
-  one. There is no `AllowAll` analogue to guard in v1 (one bounded root), so no
+  one. There is no whole-host analogue to guard in v1 (one bounded root), so no
   refusal is needed yet.
 - **`Tools::Search` / `Tools::Read` take a required `legs:` with no default**,
   since a default would be a second copy of the derivation, and `#configure`
@@ -3965,8 +3987,8 @@ workshop's shell.
 
 ## D_walked_path_denylist — Why two denylist layers, with the cheap one never the guarantee?
 
-**Context.** The whole-host `Filesystem::AllowAll`'s credential denylist (`~/.ssh`, `~/.aws`, …,
-`/etc/shadow`) was enforced in exactly one place: `resolve_for_read` /
+**Context.** The whole-host filesystem's credential denylist (`~/.ssh`, `~/.aws`, …,
+`/etc/shadow`; then `Filesystem::AllowAll`, now pikuri-workshop's `Code::WholeDisk`) was enforced in exactly one place: `resolve_for_read` /
 `resolve_for_write`. Those only ever see a path the **model supplied**. A path
 a tool **walked** to on its own reaches no `resolve_` call — so, measured
 against a synthetic home:
@@ -3986,14 +4008,14 @@ denylist" — false for two of its own tools.
 
 1. **`Filesystem#denied?` on every walked result** — the guarantee. Base
    `Filesystem` returns `false` (a scoped workspace contains by its
-   readable/writable ceiling instead); `AllowAll` symlink-resolves the
+   readable/writable ceiling instead); `WholeDisk` symlink-resolves the
    candidate and tests containment against the same denylist its
    `resolve_` calls use.
 2. **`rg --glob '!<rel>'` pruning** via `Filesystem#denied_roots` — an
    optimization, so rg never walks a subtree whose results would be discarded.
 
 **The seam outlives its implementer here.** `AllowAll` moved to pikuri-workshop
-on 2026-11-15 — a whole-disk filesystem is not safe on your host as-is
+as `Code::WholeDisk` on 2026-11-15 — a whole-disk filesystem is not safe on your host as-is
 (`D_gem_placement`) — so nothing in pikuri overrides `denied?` any more. The
 calls stay: the walking tools are pikuri's, a host can only add a denylist by
 subclassing `Filesystem`, and a tool that forgot the check would leak under
@@ -4178,7 +4200,7 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   `Skill::Catalog::Base` would read as a command being a kind of skill.
 - **Left open:** folding home skill roots into a workspace's `readable:` while
   declaring that workspace trusted is the vouched-for-island problem arriving
-  through the back door — pikuri-workshop's `AllowAll` raises on `trusted:` for
+  through the back door — pikuri-workshop's `Code::WholeDisk` raises on `trusted:` for
   the same reason. `pikuri-code` cannot reach it (its workspace is untrusted
   regardless), so it binds the first host whose readable set is the project
   root. See `design/ideas/security-open-questions.md`.
@@ -4285,7 +4307,7 @@ Rejected, all of them consequences of wanting a second level:
   useful to an OS-helper agent; `~/work/my/pikuri` is a repo. `$HOME` at depth
   1 clears the cap, so nothing needs the special case. (Narrower still than it
   looked: `Filesystem::Restricted` *refuses* a `/home/*` project root outright,
-  so only pikuri-workshop's `AllowAll` hosts can be rooted there at all.)
+  so only pikuri-workshop's `Code::WholeDisk` hosts can be rooted there at all.)
 - **A constructor flag, default off, on in `pikuri-code`.** At ~90 tokens
   median it is cheap enough to be unconditional, and a flag is a thing a host
   forgets to set. The premise: if a harness wires the workspace, it wants to

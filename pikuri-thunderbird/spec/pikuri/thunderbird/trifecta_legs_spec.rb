@@ -94,11 +94,11 @@ RSpec.describe 'trifecta dry run: pikuri-computer' do
     Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress_payload_review: egress_payload_review)
   end
 
-  # Whole-host disk (AllowAll, declared private) + mail/calendar reads +
+  # Whole-host disk (WholeDisk, declared private) + mail/calendar reads +
   # kernel-severed bash. Egress is Thunderbird compose, not the web tools.
   def computer_node(internet:)
     tools = {
-      'read' => legs(private: true, untrusted: :hard),           # AllowAll: no trusted: possible
+      'read' => legs(private: true, untrusted: :hard),           # WholeDisk: no trusted: possible
       'bash' => legs(private: true, untrusted: :hard),           # FullFsNoNet: egress severed
       'thunderbird_mail_search' => Pikuri::Thunderbird::INBOUND_LEGS,
       'thunderbird_mail_compose' => Pikuri::Thunderbird::OUTBOUND_LEGS
