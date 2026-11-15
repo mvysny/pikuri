@@ -100,11 +100,13 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 | ~~`ReadOnly` gate + slots in Write/Edit/Extension~~ | ~330 with specs | code plan mode, os, tui | **dropped 2026-11-15** — a second write gate beside `Filesystem#resolve_for_write`, which already refuses with a model-facing `Filesystem::Error`; the workshop re-adapts plan mode in its own shape when it catches up (pikuri-code, pikuri-os and pikuri-tui's `code`/`computer` apps still call it) |
 | ~~Filesystem temp/tmp-alias, env/git identity~~ | ~350 with specs | code bash sandbox | **dropped 2026-11-15** — sandbox plumbing; the workshop mints its playground via `Paths.new_temp` + `writable:`, aliases `/tmp` in a `Filesystem` wrapper, resolves git identity in `Bash` (pikuri-code's `Bash`/`Sandbox`/`GitClone` and pikuri-tui's code app still call it). Settles the `Filesystem env:` deferral from `Q_dead_knobs` |
 | ~~temp workspace for sub-agents (`with_workspace` ×4, mint, `needs_temp_workspace`)~~ | ~105 + ~150 spec | GIT_REPO_RESEARCHER | **dropped 2026-11-15** — a second propagation hook beside `for_sub_agent`, for one workshop persona. The workshop rebuilds it as its own spawning tool (~25 lines of `SubAgentTool` repeated) or asks back for "persona-owned tools" (`subagent-deferrals.md`); `GitClone#with_workspace`, `GIT_REPO_RESEARCHER` and pikuri-tui's code app still call it |
-| delegation confirmer gate (subagents) | ~35 | os, computer, tui | ✗ |
-| `Configurator#history`, `Contribution` legs, `display_name` override | ~30 | mcp, command, lsp | ✗ |
+| delegation confirmer gate (subagents) | ~35 | code, tui computer/code | ✓ book/trifecta-detector.md (`[gate: …]`, "A delegation channel is `min`") — the gate is what makes a channel `human_reviewed`; laundering channel in `D_no_static_poisoned_flag`, the cap in `D_egress_axis_shape`, local choices (editable task, reply not re-confirmed, posture-read channel) in `SubAgentTool` / `Extension#trifecta_contribution` (2026-11-15). No root: it bites only where the parent holds private data and a persona reaches the network, and no pikuri bin has that shape; a minions flag would be wiring for the map's sake (`D_page_text_by_handle`'s precedent) |
+| `Configurator#history` | ~5 | mcp | ✓ `D_agent_is_one_conversation` (an extension rebuilds what the restored transcript implies), `D_one_phase_extensions` (2026-11-15) |
+| `Contribution` `label:`/`legs:` | ~15 | mcp, command | ✓ `Trifecta::Contribution` yardoc (a raw-tool surface has no leg surface); `D_write_custody_axis` cites it as the host's way to add a leg pikuri can't see (2026-11-15) |
+| `Tool#display_name` override | ~10 | lsp | ✓ `D_tool_summary_lines` + `Tool#display_name` yardoc — a plain overridable method with a mechanical default (2026-11-15) |
 
-✗ = no dedicated `D_` found (passing mentions not all read). `Q_seam_justifications` — write `D_`s
-for all, or first ask which a pikuri bin should exercise.
+`Q_seam_justifications` — **done 2026-11-15:** every C row has a written why or was dropped. Left
+open: whether `AllowAll` (~150, denylist row) moves to the workshop.
 
 ## D. ROOT, but one flag or one bin — capability calls
 
