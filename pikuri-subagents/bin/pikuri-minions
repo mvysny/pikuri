@@ -19,6 +19,14 @@ require 'reline' # line editing + history for the interactive prompt
 require 'pikuri-core'
 require 'pikuri-subagents'
 require 'pikuri-web'
+require 'pikuri-pdf'
+
+# Explicit opt-in (requiring pikuri-pdf alone changes nothing): web_scrape
+# reads a PDF from the web, a paper or a spec being what a researcher often
+# lands on. A stranger's file, parsed in pure Ruby (no native code, no
+# subprocess); pikuri-workshop's networkless extractor container is the
+# stronger posture.
+Pikuri::Extractors::PDF.register
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see

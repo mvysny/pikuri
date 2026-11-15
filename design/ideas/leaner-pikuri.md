@@ -133,8 +133,10 @@ The real slimming is unused code (~900 lines) and capability we choose to drop (
 
 ## E. Side findings
 
-- `Q_researcher_pdf` — bug: `persona-researcher.txt:7` says `fetch` for a PDF; `fetch` refuses PDFs
-  and neither `pikuri-chat` nor `pikuri-minions` registers pikuri-pdf.
+- ~~`Q_researcher_pdf`~~ **Fixed 2026-11-15:** the persona prompt sends documents (HTML, PDF) to
+  `web_scrape` and only raw textual resources to `fetch`; `pikuri-minions` registers pikuri-pdf.
+  `pikuri-chat` stays without it — it runs no researcher, it's the book's smallest bin, and
+  `web_scrape` refuses an unextractable PDF with an error the model reacts to.
 - `Q_write_defaults` — promptless `Edit` and silent new-file `Write` are the defaults, yet only
   pikuri-code / tui-code use them; every pikuri root opts into confirm-all. Flip?
 - `Q_global_ruby_llm_config` — three vectordb-using bins call `RubyLLM.configure` for the embedder;
