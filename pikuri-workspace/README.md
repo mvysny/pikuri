@@ -5,8 +5,7 @@ Filesystem tools + Workspace/Confirmer seams for the
 
 Self-contained "operate on a directory tree" toolkit:
 - `Pikuri::Workspace::Filesystem` — scopes filesystem access to a
-  project root + explicit readable / writable prefix lists, with an
-  optional ephemeral temp playground. Rejects `..`-escapes and
+  project root + explicit readable / writable prefix lists. Rejects `..`-escapes and
   symlinks that resolve outside the configured roots.
 - `Pikuri::Workspace::Confirmer` — abstract base for approving
   user-state mutations, plus `AUTO_APPROVE` (headless) and `Terminal`
@@ -59,9 +58,7 @@ end
 `Workspace` is the "look-but-don't-leak" guard around filesystem
 access. Read tools route through `#resolve_for_read(path)`; mutating
 tools route through `#resolve_for_write(path)` + the Confirmer's
-`#ask(request:, cancellable:)`. Pass `temp: true` to mint an ephemeral
-writable playground via `Dir.mktmpdir` — its path is exposed as
-`workspace.temp` and auto-removed at process exit.
+`#ask(request:, cancellable:)`.
 
 ## Further reading
 

@@ -42,175 +42,6 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
   end
 
-  describe '#temp' do
-    it 'returns nil by default' do
-      assert_nil workspace.temp
-    end
-
-    it 'mints an ephemeral writable dir when temp: true' do
-      ws = described_class.new(project_root: root, temp: true)
-      assert ws.temp.exist?
-      assert ws.temp.directory?
-      assert_includes ws.writable, ws.temp
-      assert_includes ws.readable, ws.temp
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'two workspaces with temp: true get distinct temp dirs' do
-      a = described_class.new(project_root: root, temp: true)
-      b = described_class.new(project_root: root, temp: true)
-      refute_equal a.temp, b.temp
-    ensure
-      [a, b].each { |w| FileUtils.remove_entry(w.temp.to_s) if w&.temp&.exist? }
-    end
-
-    it 'mints the temp dir under Paths.cache (~/.cache/pikuri), not /tmp' do
-      ws = described_class.new(project_root: root, temp: true)
-      cache_base = Pikuri::Paths.cache.realpath
-      assert ws.temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
-             "expected #{ws.temp} under #{cache_base}"
-      refute ws.temp.to_s.start_with?('/tmp/'),
-             'temp under /tmp would recursively self-mount when bound at /tmp in bwrap'
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'lives at <internal_temp>/playground' do
-      ws = described_class.new(project_root: root, temp: true)
-      assert_equal ws.internal_temp + 'playground', ws.temp
-    ensure
-      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
-    end
-  end
-
-  describe '#internal_temp' do
-    it 'is lazily minted — not created on construction with temp: false' do
-      cache_base = Pikuri::Paths.cache
-      before = cache_base.exist? ? cache_base.children.size : 0
-      _ws = described_class.new(project_root: root)
-      after = cache_base.exist? ? cache_base.children.size : 0
-      assert_equal before, after,
-                   'constructing a workspace with temp: false must not mint internal_temp'
-    end
-
-    it 'is the same dir across repeated reads (memoized)' do
-      ws = described_class.new(project_root: root)
-      a = ws.internal_temp
-      b = ws.internal_temp
-      assert_equal a, b
-    ensure
-      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.instance_variable_get(:@internal_temp)&.exist?
-    end
-
-    it 'is forced to mint when temp: true (so #temp can live inside it)' do
-      ws = described_class.new(project_root: root, temp: true)
-      assert ws.internal_temp.exist?
-      assert ws.internal_temp.directory?
-      assert_equal ws.internal_temp, ws.temp.parent
-    ensure
-      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
-    end
-
-    it 'sits under Paths.cache with the temp- prefix' do
-      ws = described_class.new(project_root: root)
-      cache_base = Pikuri::Paths.cache.realpath
-      assert ws.internal_temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
-             "expected #{ws.internal_temp} under #{cache_base}"
-      assert ws.internal_temp.basename.to_s.start_with?('temp-'),
-             "expected basename to start with 'temp-', got #{ws.internal_temp.basename}"
-    ensure
-      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
-    end
-  end
-
-  describe '#alias_tmp_to_temp' do
-    it 'defaults to false' do
-      ws = described_class.new(project_root: root, temp: true)
-      refute ws.alias_tmp_to_temp
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'is forced to false when temp: is not set, even if alias_tmp_to_temp: true' do
-      ws = described_class.new(project_root: root, alias_tmp_to_temp: true)
-      refute ws.alias_tmp_to_temp
-    end
-
-    it 'rewrites /tmp/foo to <host-temp>/foo for resolve_for_read' do
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-      File.write(ws.temp + 'foo.txt', 'x')
-
-      assert_equal ws.temp + 'foo.txt', ws.resolve_for_read('/tmp/foo.txt')
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'rewrites /tmp/foo to <host-temp>/foo for resolve_for_write' do
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-
-      assert_equal ws.temp + 'sub/new.txt', ws.resolve_for_write('/tmp/sub/new.txt')
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'takes a Pathname as readily as a String (the alias reads the same either way)' do
-      # A caller holding a Pathname used to hit NoMethodError here rather than
-      # a rewrite: the alias asked a Pathname for #start_with?.
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-
-      assert_equal ws.resolve_for_read('/tmp/foo.txt'), ws.resolve_for_read(Pathname.new('/tmp/foo.txt'))
-      assert_equal ws.resolve_for_read('sub/a.rb'), ws.resolve_for_read(Pathname.new('sub/a.rb'))
-      assert_equal ws.temp, ws.resolve_for_read(Pathname.new('/tmp'))
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'leaves a project that itself lives under /tmp alone (the sandbox re-binds it there)' do
-      # bwrap binds temp at /tmp first, then the workspace roots on top, so
-      # inside the subprocess /tmp/<root> is the real project. Rewriting it
-      # host-side sent every absolute in-root path into an empty playground —
-      # which is what an LSP result, always absolute, is made of.
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-      File.write(root + 'here.rb', 'x')
-      inside = (root + 'here.rb').to_s
-      assert inside.start_with?('/tmp/'), 'fixture root must be under /tmp for this to mean anything'
-
-      assert_equal root + 'here.rb', ws.resolve_for_read(inside)
-      # …while /tmp outside the project still aliases.
-      assert_equal ws.temp + 'foo.txt', ws.resolve_for_read('/tmp/foo.txt')
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'rewrites exactly /tmp to the host temp dir' do
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-      assert_equal ws.temp, ws.resolve_for_read('/tmp')
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'does NOT rewrite /tmpfoo (only /tmp and /tmp/...)' do
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
-        ws.resolve_for_read('/tmpfoo')
-      end
-      assert_includes err.message, 'outside the workspace'
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'passes /tmp/foo through unchanged when alias is off (rejected as outside workspace)' do
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: false)
-      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
-        ws.resolve_for_read('/tmp/foo.txt')
-      end
-      assert_includes err.message, 'outside the workspace'
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-  end
-
   describe '#resolve_for_read / #resolve_for_write under the project_root' do
     it 'resolves an existing file under the project_root' do
       FileUtils.mkdir_p(root + 'lib')
@@ -399,70 +230,6 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       assert_equal root, workspace.resolve_for_read('')
     end
   end
-
-  describe '#env' do
-    # Each test uses a fresh project_root + isolated HOME so the host's
-    # ~/.gitconfig doesn't leak in via git's global-config resolution.
-    let(:fake_home) { Pathname.new(Dir.mktmpdir('pikuri-ws-home-')).realpath }
-
-    around do |ex|
-      original_home = ENV['HOME']
-      original_xdg = ENV['XDG_CONFIG_HOME']
-      ENV['HOME'] = fake_home.to_s
-      ENV['XDG_CONFIG_HOME'] = (fake_home + '.config').to_s
-      ex.run
-    ensure
-      ENV['HOME'] = original_home
-      ENV['XDG_CONFIG_HOME'] = original_xdg
-      FileUtils.rm_rf(fake_home)
-    end
-
-    it 'returns {} when project_root has no git identity (and no global config)' do
-      ws = described_class.new(project_root: root)
-      assert_equal({}, ws.env)
-    end
-
-    it 'returns frozen GIT_AUTHOR_*/GIT_COMMITTER_* derived from git config user.name + user.email' do
-      Pikuri::Subprocess.spawn('git', 'init', '-q', '-b', 'main', root.to_s, chdir: root.to_s).wait
-      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.name', 'Pikuri Tester', chdir: root.to_s).wait
-      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.email', 'tester@example.com', chdir: root.to_s).wait
-
-      ws = described_class.new(project_root: root)
-      assert_equal 'Pikuri Tester',       ws.env['GIT_AUTHOR_NAME']
-      assert_equal 'tester@example.com',  ws.env['GIT_AUTHOR_EMAIL']
-      assert_equal 'Pikuri Tester',       ws.env['GIT_COMMITTER_NAME']
-      assert_equal 'tester@example.com',  ws.env['GIT_COMMITTER_EMAIL']
-      assert ws.env.frozen?, 'env hash must be frozen'
-    end
-
-    it 'is memoized — repeated reads return the same object without re-shelling out' do
-      ws = described_class.new(project_root: root)
-      assert ws.env.equal?(ws.env)
-    end
-
-    it 'is NOT computed at construction time (lazy)' do
-      # Drop a git binary on PATH that would crash if invoked. If construction
-      # runs the lookup, this test fails immediately at `described_class.new`.
-      ws = described_class.new(project_root: root)
-      assert_nil ws.instance_variable_get(:@env), 'env should not be set until first #env call'
-    end
-
-    it 'uses the explicit env: hash verbatim and skips git lookup' do
-      custom = { 'FOO' => 'bar', 'BAZ' => 'qux' }
-      ws = described_class.new(project_root: root, env: custom)
-      assert_equal custom, ws.env
-      assert ws.env.frozen?
-    end
-
-    it 'explicit env: {} stays empty (no fallback to git lookup)' do
-      Pikuri::Subprocess.spawn('git', 'init', '-q', '-b', 'main', root.to_s, chdir: root.to_s).wait
-      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.name', 'Pikuri Tester', chdir: root.to_s).wait
-      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.email', 'tester@example.com', chdir: root.to_s).wait
-
-      ws = described_class.new(project_root: root, env: {})
-      assert_equal({}, ws.env)
-    end
-  end
 end
 
 RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
@@ -504,43 +271,16 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
     end
   end
 
-  describe 'project_root + temp' do
+  describe 'project_root' do
     it 'accepts a root project_root that the base Filesystem would reject' do
       # Don't actually use / as the project root; just verify validate_project_root! is skipped.
       ws = described_class.new(project_root: '/')
       assert_equal Pathname.new('/').realpath, ws.project_root
     end
 
-    it 'mints a temp playground when temp: true' do
-      ws = described_class.new(project_root: root, temp: true)
-      assert ws.temp.exist?
-      assert_includes ws.writable, ws.temp
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
     it 'advertises the whole filesystem via readable / writable' do
       assert_includes workspace.readable, Pathname.new('/').realpath
       assert_includes workspace.writable, Pathname.new('/').realpath
-    end
-
-    it 'mints the temp dir under Paths.cache, not /tmp (same as base Filesystem)' do
-      ws = described_class.new(project_root: root, temp: true)
-      cache_base = Pikuri::Paths.cache.realpath
-      assert ws.temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
-             "expected #{ws.temp} under #{cache_base}"
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
-    end
-
-    it 'rewrites /tmp/foo to <host-temp>/foo when alias_tmp_to_temp: true' do
-      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
-      File.write(ws.temp + 'foo.txt', 'x')
-
-      assert_equal ws.temp + 'foo.txt', ws.resolve_for_read('/tmp/foo.txt')
-      assert_equal ws.temp + 'bar.txt', ws.resolve_for_write('/tmp/bar.txt')
-    ensure
-      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
     end
   end
 

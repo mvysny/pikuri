@@ -4849,8 +4849,7 @@ through `Paths`") lives in AGENTS.md *Conventions*.
 - **Keeping the mint on `Workspace::Filesystem`** (`mint_internal_temp` /
   `sweep_stale_internal_temps!`) — rejected: the concept isn't
   workspace-shaped, and the stale sweep ran at *workspace* gem load, so a
-  binary that wires no workspace never swept. Both were deleted;
-  `Filesystem#internal_temp` now memoizes `Paths.new_temp`, and the sweep
+  binary that wires no workspace never swept. Both were deleted, and the sweep
   moved to *core* load with a generic `temp-*` prefix, so every binary
   sweeps.
 

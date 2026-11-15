@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
     pikuri-workspace adds "operate on a directory tree" to pikuri-core
     agents: the +Pikuri::Workspace::Filesystem+ class that scopes
     filesystem access to an anchor + explicit readable / writable
-    prefix lists (with optional ephemeral temp playground), the
+    prefix lists, the
     +Pikuri::Workspace::Confirmer+ seam (+AUTO_APPROVE+ + +TERMINAL+)
     for user-state mutations, and five tools wired to those seams:
     +Pikuri::Workspace::Read+, +Pikuri::Workspace::Write+,

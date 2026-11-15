@@ -176,8 +176,7 @@ module Pikuri
               session_workspace = Pikuri::Workspace::Workspace.new(
                 filesystem: Pikuri::Workspace::Filesystem.new(
                   project_root: Pathname.new(session_temp_root),
-                  readable: TEMP_WORKSPACE_READABLE.select { |p| File.directory?(p) },
-                  temp: false
+                  readable: TEMP_WORKSPACE_READABLE.select { |p| File.directory?(p) }
                 )
               )
               sub_tools = sub_tools.map do |t|
