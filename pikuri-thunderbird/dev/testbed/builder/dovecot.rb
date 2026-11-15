@@ -35,8 +35,9 @@ module Pikuri
       PASSWORD = 'demo'
 
       # @param messages [Hash{String => String}] +"<folder>/<name>"+ to one
-      #   message's bytes; the folder +INBOX+ is the inbox, and names sort in
-      #   the order the UIDs should follow.
+      #   message's bytes; the folder +INBOX+ is the inbox, a nested one is
+      #   +/+-separated (+[Gmail]/All Mail+), and names sort in the order the
+      #   UIDs should follow.
       # @return [Dovecot] a running server.
       # @raise [RuntimeError] when the port is taken or dovecot doesn't come up.
       def self.start(messages:)
@@ -87,15 +88,16 @@ module Pikuri
       # @return [String]
       def log = File.join(@dir, 'dovecot.log')
 
-      # Maildir++: INBOX is the root's +cur/+, a folder +Sent+ is +.Sent/cur/+.
-      # No +:2,+ flag letters, so every message arrives unread.
+      # Maildir++: INBOX is the root's +cur/+, a folder +Sent+ is +.Sent/cur/+,
+      # +[Gmail]/All Mail+ is +.[Gmail].All Mail/cur/+. No +:2,+ flag letters,
+      # so every message arrives unread.
       #
       # @param mail [String]
       # @return [void]
       def write_maildir(mail)
         @messages.each do |path, bytes|
-          folder, name = path.split('/', 2)
-          dir = File.join(mail, folder == 'INBOX' ? '' : ".#{folder}")
+          folder, _, name = path.rpartition('/')
+          dir = File.join(mail, folder == 'INBOX' ? '' : ".#{folder.tr('/', '.')}")
           %w[cur new tmp].each { FileUtils.mkdir_p(File.join(dir, _1)) }
           file = File.join(dir, 'cur', "#{name}.pikuri-demo:2,")
           File.binwrite(file, bytes)
@@ -128,8 +130,10 @@ module Pikuri
 
       # Rootless: every internal and login process runs as the caller, the
       # login process isn't chrooted (that needs root), and only the plain
-      # IMAP listener is on (+imaps+ would want port 993). The +Sent+ folder
-      # carries the +\Sent+ special-use flag, as Gmail's and iCloud's do.
+      # IMAP listener is on (+imaps+ would want port 993). Folders nest with
+      # +/+, Gmail's separator, so +[Gmail]+ is a non-selectable parent. +Sent+
+      # carries the +\Sent+ special-use flag, as Gmail's and iCloud's do, and
+      # +[Gmail]/All Mail+ and +[Gmail]/Starred+ Gmail's +\All+ and +\Flagged+.
       #
       # @param mail [String] the Maildir.
       # @return [String]
@@ -165,8 +169,15 @@ module Pikuri
           mail_path = #{mail}
           namespace inbox {
             inbox = yes
+            separator = /
             mailbox Sent {
               special_use = \\Sent
+            }
+            mailbox "[Gmail]/All Mail" {
+              special_use = \\All
+            }
+            mailbox "[Gmail]/Starred" {
+              special_use = \\Flagged
             }
           }
 

@@ -26,6 +26,10 @@ module Pikuri
       # IMAP account's.
       LOCAL_FOLDERS = %w[Archive].freeze
 
+      # The IMAP folders never marked for offline use, so Thunderbird syncs
+      # their headers alone, as many keep Gmail's All Mail.
+      HEADERS_ONLY = ['[Gmail]/All Mail'].freeze
+
       # {#inputs}' path prefixes: written into the profile, or served by {Dovecot}.
       PROFILE_PREFIX = 'profile/'
       IMAP_PREFIX = 'imap/'
@@ -61,8 +65,9 @@ module Pikuri
           File.binwrite(file, bytes)
         end
         dovecot = Dovecot.start(messages: under(inputs, IMAP_PREFIX))
+        headers_only = HEADERS_ONLY.to_h { [_1, @content.folders.fetch(_1, []).size] }
         seconds = Indexer.new(profile_dir: @target.profile_dir, messages: @content.message_count,
-                              events: @content.event_count, log: @log).run!
+                              headers_only: headers_only, events: @content.event_count, log: @log).run!
         store(tarball)
         seconds
       ensure

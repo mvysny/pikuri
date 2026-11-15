@@ -13,7 +13,8 @@ module Pikuri
     # The IMAP account first syncs from {Dovecot}: its folders are listed,
     # each one's headers fetched (which writes its +.msf+) and its bodies
     # downloaded into the offline store, all over Marionette, since with mail
-    # checks off nothing would connect on its own.
+    # checks off nothing would connect on its own. A headers-only folder gets
+    # its headers and no bodies, as one never marked for offline use does.
     #
     # A dropped mbox in Local Folders isn't picked up on its own either:
     # nothing opens the folder, so no +.msf+ summary appears and Gloda's sweep
@@ -21,18 +22,23 @@ module Pikuri
     # +indexFolder+ alone, without the reparse, indexes nothing.
     #
     # Done-detection is by count, not by guessing at Gloda's internals: the
-    # builder knows it wrote N messages, so a copy of the Gloda DB is counted
-    # until it holds N. The clean quit then checkpoints the calendar's WAL, so
-    # the M events become countable in +cache.sqlite+ too.
+    # builder knows it wrote N message copies, B of them in folders whose
+    # bodies are downloaded, so a copy of the Gloda DB is counted until it
+    # holds N rows, B with a body. The clean quit then checkpoints the
+    # calendar's WAL, so the M events become countable in +cache.sqlite+ too.
     class Indexer
       # Syncs the IMAP folders, reparses the local ones, and queues every
-      # folder for Gloda. Resolves with the folder URIs, or +{error:}+.
+      # folder for Gloda. Needs +headersOnly+ declared before it: the IMAP
+      # folders to sync without bodies, by server name, to how many headers
+      # each holds. Resolves with the folder URIs, or +{error:}+.
       SYNC_JS = <<~JS
         const resolve = arguments[arguments.length - 1];
         (async () => {
           const { MailServices } = ChromeUtils.importESModule("resource:///modules/MailServices.sys.mjs");
           const { GlodaMsgIndexer } = ChromeUtils.importESModule("resource:///modules/gloda/IndexMsg.sys.mjs");
-          const skip = Ci.nsMsgFolderFlags.Trash | Ci.nsMsgFolderFlags.Queue;
+          const { setTimeout } = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
+          // A non-selectable folder (Gmail's [Gmail]) has no messages to sync.
+          const skip = Ci.nsMsgFolderFlags.Trash | Ci.nsMsgFolderFlags.Queue | Ci.nsMsgFolderFlags.ImapNoselect;
           // Runs one URL-based operation; start(listener) kicks it off.
           const run = (what, start) => new Promise((ok, fail) => {
             start({
@@ -58,6 +64,26 @@ module Pikuri
               if (e.result !== Cr.NS_ERROR_NOT_INITIALIZED) fail(e); // else: reparse started
             }
           });
+          const headers = (folder) => [...folder.msgDatabase.enumerateMessages()];
+          // Clears what discovery set from the server's offline_download, as
+          // unticking "Select this folder for offline use" does, and syncs
+          // the headers alone.
+          const syncHeaders = async (folder, expected) => {
+            folder.clearFlag(Ci.nsMsgFolderFlags.Offline);
+            await run(`header sync of ${folder.URI}`, (l) => folder.updateFolderWithListener(null, l));
+            // Its listener can hear an earlier URL end (see below), so the
+            // headers themselves are waited for.
+            const deadline = Date.now() + 60000;
+            while (headers(folder).length < expected) {
+              if (Date.now() > deadline) {
+                throw new Error(`${folder.URI} holds ${headers(folder).length} headers, expected ${expected}`);
+              }
+              await new Promise((ok) => setTimeout(ok, 200));
+            }
+            if (headers(folder).some((hdr) => hdr.flags & Ci.nsMsgMessageFlags.Offline)) {
+              throw new Error(`${folder.URI} got bodies, but is synced headers-only`);
+            }
+          };
           const done = [];
           for (const account of MailServices.accounts.accounts) {
             const server = account.incomingServer;
@@ -68,7 +94,12 @@ module Pikuri
             }
             for (const folder of server.rootFolder.descendants) {
               if (folder.flags & skip) continue;
-              if (imap) {
+              const headersOnlyCount = imap
+                ? headersOnly[folder.QueryInterface(Ci.nsIMsgImapMailFolder).onlineName]
+                : undefined;
+              if (headersOnlyCount !== undefined) {
+                await syncHeaders(folder, headersOnlyCount);
+              } else if (imap) {
                 // What the account wizard's "keep messages on this computer"
                 // sets; an account from user.js lacks it on INBOX, made before
                 // the folders were discovered.
@@ -95,26 +126,32 @@ module Pikuri
       JS
 
 
-      # Gloda keeps a row per referenced-but-absent message too (a "ghost",
-      # +folderID+ null), so only real ones count; and only with a body, since
-      # an IMAP message Gloda reached before its body was downloaded is
-      # indexed from its headers alone.
+      # Gloda's rows, and those with a body. It keeps a row per
+      # referenced-but-absent message too (a "ghost", +folderID+ null), so only
+      # real ones count. An IMAP message whose body isn't offline is indexed
+      # from its headers alone: forever in a headers-only folder, and for a
+      # while in the others, if Gloda reaches it before its body.
       MESSAGES_SQL = <<~SQL
-        SELECT COUNT(*) FROM messages m JOIN messagesText_content t ON t.docid = m.id
-        WHERE m.folderID IS NOT NULL AND length(t.c0body) > 0
+        SELECT COUNT(*), COUNT(CASE WHEN length(t.c0body) > 0 THEN 1 END)
+        FROM messages m JOIN messagesText_content t ON t.docid = m.id
+        WHERE m.folderID IS NOT NULL
       SQL
 
       # The demo calendar's events (a recurring one is one row).
       EVENTS_SQL = "SELECT COUNT(*) FROM cal_events WHERE cal_id = 'pikuridemo'"
 
       # @param profile_dir [String]
-      # @param messages [Integer] how many messages the builder wrote.
+      # @param messages [Integer] how many message copies the builder wrote.
+      # @param headers_only [Hash{String => Integer}] the IMAP folders synced
+      #   without bodies, by server name (+[Gmail]/All Mail+), to how many
+      #   copies each holds.
       # @param events [Integer] how many events the demo calendar holds.
       # @param log [String] where Thunderbird's own output goes.
       # @param timeout [Numeric] seconds to wait for the index.
-      def initialize(profile_dir:, messages:, events:, log:, timeout: 300)
+      def initialize(profile_dir:, messages:, headers_only:, events:, log:, timeout: 300)
         @profile_dir = profile_dir
-        @messages = messages
+        @headers_only = headers_only
+        @expected = [messages, messages - headers_only.values.sum]
         @events = events
         @log = log
         @timeout = timeout
@@ -125,7 +162,7 @@ module Pikuri
       def run!
         started = Time.now
         session = Session.start(profile_dir: @profile_dir, log: @log)
-        folders = session.execute(SYNC_JS, timeout: 120)
+        folders = session.execute("const headersOnly = #{@headers_only.to_json};\n#{SYNC_JS}", timeout: 120)
         raise "sync failed: #{folders['error']}" if folders.is_a?(Hash)
 
         puts "  synced #{folders.join(', ')}"
@@ -141,24 +178,32 @@ module Pikuri
 
       private
 
-      # Counts a copy of the Gloda DB until it holds every message.
+      # Counts a copy of the Gloda DB until it holds every copy, each body
+      # included.
       #
       # @return [void]
       def wait_for_messages
         deadline = Time.now + @timeout
         last = nil
         loop do
-          count = count_copy(File.join(@profile_dir, 'global-messages-db.sqlite'), MESSAGES_SQL)
-          if count != last
-            puts "  indexed #{count || 0}/#{@messages}"
-            last = count
+          counts = count_copy(File.join(@profile_dir, 'global-messages-db.sqlite'), MESSAGES_SQL)
+          if counts != last
+            puts "  indexed #{describe(counts)}"
+            last = counts
           end
-          return if count == @messages
-          raise "Gloda holds #{count} messages, expected #{@messages}" if count && count > @messages
-          raise "index stalled at #{count || 0}/#{@messages} after #{@timeout}s" if Time.now > deadline
+          return if counts == @expected
+          raise "Gloda holds #{describe(counts)}" if counts && counts.first > @expected.first
+          raise "index stalled at #{describe(counts)} after #{@timeout}s" if Time.now > deadline
 
           sleep 1
         end
+      end
+
+      # @param counts [Array(Integer, Integer), nil] rows and rows with a body.
+      # @return [String] e.g. "12/197 rows, 10/194 with a body".
+      def describe(counts)
+        rows, bodies = counts || [0, 0]
+        "#{rows}/#{@expected.first} rows, #{bodies}/#{@expected.last} with a body"
       end
 
       # Counts on a private copy, never the file Thunderbird holds open; a
@@ -166,7 +211,7 @@ module Pikuri
       #
       # @param db [String]
       # @param sql [String]
-      # @return [Integer, nil]
+      # @return [Array<Integer>, nil] the first row.
       def count_copy(db, sql)
         return nil unless File.file?(db)
 
@@ -176,7 +221,7 @@ module Pikuri
           FileUtils.cp("#{db}-wal", "#{copy}-wal") if File.file?("#{db}-wal")
           sqlite = SQLite3::Database.new(copy)
           begin
-            sqlite.get_first_value(sql)
+            sqlite.get_first_row(sql)
           ensure
             sqlite.close
           end
@@ -189,10 +234,10 @@ module Pikuri
       #
       # @return [void]
       def verify_closed_stores
-        messages = count_copy(File.join(@profile_dir, 'global-messages-db.sqlite'), MESSAGES_SQL)
-        raise "after quit Gloda holds #{messages.inspect} messages, expected #{@messages}" unless messages == @messages
+        counts = count_copy(File.join(@profile_dir, 'global-messages-db.sqlite'), MESSAGES_SQL)
+        raise "after quit Gloda holds #{describe(counts)}" unless counts == @expected
 
-        events = count_copy(File.join(@profile_dir, 'calendar-data', 'cache.sqlite'), EVENTS_SQL)
+        events = count_copy(File.join(@profile_dir, 'calendar-data', 'cache.sqlite'), EVENTS_SQL)&.first
         raise "after quit the calendar holds #{events.inspect} events, expected #{@events}" unless events == @events
       end
     end

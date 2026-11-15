@@ -2,7 +2,9 @@
 # the secretary chapter happen. ERB over facts.yml (as f) first, then YAML.
 #
 #   id:           Message-ID's local part; the sender's domain is appended
-#   folder:       Inbox (default), Sent, or none (exists only inside a forward)
+#   folder:       Inbox (default), Sent, Finance, [Gmail]/All Mail, [Gmail]/Starred,
+#                 or none (exists only inside a forward); a list files one message
+#                 in each, as Gmail's labels do. All Mail is synced headers-only.
 #   at:           [days from the build day, 'HH:MM'] local time
 #   from/to/cc:   people keys from facts.yml (owner is Alex)
 #   reply_to:     ids of the thread so far, oldest first (In-Reply-To + References)
@@ -23,7 +25,9 @@
 #                 body/html: a shape another client writes and the mail gem can't
 
 # --- The invoice: the cross-source answer (the PDF is in Documents/Finance).
+# Labelled Finance too: two copies, both downloaded, which search and read dedup.
 - id: kettle-4471-reminder
+  folder: [Inbox, Finance]
   at: [-3, '08:12']
   from: kettle
   subject: 'Payment reminder: invoice <%= f.invoice.number %>'
@@ -473,8 +477,10 @@
     With best regards,
     Aino Virtanen, chair of the board
 
-# --- Cross-source with Documents/Insurance.
+# --- Cross-source with Documents/Insurance. Also in All Mail, headers only:
+# the read takes the Inbox copy, the one with a body.
 - id: insurance-renewal
+  folder: [Inbox, '[Gmail]/All Mail']
   at: [-12, '09:00']
   from: insurer
   subject: Your home insurance <%= f.insurance.policy %> renews on 1 January
@@ -548,3 +554,45 @@
     - name: office-photos-raw.zip
       type: application/zip
       bytes: 42000000
+
+# --- Archived, so only in All Mail, which is synced headers-only: the read
+# says the body isn't downloaded, and so does the attachment read.
+- id: q3-hours
+  folder: '[Gmail]/All Mail'
+  at: [-95, '16:20']
+  from: mira
+  subject: Q3 hours
+  body: |
+    Hi Alex,
+
+    the Q3 hours are attached: 231 against 240 budgeted. Let me know if
+    anything looks off before I invoice.
+
+    Mira
+  attachments:
+    - name: q3-hours.csv
+      type: text/csv
+      text: |
+        month,hours
+        July,74
+        August,61
+        September,96
+
+# --- Archived but starred: All Mail's copy is headers only, Starred's is
+# downloaded, so the read takes Starred's body, and the attachment comes from
+# the nested [Gmail].sbd/Starred mbox.
+- id: lease-signed
+  folder: ['[Gmail]/All Mail', '[Gmail]/Starred']
+  at: [-400, '10:30']
+  from: aino
+  subject: Your signed lease
+  body: |
+    Hi Alex,
+
+    welcome to B 12! The lease, signed by both of us, is attached for your
+    records. The keys are with the caretaker from Monday.
+
+    Best regards,
+    Aino Virtanen
+  attachments:
+    - document: Housing/lease-agreement.pdf

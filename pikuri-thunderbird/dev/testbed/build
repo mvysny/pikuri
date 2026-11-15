@@ -56,7 +56,7 @@ begin
   content = Pikuri::Demo::Content.new(today: options[:today], tzid: tzid, converter: Pikuri::Demo::Converter.shared)
   puts "Writing #{content.documents.files.size} documents into #{home.documents_dir}"
   home.write!(content.documents)
-  puts "Building #{content.message_count} messages and #{content.event_count} events into #{target.profile_dir}"
+  puts "Building #{content.message_count} message copies and #{content.event_count} events into #{target.profile_dir}"
   builder = Pikuri::Demo::Builder.new(target: target, content: content, cache_dir: cache_dir.to_s, log: log)
   seconds = builder.build!(rebuild: options[:rebuild])
 rescue Pikuri::Demo::Home::Refused => e

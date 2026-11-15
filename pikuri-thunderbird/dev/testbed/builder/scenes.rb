@@ -38,9 +38,12 @@ module Pikuri
           # On demand: a forward needs the message it carries, which may be a forward too.
           build = ->(id) { built[id] ||= message(by_id.fetch(id), ids, build) }
           scenes.each { |s| build.(s['id']) }
+          # A scene in two folders is one message with two copies, as a Gmail
+          # label makes.
           scenes.reject { |s| s['folder'] == 'none' }
-                .group_by { |s| s['folder'] || 'Inbox' }
-                .transform_values { |list| list.map { |s| built.fetch(s['id']) } }
+                .flat_map { |s| Array(s['folder'] || 'Inbox').map { |folder| [folder, s] } }
+                .group_by(&:first)
+                .transform_values { |pairs| pairs.map { |_, s| built.fetch(s['id']) } }
         end
       end
 

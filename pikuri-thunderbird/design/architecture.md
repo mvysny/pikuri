@@ -653,6 +653,13 @@ no identity, so Gloda would have no "me", no Sent folder and no correspondence g
 Folders holds an `Archive` (CI mail older than 90 days), so `Mail/` is a real store too. Every
 domain is RFC 2606-reserved, so a Send clicked by mistake fails.
 
+**Gmail's folder shape, without Gmail.** Dovecot nests folders with `/` and serves
+`[Gmail]/All Mail` (`\All`) and `[Gmail]/Starred` (`\Flagged`) under a non-selectable `[Gmail]`;
+a `mail.yml` scene filed in two folders is two copies with one Message-ID, as a Gmail label
+makes. All Mail is synced headers-only, as many keep it, so the testbed holds a message whose
+read prefers its downloaded copy (INBOX's, or Starred's), one with no body at all, and an mbox
+at `ImapMail/127.0.0.1/[Gmail].sbd/Starred`.
+
 **The IMAP server: a rootless dovecot, up only during a build** (`builder/dovecot.rb`). An IMAP
 folder's `.msf` and its UIDs come from the server's replies, so the mail has to be downloaded
 for real (why a real server: `D_thunderbird_testbed`). Dovecot 2.4 (Ubuntu's; most guides online
@@ -689,7 +696,10 @@ script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
   session at a time, so a client must `DeleteSession` before the next can connect.
 - **The IMAP sync is driven too**, since with mail checks off nothing connects:
   `MailServices.imap.discoverAllFolders`, then per folder `setFlag(Offline)` and
-  `downloadAllForOffline`, which selects the folder, syncs its headers and fetches every body.
+  `downloadAllForOffline`, which selects the folder, syncs its headers and fetches every body;
+  a headers-only folder gets `clearFlag(Offline)` (discovery sets it from the server's
+  `offline_download`) and `updateFolderWithListener`, then a wait until its `.msf` holds every
+  header.
   An account from `user.js` lacks the Offline flag on INBOX (the account wizard's "keep
   messages on this computer" sets it), and without it INBOX's bodies are never fetched. A
   separate `updateFolderWithListener` first is a trap: its listener heard the discovery URL end,
@@ -701,9 +711,9 @@ script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
   `NS_ERROR_NOT_INITIALIZED` to mean "reparse started") and then queues every folder
   (`GlodaMsgIndexer.indexFolder(folder, {force: true})`); `indexFolder` alone indexes
   nothing. Done is detected by count, not by Gloda's internals: the builder knows it wrote N
-  messages and counts a copy of the Gloda DB until it holds N with a body — an IMAP message
-  Gloda reaches before its body is offline is indexed from its headers alone, and counts too
-  early.
+  message copies, B of them in folders with bodies, and counts a copy of the Gloda DB until it
+  holds N rows, B with a body — an IMAP message Gloda reaches before its body is offline is
+  indexed from its headers alone, and would count too early.
 - A clean quit is a script that resolves and then dispatches
   `Services.startup.quit(eAttemptQuit)`: about two seconds, the WAL stores checkpointed, and
   open compose windows discarded without a prompt.
@@ -743,6 +753,6 @@ either root holds an unmarked profile, or while Thunderbird runs, and checks the
 own guard (`~/Documents` non-empty and unmarked) before writing anything; it never deletes
 anything unmarked and never stops a Thunderbird it didn't start.
 
-**Not covered:** Gmail's own IMAP (labels as folders, `X-GM-EXT-1`), a message in two
-folders, a folder synced headers-only, and the `-1` directory of a second account on one host;
+**Not covered:** Gmail's own IMAP extension (`X-GM-EXT-1`), a copy gone from the offline store
+after Gloda indexed it, and the `-1` directory of a second account on one host;
 `design/ideas/thunderbird-testbed-imap-scenes.md`.

@@ -36,7 +36,8 @@ module Pikuri
         @folders ||= @scenes.folders.merge(@noise.folders) { |_, scenes, noise| scenes + noise }
       end
 
-      # @return [Integer]
+      # @return [Integer] one per copy: a message in two folders counts twice,
+      #   as Gloda gives it two rows.
       def message_count = folders.values.sum(&:size)
 
       # @return [Integer]
