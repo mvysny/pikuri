@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `Pikuri::Agent::Configurator#replace_compacted_history`, which swaps a conversation for a shorter version of itself while tools, MCP connections and extension state stay as they are, and emits the new `Event::HistoryCompacted`.
 - **Breaking:** removed `Pikuri::Agent::EmptyTurnError`; a blank turn on a fresh chat now goes to the provider, and Anthropic or Bedrock answer it with their own 400 (`D_reference_text_as_user_turn`). Drop any `rescue` of it.
 - **Breaking:** removed `Pikuri::Agent::Event::Transient`; `Listener::Terminal` prints every domain event as one line and no longer redraws one in place (`D_domain_events`). Drop the `include`, and emit a progress sequence's start and end rather than each update.
 - Add `Pikuri::Workspace::ReadOnly#remove_on_change`; `#on_change` now returns the block it registered, so a subscriber that dies before the flag, like an agent after a `/clear`, removes itself instead of pinning its closed conversation.

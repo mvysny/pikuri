@@ -26,7 +26,8 @@ RSpec.describe Pikuri::Agent::Configurator do
 
   def new_configurator(history: nil)
     Pikuri::Agent::Configurator.new(agent: fake_agent, chat: fake_chat, listeners: listeners,
-                                    history: history, on_close_sink: close_sink)
+                                    history: history, on_close_sink: close_sink,
+                                    history_replacer: ->(_) { raise 'not under test here' })
   end
 
   describe '#initialize' do

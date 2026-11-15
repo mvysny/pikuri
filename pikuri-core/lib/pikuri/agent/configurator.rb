@@ -13,7 +13,8 @@ module Pikuri
     #
     # Two kinds of call. *Declarations* — {#add_tool}, {#add_listener},
     # {#add_extension}, {#on_close} — shape the agent being built. *Capabilities*
-    # — {#emit_event}, {#add_raw_tool}, {#sub_agent_listeners} — act on the live
+    # — {#emit_event}, {#add_raw_tool}, {#sub_agent_listeners},
+    # {#replace_compacted_history} — act on the live
     # agent, so an extension keeps the Configurator and uses them later, from a
     # callback or a tool's +execute+:
     #
@@ -77,12 +78,15 @@ module Pikuri
       # @param on_close_sink [Array<Proc>] the agent's live +on_close+ list, so
       #   a handler armed mid-block is there when a later +configure+ raises
       #   and the constructor closes the half-built agent.
-      def initialize(agent:, chat:, listeners:, history:, on_close_sink:)
+      # @param history_replacer [#call] the agent's private swap behind
+      #   {#replace_compacted_history}, called with the {History}
+      def initialize(agent:, chat:, listeners:, history:, on_close_sink:, history_replacer:)
         @agent = agent
         @chat = chat
         @listeners = listeners
         @history = history
         @on_close_handlers = on_close_sink
+        @history_replacer = history_replacer
         @tools = []
         @sub_agent_tools = []
         @extensions = []
@@ -184,6 +188,53 @@ module Pikuri
       # @return [void]
       def add_raw_tool(ruby_llm_tool)
         @chat.with_tools(ruby_llm_tool)
+        nil
+      end
+
+      # Replace the conversation with a shorter rendering of *itself* — the
+      # actuator a compaction extension drives, deciding when and how to
+      # shorten on its own:
+      #
+      #   def configure(c)
+      #     @c = c
+      #   end
+      #
+      #   def on_user_message(_content, _attachments)
+      #     @c.replace_compacted_history(compact(@c.agent.export_history)) if over_budget?
+      #     nil
+      #   end
+      #
+      # Only the messages change. Tools, MCP connections and the servers
+      # behind them, every extension's state (a workspace's read-marks,
+      # promoted skills), listeners, the system prompt and the transport all
+      # stand, because a compacted conversation is still the same
+      # conversation. The incoming messages get {Agent}'s resume repairs.
+      #
+      # So +history+ must be *this* conversation, shortened. Handing it a
+      # different one gives that conversation everything this one built up —
+      # the logged-in browser an MCP server holds included — which is the
+      # leak building a new {Agent} per conversation exists to prevent
+      # (+design/decisions.md+ +D_agent_is_one_conversation+). Nothing checks
+      # this beyond the shape below; the name is the guard.
+      #
+      # Shape it must keep, enforced:
+      #
+      # - end with the conversation's current last message, same {History::Message#id};
+      #   rewriting its content is fine;
+      # - keep each tool result right after the assistant turn that made its call.
+      #
+      # Keep the ids of every other message you carry over too, so state an
+      # extension keys on one still finds it. Callable on the agent's thread
+      # anywhere outside an open tool batch: between turns, or from
+      # {Extension#on_user_message}.
+      #
+      # @param history [History] typically {Agent#export_history}, shortened
+      # @return [void]
+      # @raise [ArgumentError] if +history+ breaks the shape above
+      # @raise [RuntimeError] inside the +Agent.new+ block, or while a tool
+      #   batch is open (from a tool's +execute+)
+      def replace_compacted_history(history)
+        @history_replacer.call(history)
         nil
       end
 

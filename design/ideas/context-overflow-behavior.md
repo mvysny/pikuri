@@ -1,8 +1,8 @@
 # What should happen when the context window fills up?
 
-Status: **draft, deliberately unbrainstormed.** Placeholder for a session
-of its own. This file frames the question and records the grounded
-starting state; the strategies below are a bare agenda, not yet arguments.
+Status: **draft, partly decided.** The actuator and who owns the policy
+are settled (*Decided (2026-11-15)* below); the policy itself is still a
+bare agenda, not yet arguments.
 
 [`context-budget.md`](context-budget.md) — whether to tell the *model*
 how much context it has spent — is **blocked on this note**, because how
@@ -46,6 +46,70 @@ Per AGENTS.md (Layout), the `exit 1` is a *demo script's* deliberate
 simplicity and must not be read as pikuri's policy. But 10 identical
 copies of it means the moment there is a policy, there's a question of
 whether it belongs in a shared place.
+
+
+## Decided (2026-11-15): core ships the actuator, workshop owns the policy
+
+Core now has `Configurator#replace_compacted_history(history)`. It swaps
+the messages and nothing else: tools, MCP connections and the servers
+behind them, extension state, listeners, the system prompt and the
+transport all stay, and it emits `Event::HistoryCompacted`. When to
+compact, how to shorten and what to summarize with is a policy, so it
+goes to a pikuri-workshop extension that keeps its `c`. Core stays out of
+the policy business, which the `D_no_step_limit` reversal argued for.
+
+**Why in place, when `D_agent_is_one_conversation` forbids loading a
+history into a live agent.** That decision draws its line at a
+*conversation* boundary, because state a conversation built (a logged-in
+browser behind MCP) must not reach a different one. A compaction crosses
+no boundary: it is the same conversation, shorter, so that state belongs
+to it. The rebuild path (`close` + `Agent.new(history:)`) is in fact wrong
+for compaction: it drops read-marks, promoted skills and the task list,
+restarts every MCP server, and MCP re-registers tools only from the
+`mcp_connect` calls still in the transcript, so a summary that drops one
+quietly loses those tools.
+
+**Why on `Configurator`, not `Agent`.** A live `Agent` reference is
+read-only (the Capability seam), and tools reach the agent, so
+`Agent#set_history` would let any tool rewrite the conversation.
+
+**Misuse is guarded by the name, not by a check.** Handing it a
+*different* conversation leaks exactly what `D_agent_is_one_conversation`
+exists to stop. Telling a compaction from a different conversation would
+be a filter, so the method name states the contract instead. What *is*
+enforced is the shape no provider reports clearly:
+
+- **The conversation's current last message stays last, with the same
+  id** (content may be rewritten — dropping an old screenshot's bytes is
+  fine). This makes every point outside a tool batch safe. Without it, a
+  listener compacting at the end of a turn into a history that ends on a
+  user message would make ruby_llm send a request nobody asked for.
+- **Each tool result sits right after the assistant turn that made its
+  call.** A result whose call was cut away is a 400 on OpenAI/Anthropic
+  and something the template improvises around on llama.cpp. The reverse,
+  a call left without a result, is already repaired on the way in.
+- **Not while a tool batch is open**: ruby_llm still holds the batch's
+  calls and would append their results after whatever the chat then holds.
+  That rules out a tool's `execute` and a listener reacting to a
+  `ToolCall`. Between turns and `Extension#on_user_message` are fine,
+  including the mid-turn drain after a batch is answered.
+
+**Still open, deliberately.** Everything else on the agenda below: whether
+the interactive agent wants any of this (the counter-thesis says maybe
+not), the trigger (before or after the raise), what to summarize with, and
+what must never be pruned. The sub-agent is the one case the note says
+*needs* automatic compaction. Mid-turn compaction now works at the
+batch-answered boundary, but nothing triggers it there yet.
+
+**Not an option: ruby_llm's own `Chat#with_compaction`** (2.2.0). It is
+provider-side: Anthropic and OpenAI condense the span into an opaque
+block, and OpenRouter drops messages from the middle. None of that exists
+on llama.cpp, and a feature that only works against a hosted provider
+breaks the privacy promise. Its neighbour `Chat#with_context_budget(per_request:)`
+is client-side strategy 5: it leaves the oldest tool results out of the
+request, each replaced by a note, while the transcript keeps them. Known
+from its doc comment only, never run; worth a look before writing an
+evict-by-kind policy by hand.
 
 
 ## The operator-discipline counter-thesis (2026-08-15)
@@ -160,14 +224,9 @@ than something to paper over.
   counter-thesis above, a watching human may make it moot there, leaving
   only the autonomous legs to serve. "Ship nothing for the main agent" is
   a live answer, not a placeholder.
-- **Who owns recovery — `lib/` or the host?** A `Control` in core that
-  every host inherits, versus a seam core exposes and `pikuri-tui`
-  implements. This note used to cite `StepLimit` as the precedent for
-  choosing a policy enum in core. That precedent has been **reversed**,
-  not merely lost: the enum was deleted as exactly the knob AGENTS.md's
-  "no knobs not needed for the next concrete step" rule warns about
-  (`D_no_step_limit`). A new policy enum in core now has to justify
-  itself from scratch; there is no sibling left to lean on.
+- ~~**Who owns recovery — `lib/` or the host?**~~ **Decided**: core
+  exposes the seam, a pikuri-workshop extension implements the policy.
+  See *Decided (2026-11-15)* above.
 - **Does a `bin/` script get a choice?** An `on_context_overflow:` knob
   would keep demos honest while letting one demonstrate the real
   behaviour. Note what the bullet above does to this one: the
@@ -179,10 +238,11 @@ than something to paper over.
   failed and the turn is half-built); acting on a threshold *before* it
   needs a trustworthy cap, which per `D_context_window_sources` most
   wirings don't have.
-- **Is a compacted conversation still the same conversation?** Bears on
-  `clear_conversation`, `Event::Reset`, extension `on_conversation_reset`
-  (does the workspace's read-record survive a compaction?), and what
-  `TokenLog` should show afterwards.
+- ~~**Is a compacted conversation still the same conversation?**~~
+  **Decided: yes.** The workspace's read-record, promoted skills and MCP
+  servers survive a compaction. `TokenLog` keeps its last size and shows a
+  `compacted: N → M msgs` status line until the next reply reports the new
+  size.
 - **What must never be pruned?** The Agent Skills spec's own
   client-implementation guide (Step 5) says to exempt skill content from
   pruning: losing a loaded skill mid-conversation degrades the agent
@@ -341,20 +401,10 @@ reach for now, and the honest answer is that this never fired.
   above for what survived the deletion, and `D_no_step_limit` for why.
 - {Pikuri::Agent::Listener::TokenLog} — where the live usage number
   already lives.
-- {Pikuri::Agent#clear_conversation} — the existing "start over" path any
-  compaction has to stay coherent with.
-- {Pikuri::Agent#export_history} + `Agent.new(history:)` (the history
-  entries in `../decisions.md`) — **the natural actuator if this note ever
-  chooses summarize-in-place.** "Export, shorten, reload" is exactly the
-  shape, and the machinery now exists. What it does *not* answer is the
-  policy question that blocks it: a compactor has to slice a conversation
-  without splitting an assistant `tool_calls` turn from the `:tool`
-  messages answering it, and nothing in pikuri says where to cut — a
-  cut that strands a result draws a provider 400. Note
-  also that a resume deliberately restores the
-  conversation and not the session, which is one concrete answer to this
-  note's open "does the workspace's read-record survive a compaction?"
-  (today: no).
+- {Pikuri::Agent::Configurator#replace_compacted_history} — the actuator:
+  export with {Pikuri::Agent#export_history}, shorten, hand back. Where to
+  cut is still the compactor's problem; the method only refuses a cut that
+  strands a tool result or drops the last message.
 - `D_context_window_sources` — why a cap is often `nil`, which constrains
   every threshold-based option.
 - `book/tasks.md` mentions the overflow raise in passing; if behaviour

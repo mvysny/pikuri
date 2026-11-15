@@ -161,6 +161,19 @@ module Pikuri
       # @!attribute [r] tokens
       #   @return [Tokens, nil] usage of the last restored assistant message
       HistoryLoaded = Data.define(:messages, :tokens)
+
+      # The conversation was swapped for a compacted rendering of itself
+      # ({Configurator#replace_compacted_history}); tools, extensions and the
+      # system prompt stand as they were.
+      #
+      # Carries no token counts: what the shorter conversation costs is known
+      # only once the next reply reports usage.
+      #
+      # @!attribute [r] messages_before
+      #   @return [Integer] how many messages the conversation held
+      # @!attribute [r] messages_after
+      #   @return [Integer] how many it holds now
+      HistoryCompacted = Data.define(:messages_before, :messages_after)
     end
   end
 end

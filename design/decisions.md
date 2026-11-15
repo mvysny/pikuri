@@ -554,7 +554,9 @@ instance state on objects built for that agent: an extension instance serves one
 `close` tears down what it started. An extension that needs to know what the restored
 conversation did reads it in `configure`, as `c.history` — MCP re-registers the tools of servers
 the transcript connected, from its cached schemas, with no call to the server. Reconnecting does
-not restore what those servers held; see `D_history_load_repairs`.
+not restore what those servers held; see `D_history_load_repairs`. A compaction crosses no
+boundary, so it shortens the messages in place and everything else stays
+(`Configurator#replace_compacted_history`).
 
 The price is building an agent per conversation, which is cheap for everything pikuri ships:
 tools are instances or constants, the prompt is re-assembled, the `/props` probe repeats on the

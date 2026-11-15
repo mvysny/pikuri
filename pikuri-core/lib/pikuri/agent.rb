@@ -39,7 +39,9 @@ module Pikuri
   #
   # A conversation boundary must not carry state across — not the tools an
   # MCP server registered mid-conversation, not the browser session behind
-  # them. See +design/decisions.md+ +D_agent_is_one_conversation+.
+  # them. See +design/decisions.md+ +D_agent_is_one_conversation+. Compaction
+  # crosses no boundary, so it rewrites the conversation in place:
+  # {Configurator#replace_compacted_history}.
   #
   # == The loop is unbounded
   #
@@ -517,7 +519,8 @@ module Pikuri
       @chat = build_chat(@transport)
       @listeners = ListenerList.new([])
       configurator = Configurator.new(agent: self, chat: @chat, listeners: @listeners,
-                                      history: @history, on_close_sink: @on_close_handlers)
+                                      history: @history, on_close_sink: @on_close_handlers,
+                                      history_replacer: method(:replace_compacted_history))
 
       @block&.call(configurator)
 
@@ -591,7 +594,8 @@ module Pikuri
       @listeners.on_event(restore_history(@history)) if @history
     end
 
-    # Put a saved conversation into the freshly built chat. Restored:
+    # Put a saved conversation into the chat — freshly built, or emptied by
+    # {#replace_compacted_history}. Restored:
     # messages, tool calls and their results, thinking, attachments,
     # per-message usage. **Not** state living outside the conversation — a
     # workspace's read-before-edit marks, promoted skills, a task list, what an
@@ -631,6 +635,74 @@ module Pikuri
         messages: repaired.messages.size,
         tokens: last && Event::Tokens.new(**last.tokens.to_h, model_id: last.model_id)
       )
+    end
+
+    # Swap the conversation for +history+, a compacted rendering of it, and
+    # emit {Event::HistoryCompacted}. The contract, and why nothing else is
+    # reset: {Configurator#replace_compacted_history}.
+    #
+    # @param history [History]
+    # @return [void]
+    # @raise [ArgumentError] if +history+ is not a {History}, drops the
+    #   conversation's last message, or holds a tool result with no call
+    # @raise [RuntimeError] inside the +Agent.new+ block, or while a tool
+    #   batch is open
+    def replace_compacted_history(history)
+      raise ArgumentError, "expected a Pikuri::Agent::History, got #{history.class}" unless history.is_a?(History)
+      # Set right after the block returns: inside it there is no conversation
+      # to compact yet, and resuming one is +history:+'s job.
+      raise 'replace_compacted_history called before Agent.new returned' unless @message_meta
+
+      open = unanswered_tool_calls
+      unless open.empty?
+        # ruby_llm still holds the batch's calls and appends their results
+        # after whatever the chat holds by then.
+        raise 'cannot replace the history while a tool batch is open: ' \
+              "#{open.map { |c| "#{c.name}(#{c.provider_call_id})" }.join(', ')}"
+      end
+      refuse_bad_compaction(history)
+
+      before = @chat.messages.count { |m| m.role != :system }
+      @chat.messages.select! { |m| m.role == :system }
+      @message_meta.clear
+      @pending_tool_call = nil
+      loaded = restore_history(history)
+      @listeners.on_event(Event::HistoryCompacted.new(messages_before: before, messages_after: loaded.messages))
+      nil
+    end
+
+    # The two cuts a compactor can get wrong that no provider reports
+    # clearly.
+    #
+    # Dropping the last message strands whatever ruby_llm does next: from a
+    # listener at the end of a turn, a history ending on a user message draws
+    # a request nobody asked for.
+    #
+    # A tool result whose call was cut away is a 400 on OpenAI and Anthropic,
+    # and on llama.cpp a template that improvises.
+    #
+    # @param history [History]
+    # @return [void]
+    # @raise [ArgumentError] on either
+    def refuse_bad_compaction(history)
+      last = @chat.messages.reverse.find { |m| m.role != :system }
+      last_id = last && @message_meta.dig(last, :id)
+      if last_id && history.messages.last&.id != last_id
+        raise ArgumentError, "a compacted history must end with the conversation's last message #{last_id}, " \
+                             "got #{history.messages.last&.id.inspect}"
+      end
+
+      calls = []
+      history.messages.each do |m|
+        unless m.role == 'tool'
+          calls = m.tool_calls.map(&:id)
+          next
+        end
+        next if calls.include?(m.tool_call_id)
+
+        raise ArgumentError, "tool result #{m.id} answers #{m.tool_call_id.inspect}, " \
+                             'a call the assistant turn before it did not make'
+      end
     end
 
     # Build the full prompt: base plus every extension's
@@ -1043,12 +1115,7 @@ module Pikuri
     #   batch on a turn that succeeded. Safe to raise from an +ensure+ here
     #   precisely because there is no in-flight exception to clobber.
     def repair_dangling_tool_calls!(cause)
-      messages = @chat.messages
-      opener_index = messages.rindex { |m| m.role == :assistant && m.tool_calls&.any? }
-      return if opener_index.nil?
-
-      answered = messages[(opener_index + 1)..].filter_map { |m| m.tool_call_id if m.role == :tool }
-      dangling = messages[opener_index].tool_calls.each_value.reject { |c| answered.include?(c.id) }
+      dangling = unanswered_tool_calls
       return if dangling.empty?
 
       if cause.nil?
@@ -1123,14 +1190,19 @@ module Pikuri
     # @return [Boolean] true when +msg+ is the last tool result its assistant
     #   message was waiting for (so parallel calls drain once, at the end)
     def tool_batch_complete?(msg)
-      return false unless msg.role == :tool
+      msg.role == :tool && unanswered_tool_calls.empty?
+    end
 
+    # @return [Array<RubyLLM::ToolCall>] the calls of the last assistant
+    #   turn that asked for tools which no +:tool+ message answers yet, in
+    #   the order ruby_llm runs them; empty when no batch is open.
+    def unanswered_tool_calls
       messages = @chat.messages
       opener_index = messages.rindex { |m| m.role == :assistant && m.tool_calls&.any? }
-      return true if opener_index.nil?
+      return [] if opener_index.nil?
 
       answered = messages[(opener_index + 1)..].filter_map { |m| m.tool_call_id if m.role == :tool }
-      messages[opener_index].tool_calls.each_key.all? { |id| answered.include?(id) }
+      messages[opener_index].tool_calls.each_value.reject { |c| answered.include?(c.id) }
     end
 
     # Normalize an +after_message+ payload into zero, one, or two {Event}s

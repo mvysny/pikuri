@@ -7,8 +7,9 @@ module Pikuri
       # turn via +Pikuri.logger_for('Tokens')+ — a running headline to catch
       # growth before the provider raises
       # +RubyLLM::ContextLengthExceededError+. Consumes {Event::Tokens} (one
-      # line each) and {Event::HistoryLoaded} (seed the snapshot, see
-      # {#seed_snapshot}); every other variant is a no-op.
+      # line each), {Event::HistoryLoaded} (seed the snapshot, see
+      # {#seed_snapshot}) and {Event::HistoryCompacted} (a status line only);
+      # every other variant is a no-op.
       #
       # == Log line shape
       #
@@ -107,6 +108,11 @@ module Pikuri
             log_tokens(tokens)
           in Event::HistoryLoaded(tokens:)
             seed_snapshot(tokens)
+          in Event::HistoryCompacted(messages_before:, messages_after:)
+            # The snapshot stays, so the next reply's Δ shows what the compaction freed.
+            @status_line = "compacted: #{messages_before} → #{messages_after} msgs, " \
+                           "ctx was #{format_k(@context_window_size)}"
+            @on_status_line&.call(@id, @status_line)
           else
             # Every other variant: no-op.
           end
