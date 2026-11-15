@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Fix `Pikuri::Thunderbird::Profile.discover` raising "profiles under two roots" when the snap root is a symlink to `~/.thunderbird`, as the snap launcher makes for a user migrated from the deb; roots are now compared by realpath, and a profile with no mail account no longer counts.
+
 - Fix `thunderbird_mail_read` and `thunderbird_mail_attachment_read` on a message Thunderbird holds only the headers of: instead of an empty body and "no attachments", they say so and name the offline-storage setting to change; `Gloda::Mail#read` gains `downloaded:` and prefers a downloaded copy.
 - Add `Pikuri::Agent::Configurator#replace_compacted_history`, which swaps a conversation for a shorter version of itself while tools, MCP connections and extension state stay as they are, and emits the new `Event::HistoryCompacted`.
 - **Breaking:** removed `Pikuri::Agent::EmptyTurnError`; a blank turn on a fresh chat now goes to the provider, and Anthropic or Bedrock answer it with their own 400 (`D_reference_text_as_user_turn`). Drop any `rescue` of it.

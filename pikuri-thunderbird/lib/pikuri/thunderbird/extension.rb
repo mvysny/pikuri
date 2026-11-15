@@ -47,7 +47,7 @@ module Pikuri
     #
     # When Thunderbird isn't installed ({Profile.discover} returns +nil+),
     # nothing is registered and the agent still constructs. An *ambiguous*
-    # install (profiles under two roots) raises from {Profile.discover} —
+    # install (mail accounts under two roots) raises from {Profile.discover} —
     # loud, with the fix — rather than guessing.
     #
     # By default this is the search-only, no-egress surface. The two

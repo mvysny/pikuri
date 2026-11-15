@@ -15,14 +15,21 @@ module Pikuri
     #
     # Two install roots are probed, in this order: **snap**
     # (+~/snap/thunderbird/common/.thunderbird+, confirmed) and **apt**
-    # (+~/.thunderbird+, recalled). Flatpak is out of scope. If *both* roots
-    # hold a +profiles.ini+ (a stale apt profile left behind by an apt→snap
-    # migration is the common case), discovery raises rather than guess
-    # which is live — the one-time fix (delete the obsolete root) beats a
-    # liveness heuristic that guesses wrong exactly there. An explicit
-    # +profile_dir:+ override bypasses all of this.
+    # (+~/.thunderbird+, recalled). Flatpak is out of scope. A profile with
+    # no mail account (Thunderbird started once, its account wizard closed)
+    # doesn't count. If *both* roots hold a profile with an account (a stale
+    # apt profile left behind by an apt→snap migration is the common case),
+    # discovery raises rather than guess which is live — the one-time fix
+    # (delete the obsolete root) beats a liveness heuristic that guesses
+    # wrong exactly there. An explicit +profile_dir:+ override bypasses all
+    # of this.
     #
     # == Implementation details
+    #
+    # Roots are compared by +File.realpath+: started while +~/.thunderbird+
+    # existed and its own root didn't, the snap launcher links
+    # +~/snap/thunderbird/common/.thunderbird -> ~/.thunderbird+, so both
+    # roots are one directory and one profile, found as +:snap+.
     #
     # Within a root, the active profile is the +profiles.ini+ section with
     # +Default=1+ (or the sole profile when there's exactly one and none is
@@ -30,6 +37,11 @@ module Pikuri
     # when +IsRelative=1+. The confirmed real-world ini has no +[Install…]+
     # sections (Firefox's per-install default mechanism), so the plain
     # +Default=1+ scan suffices.
+    #
+    # A mail account is a +mail.server.serverN.type+ in +prefs.js+ other
+    # than +none+, which is Local Folders: every profile gets those on first
+    # start, so a +Mail/+ directory proves nothing. Nor does a missing Gloda
+    # index — a real profile has none until its first indexing finishes.
     class Profile
       # @return [String] snap install root (confirmed on a live box).
       SNAP_ROOT = File.expand_path('~/snap/thunderbird/common/.thunderbird')
@@ -55,28 +67,35 @@ module Pikuri
       # Discover the active profile, or return +nil+ when Thunderbird is not
       # installed (no +profiles.ini+ under any probed root).
       #
+      # When every found profile lacks a mail account, the first root's wins,
+      # so a fresh install is still found.
+      #
       # @param profile_dir [String, nil] explicit override; when given, it is
       #   used verbatim (expanded) and the root scan is skipped.
+      # @param roots [Hash{Symbol => String}] install roots to probe, in
+      #   preference order; the spec points it at temp dirs.
       # @return [Profile, nil] the resolved profile, or +nil+ if none found.
-      # @raise [DiscoveryError] if +profile_dir+ isn't a directory, if both
-      #   roots hold a profile, or if a root has several profiles and none
-      #   is marked +Default=1+.
-      def self.discover(profile_dir: nil)
+      # @raise [DiscoveryError] if +profile_dir+ isn't a directory, if two
+      #   roots hold a profile with a mail account, or if a root has several
+      #   profiles and none is marked +Default=1+.
+      def self.discover(profile_dir: nil, roots: ROOTS)
         return from_override(profile_dir) if profile_dir
 
-        present = ROOTS.select { |_, root| File.file?(File.join(root, 'profiles.ini')) }
+        present = roots.select { |_, root| File.file?(File.join(root, 'profiles.ini')) }
+                       .uniq { |_, root| File.realpath(root) }
+                       .map { |variant, root| new(dir: resolve_within(root), variant: variant) }
         return nil if present.empty?
 
-        if present.size > 1
-          paths = present.values.join(' and ')
+        live = present.select(&:mail_account?)
+        if live.size > 1
+          paths = live.map(&:dir).join(' and ')
           raise DiscoveryError,
-                "Found Thunderbird profiles under two roots (#{paths}). This usually " \
-                'means a stale profile from an old install. Delete the obsolete root, ' \
-                'or pass profile_dir: to pick one explicitly.'
+                "Found Thunderbird profiles with mail accounts under two roots (#{paths}). " \
+                'This usually means a stale profile from an old install. Delete the ' \
+                'obsolete root, or pass profile_dir: to pick one explicitly.'
         end
 
-        variant, root = present.first
-        new(dir: resolve_within(root), variant: variant)
+        live.first || present.first
       end
 
       # @param dir [String] resolved profile directory (absolute).
@@ -97,6 +116,16 @@ module Pikuri
       # @return [String] Thunderbird's preferences, which map each mail
       #   account to its store directory (see {MessageStore}).
       def prefs_path = File.join(@dir, 'prefs.js')
+
+      # @return [Boolean] whether +prefs.js+ names an account beyond Local
+      #   Folders; +false+ when there is no +prefs.js+.
+      def mail_account?
+        return false unless File.file?(prefs_path)
+
+        File.foreach(prefs_path, encoding: 'UTF-8').any? do |line|
+          line.match?(/\Auser_pref\("mail\.server\.server\d+\.type",\s*"(?!none")/)
+        end
+      end
 
       # @return [String] the calendar stores directory.
       def calendar_dir = File.join(@dir, 'calendar-data')

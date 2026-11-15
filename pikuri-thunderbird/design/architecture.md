@@ -265,8 +265,8 @@ full v2 rationale + open questions are in `design/ideas/thunderbird.md`.
 
 {Pikuri::Thunderbird::Profile} never guesses: it resolves one profile
 unambiguously (parsing `profiles.ini`), raises with a fix if two install
-roots both hold a profile (a stale apt profile left after an apt→snap
-migration), or returns `nil` (tools simply not registered) when Thunderbird
+roots both hold a profile with a mail account (a stale apt profile left after
+an apt→snap migration), or returns `nil` (tools simply not registered) when Thunderbird
 isn't installed. An explicit `profile_dir:` override bypasses discovery.
 Linux snap and apt roots are supported; flatpak is out of scope.
 
@@ -303,9 +303,8 @@ attachments are still checked only on that one install.
 - **The snap launcher links its root to an existing `~/.thunderbird`.** Started
   while `~/.thunderbird` existed and the snap root didn't, snap 159 created
   `~/snap/thunderbird/common/.thunderbird -> ~/.thunderbird`. For a user
-  migrated from the deb, both roots are then one directory, and § Discovery's
-  two-roots check raises on what is one profile — a bug, owned by
-  `design/ideas/thunderbird-roots-symlink.md` in the repo root.
+  migrated from the deb, both roots are then one directory, so discovery
+  compares roots by realpath.
 
 ### Mail: the Gloda index (`global-messages-db.sqlite`) — the v1 source
 

@@ -24,6 +24,67 @@ describe Pikuri::Thunderbird::Profile do
     end
   end
 
+  describe '.discover across install roots' do
+    around do |example|
+      Dir.mktmpdir do |home|
+        @home = home
+        example.run
+      end
+    end
+
+    def roots = { snap: File.join(@home, 'snap'), apt: File.join(@home, 'apt') }
+
+    # A root holding one Default=1 profile; +account_type:+ nil writes no prefs.js.
+    def make_root(root, account_type: 'imap')
+      FileUtils.mkdir_p(File.join(root, 'p.default'))
+      File.write(File.join(root, 'profiles.ini'), "[Profile0]\nPath=p.default\nIsRelative=1\nDefault=1\n")
+      return unless account_type
+
+      File.write(File.join(root, 'p.default', 'prefs.js'), <<~JS)
+        user_pref("mail.server.server1.type", "none");
+        user_pref("mail.server.server2.type", "#{account_type}");
+      JS
+    end
+
+    it 'returns nil when no root holds a profiles.ini' do
+      assert_nil Profile.discover(roots: roots)
+    end
+
+    it 'finds the one root that holds a profile' do
+      make_root(roots[:apt])
+      profile = Profile.discover(roots: roots)
+      assert_equal File.join(roots[:apt], 'p.default'), profile.dir
+      assert_equal :apt, profile.variant
+    end
+
+    it 'treats a snap root symlinked to the apt root as one profile' do
+      make_root(roots[:apt])
+      File.symlink(roots[:apt], roots[:snap])
+      profile = Profile.discover(roots: roots)
+      assert_equal :snap, profile.variant
+      assert profile.mail_account?
+    end
+
+    it 'skips a profile with no mail account' do
+      make_root(roots[:snap], account_type: 'none')
+      make_root(roots[:apt])
+      assert_equal :apt, Profile.discover(roots: roots).variant
+    end
+
+    it 'picks the first root when no profile has a mail account' do
+      make_root(roots[:snap], account_type: nil)
+      make_root(roots[:apt], account_type: 'none')
+      assert_equal :snap, Profile.discover(roots: roots).variant
+    end
+
+    it 'raises when two roots hold a profile with a mail account' do
+      make_root(roots[:snap])
+      make_root(roots[:apt], account_type: 'pop3')
+      error = assert_raises(Profile::DiscoveryError) { Profile.discover(roots: roots) }
+      assert_includes error.message, roots[:apt]
+    end
+  end
+
   describe 'derived presence probes' do
     it 'reports gloda? and calendar_dbs from disk' do
       Dir.mktmpdir do |dir|
