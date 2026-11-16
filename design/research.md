@@ -1072,7 +1072,7 @@ external validation of the persona model here.
 Where grok-build goes further and pikuri deliberately does not: **resumability** (a follow-up costs
 one delta instead of a re-run) and **worktree isolation** (parallel children editing the same repo
 without colliding). Both are the same trade opencode's `task` makes — real capability for a session
-store's worth of machinery. pikuri-workshop's `GIT_REPO_RESEARCHER` does the throwaway-workspace half for the
+store's worth of machinery. pikuri-workshop's `Code::GitRepoResearcher` does the throwaway-workspace half for the
 read-only case; the worktree variant is what a *writing* sub-agent would need, and pikuri has none.
 
 ### Bundled persona inventory
@@ -1082,7 +1082,7 @@ between "ship nothing, the host wires everything" and "ship the whole zoo."
 
 | Project | Personas shipped | Source |
 | --- | --- | --- |
-| pikuri | `RESEARCHER` (web_search/web_scrape/fetch); `FILE_MINER` (file_list/read/grep/glob); `GIT_REPO_RESEARCHER` (git_clone + file_list/read/grep/glob + web reads, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,file_miner}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb` |
+| pikuri | `RESEARCHER` (web_search/web_scrape/fetch); `FILE_MINER` (file_list/read/grep/glob) — queued: `reviewer`. pikuri-workshop adds a `git_repo_research` tool (git_clone + file_list/read/grep/glob + web reads, per-invocation temp workspace) whose child is hand-built, not a persona | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,file_miner}.rb`; `pikuri-workshop:pikuri-code/lib/pikuri/code/git_repo_researcher.rb` |
 | ruby_llm / langchainrb | none — no sub-agent surface | — |
 | pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
 | opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |
@@ -1095,7 +1095,7 @@ Cross-cutting by role:
 
 | Role | pikuri | pi | opencode | Claude Code |
 | --- | --- | --- | --- | --- |
-| read-only recon (cheap model) | `RESEARCHER` (web) + `FILE_MINER` (fs) + `GIT_REPO_RESEARCHER` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
+| read-only recon (cheap model) | `RESEARCHER` (web) + `FILE_MINER` (fs); the workshop's `git_repo_research` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
 | planner (read-only, intent-shaping) | — | `planner` (Sonnet) | `plan` (primary mode, not subagent) | `Plan` |
 | reviewer (read-only correctness) | queued | `reviewer` (Sonnet, bash for git) | — | — |
 | general-purpose catch-all | — | `worker` | `general` | `general-purpose` |
@@ -1118,15 +1118,15 @@ Cross-cutting by role:
   a harness-core fact. **[src]**
 - **Only pi pins a model per persona** — Haiku for `scout`, Sonnet for the rest. **[src]**
 
-**Takeaway.** Pikuri ships a lean set — three against pi's four, opencode's eight and Claude Code's
+**Takeaway.** Pikuri ships a lean set — two against pi's four, opencode's eight and Claude Code's
 five — which matches the read-it-in-an-evening ceiling: ship the personas that demonstrate the
-mechanism along each axis, and let downstream gems publish
-more. `RESEARCHER` and `FILE_MINER` are the direct analogues of pi's
-`scout` / opencode's `explore` / Claude Code's `Explore`, split by *what* gets read;
-`GIT_REPO_RESEARCHER` is a third axis with no direct analogue in the set — the closest move
-elsewhere is letting `bash` (with `git`) reach inside a sandbox, where the persona shape collapses
-that into one privilege-separated delegation with no `bash` in scope. Pikuri covers `explore` three
-times over and covers neither `plan` nor `general-purpose`; "planner = read-only + intent-shaping"
+mechanism along each axis, and let downstream gems publish more. `RESEARCHER` and `FILE_MINER` are
+the direct analogues of pi's `scout` / opencode's `explore` / Claude Code's `Explore`, split by
+*what* gets read. pikuri-workshop's `git_repo_research` is a third axis with no direct analogue in
+the set — the closest move elsewhere is letting `bash` (with `git`) reach inside a sandbox, where
+one privilege-separated delegation with no `bash` in scope does the same. It is a hand-built child,
+not a persona, because a persona's tools are the parent's instances, bound to the parent's
+workspace. Pikuri covers `explore` twice over and covers neither `plan` nor `general-purpose`; "planner = read-only + intent-shaping"
 is now four-for-four across the projects that ship personas at all, and pikuri has not committed
 either way. opencode's hidden-housekeeping trick is worth knowing for a compaction policy
 (`D_compaction_in_place`) — pikuri's one equivalent, a hard-coded
