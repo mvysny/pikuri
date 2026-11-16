@@ -85,6 +85,23 @@ describe Pikuri::Thunderbird::Gloda do
     end
   end
 
+  it 'keeps serving the older copy while Thunderbird is mid-write, even after a close' do
+    with_gloda(rows: 1) do |gloda, dir|
+      count = -> { gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') } }
+      assert_equal 1, count.()
+
+      add_message(dir, 99)
+      journal = File.join(dir, 'global-messages-db.sqlite-journal')
+      File.write(journal, '')
+      assert_equal 1, count.(), 'busy → the older copy answers'
+      gloda.close
+      assert_equal 1, count.(), 'busy after a close → the older copy reopens'
+
+      File.delete(journal)
+      assert_equal 2, count.()
+    end
+  end
+
   # P_shared_locked, asserted on the *outcome* rather than on a schedule: a
   # reader parks inside its block while a second caller tries to rebuild. Drop
   # the lock and the rebuild's #close lands on the handle the reader is still

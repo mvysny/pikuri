@@ -33,21 +33,13 @@ Each needs a live install or a comm-central read; none blocks what ships.
   dovecot is IMAP only, and a CalDAV server that doesn't auto-schedule (Radicale)
   proves nothing. It needs Nextcloud/Sabre, Cyrus or a hosted account.
 
-## Open bugs
-
-- **A mail query during a large poll raises `TornError` out of the tool.**
-  Gloda holds its `-journal` for about 11 ms per new message (measured:
-  `pikuri-thunderbird/design/architecture.md`, *Across a real poll*), and
-  {Pikuri::Thunderbird::DatabaseSnapshot#refresh}'s 6 × 80 ms budget gives up
-  under a 100-message poll. Nothing in `lib/` rescues it, so the turn dies. A
-  longer budget only moves the line. The candidates: when a previous copy exists,
-  serve it one poll stale instead of raising; otherwise answer
-  `Tool::Result.error` saying the index is busy, so the model can try again.
-  If the ~1 s spurious FTS5 rebuild ever bites too, the fix there is the
-  content-triple de-churn (`max(id)` / `count(*)` / `sum(deleted)`) instead of
-  the bare counter.
 
 ## Deferred work
+
+- **Content-triple de-churn of the FTS5 rebuild.** Gloda's counter moves on
+  read/star/tag flips too, so the ~1 s rebuild re-fires during triage. If that
+  ever bites, gate the rebuild on `max(id)` / `count(*)` / `sum(deleted)`
+  instead of the bare counter.
 
 - **A correspondent allowlist** — restrict mail search/read to senders and
   recipients matching an address or domain, so a host can scope the mailbox

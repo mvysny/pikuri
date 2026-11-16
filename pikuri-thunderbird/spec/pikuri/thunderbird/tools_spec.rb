@@ -108,6 +108,16 @@ describe 'pikuri-thunderbird tools' do
         g.close
       end
     end
+
+    it 'Errors with the busy text while Thunderbird writes and no copy exists yet' do
+      Dir.mktmpdir do |dir|
+        g = gloda(dir)
+        File.write(File.join(dir, 'global-messages-db.sqlite-journal'), '')
+        out = Pikuri::Thunderbird::MailSearch.new(backend: mail(g)).run('query' => 'invoice').to_s
+        assert_equal "Error: #{Pikuri::Thunderbird::DatabaseSnapshot::BUSY}", out
+        g.close
+      end
+    end
   end
 
   describe 'the display line' do

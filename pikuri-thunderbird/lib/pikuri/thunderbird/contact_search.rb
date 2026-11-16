@@ -54,8 +54,8 @@ module Pikuri
       end
 
       # @return [Pikuri::Tool::Result] the ranked candidates (+"Found 3
-      #   contacts"+), or the no-match line (+"Found 0 contacts"+). This tool
-      #   has no failure the LLM can act on, so never an +"Error: …"+.
+      #   contacts"+), the no-match line (+"Found 0 contacts"+), or
+      #   {Pikuri::Tool::Result.error} while Thunderbird is too busy to read.
       def self.run_search(backend:, query:, limit:)
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         candidates = backend.resolve(query:, limit:)
@@ -69,6 +69,8 @@ module Pikuri
           content: [header, *candidates.map { |c| render(c) }].join("\n\n"),
           summary: "Found #{Pikuri::Tool.pluralize(candidates.size, 'contact')}"
         )
+      rescue DatabaseSnapshot::TornError => e
+        Pikuri::Tool::Result.error(e.message)
       end
 
       # @param c [Hash] one candidate from {Gloda::Contacts#resolve}.

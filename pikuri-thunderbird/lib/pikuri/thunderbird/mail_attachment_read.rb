@@ -140,6 +140,8 @@ module Pikuri
         Pikuri::Tool::Result.error("no reader for #{found.content_type} attachments on this host.")
       rescue Pikuri::Extractor::Error => e
         Pikuri::Tool::Result.error(e.message)
+      rescue DatabaseSnapshot::TornError => e
+        Pikuri::Tool::Result.error(e.message)
       end
 
       # The attachment a handle names, once found.

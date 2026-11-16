@@ -102,7 +102,12 @@ the live file. Instead {Pikuri::Thunderbird::DatabaseSnapshot} takes a **bracket
 reads the *generation* (the SQLite change counter at header bytes 24–27, plus
 the `-wal`'s salt and size) and checks for a rollback `-journal` before and
 after the copy, and accepts the copy only if the generation didn't move and
-no journal was present at either edge (otherwise it discards and retries).
+no journal was present at either edge (otherwise it discards and retries, 4
+tries 250 ms apart). Copies alternate between two slots, so a failed try never
+touches the copy in use: when the tries run out, that older copy keeps serving,
+one poll stale. Only with no older copy yet does the tool answer an error
+telling the model Thunderbird is busy. Retrying forever is not an option: a
+crash mid-write leaves a hot `-journal` that stays until Thunderbird next starts.
 The copy is opened normally, so SQLite applies the copied WAL. Reflink makes
 the copy a near-free metadata-only extent share on a copy-on-write
 filesystem.
@@ -430,10 +435,11 @@ not at the header fetch. It commits in batches, not per message: N=3 → +3, N=2
 → +2, N=100 → +2, N=400 → +3 on the counter. One transaction holds the
 `-journal` for most of the burst, and it **grows with the poll, about 11 ms a
 message**: 0.65 s at N=20, 1.1 s at N=100, 4.4 s at N=400. After that, nothing
-for the next 40–60 s. So the bracket's retry budget (6 × 80 ms) is shorter than
-a 100-message poll: two of the 22 default-budget refreshes taken during that
-burst raised `TornError` ("journal true/true" on every try). No fixed budget
-covers every poll. (In a headless session autosync never fetched the new bodies
+for the next 40–60 s; a rerun of the 100-message poll held it 2.0 s. No fixed
+retry budget covers every poll, hence the stale fallback above: during that
+rerun, a search every 100 ms through one shared `Gloda` never failed. The two
+that landed inside the window waited ~0.8 s and answered from the older copy,
+and the first one after the burst took 0.27 s to copy and re-index. (In a headless session autosync never fetched the new bodies
 on its own within 90 s; the measurement fetched them with
 `downloadMessagesForOffline`, which is what autosync does.)
 

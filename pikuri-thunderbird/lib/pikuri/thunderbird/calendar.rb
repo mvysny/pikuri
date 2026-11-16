@@ -166,15 +166,18 @@ module Pikuri
 
       private
 
-      # (Re)snapshot + reopen each store whose source generation moved.
+      # (Re)snapshot + reopen each store whose source generation moved. While
+      # Thunderbird is busy writing, the older copy keeps serving.
       #
       # @return [void]
+      # @raise [DatabaseSnapshot::TornError] Thunderbird is busy and a store
+      #   has no copy yet.
       def ensure_fresh
         @snapshots.each do |src, snap|
           next if @conns[src] && snap.current?
+          next unless snap.refresh || @conns[src].nil?
 
           @conns.delete(src)&.close
-          snap.refresh
           @conns[src] = SQLite3::Database.new(snap.path, flags: SQLite3::Constants::Open::READONLY)
         end
       end

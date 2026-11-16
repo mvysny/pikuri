@@ -102,6 +102,8 @@ module Pikuri
         )
       rescue ArgumentError => e
         Pikuri::Tool::Result.error("bad date filter (#{e.message}).")
+      rescue DatabaseSnapshot::TornError => e
+        Pikuri::Tool::Result.error(e.message)
       end
 
       # The leading line: affirm completeness when every event fit ("all

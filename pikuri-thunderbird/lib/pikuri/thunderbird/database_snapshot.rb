@@ -12,9 +12,10 @@ module Pikuri
     #
     #   snap = DatabaseSnapshot.new(source: profile.gloda_path, dir: cache_dir)
     #   unless db && snap.current?
-    #     db&.close           # before refresh overwrites the copy under it
-    #     snap.refresh        # (re)copies iff the source generation moved
-    #     db = SQLite3::Database.new(snap.path)
+    #     if snap.refresh || db.nil?  # false: unchanged, or Thunderbird busy → keep the older copy
+    #       db&.close                 # the older copy; the next refresh overwrites it
+    #       db = SQLite3::Database.new(snap.path)
+    #     end
     #   end
     #
     # Open the copy normally, never +?immutable=1+: for a WAL store the copy
@@ -29,7 +30,14 @@ module Pikuri
     # {.generation} and check +-journal+ absence *before and after* the copy;
     # a copy counts as settled only when the generation didn't move and no
     # rollback journal was present at either edge. Otherwise the copy is
-    # discarded and retried after a short backoff.
+    # discarded and retried after a backoff.
+    #
+    # When the tries run out, the older settled copy keeps serving, so a
+    # query during a big sync answers one poll stale. Only with no older copy
+    # does {#refresh} raise {TornError}, whose message is the model-facing
+    # "Thunderbird is busy" text. Gloda holds its +-journal+ about 11 ms per
+    # new message (4 s for 400), so no budget outlasts every poll, and a
+    # crash leaves a hot +-journal+ until Thunderbird next starts.
     #
     # The generation doubles as the freshness stamp: {#current?} compares the
     # live one against the copy's, and {#refresh} re-copies only when they
@@ -47,8 +55,13 @@ module Pikuri
     # torn WAL tail fails its frame checksum, so SQLite stops at the last
     # whole commit. The one unsafe case — a WAL restart between the copies,
     # new frames over the old main — changes the salt, which the bracket
-    # catches. Our dir's +-wal+/+-shm+ are deleted before each copy: a stale
-    # WAL would be replayed over the new main.
+    # catches. The target slot's +-wal+/+-shm+ are deleted before each copy:
+    # a stale WAL would be replayed over the new main.
+    #
+    # Copies alternate between two slots, +a/+ and +b/+, so a failed attempt
+    # never overwrites the copy a caller still reads. That is also why the
+    # caller must close its connection after each successful {#refresh}: the
+    # next one copies into the slot that connection holds.
     #
     # On-disk rather than an +:memory:+ load: the page cache keeps idle RAM ≈ 0
     # for a multi-hundred-MB Gloda, which a memory copy would pin for the life
@@ -64,12 +77,17 @@ module Pikuri
     class DatabaseSnapshot
       LOGGER = Pikuri.logger_for('Thunderbird::DatabaseSnapshot')
 
-      # Raised when a settled copy can't be taken within the attempt budget
-      # (Thunderbird mid-sync, generation won't sit still). Recoverable — the
-      # calling tool degrades to a stale snapshot or an +"Error: …"+.
+      # Raised when no settled copy can be taken and there is no older one to
+      # serve. Its message is written for the model; a tool answers it as
+      # +Tool::Result.error(e.message)+.
       class TornError < StandardError; end
 
-      # @return [String] absolute path of the snapshot copy.
+      # @return [String] what {TornError} says.
+      BUSY = 'Thunderbird is busy writing to its database; please wait for Thunderbird to settle down ' \
+             'and try again, or restart Thunderbird if this is taking too much time.'
+
+      # @return [String] absolute path of the current snapshot copy. It moves
+      #   to the other slot on each successful {#refresh}.
       attr_reader :path
 
       # The source's change stamp: any commit moves it, a read never does.
@@ -108,9 +126,10 @@ module Pikuri
       def initialize(source:, dir:)
         @source = source
         @dir = dir
-        @path = File.join(dir, File.basename(source))
+        @path = slot_path('a')
         @generation = nil
         FileUtils.mkdir_p(@dir, mode: 0o700)
+        %w[a b].each { FileUtils.mkdir_p(File.join(@dir, _1), mode: 0o700) }
         # Fire-and-forget reap of the whole private dir (block form).
         Pikuri::Finalizers.register { FileUtils.rm_rf(@dir) }
       end
@@ -121,57 +140,72 @@ module Pikuri
         !@generation.nil? && File.file?(@path) && self.class.generation(@source) == @generation
       end
 
-      # (Re)take the snapshot unless {#current?} — a no-op returning +false+
-      # then. Close any connection to {#path} first: the copy is overwritten
-      # in place.
+      # (Re)take the snapshot unless {#current?}. On +true+, {#path} names the
+      # new copy: close the connection to the older one and open it.
       #
-      # @param attempts [Integer] bracket retries before giving up.
-      # @param backoff [Float] seconds between retries.
-      # @return [Boolean] +true+ if a fresh copy was taken this call.
-      # @raise [TornError] if no settled copy could be taken.
-      def refresh(attempts: 6, backoff: 0.08)
+      # @param attempts [Integer] bracket tries before giving up.
+      # @param backoff [Float] seconds between tries; Thunderbird's sync is slow,
+      #   so there is no point hammering the file.
+      # @return [Boolean] +true+ if a fresh copy was taken this call; +false+
+      #   when the copy is current, or when Thunderbird kept writing through
+      #   every try and the older copy keeps serving.
+      # @raise [TornError] if no settled copy could be taken and none exists yet.
+      def refresh(attempts: 4, backoff: 0.25)
         return false if current?
 
-        copy_bracketed(attempts, backoff)
-        true
+        detail = copy_bracketed(attempts, backoff)
+        return true unless detail
+
+        LOGGER.warn("no settled snapshot of #{@source} after #{attempts} tries (#{detail})" \
+                    "#{', serving the older copy' if @generation}")
+        raise TornError, BUSY unless @generation
+
+        false
       end
 
       private
 
-      # @return [void]
-      # @raise [TornError]
+      # @return [String, nil] why the last try failed, or +nil+ once a
+      #   settled copy is in place.
       def copy_bracketed(attempts, backoff)
+        target = slot_path(@generation && @path == slot_path('a') ? 'b' : 'a')
         detail = nil
-        attempts.times do
+        attempts.times do |i|
+          sleep(backoff) if i.positive?
           before = self.class.generation(@source)
           before_journal = journal?
-          copy_error = copy_files
+          copy_error = copy_files(target)
           after = self.class.generation(@source)
           after_journal = journal?
 
           if copy_error.nil? && !before.nil? && before == after && !before_journal && !after_journal
+            @path = target
             @generation = after
-            return
+            return nil
           end
 
           detail = copy_error || "generation #{before.inspect}->#{after.inspect}, " \
                                  "journal #{before_journal}/#{after_journal}"
-          sleep(backoff)
         end
-        raise TornError, "no settled snapshot of #{@source} after #{attempts} tries (#{detail})"
+        detail
       end
+
+      # @param slot [String] +"a"+ or +"b"+.
+      # @return [String]
+      def slot_path(slot) = File.join(@dir, slot, File.basename(@source))
 
       # @return [Boolean] whether a +<source>-journal+ (write in flight) exists.
       def journal? = File.exist?("#{@source}-journal")
 
       # Copy the main file, then its +-wal+ if one exists.
       #
+      # @param target [String] the slot's copy path.
       # @return [String, nil] +cp+'s complaint, or +nil+ on success.
-      def copy_files
-        FileUtils.rm_f(["#{@path}-wal", "#{@path}-shm"])
-        error = cp(@source, @path)
+      def copy_files(target)
+        FileUtils.rm_f(["#{target}-wal", "#{target}-shm"])
+        error = cp(@source, target)
         wal = "#{@source}-wal"
-        error ||= cp(wal, "#{@path}-wal") if File.exist?(wal)
+        error ||= cp(wal, "#{target}-wal") if File.exist?(wal)
         error
       end
 

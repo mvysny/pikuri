@@ -63,6 +63,8 @@ module Pikuri
           desc.empty? ? '(no description)' : desc
         ].join("\n")
         Pikuri::Tool::Result.new(content: detail, summary: 'Read 1 event')
+      rescue DatabaseSnapshot::TornError => e
+        Pikuri::Tool::Result.error(e.message)
       end
 
       # The +Organizer:+ + +Attendees:+ block, or +[]+ when the event has no

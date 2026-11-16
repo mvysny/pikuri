@@ -106,6 +106,8 @@ module Pikuri
         MSG
         Pikuri::Tool::Result.new(content: message,
                                  summary: "Read #{Pikuri::Tool.format_bytes(message.bytesize)}")
+      rescue DatabaseSnapshot::TornError => e
+        Pikuri::Tool::Result.error(e.message)
       end
 
       # The numbered listing, also quoted back by +thunderbird_mail_attachment_read+

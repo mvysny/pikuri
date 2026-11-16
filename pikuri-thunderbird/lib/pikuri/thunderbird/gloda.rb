@@ -136,15 +136,18 @@ module Pikuri
       end
 
       # (Re)take the snapshot + rebuild the FTS5 index iff the live Gloda
-      # generation differs from what the current index was built from. Callers
-      # hold the lock.
+      # generation differs from what the current index was built from. While
+      # Thunderbird is busy writing, the older copy and its index keep serving.
+      # Callers hold the lock.
       #
       # @return [void]
+      # @raise [DatabaseSnapshot::TornError] Thunderbird is busy and no copy
+      #   exists yet.
       def ensure_fresh
         return if @db && @snapshot.current?
+        return unless @snapshot.refresh || @db.nil?
 
-        close! # release the fd before cp overwrites the copy in place
-        @snapshot.refresh
+        close!
         open_and_index
       end
 

@@ -199,7 +199,7 @@ module Pikuri
         notes << "You have never sent mail to #{novel.join(', ')}. If you expected a " \
                  'familiar contact, watch for a look-alike domain and verify out of ' \
                  'band (not by replying to a suspect message).'
-      rescue SQLite3::SQLException => e
+      rescue SQLite3::SQLException, DatabaseSnapshot::TornError => e
         LOGGER.warn("recipient-novelty check unavailable: #{e.message}")
         notes << "Couldn't check whether you've mailed these recipients before — " \
                  'double-check the address is correct.'

@@ -143,4 +143,53 @@ describe Pikuri::Thunderbird::DatabaseSnapshot do
       assert_raises(DatabaseSnapshot::TornError) { snap.refresh(attempts: 2, backoff: 0) }
     end
   end
+
+  # A +-journal+ beside the source is a write in flight; while it stays, no
+  # try settles.
+  it 'raises the busy text when Thunderbird keeps writing and there is no copy yet' do
+    Dir.mktmpdir do |dir|
+      src = make_db(dir)
+      File.write("#{src}-journal", '')
+      snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
+      error = assert_raises(DatabaseSnapshot::TornError) { snap.refresh(attempts: 2, backoff: 0) }
+      assert_equal DatabaseSnapshot::BUSY, error.message
+    end
+  end
+
+  it 'keeps serving the older copy while Thunderbird keeps writing' do
+    Dir.mktmpdir do |dir|
+      src = make_db(dir)
+      snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
+      snap.refresh
+      older = snap.path
+
+      bump(src)
+      File.write("#{src}-journal", '')
+      refute snap.refresh(attempts: 2, backoff: 0), 'busy → no fresh copy'
+      assert_equal older, snap.path
+      assert_equal [1], rows(snap), 'the failed tries left the older copy intact'
+      refute snap.current?, 'still stale, so the next query tries again'
+
+      File.delete("#{src}-journal")
+      assert snap.refresh
+      refute_equal older, snap.path, 'the fresh copy lands in the other slot'
+      assert_equal [1, 2], rows(snap)
+    end
+  end
+
+  it 'leaves an open connection to the older copy readable across a refresh' do
+    Dir.mktmpdir do |dir|
+      src = make_db(dir)
+      snap = DatabaseSnapshot.new(source: src, dir: File.join(dir, 'cache'))
+      snap.refresh
+      older = SQLite3::Database.new(snap.path, flags: SQLite3::Constants::Open::READONLY)
+
+      bump(src)
+      assert snap.refresh
+      assert_equal [1], older.execute('SELECT x FROM t ORDER BY x').flatten
+      assert_equal [1, 2], rows(snap)
+    ensure
+      older&.close
+    end
+  end
 end
