@@ -80,15 +80,16 @@ describe Pikuri::VectorDb::Tools::Search do
   describe '#execute happy path (no reranker)' do
     before { populate_backend }
 
-    it 'returns a header + numbered blocks with source + line range + score + snippet' do
+    it 'returns a header + numbered blocks with source + line range + snippet, no score' do
       observation = execute
 
       assert_includes observation, 'Found 3 matches.'
-      assert_includes observation, '[1] risotto.md lines 1-3 (score=1.00)'
+      assert_includes observation, "[1] risotto.md lines 1-3\n"
       assert_includes observation, 'Rice should be added gradually'
-      assert_includes observation, '[2] risotto.md line 3 (score=0.99)' # cosine of (0.9, 0.1, 0) ≈ 0.994
+      assert_includes observation, "[2] risotto.md line 3\n"
       # paella.md:0 carries no line range — a chunk not written by the Indexer.
-      assert_includes observation, '[3] paella.md (score=0.00)'
+      assert_includes observation, "[3] paella.md\n"
+      refute_includes observation, 'score'
     end
 
     it 'asks the backend for FINAL_K candidates when no reranker is configured' do
@@ -165,19 +166,6 @@ describe Pikuri::VectorDb::Tools::Search do
       assert_includes first_block, 'paella.md'
     end
 
-    it 'displays the reranker relevance score, not the cosine score' do
-      # The reversing reranker assigns descending scores 3.0, 2.0, 1.0
-      # to the reordered results — so the top hit (paella, cosine 0.00)
-      # shows the rerank score, never its cosine. This is the whole
-      # point: the displayed number matches the rank the reranker built.
-      observation = execute(reranker: reversing_reranker)
-
-      assert_includes observation, '[1] paella.md (score=3.00)'
-      assert_includes observation, '[3] risotto.md lines 1-3 (score=1.00)'
-      # The cosine scores from vector-only mode must NOT leak through.
-      refute_includes observation, 'paella.md (score=0.00)'
-    end
-
     it 'returns at most FINAL_K results even from a wider candidate set' do
       # Populate with 10 chunks, all matching the query.
       backend.delete_all
@@ -219,7 +207,7 @@ describe Pikuri::VectorDb::Tools::Search do
         # Observation is still produced — degraded, not failed.
         assert_includes observation, 'Found '
         # And the vector order (not reranker order) appears.
-        assert_includes observation, '[1] risotto.md lines 1-3 (score=1.00)'
+        assert_includes observation, "[1] risotto.md lines 1-3\n"
       ensure
         Pikuri.log_io = original_io
       end

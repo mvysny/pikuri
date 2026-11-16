@@ -122,11 +122,12 @@ describe Pikuri::Rag::Tools::Search do
       assert_includes out, 'notes.md'
     end
 
-    it 'formats as vectordb_search does — numbered source + line range + score + snippet' do
+    it 'formats as vectordb_search does — numbered source + line range + snippet, no score' do
       populate
       out = execute(query: 'invoice 4471')
       assert_match(/\AFound \d+ match/, out)
-      assert_match(/^\[1\] notes\.md lines 7-9 \(score=\d\.\d\d\)$/, out)
+      assert_match(/^\[1\] notes\.md lines 7-9$/, out)
+      refute_includes out, 'score'
     end
 
     it 'says so when the corpus has nothing' do
@@ -178,7 +179,7 @@ describe Pikuri::Rag::Tools::Search do
   end
 
   describe 'the optional reranker' do
-    it 'reorders the fused candidates and shows the rerank score' do
+    it 'reorders the fused candidates' do
       populate
       reranker = Object.new
       reranker.define_singleton_method(:rerank) do |query:, documents:|
@@ -188,7 +189,8 @@ describe Pikuri::Rag::Tools::Search do
         end
       end
       out = execute(reranker: reranker)
-      assert_includes out, '(score=10.00)'
+      # Fused, acme.md leads (the vector leg's #1) and other.md trails.
+      assert_match(/\A\[1\] other\.md /, out.split("\n\n")[1])
     end
 
     it 'falls back to the fused ordering on a reranker outage' do

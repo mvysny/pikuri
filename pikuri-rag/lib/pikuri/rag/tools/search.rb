@@ -8,7 +8,7 @@ module Pikuri
       #
       #   Found 5 matches.
       #
-      #   [1] acme-2026-08-14.md lines 1-4 (score=0.33)
+      #   [1] acme-2026-08-14.md lines 1-4
       #   Agreed to hold list pricing through Q1 and revisit at renewal...
       #
       # * *Vector leg* — embed the query, {Pikuri::VectorDb::Backend#query} for
@@ -27,9 +27,8 @@ module Pikuri
       # Fusion is reciprocal rank ({RRF_K}), then the optional
       # {Pikuri::VectorDb::Reranker} over the fused candidates, then
       # {FINAL_K}. The observation is {Pikuri::VectorDb::Tools::Search}'s
-      # format, and the +score+ is whatever built the order — so the same
-      # caveat applies as there, one +score=+ label over three scales (fused
-      # rank, cross-encoder relevance, or cosine on the vector-only path).
+      # format, rank order and no score — a fused-rank value means nothing
+      # outside its one query.
       #
       # A single-param surface (+query:+ only): retrieval depth, fusion and
       # rerank choice are host policy baked into {Pikuri::Rag::Extension}, not

@@ -1082,16 +1082,30 @@ sections the vector leg had at #1 fused to #6, #22 and #31, past the reranker's 
 **Decision.** `RRF_K` 5, and each leg contributes its top `LEG_K` = 10, reranker or not: 37/41,
 two more than the vector leg alone. The keyword leg earns its place as a voter — it lifts a
 vector #7 or #8 into the top 5 when it agrees near its own top — rather than by finding what the
-vector leg misses, which it never did on this corpus. The reranker now scores ≤ 20 documents.
+vector leg misses, which it never did on this corpus. The reranker now scores ≤ 20 documents,
+which cost bge-reranker-v2-m3 22 s a question on a CPU and 1.7 s on a GPU, the price a host
+weighs before wiring one (`reranker:` defaults to `nil`).
 
 **Alternatives rejected.**
 
 - **Hand the model both legs unfused** (each leg's top 3, interleaved, labelled): 35/41 — a
   quota gives the keyword leg three slots whether it has anything or not, so it lands on
   vector-only. Its one edge is MRR, 0.77 vs 0.63: each leg's #1 always leads, so the gold is
-  at #1 more often. That only matters if the model reads from the top. Per-hit labels like
-  "meaning #1, keyword #4", the other half of the proposal, can go on a fused list just as
-  well, so dropping the union doesn't rule them out.
+  at #1 more often. That only matters if the model reads from the top, and it mostly doesn't.
+  In a pick test (Ornith-1.5, thinking off, shown one search result per question and asked
+  which hit answers it, 3 repeats), each leg's top 10 interleaved was right 98/123 against
+  the fused top 5's 91: about two questions, at ~3× the context, and it never answered
+  "none".
+- **Label each fused hit with the legs that found it** ("meaning #1, keyword #4"), the other
+  half of that proposal, or **with its cosine**. Same pick test: bare, `(cosine=…)` and
+  labelled each scored 91/123, right on the same questions; the model picks by the snippet,
+  not the number beside it. With thinking on, one run over the 17 questions whose gold sat
+  below #1 scored 12, 14 and 15 of 17, unconfirmed. So hits print no score at all
+  ({Pikuri::VectorDb::Tools::Search}).
+- **Pin the vector leg's #1 first**, keeping the fused top 5. Gold at #1 rises from 20/41 to
+  29/41 and MRR to 0.77 with recall unchanged, but the pick test gained 93/123 against 91:
+  the model already finds a lower gold (38 of 51 picks), and a pinned wrong #1 misleads it
+  about as often as a pinned right one helps.
 - **Only one knob.** `k` 5 at depth 50: 34/41. Depth 10 at `k` 60: 36/41. Depth does most of
   the work; agreement deep in both lists is the noise.
 - **Keep 60, because every stack does.** It comes from the original paper's pilot over TREC

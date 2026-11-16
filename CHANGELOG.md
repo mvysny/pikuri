@@ -20,6 +20,7 @@ march on.
 ## [Unreleased]
 
 - Fix a sub-agent's context overflow ending the parent's whole turn; `Pikuri::SubAgent::SubAgentTool` now answers it as a tool error telling the parent to give the agent a narrower task.
+- **Breaking:** `vectordb_search` and `rag_search` hits no longer print `(score=…)`, only their rank, since no score behind the order is one the model can calibrate (`Pikuri::VectorDb::Tools::Search`). `Backend::Result#score` is unchanged for library callers.
 - Add `grep:` to `Pikuri::Workspace::Extension.new`; `false` leaves `grep` unwired for a host whose root a rag index also covers, since grep skips PDFs. `bin/pikuri-secretary` now wires its file tools through the extension, gaining `glob`, `file_list`, the root snapshot and the decline guidance (`D_secretary_wiring`).
 - Add `root_writable:` to `Pikuri::Workspace::Filesystem.new`; `false` keeps the project root readable but not writable, so the file tools share one path base with a corpus while writes land only in `writable:` roots. `bin/pikuri-secretary` now roots them at `~/Documents`, writable only in `Notes/` (`D_secretary_wiring`).
 - Add to `Pikuri::Workspace::Edit`'s not-found error the line and codepoint of each smart quote, en/em dash or no-break space that kept `old_string` from matching, so the model stops resending the same ASCII bytes; the file is never edited through the fold.

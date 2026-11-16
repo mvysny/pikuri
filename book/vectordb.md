@@ -278,7 +278,7 @@ What you should see: the agent reasons about the question, fires
 off two or three `vectordb_search` calls, and answers with a
 paragraph plus a citation to `subagents.md` (and possibly
 `security.md` for the lethal-trifecta tie-in). The retrieved
-chunks — a numbered list of `source lines a-b (score=…)` snippets — arrive as
+chunks — a numbered list of `source lines a-b` snippets — arrive as
 the observations it reasons over, right in its own output stream.
 
 Try a follow-up that doesn't need the corpus:
@@ -397,7 +397,7 @@ the index in the background and keep it live as files change.
 
 The retrieved chunks enter the agent's context as the next
 observation, formatted as a numbered list of
-`source lines 1210-1248 (score=2.08)\n<snippet…>`. The agent reads
+`source lines 1210-1248\n<snippet…>`, best first. The agent reads
 them the way it reads any other tool result, then quotes or cites
 what's relevant in its answer.
 
@@ -408,13 +408,13 @@ it rarely holds the whole answer. The range lets the agent call
 passage with its surroundings, instead of answering from a fragment
 plus whatever the model remembers.
 
-The `score` always tracks whatever produced the ordering: with the
-reranker on (the default), it's the cross-encoder's relevance score
-— a model-dependent scale that can run above 1 or go negative, so
-read it as a relative confidence gradient down the list, not a 0–1
-value. Pass `--no-reranker` and the score is plain cosine similarity
-in `[0, 1]` instead. Either way the number never disagrees with the
-rank, because it *is* the number the rank was built from.
+A hit carries no score, only its place in the list. The number
+behind the order is the cross-encoder's relevance with the reranker
+on (the default), a scale that can run above 1 or go negative, and
+cosine similarity with `--no-reranker`, whose useful band depends on
+the embedder. Neither tells the model whether a hit is good. Printed,
+a well-ranked `-2.31` reads as a weak match. The model judges the
+snippet itself, which is the better test anyway.
 
 ## Why this agent can't leak your corpus
 

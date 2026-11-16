@@ -60,7 +60,7 @@ Four tools, registered by the extension:
 1. **`rag_search`** — the hybrid ranking. Embeds the query for the
    vector leg, ORs its terms for a bm25-ranked keyword leg, fuses the
    two by reciprocal rank, optionally reranks with a cross-encoder,
-   and hands back five `source lines a-b (score=…)` snippets.
+   and hands back five `source lines a-b` snippets, best first.
 2. **`rag_search_keywords`** — the complete listing. ANDs the (stemmed) terms
    *across the whole document* and returns *every* match: `source`,
    matching-chunk count with the line each starts at, byte size. No

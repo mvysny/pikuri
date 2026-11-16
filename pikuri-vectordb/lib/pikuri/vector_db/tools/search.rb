@@ -12,7 +12,7 @@ module Pikuri
       #
       #   Found 5 matches.
       #
-      #   [1] handbook.md lines 1210-1248 (score=0.83)
+      #   [1] handbook.md lines 1210-1248
       #   Either party may terminate the agreement with three months' notice...
       #
       # The line range (per {Pikuri::Extractor}'s == Lines) is a ready
@@ -20,18 +20,18 @@ module Pikuri
       # surroundings rather than answering from the {SNIPPET_LENGTH}-char
       # snippet alone.
       #
-      # == Which score is shown
+      # == Why no score is shown
       #
-      # The +score+ tracks whatever determined the ordering, so it never
-      # disagrees with the rank — but the two modes put *different scales* behind
-      # one +score=+ label:
-      #
-      # * *Vector-only* (no reranker, or outage fallback) — cosine similarity
-      #   +[0, 1]+, comparable across results.
-      # * *Reranked* — the {Reranker::Hit} relevance score, a cross-encoder value
-      #   on a model-dependent scale (can be negative/unbounded for raw logits —
-      #   see {Reranker::Hit}), a relative gradient *not* a 0–1 threshold. pikuri
-      #   shows the one the order was built from rather than a misleading cosine.
+      # The rank is the whole signal the model gets. Every number behind it is
+      # one the model can't calibrate: a cosine's useful band depends on the
+      # embedder, a cross-encoder's relevance is often an unbounded logit
+      # ({Reranker::Hit}), and +pikuri-rag+'s fused rank and +bm25()+ mean
+      # nothing outside one query. Under one +score=+ label they invited the
+      # model to read a well-ranked hit as weak, and naming each scale
+      # (+cosine=+, +bm25=+) would only name a number it still can't read; it
+      # judges the snippets anyway — measured, a cosine or per-leg label beside
+      # each hit changed no pick (+D_rrf_tuning+). The score stays on
+      # {Backend::Result} for a library caller.
       #
       # A reranker outage falls back, doesn't fail: its +RuntimeError+ (the
       # {Reranker} protocol's) is caught, WARN-logged, and the vector-only top {FINAL_K}
@@ -151,8 +151,8 @@ module Pikuri
         # Attempt the rerank; on any reranker +RuntimeError+, WARN and return the
         # candidate ordering unchanged. On success each {Backend::Result} carries
         # the reranker's relevance score (via +Data#with+, replacing whatever the
-        # candidate arrived with) so the printed number matches the rerank order.
-        # See "Which score is shown".
+        # candidate arrived with), so a caller reading +score+ sees the number
+        # the order was built from.
         #
         # Public, with {.format_observation}: the two are the rerank-then-render
         # tail of the search pipeline, reusable by any tool set over this corpus
@@ -175,14 +175,11 @@ module Pikuri
           candidates
         end
 
-        # Format the results as a header + numbered
-        # +source lines a-b (score=X.XX)+ blocks with the snippet below,
-        # truncated at {SNIPPET_LENGTH} with +...+. The +score+ is whatever
-        # the caller stored (see "Which score is shown"); +%.2f+ handles every
-        # scale, including negative rerank logits and the small fused-rank
-        # values +pikuri-rag+ passes in. A chunk without +first_line:+ /
-        # +last_line:+ metadata — one not written by the {Indexer} — prints
-        # no range.
+        # Format the results as a header + numbered +source lines a-b+ blocks
+        # with the snippet below, truncated at {SNIPPET_LENGTH} with +...+, in
+        # the order given and with no score (see "Why no score is shown"). A
+        # chunk without +first_line:+ / +last_line:+ metadata — one not
+        # written by the {Indexer} — prints no range.
         #
         # Public as the other half of the reusable tail — see
         # {.reranked_or_fallback}.
@@ -196,8 +193,7 @@ module Pikuri
           body = results.each_with_index.map do |result, i|
             snippet = result.chunk.text
             snippet = snippet[0, SNIPPET_LENGTH] + '...' if snippet.length > SNIPPET_LENGTH
-            score = format('%.2f', result.score)
-            "[#{i + 1}] #{result.chunk.source}#{line_range(result.chunk)} (score=#{score})\n#{snippet}"
+            "[#{i + 1}] #{result.chunk.source}#{line_range(result.chunk)}\n#{snippet}"
           end.join("\n\n")
           Pikuri::Tool::Result.new(
             content: header + body,
