@@ -138,12 +138,10 @@ unless File.directory?(source)
   exit 2
 end
 
-# The chat transport and the embedder each build their own connection from
-# +server+, re-appending +/v1+ themselves. The reranker endpoint stays a bare
-# origin (it appends +/v1/rerank+ itself), so both get the +/v1+-free form.
+# The chat transport, the embedder and the reranker each build their own
+# connection from their server, re-appending +/v1+ themselves.
 api_key         = examples_config.fetch('llm_api_key', 'not-needed')
-server          = server.chomp('/').delete_suffix('/v1')
-reranker_server = (reranker_server || server).chomp('/').delete_suffix('/v1')
+reranker_server ||= server
 
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing).
 Pikuri::Extractors::PDF.register
@@ -163,7 +161,7 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nIndexed notes folder: #{source}"
 
 reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
-  endpoint: reranker_server,
+  server:   reranker_server,
   model:    reranker_model,
   api_key:  examples_config['llm_api_key']
 ) : nil

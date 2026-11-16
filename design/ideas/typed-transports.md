@@ -26,8 +26,9 @@ Related, already in the repo:
 the sketch below assumed a `Pikuri::Transport::Reranker::*` location.
 The reranker actually shipped under `Pikuri::VectorDb::Reranker`
 (`Reranker::LlamaServer` over `/v1/rerank`), *not* a `Transport::`
-type. So the "rerankers don't exist in ruby_llm" argument still holds,
-but the concrete class path in the sketch is now wrong — a future
+type, and since 2026-11 it reranks through ruby_llm 2.2's `Context#rerank`,
+so the "rerankers don't exist in ruby_llm" argument below no longer holds;
+the concrete class path in the sketch is wrong too — a future
 implementation would classify the existing `VectorDb::Reranker`
 instance, or hoist it, rather than introduce the path shown here.
 

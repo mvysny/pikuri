@@ -118,7 +118,8 @@ piece — each swappable via the Extension's keyword arguments:
   same arguments as the chat's `ChatTransport.from_openai_server`.
   Tests inject a fake `#embed` without monkey-patching ruby_llm.
 - **Reranker** (`Reranker::LlamaServer`, optional) — cross-encoder
-  over `POST /v1/rerank`. Pass `reranker: nil` to skip it;
+  over `POST /v1/rerank`, on its own connection like the embedder's:
+  `Reranker::LlamaServer.new(server:, model:, api_key:)`. Pass `reranker: nil` to skip it;
   retrieval falls back to vector-only top-k — less precision, same
   correctness.
 
@@ -162,7 +163,7 @@ reranker on top.
 
 If you'd rather pin the reranker in its own process — to avoid
 paying the router's unload/reload cost on rerank requests —
-`Reranker::LlamaServer` takes its own `endpoint:` argument and
+`Reranker::LlamaServer` takes its own `server:` argument and
 can point at a separate `llama-server`. Otherwise pikuri stays
 agnostic: it just needs URLs.
 

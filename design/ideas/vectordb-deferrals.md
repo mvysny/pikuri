@@ -74,9 +74,9 @@ Only the deferrals stay here.
   `#configure` rather than from a single boolean. See `design/decisions.md`
   `D_corpus_trust_declaration`.
 - **Additional reranker backends.** Only `Reranker::LlamaServer`
-  ships. Because it speaks the same `/v1/rerank` wire format as
-  Cohere's hosted reranker, a `Reranker::Cohere` (or any other
-  hosted cross-encoder) is a thin adapter behind the same duck-typed
+  ships. It reranks through ruby_llm, which also speaks Cohere's,
+  OpenRouter's and Bedrock's rerank, so a hosted cross-encoder is
+  mostly a `provider:` swap behind the same duck-typed
   `#rerank(query:, documents:)` protocol — deferred until someone
   wants a non-local reranker. Referenced from `VectorDb::Reranker`
   yardoc (that yardoc is the source of truth).

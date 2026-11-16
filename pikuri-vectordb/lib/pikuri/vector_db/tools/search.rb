@@ -33,8 +33,8 @@ module Pikuri
       #   see {Reranker::Hit}), a relative gradient *not* a 0–1 threshold. pikuri
       #   shows the one the order was built from rather than a misleading cosine.
       #
-      # A reranker outage falls back, doesn't fail: its {Reranker::LlamaServer}
-      # +RuntimeError+ is caught, WARN-logged, and the vector-only top {FINAL_K}
+      # A reranker outage falls back, doesn't fail: its +RuntimeError+ (the
+      # {Reranker} protocol's) is caught, WARN-logged, and the vector-only top {FINAL_K}
       # returned — reranker is a quality knob, degraded results beat a tool error.
       #
       # Single-param surface (+query:+ only, no +top_k:+/+reranker:+ toggle):

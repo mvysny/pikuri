@@ -375,9 +375,8 @@ summaries below tell you what each owns.
   (`#upsert` / `#query` / `#delete_all` / `#count`), so swapping
   between them is a one-line change.
 - **Reranker** (`Reranker::LlamaServer`) — optional. Speaks `POST
-  /v1/rerank` against a cross-encoder served by `llama-server` —
-  the same wire format Cohere's hosted reranker uses, so a hosted
-  fallback later is a base-URL + auth-header swap. If the reranker
+  /v1/rerank` against a cross-encoder served by `llama-server`,
+  through ruby_llm like the chat and the embedder. If the reranker
   errors mid-query (server down, timeout), `Search` logs a warning
   and returns the vector-only top-k instead — degraded results
   beat a tool error the model has to recover from.
