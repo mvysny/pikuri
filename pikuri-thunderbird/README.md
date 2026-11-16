@@ -4,7 +4,7 @@ Search and read your **local** Thunderbird mail and calendars from a pikuri
 agent — reading Thunderbird's own on-disk profile, never touching the
 network. Part of the [pikuri](https://codeberg.org/mvysny/pikuri) family.
 
-The default surface is read-only and egress-free: six inbound tools
+The default surface is read-only and egress-free: the inbound tools
 (`thunderbird_mail_search` / `thunderbird_mail_read` /
 `thunderbird_mail_attachment_read` / `thunderbird_contact_search` /
 `thunderbird_calendar_search` / `thunderbird_calendar_read`). The attachment

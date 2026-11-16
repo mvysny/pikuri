@@ -10,7 +10,7 @@ module Pikuri
     # mirroring {MailSearch}: tighten it to AND and the model — primed by the
     # forgiving mail search — reads the sparser hits as "no such event".
     #
-    # == Empty-corpus guidance (Q6)
+    # == Empty-corpus guidance
     #
     # Thunderbird keeps a CalDAV calendar's events *in memory only* unless
     # "Offline Support" is enabled, so a calendar can look full in the UI yet

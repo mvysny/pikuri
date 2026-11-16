@@ -95,7 +95,7 @@ in:
     matching document. Demo: `pikuri-briefing`, which briefs you on
     a customer from your own notes.
   - [`pikuri-thunderbird`](pikuri-thunderbird/README.md) — the
-    local Thunderbird profile as five read-only mail/calendar
+    local Thunderbird profile as read-only mail/calendar
     tools plus two human-gated hand-offs. No network, no
     autonomous send.
   - The power tools, which run code you didn't write and so need a

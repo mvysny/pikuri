@@ -16,10 +16,10 @@ module Pikuri
     #   only when the Gloda index exists (an +available?+-probed gate).
     #   Attachment read answers a message
     #   with no offline copy per call, so it needs no store probe of its own. Contact search is a pure read that resolves a name
-    #   to addresses; it rides Gloda's presence, not the +compose:+ flag.
+    #   to addresses; it rides Gloda's presence, not the +allow_compose_mail:+ flag.
     # * calendar search + read — registered *whenever a profile is found*,
     #   even with nothing cached: the empty state is self-explaining (the
-    #   tool tells the user to enable Offline Support — Q6), which a bare
+    #   tool tells the user to enable Offline Support), which a bare
     #   "not registered" could not.
     #
     # == Wiring fewer surfaces
@@ -65,8 +65,7 @@ module Pikuri
     # egress leg, not mere feature toggles.
     #
     # Both are human-gated hand-offs — pikuri writes nothing to Thunderbird's
-    # stores and sends/imports nothing itself (+design/architecture.md+,
-    # +design/ideas/thunderbird.md+).
+    # stores and sends/imports nothing itself (+design/architecture.md+).
     #
     # == One instance per agent
     #

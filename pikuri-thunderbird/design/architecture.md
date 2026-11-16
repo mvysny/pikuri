@@ -2,8 +2,8 @@
 
 Audience: someone extending this gem or auditing its security posture.
 Rationale for individual classes lives in their YARD headers; this file
-covers the cross-cutting design and the threat model. The in-flight design
-notes and still-open questions live in `design/ideas/thunderbird.md`.
+covers the cross-cutting design and the threat model. Still-open questions
+and deferred work live in `design/ideas/thunderbird.md`.
 
 ## What it does
 
@@ -31,7 +31,7 @@ Email is the textbook lethal trifecta. The three legs:
    attacker. Inherently present.
 3. **Egress** — the ability to send data out.
 
-**The default surface removes leg 3 entirely.** The six tools
+**The default surface removes leg 3 entirely.** The tools
 `thunderbird_mail_search`, `thunderbird_mail_read`,
 `thunderbird_mail_attachment_read`, `thunderbird_contact_search`,
 `thunderbird_calendar_search`, and `thunderbird_calendar_read` are all
@@ -143,7 +143,7 @@ backends touch only the allowlist in § "Files never touched".
 The attachment reader adds **no** at-rest copy: it decodes in memory, from
 the mbox Thunderbird already keeps in plaintext.
 
-## Outbound is a human-gated v2, never an autonomous send
+## Outbound is a human-gated hand-off, never an autonomous send
 
 Composing a mail or creating a calendar event is egress (a send, an invite,
 a CalDAV sync). The design invariant, locked in before any of it ships:
@@ -263,8 +263,8 @@ every field so a description can't inject a second `VEVENT`), stages it where a
 snap-confined Thunderbird can read it ({Pikuri::Thunderbird::Profile#outbox_dir}),
 and hands it to TB's import wizard, where the human picks the destination
 calendar (local-vs-CalDAV = their no-egress-vs-egress choice) and confirms.
-Both outbound tools launch via the shared {Pikuri::Thunderbird::Launcher}. The
-full v2 rationale + open questions are in `design/ideas/thunderbird.md`.
+Both outbound tools launch via the shared {Pikuri::Thunderbird::Launcher}; each
+one's rationale is in its class yardoc.
 
 ## Discovery
 
@@ -281,7 +281,7 @@ The reference data the design rests on, probed against a live snap install
 (Thunderbird 152.0, Linux, 2026-07). It's here — not in the class yardocs —
 because it spans the whole gem and is expensive to re-derive (it needs a real,
 populated Thunderbird). The per-symbol *why* lives in the class yardocs; this
-is the shared evidence base, and the ground truth a v2 builder will need.
+is the shared evidence base, and the ground truth the next tool's builder will need.
 
 Caveat: all of this is one real install (snap; Gmail + iCloud IMAP; CalDAV
 calendars); the attachment facts were re-probed on it at Thunderbird 157
@@ -311,7 +311,7 @@ attachments are still checked only on that one install.
   migrated from the deb, both roots are then one directory, so discovery
   compares roots by realpath.
 
-### Mail: the Gloda index (`global-messages-db.sqlite`) — the v1 source
+### Mail: the Gloda index (`global-messages-db.sqlite`) — the mail source
 
 A complete, pre-decoded search index. Tables that matter:
 
@@ -533,7 +533,7 @@ calendar tools register regardless and self-explain the empty state.
   a `TZID` is stored `floating`; an Olson `TZID` with no `VTIMEZONE` block is
   resolved by name (Thunderbird 159).
 - `flags` = calStorageCalendar's `CAL_ITEM_FLAG` bitfield (verify against
-  comm-central at v2 impl): 2=attendees, 4=properties, **8=all-day**,
+  comm-central before relying on a bit): 2=attendees, 4=properties, **8=all-day**,
   16=recurrence, 32=exceptions, 64=attachments, 128=relations, 256=alarms,
   512=recurrence-id-all-day. **All-day = bit 8** — airtight (a clean diagonal:
   126 rows, `flags&8` ⟺ midnight-aligned start ⟺ `tz=floating`, zero
@@ -586,12 +586,12 @@ The recalled dotfile restriction is real: the `home` interface grants
 non-hidden `$HOME` files, not dotfiles. **Sharp UX edge:** a blocked path does
 *not* error — the `.ics` import wizard opens and reports "no events available"
 (it read an empty file) — so staging correctness can't lean on error
-detection. Consequence: the v1 snapshot lives in hidden `~/.cache` (read by
-*pikuri*, unconfined — fine), but a v2 `.ics` hand-off must stage where the
+detection. Consequence: the inbound snapshot lives in hidden `~/.cache` (read by
+*pikuri*, unconfined — fine), but the outbound `.ics` hand-off must stage where the
 confined TB reads (snap-owned area, or a non-hidden `$HOME` dir); the two dirs
 can't be shared on snap.
 
-### Hand-off mechanics — for the v2 egress tools
+### Hand-off mechanics — for the egress tools
 
 - **Compose → `mailto:` URI (built).** `thunderbird 'mailto:to@…?cc=…&bcc=…&subject=…&body=First%0ASecond'`
   opens a pre-filled compose window, percent-decoding cleanly (`%0A`→newline,

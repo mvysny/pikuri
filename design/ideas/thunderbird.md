@@ -1,8 +1,7 @@
 # Local Thunderbird integration
 
-Status: **v1 (five inbound tools) + v2 (compose, contact-search,
-calendar-create) both shipped and validated against a real populated
-Thunderbird profile.** Everything shipped has graduated: empirical storage
+The inbound tools and the outbound hand-offs have shipped. Everything shipped
+has graduated: empirical storage
 data → `pikuri-thunderbird/design/architecture.md`, per-symbol design + rationale (including
 the rejected alternatives, inline beside the live design) → the class yardocs,
 invariants → `pikuri-thunderbird/AGENTS.md`'s *Thunderbird no-egress / no-send seam*.

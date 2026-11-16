@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     *local* Thunderbird data — mail folders and cached calendars — by
     reading Thunderbird's own on-disk profile. It never speaks
     IMAP/POP3/SMTP itself and never egresses: search and read are both
-    inbound-only, so the v1 demo (+bin/pikuri-thunderbird+) breaks the
+    inbound-only, so the demo (+bin/pikuri-thunderbird+) breaks the
     lethal trifecta by construction, exactly like +bin/pikuri-corpus+.
 
     Mail search rides Thunderbird's Gloda index
@@ -24,10 +24,10 @@ Gem::Specification.new do |spec|
     MIME parsing. Calendar reads come from the +calendar-data/*.sqlite+
     stores (normalized columns, no ICS parser for the common case).
 
-    Any *outbound* action (compose a mail, create an event) is a v2
-    feature and is always a human-gated hand-off to Thunderbird's own UI —
+    Any *outbound* action (compose a mail, create an event) is opt-in and
+    always a human-gated hand-off to Thunderbird's own UI —
     pikuri writes nothing to Thunderbird's stores and sends nothing itself.
-    See +pikuri-thunderbird/design/architecture.md+ and +design/ideas/thunderbird.md+.
+    See +pikuri-thunderbird/design/architecture.md+.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'

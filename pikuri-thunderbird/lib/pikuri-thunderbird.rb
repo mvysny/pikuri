@@ -14,12 +14,12 @@ require 'pikuri-core'
 # but *no egress leg* — the lethal trifecta is broken by construction, the
 # same model as +bin/pikuri-corpus+. Outbound actions (compose / create
 # event) are opt-in and always human-gated hand-offs to Thunderbird's own
-# UI. Threat model: +design/architecture.md+; design rationale: +design/ideas/thunderbird.md+.
+# UI. Threat model: +design/architecture.md+; per-tool rationale: each class's yardoc.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri
   module Thunderbird
-    # Legs of the six inbound tools: a mailbox and a calendar are private by
+    # Legs of the inbound tools: a mailbox and a calendar are private by
     # *domain*, and their contents are written by whoever mailed you.
     #
     # The +private: true+ is the one place the framework declares that leg for
