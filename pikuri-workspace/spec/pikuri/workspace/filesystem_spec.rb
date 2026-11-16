@@ -156,6 +156,30 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
   end
 
+  describe 'root_writable: false' do
+    let(:notes) { (root + 'Notes').tap(&:mkpath) }
+    let(:ws)    { described_class.new(project_root: root, root_writable: false, writable: [notes]) }
+
+    it 'keeps the project_root readable but not writable' do
+      assert_includes ws.readable, root
+      refute_includes ws.writable, root
+    end
+
+    it 'reads anywhere under the root, relative to it' do
+      File.write(root + 'invoice.txt', 'x')
+      assert_equal root + 'invoice.txt', ws.resolve_for_read('invoice.txt')
+    end
+
+    it 'writes into the writable subfolder by a path relative to the root' do
+      assert_equal notes + 'kettle.md', ws.resolve_for_write('Notes/kettle.md')
+    end
+
+    it 'refuses a write elsewhere under the root' do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) { ws.resolve_for_write('kettle.md') }
+      assert_includes err.message, 'outside the workspace'
+    end
+  end
+
   describe 'containment errors' do
     it 'raises on .. escape (lexical traversal)' do
       err = assert_raises(Pikuri::Workspace::Filesystem::Error) do

@@ -446,6 +446,16 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   the verdict is soft either way (`D_egress_axis_shape`), and an injected query lands only in the
   engine's logs. It's **Privacy first** against the engine operator, since the model will write a
   sick friend's name into a query unprompted.
+- ***The file tools read all of `~/Documents` and write only `Notes/`***, through
+  `Filesystem.new(project_root: documents, root_writable: false, writable: [notes])`. One root
+  for `read` and `rag_read` means one path style: rooted at `Notes/`, the model carried rag's
+  `Notes/kettle-co.md` over to `write` and created `Notes/Notes/kettle-co.md`. The write side
+  stays one folder because then the damage stays in one place: notes you can look over and
+  delete, never an original you may hold no other copy of, and a folder small enough to keep off
+  a sync client (a write into a share is egress the map grades as `[]`). Making all of
+  `~/Documents` writable would leave the diff as the only check, and the diff weakens with every
+  approval you click through. Folders kept out of the index are named in the prompt, so the
+  model doesn't take "search found nothing" to mean "you have nothing".
 - ***Every note write confirmed, with its diff.*** It guards integrity, which no leg measures.
   Loosening it (say, confirming only edits to notes the agent didn't write) is to be decided from
   practice, not up front.
@@ -493,8 +503,9 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
 
 **Consequences.**
 
-- Two primitives landed upstream because the demo needed them, and Puri picks them up from here:
-  `Web::Search.build`'s `confirmer:` and `snippets_only:`. The secretary is also `page_text`'s
+- Three primitives landed upstream because the demo needed them, and Puri picks them up from here:
+  `Web::Search.build`'s `confirmer:` and `snippets_only:`, and `Workspace::Filesystem`'s
+  `root_writable:`. The secretary is also `page_text`'s
   only shipped caller.
 - The secretary's system prompt lives in pikuri (`prompts/pikuri-secretary.txt`); Puri may keep
   its own and reuse the fragments.

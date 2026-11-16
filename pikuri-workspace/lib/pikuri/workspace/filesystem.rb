@@ -20,6 +20,13 @@ module Pikuri
     # +readable+ list grants read-only roots (toolchains, caches); the extra
     # +writable+ list grants read+write roots.
     #
+    # +root_writable: false+ makes the project root read-only, so paths still
+    # resolve against one base while writes land only in the +writable+ list:
+    #
+    #   Filesystem.new(project_root: '~/Documents', root_writable: false,
+    #                  writable: ['~/Documents/Notes'])
+    #   # read('Finance/invoice.pdf') ok; write('Notes/x.md') ok; write('x.md') refused
+    #
     # {#resolve_for_read} checks +readable ∪ writable+; {#resolve_for_write}
     # checks +writable+ only. Neither checks existence — the workspace owns
     # *containment*, not filesystem state (Read errors on a missing file, Write
@@ -64,9 +71,9 @@ module Pikuri
         /usr /opt /lib /lib64 /bin /sbin /tmp
       ].map { |p| Pathname.new(p) }.freeze
 
-      # @return [Pathname] project root, post-realpath — the writable
-      #   containment ceiling, relative-path base, and shell/Grep/Glob chdir
-      #   target; always in {#readable}/{#writable}.
+      # @return [Pathname] project root, post-realpath — the containment
+      #   ceiling, relative-path base, and shell/Grep/Glob chdir target;
+      #   always in {#readable}, in {#writable} unless +root_writable: false+.
       attr_reader :project_root
 
       # @return [Array<Pathname>] read-only roots (writable roots are also
@@ -74,7 +81,7 @@ module Pikuri
       attr_reader :readable
 
       # @return [Array<Pathname>] writable roots (read+write); includes
-      #   {#project_root}. Post-realpath, deduped.
+      #   {#project_root} unless +root_writable: false+. Post-realpath, deduped.
       attr_reader :writable
 
       # Whether these roots may hold data worth exfiltrating — the lethal
@@ -114,6 +121,8 @@ module Pikuri
       # @param readable [Array<String, Pathname>] extra read-only roots;
       #   +realpath+'d (missing entries raise).
       # @param writable [Array<String, Pathname>] extra read+write roots; same.
+      # @param root_writable [Boolean] +false+ keeps +project_root+ read-only;
+      #   writes then land only under +writable+.
       # @param private [Boolean] these roots may hold sensitive data; see
       #   {#private?}.
       # @param trusted [Boolean] every byte under these roots is user-authored;
@@ -121,15 +130,16 @@ module Pikuri
       # @raise [Errno::ENOENT] if any of +project_root+/+readable+/+writable+
       #   doesn't exist.
       # @raise [Error] if +project_root+ is denied (system root or +/home/*+).
-      def initialize(project_root:, readable: [], writable: [], private: false, trusted: false)
+      def initialize(project_root:, readable: [], writable: [], root_writable: true, private: false,
+                     trusted: false)
         @project_root = Pathname.new(project_root).realpath
         validate_project_root!(@project_root)
 
         @private = private
         @trusted = trusted
 
-        @writable = ([@project_root] + writable.map { |p| Pathname.new(p).realpath }).uniq
-        @readable = (@writable + readable.map { |p| Pathname.new(p).realpath }).uniq
+        @writable = ((root_writable ? [@project_root] : []) + writable.map { |p| Pathname.new(p).realpath }).uniq
+        @readable = ([@project_root] + @writable + readable.map { |p| Pathname.new(p).realpath }).uniq
       end
 
       # Resolve a user path against the read-set (readable ∪ writable). Returned

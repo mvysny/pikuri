@@ -209,9 +209,12 @@ But "the model resisted this time" is not a defense, and the
 secretary doesn't rely on it. The defense is two cuts, both
 structural:
 
-- **One folder.** The secretary writes only inside `~/Documents/Notes`.
-  The file tools are rooted there, so a path outside it is refused by
+- **One folder.** The secretary reads all of `~/Documents` but writes
+  only inside `~/Documents/Notes`. A write anywhere else is refused by
   the tool's code, not by a prompt line the model could argue with.
+  If something odd happens, the damage is in Notes, a folder of files
+  the secretary made, and never in an original you may have no other
+  copy of.
 - **Every write is shown to you as a diff before it lands.** You see
   the exact bytes. Here's the secretary asked for a note it has to
   write itself:
@@ -259,14 +262,19 @@ trifecta chapter's ["edges"](trifecta-detector.md#the-edges-stated-plainly)
 say why: it's a question of custody, not of the tool. Don't point the
 secretary at a shared folder.
 
-**Two readers.** The notes folder has two ways in: `rag_read`, which
-reads any indexed document, and `read`, the file tool. `edit` changes
-only a file that was read through `read`, so both are wired. A model
-holding a path from one will sometimes try it on the other. So when
-`read` misses, its error names the folder it resolves against
-(`file not found: xyz/spec.txt (relative paths resolve against
-/home/alex/Documents/Notes)`), and the model can see the mismatch and
-switch.
+**Two readers, one root.** A document has two ways in: `rag_read`,
+which reads anything indexed, and `read`, the file tool, wired because
+`edit` changes only a file that was read through `read`. Both take
+paths relative to `~/Documents`, so `Notes/kettle-co.md` is the same
+file to every tool. That's not a detail. With the file tools rooted at
+`Notes/`, the model took rag's `Notes/kettle-co.md` over to `write`
+and created `Notes/Notes/kettle-co.md`. Nothing warned anyone: the
+write was inside the notes folder, so it was allowed. A model reuses
+the paths it's shown, so every tool should read them the same way.
+
+`read` also reaches the folders you `--exclude`d. The prompt names
+them, so a search that finds nothing there means "not indexed", not
+"you have nothing".
 
 ## Memory is a note
 

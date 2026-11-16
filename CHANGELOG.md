@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add `root_writable:` to `Pikuri::Workspace::Filesystem.new`; `false` keeps the project root readable but not writable, so the file tools share one path base with a corpus while writes land only in `writable:` roots. `bin/pikuri-secretary` now roots them at `~/Documents`, writable only in `Notes/` (`D_secretary_wiring`).
 - Add to `Pikuri::Workspace::Edit`'s not-found error the line and codepoint of each smart quote, en/em dash or no-break space that kept `old_string` from matching, so the model stops resending the same ASCII bytes; the file is never edited through the fold.
 - Fix `fetch`, `web_scrape`, `web_read_cached` and `web_search` stating hand-typed limits in their parameter descriptions; they now interpolate the enforcing constant, and `web_search` drops its unverifiable "most providers cap this at 20".
 - **Breaking:** `Pikuri::VectorDb::Reranker::LlamaServer.new(server:, model:, api_key:, around_request:)` reranks over its own `RubyLLM::Context` instead of a hand-rolled Faraday client, so a host's `around_request` throttle gates reranks too, and `model:` is now required. Rename `endpoint:` to `server:` (a trailing `/v1` is fine) and drop `connection:`.
