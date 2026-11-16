@@ -7,7 +7,7 @@ RSpec.describe Pikuri::Workspace::Edit do
   let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-edit-root-')).realpath }
   let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
-  let(:tool)       { described_class.new(workspace: workspace) }
+  let(:tool)       { described_class.new(workspace: workspace, confirmer: Pikuri::Workspace::Confirmer::AUTO_APPROVE) }
 
   after { FileUtils.rm_rf(root) }
 
@@ -34,7 +34,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'replaces the unique occurrence and returns an observation with the count' do
       write_file('foo.rb', "alpha\nbeta\ngamma\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'foo.rb',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'foo.rb',
                                     old_string: 'beta', new_string: 'BETA',
                                     replace_all: false).to_s
 
@@ -45,7 +45,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'matches multi-line old_string exactly' do
       write_file('m.rb', "def foo\n  bar\nend\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'm.rb',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'm.rb',
                                     old_string: "def foo\n  bar\nend",
                                     new_string: "def foo\n  baz\nend",
                                     replace_all: false).to_s
@@ -57,7 +57,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'fails when old_string differs by interior whitespace (no fuzz fallback)' do
       write_file('w.rb', "foo  bar\n") # two spaces between foo and bar on disk
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'w.rb',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'w.rb',
                                     old_string: 'foo bar', # one space
                                     new_string: 'FOO BAR',
                                     replace_all: false).to_s
@@ -69,7 +69,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'fails on multiple matches without replace_all' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: false).to_s
 
@@ -83,7 +83,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'replaces every occurrence and counts them' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: true).to_s
 
@@ -94,7 +94,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'still works with a single occurrence (reports 1)' do
       write_file('once.txt', 'just once')
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'once.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'once.txt',
                                     old_string: 'once', new_string: 'twice',
                                     replace_all: true).to_s
 
@@ -107,7 +107,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'replaces only the Nth match and leaves the others alone' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: false, occurrence: 2).to_s
 
@@ -118,7 +118,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'lifts the uniqueness requirement rather than relaxing the match' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'fo o', new_string: 'bar',
                                     replace_all: false, occurrence: 1).to_s
 
@@ -129,7 +129,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'takes the first match on occurrence 1' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                            old_string: 'foo', new_string: 'bar',
                            replace_all: false, occurrence: 1)
 
@@ -139,7 +139,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'takes the last match on occurrence == the match count' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                            old_string: 'foo', new_string: 'bar',
                            replace_all: false, occurrence: 3)
 
@@ -149,7 +149,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'counts non-overlapping matches, agreeing with the multi-match error' do
       write_file('aaaa.txt', 'aaaa')
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'aaaa.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'aaaa.txt',
                                     old_string: 'aa', new_string: 'B',
                                     replace_all: false, occurrence: 2).to_s
 
@@ -160,7 +160,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'works on a multi-line old_string' do
       write_file('m.rb', "def a\n  x\nend\ndef b\n  x\nend\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'm.rb',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'm.rb',
                                     old_string: "  x\nend", new_string: "  y\nend",
                                     replace_all: false, occurrence: 2).to_s
 
@@ -171,7 +171,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'matches in LF space on a CRLF file and preserves CRLF on write' do
       write_file('crlf.txt', "foo\r\nfoo\r\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'crlf.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'crlf.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: false, occurrence: 2).to_s
 
@@ -182,7 +182,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects an occurrence past the match count, leaving the file untouched' do
       write_file('many.txt', "foo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: false, occurrence: 3).to_s
 
@@ -193,7 +193,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects occurrence below 1' do
       write_file('many.txt', "foo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: false, occurrence: 0).to_s
 
@@ -204,7 +204,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects occurrence combined with replace_all' do
       write_file('many.txt', "foo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: true, occurrence: 1).to_s
 
@@ -216,7 +216,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'points at occurrence in the multi-match error' do
       write_file('many.txt', "foo\nfoo\nfoo\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'many.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
                                     replace_all: false).to_s
 
@@ -228,7 +228,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'writes "\\1" literally rather than treating it as a backreference' do
       write_file('br.txt', 'a Q b')
 
-      described_class.edit(cancellable: never, workspace: workspace, path: 'br.txt',
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'br.txt',
                            old_string: 'Q', new_string: '\\1',
                            replace_all: false)
 
@@ -238,7 +238,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'writes "\\&" literally rather than as the matched text' do
       write_file('amp.txt', 'a Q b')
 
-      described_class.edit(cancellable: never, workspace: workspace, path: 'amp.txt',
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'amp.txt',
                            old_string: 'Q', new_string: '\\&',
                            replace_all: true)
 
@@ -250,7 +250,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'matches LF old_string against a CRLF file and preserves CRLF on write' do
       write_file('crlf.txt', "line one\r\nline two\r\nline three\r\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'crlf.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'crlf.txt',
                                     old_string: 'line two', new_string: 'LINE TWO',
                                     replace_all: false).to_s
 
@@ -261,7 +261,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'matches multi-line LF old_string against a CRLF file and keeps CRLF' do
       write_file('crlf2.txt', "a\r\nb\r\nc\r\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'crlf2.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'crlf2.txt',
                                     old_string: "a\nb",
                                     new_string: "A\nB",
                                     replace_all: false).to_s
@@ -273,7 +273,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'leaves LF files as LF' do
       write_file('lf.txt', "a\nb\nc\n")
 
-      described_class.edit(cancellable: never, workspace: workspace, path: 'lf.txt',
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'lf.txt',
                            old_string: 'b', new_string: 'B',
                            replace_all: false)
 
@@ -283,7 +283,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'accepts CRLF in old_string against a CRLF file (symmetric normalization)' do
       write_file('sym.txt', "x\r\ny\r\nz\r\n")
 
-      described_class.edit(cancellable: never, workspace: workspace, path: 'sym.txt',
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'sym.txt',
                            old_string: "x\r\ny",
                            new_string: "X\r\nY",
                            replace_all: false)
@@ -296,7 +296,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects empty old_string and points at the write tool' do
       write_file('any.txt', 'hi')
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'any.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'any.txt',
                                     old_string: '', new_string: 'new',
                                     replace_all: false).to_s
 
@@ -307,7 +307,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects identical old_string and new_string' do
       write_file('any.txt', 'hi')
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'any.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'any.txt',
                                     old_string: 'hi', new_string: 'hi',
                                     replace_all: false).to_s
 
@@ -315,7 +315,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
 
     it 'rejects a missing file' do
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'nope.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'nope.txt',
                                     old_string: 'a', new_string: 'b',
                                     replace_all: false).to_s
 
@@ -325,7 +325,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects directories' do
       FileUtils.mkdir_p(root + 'subdir')
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'subdir',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'subdir',
                                     old_string: 'a', new_string: 'b',
                                     replace_all: false).to_s
 
@@ -335,7 +335,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects binary files (NUL byte in sample)' do
       write_file('bin.dat', "abc\x00def\x00ghi")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'bin.dat',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'bin.dat',
                                     old_string: 'abc', new_string: 'xyz',
                                     replace_all: false).to_s
 
@@ -344,7 +344,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
 
     it 'converts workspace-boundary violations to "Error: ..." strings' do
-      result = described_class.edit(cancellable: never, workspace: workspace, path: '../escape.txt',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: '../escape.txt',
                                     old_string: 'a', new_string: 'b',
                                     replace_all: false).to_s
 
@@ -357,7 +357,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       File.chmod(0o000, path)
 
       begin
-        result = described_class.edit(cancellable: never, workspace: workspace, path: 'locked.txt',
+        result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'locked.txt',
                                       old_string: 'a', new_string: 'b',
                                       replace_all: false).to_s
 
@@ -373,7 +373,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'refuses an existing file that has not been read this conversation' do
       create_unread('unread.rb', "alpha\nbeta\n")
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'unread.rb',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'unread.rb',
                                     old_string: 'beta', new_string: 'BETA',
                                     replace_all: false).to_s
 
@@ -386,7 +386,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       create_unread('via_read.rb', "alpha\nbeta\n")
       Pikuri::Workspace::Read.read(workspace: workspace, path: 'via_read.rb', offset: 1, limit: 2000)
 
-      result = described_class.edit(cancellable: never, workspace: workspace, path: 'via_read.rb',
+      result = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'via_read.rb',
                                     old_string: 'beta', new_string: 'BETA',
                                     replace_all: false).to_s
 
@@ -397,9 +397,9 @@ RSpec.describe Pikuri::Workspace::Edit do
       create_unread('refresh.rb', "a\nb\nc\n")
       Pikuri::Workspace::Read.read(workspace: workspace, path: 'refresh.rb', offset: 1, limit: 2000)
 
-      first = described_class.edit(cancellable: never, workspace: workspace, path: 'refresh.rb',
+      first = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'refresh.rb',
                                    old_string: 'a', new_string: 'A', replace_all: false).to_s
-      second = described_class.edit(cancellable: never, workspace: workspace, path: 'refresh.rb',
+      second = described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: 'refresh.rb',
                                     old_string: 'b', new_string: 'B', replace_all: false).to_s
 
       assert_equal 'Edited refresh.rb: replaced 1 occurrence.', first
@@ -416,6 +416,33 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       assert_equal 'Edited integ.txt: replaced 1 occurrence.', result
       assert_equal "A\nbeta\n", (root + 'integ.txt').binread
+    end
+
+    it 'asks the confirmer by default' do
+      write_file('ask.txt', "x\n")
+      asked = []
+      cf = Object.new
+      cf.define_singleton_method(:ask) do |request:, cancellable:|
+        asked << request
+        Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      end
+
+      described_class.new(workspace: workspace, confirmer: cf)
+                     .run('path' => 'ask.txt', 'old_string' => 'x', 'new_string' => 'y')
+
+      assert_equal 1, asked.size
+      assert_equal "y\n", (root + 'ask.txt').binread
+    end
+
+    it 'never asks under confirm_all_writes: false' do
+      write_file('quiet.txt', "x\n")
+      cf = Object.new
+      cf.define_singleton_method(:ask) { |**| raise 'the confirmer was asked' }
+
+      result = described_class.new(workspace: workspace, confirmer: cf, confirm_all_writes: false)
+                              .run('path' => 'quiet.txt', 'old_string' => 'x', 'new_string' => 'y').to_s
+
+      assert_equal 'Edited quiet.txt: replaced 1 occurrence.', result
     end
 
     it 'accepts replace_all as a JSON boolean' do

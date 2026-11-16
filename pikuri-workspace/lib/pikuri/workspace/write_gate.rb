@@ -2,9 +2,9 @@
 
 module Pikuri
   module Workspace
-    # The shared pre-write gate for the *confirm-all-writes* posture (the
-    # OS-helper wiring; book/os-assistant.md). Before a {Write}/{Edit} mutates a file
-    # it runs {.check}, which:
+    # The shared pre-write gate behind every confirmed write
+    # (book/touching-files.md). Before a {Write}/{Edit} mutates a file it runs
+    # {.check}, which:
     #
     # 1. **Short-circuits an unwritable target.** If the user can't write the
     #    path, the write would fail anyway and confirming a doomed write is
@@ -18,9 +18,8 @@ module Pikuri
     #
     # Stateless module (composition, not a base class); both tools call {.check}
     # and return on a non-nil result. {Write} always routes an overwrite through
-    # it (its confirmer is mandatory; +confirm_all_writes+ only decides whether
-    # new-file writes go through too); {Edit} stays promptless unless a confirmer
-    # is passed, then every edit routes through it.
+    # it; +confirm_all_writes: false+ lets a new file skip it and makes {Edit}
+    # skip it entirely.
     #
     # If a frequent-writing agent ever wants some writes to skip the prompt,
     # grow an allowlist of safe paths (deny-by-default = confirm, like

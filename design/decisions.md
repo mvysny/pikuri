@@ -21,6 +21,33 @@ what it already says.
 
 ---
 
+## D_confirm_all_writes_default — Why do the file tools confirm every write unless told otherwise?
+
+**Context.** `Write` and `Edit` have two postures. In one, every writable change is shown to the
+user as a diff first. In the other, a new file is created without asking and an edit doesn't ask
+at all, which the two-guard argument in `pikuri-workspace/design/architecture.md` makes safe: the
+read-before-edit gate, plus `old_string` pinning an edit to bytes the model has seen. A
+`confirm_all_writes:` flag picks between them. Every wiring in pikuri wants the first posture:
+`pikuri-files`, `pikuri-secretary`, and in pikuri-workshop the OS assistant. Only the coding agent
+wants the second.
+
+**Decision.** `confirm_all_writes: true` is the default, on `Workspace::Extension`, `Write` and
+`Edit` alike, and the coding agent passes `false`. Both tools take the same
+`confirmer:` + `confirm_all_writes:` pair.
+
+**Alternatives rejected.**
+
+- **The promptless default, which is where pikuri started.** Every pikuri root overrode it, so the
+  default branch ran only from pikuri-workshop, and a reader of pikuri followed a path pikuri never
+  takes (`D_read_what_you_run`). A host that forgot the flag got the lenient posture, the wrong
+  failure direction for **Privacy first**: a missed flag should cost a prompt, not a silent write.
+- **Edit's posture inferred from whether it got a confirmer.** It saved a flag, at the cost of two
+  tool shapes for one posture, and it made the cautious posture the one you had to remember to ask
+  for. One required `confirmer:` and one flag, the same on both tools, is the smaller thing to
+  read.
+
+---
+
 ## D_compaction_in_place — Why does core ship a compaction actuator but no compaction?
 
 **Context.** Overflow is the last ceiling on a turn (`D_no_step_limit`), and every `bin/` script

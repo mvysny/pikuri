@@ -13,7 +13,8 @@ module Pikuri
     #
     # Three branches on +path+'s on-disk state:
     #
-    # 1. *New file* — write, no prompt.
+    # 1. *New file* — confirm +"OK to create <path> (<n> bytes)?"+ via
+    #    {WriteGate}; under +confirm_all_writes: false+, write with no prompt.
     # 2. *Existing, identical content* — return an +"Error: ..."+ no-op
     #    *before* the confirmer (don't ask to approve a no-change write).
     #    Comparison is byte-strict, BINARY (trailing-newline diffs still confirm).
@@ -25,20 +26,25 @@ module Pikuri
     # promptless-confirm path), so it gets the diff payload, decline-reason
     # steering, and unwritable-target short-circuit in every posture.
     #
-    # == Confirm-all-writes (opt-in)
+    # == Confirm-all-writes (the default)
+    #
+    #   Write.new(workspace: ws, confirmer: c)                            # every write asks
+    #   Write.new(workspace: ws, confirmer: c, confirm_all_writes: false) # only overwrites ask
     #
     # +confirm_all_writes+ scopes *which* writes are gated, not *how* (overwrites
-    # use {WriteGate} regardless). +true+ (the OS-helper posture) also confirms
-    # the *new-file* branch via {WriteGate} — every writable write confirms, an
-    # unwritable target short-circuits without prompting. +false+ (default) writes
-    # new files silently; only overwrites confirm. See book/os-assistant.md.
+    # use {WriteGate} regardless). +true+ also gates the new-file branch, so
+    # every writable write confirms and an unwritable target short-circuits
+    # without prompting. +false+ writes new files silently — the coding-agent
+    # posture, where new files are routine and git is the undo. See
+    # book/touching-files.md.
     #
-    # == Why ask-on-overwrite (Edit doesn't)
+    # == Why an overwrite always asks (Edit can opt out)
     #
-    # Write confirms an overwrite where {Edit} stays promptless — the two-guard
-    # asymmetry (the shared read-before-edit gate plus Edit's +old_string+
-    # content-check, which Write lacks so a hallucinated +content+ could clobber
-    # the file) is in +pikuri-workspace/design/architecture.md+.
+    # Under +confirm_all_writes: false+ Write still confirms an overwrite where
+    # {Edit} goes promptless — the two-guard asymmetry (the shared
+    # read-before-edit gate plus Edit's +old_string+ content-check, which Write
+    # lacks so a hallucinated +content+ could clobber the file) is in
+    # +pikuri-workspace/design/architecture.md+.
     #
     # == Side effects
     #
@@ -69,15 +75,12 @@ module Pikuri
       # @param workspace [Workspace] captured for path resolution, the
       #   read-before-overwrite gate, and read-ledger marking
       #   (+resolve_for_write+).
-      # @param confirmer [Confirmer] consulted (via {WriteGate}) before an
-      #   overwrite with non-identical content, and — under +confirm_all_writes+
-      #   — before new-file writes too.
-      # @param confirm_all_writes [Boolean] scopes which writes are gated
-      #   (overwrites always confirm regardless). +true+ (OS-helper posture)
-      #   also confirms the new-file branch and short-circuits an unwritable
-      #   target without prompting; +false+ (default) writes new files silently.
+      # @param confirmer [Confirmer] consulted (via {WriteGate}) before every
+      #   write, or only before an overwrite under +confirm_all_writes: false+.
+      # @param confirm_all_writes [Boolean] +false+ writes new files silently;
+      #   overwrites confirm either way.
       # @return [Write]
-      def initialize(workspace:, confirmer:, confirm_all_writes: false)
+      def initialize(workspace:, confirmer:, confirm_all_writes: true)
         super(
           name: 'write',
           description: DESCRIPTION,
@@ -115,7 +118,7 @@ module Pikuri
       # @param confirmer [Confirmer]
       # @param path [String] raw path from the LLM
       # @param content [String] bytes to write
-      # @param confirm_all_writes [Boolean] see {#initialize} (default +false+).
+      # @param confirm_all_writes [Boolean] see {#initialize}.
       # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
       #   turn's token, for the confirmation.
       # @return [Tool::Result] +"Created, 88 lines"+ / +"Updated, 88 lines (was
@@ -123,7 +126,7 @@ module Pikuri
       #   confirmer's decline. The line counts rather than a diff: pikuri has no
       #   in-process differ (a diff-capable chrome renders the
       #   {Confirmer::Change} itself).
-      def self.write(workspace:, confirmer:, path:, content:, cancellable:, confirm_all_writes: false)
+      def self.write(workspace:, confirmer:, path:, content:, cancellable:, confirm_all_writes:)
         resolved = workspace.resolve_for_write(path)
 
         if resolved.exist?

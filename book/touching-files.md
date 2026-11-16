@@ -236,12 +236,12 @@ shows that one for real.
 
 ### How much to confirm
 
-This demo confirms *every* change, because it's a demo and you
-should see each one. That's a choice the host makes, with
-`confirm_all_writes: true`. By default the file tools are quieter:
-`write` asks only before it overwrites a file that already exists,
-and `edit` doesn't ask at all, since it can only touch a file the
-model read and change text that's exactly there.
+This demo confirms *every* change, and so does everything else in
+pikuri: it's the file tools' default. A host can turn it down with
+`confirm_all_writes: false`, and a coding agent does. Then `write`
+asks only before it overwrites a file that already exists, and `edit`
+doesn't ask at all, since it can only touch a file the model read and
+change text that's exactly there.
 
 Which is right depends on the job, and on attention. Every prompt is
 spent from yours, and a confirmer that asks about everything trains

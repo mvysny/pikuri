@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::Workspace::Extension`, `Write` and `Edit` default to `confirm_all_writes: true`, so a new file and every edit now ask first, and `Edit.new` requires a `confirmer:` (`D_confirm_all_writes_default`). Pass `confirm_all_writes: false` to keep the old promptless behaviour.
 - Fix the bundled `RESEARCHER` persona's prompt sending a PDF to `fetch`, which refuses it; it now reads documents with `web_scrape`, and `bin/pikuri-minions` registers pikuri-pdf so that works there.
 - Fix `thunderbird_mail_search` and `thunderbird_mail_read` showing the model a literal `undefined` after every From/To address, which Gloda writes into its author and recipient text; `Gloda.strip_undefined` removes it, and `thunderbird_contact_search` now keeps a person named "Undefined".
 - Fix `thunderbird_mail_search` showing a Gmail message from its headers-only `[Gmail]/All Mail` copy, with an empty snippet, when that copy outranked the downloaded one; `Gloda::Mail#search` keeps the best rank but shows a downloaded copy.

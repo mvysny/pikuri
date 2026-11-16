@@ -100,6 +100,38 @@ RSpec.describe Pikuri::Workspace::Extension do
     end
   end
 
+  describe 'write posture' do
+    def counting_confirmer
+      asked = []
+      c = Object.new
+      c.define_singleton_method(:ask) do |request:, cancellable:|
+        asked << request.question
+        Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      end
+      c.define_singleton_method(:asked) { asked }
+      c
+    end
+
+    # Creates a file with +write+, then edits it, through the registered tools.
+    def write_then_edit(**posture)
+      cf = counting_confirmer
+      described_class.new(filesystem: filesystem, confirmer: cf, **posture).configure(configurator)
+      tools = configurator.tools.to_h { |t| [t.name, t] }
+      tools.fetch('write').run('path' => 'new.txt', 'content' => "x\n")
+      tools.fetch('edit').run('path' => 'new.txt', 'old_string' => 'x', 'new_string' => 'y')
+      assert_equal "y\n", File.read(root + 'new.txt')
+      cf.asked
+    end
+
+    it 'confirms a new file and an edit by default' do
+      assert_equal 2, write_then_edit.size
+    end
+
+    it 'confirms neither under confirm_all_writes: false' do
+      assert_equal [], write_then_edit(confirm_all_writes: false)
+    end
+  end
+
   describe 'shared read record across the registered tools' do
     it 'lets an edit through once the file is read via the registered read tool' do
       File.write(root + 'foo.rb', "alpha\nbeta\n")

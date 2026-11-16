@@ -88,14 +88,12 @@ module Pikuri
 
       # @param filesystem [Filesystem] path resolution / sandboxing; wrapped in a
       #   fresh {Workspace} (empty read record).
-      # @param confirmer [Confirmer] consulted by {Write} before an overwrite.
-      # @param confirm_all_writes [Boolean] the host's write posture: +true+ (the
-      #   OS-helper posture) confirms every writable write/edit with a diff and
-      #   short-circuits unwritable targets; +false+ (default) keeps the classic
-      #   policy. {Write} takes it directly; {Edit} infers the posture from
-      #   whether a confirmer was passed, so this reaches Edit as
-      #   +confirmer+-or-+nil+. See book/os-assistant.md.
-      def initialize(filesystem:, confirmer:, confirm_all_writes: false)
+      # @param confirmer [Confirmer] consulted by {Edit} and {Write} before a change.
+      # @param confirm_all_writes [Boolean] the host's write posture: +true+
+      #   (default) confirms every writable write and edit with a diff; +false+
+      #   leaves {Edit} promptless and {Write} asking only before an overwrite.
+      #   See book/touching-files.md.
+      def initialize(filesystem:, confirmer:, confirm_all_writes: true)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer
         @confirm_all_writes = confirm_all_writes
@@ -116,10 +114,8 @@ module Pikuri
         c.add_tool Search::Grep.new(workspace: @workspace)
         c.add_tool Search::Glob.new(workspace: @workspace)
         c.add_tool FileList.new(workspace: @workspace)
-        # Edit takes no posture flag: a non-nil confirmer *is* its
-        # confirm-all-writes posture (see {Edit}), so +confirm_all_writes+
-        # reaches Edit as confirmer-or-nil.
-        c.add_tool Edit.new(workspace: @workspace, confirmer: @confirm_all_writes ? @confirmer : nil)
+        c.add_tool Edit.new(workspace: @workspace, confirmer: @confirmer,
+                            confirm_all_writes: @confirm_all_writes)
         c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer,
                              confirm_all_writes: @confirm_all_writes)
         nil

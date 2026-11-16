@@ -49,7 +49,7 @@ agent = Pikuri::Agent.new(
   c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
   c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
   c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
-  c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace, confirmer: confirmer)
   c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
   c.add_listener ...
 end

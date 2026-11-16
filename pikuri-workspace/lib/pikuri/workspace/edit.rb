@@ -2,25 +2,22 @@
 
 module Pikuri
   module Workspace
-    # The +edit+ tool — exact-string replacement on an existing file.
-    # +Edit.new(workspace: ws)+ produces a tool wired like any bundled tool's.
-    # In its default (promptless) form it takes the lone +workspace:+ like
-    # {Read}; an optional +confirmer:+ turns on diff-confirmation.
+    # The +edit+ tool — exact-string replacement on an existing file:
     #
-    # == Confirmer is optional (and self-describing)
+    #   Edit.new(workspace: ws, confirmer: c)                            # every edit asks, with a diff
+    #   Edit.new(workspace: ws, confirmer: c, confirm_all_writes: false) # no prompt
     #
-    # With no +confirmer:+ (default), Edit runs without a prompt because two
-    # guards bound its blast radius. First, the read-before-edit gate: +.edit+
-    # refuses a path the {Workspace}'s read record doesn't show read this
-    # conversation. Second, +old_string+ is itself an implicit read-check — the
-    # model can't supply correct bytes it hasn't seen — so even within a read
-    # file the change is pinned to content the model has. ({Write} differs — it
-    # always takes a confirmer; see +pikuri-workspace/design/architecture.md+.)
+    # == Confirm every edit, or opt out
     #
-    # Handing Edit a +confirmer:+ opts it into the confirm-all-writes posture
-    # (the OS-helper wiring): every writable edit confirms with a diff via
-    # {WriteGate}, an unwritable target short-circuits to "ask the user to
-    # sudo". So the confirmer's presence *is* the posture — no separate flag.
+    # By default every writable edit confirms with a diff via {WriteGate}, and
+    # an unwritable target short-circuits to "ask the user to sudo". Opting
+    # out is safe because two guards bound the blast radius. First, the
+    # read-before-edit gate: +.edit+ refuses a path the {Workspace}'s read
+    # record doesn't show read this conversation. Second, +old_string+ is
+    # itself an implicit read-check — the model can't supply correct bytes it
+    # hasn't seen — so the change is pinned to content the model has. ({Write}
+    # lacks the second guard, so it confirms an overwrite either way; see
+    # +pikuri-workspace/design/architecture.md+.)
     #
     # == Matching is strict (no fuzz cascade)
     #
@@ -82,12 +79,13 @@ module Pikuri
       # @param workspace [Workspace] captured for path resolution and the
       #   read-before-edit gate; edits route through +resolve_for_write+ (Edit
       #   modifies, so the write-set) and the gate consults +read?+.
-      # @param confirmer [Confirmer, nil] non-nil opts Edit into the
-      #   confirm-all-writes posture (every writable edit confirms with a diff,
-      #   unwritable targets short-circuit). +nil+ (default) keeps Edit
-      #   promptless (see "Confirmer is optional").
+      # @param confirmer [Confirmer] asked before each edit, unless
+      #   +confirm_all_writes+ is +false+.
+      # @param confirm_all_writes [Boolean] +false+ makes Edit promptless (see
+      #   "Confirm every edit, or opt out").
       # @return [Edit]
-      def initialize(workspace:, confirmer: nil)
+      def initialize(workspace:, confirmer:, confirm_all_writes: true)
+        gate = confirm_all_writes ? confirmer : nil
         super(
           name: 'edit',
           description: DESCRIPTION,
@@ -117,7 +115,7 @@ module Pikuri
           },
           wants_context: true,
           execute: ->(path:, old_string:, new_string:, context:, replace_all: false, occurrence: nil) {
-            Edit.edit(workspace: workspace, confirmer: confirmer,
+            Edit.edit(workspace: workspace, confirmer: gate,
                       path: path, old_string: old_string, new_string: new_string,
                       replace_all: replace_all, occurrence: occurrence,
                       cancellable: context.cancellable)
@@ -144,7 +142,8 @@ module Pikuri
       # @param occurrence [Integer, nil] 1-based index of the single match to
       #   replace, lifting the uniqueness requirement; +nil+ (default) keeps
       #   it. Mutually exclusive with +replace_all+.
-      # @param confirmer [Confirmer, nil] see {#initialize} (default +nil+).
+      # @param confirmer [Confirmer, nil] asked before the write; +nil+ writes
+      #   with no prompt (the opted-out posture).
       # @param cancellable [Pikuri::Agent::Control::Cancellable] the calling
       #   turn's token, for the confirmation.
       # @return [Tool::Result] +"Added 2 lines, removed 3 lines"+ once the edit
@@ -152,7 +151,7 @@ module Pikuri
       #   decline. The counts are exact without a differ: the replaced text and
       #   its substitute are both arguments.
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
-                    cancellable:, occurrence: nil, confirmer: nil)
+                    cancellable:, confirmer:, occurrence: nil)
         if old_string.empty?
           return Tool::Result.error('old_string is empty; use the write tool to create or overwrite a file.')
         end

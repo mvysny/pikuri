@@ -94,12 +94,10 @@ agent = Pikuri::Agent.new(
   c.add_listener Pikuri::Agent::Listener::Terminal.new
   c.add_listener Pikuri::Agent::Listener::TokenLog.new
   # The six file tools, sharing one workspace so `edit` can tell which files
-  # the model has read. confirm_all_writes: every write and edit asks first,
-  # with a diff, not only the ones that overwrite.
+  # the model has read. Every write and edit asks first, with a diff.
   c.add_extension Pikuri::Workspace::Extension.new(
     filesystem: filesystem,
-    confirmer: Pikuri::Workspace::Confirmer::Terminal.new,
-    confirm_all_writes: true
+    confirmer: Pikuri::Workspace::Confirmer::Terminal.new
   )
   # Off by default so the touching-files chapter's map has no sub-agent in
   # it before the reader has met one.

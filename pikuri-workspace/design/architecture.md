@@ -42,22 +42,21 @@ compose (each piece's own contract stays in its YARD):
   file tools and clears the record on conversation reset — a
   `/clear` re-arms the gate from empty.
 
-## Two guards — why Write confirms an overwrite and Edit doesn't
+## Two guards — why an overwrite always asks and an edit may not
 
-Both tools share the gate above. The asymmetry — Edit runs promptless by
-default while Write always takes a confirmer for overwrites — is not
-inconsistency; it falls out of a *second*, content-level guard that only
-Edit has:
+By default every writable write and edit confirms with a diff
+(`confirm_all_writes: true`, `D_confirm_all_writes_default`). A host may
+pass `confirm_all_writes: false`, and what that opt-out lifts is not
+uniform. Both tools share the gate above, and the asymmetry falls out of a
+*second*, content-level guard that only Edit has:
 
 - **Edit** requires `old_string` to match the current bytes, so a read
   file can change only where the model demonstrably knows the content.
   The match is itself an implicit read-check on top of the gate — hence
-  no prompt is needed.
+  the opt-out may drop its prompt.
 - **Write** has no per-change check: a hallucinated `content` would
-  clobber the whole file. So it asks for confirmation on top of the gate,
-  routed through {Pikuri::Workspace::WriteGate} for the diff payload and
+  clobber the whole file. So an overwrite asks in either posture, routed
+  through {Pikuri::Workspace::WriteGate} for the diff payload and
   unwritable-target short-circuit.
 - A **new-file** write hits neither guard — nothing to have read,
-  nothing to clobber — so it writes silently (until the confirm-all-writes
-  posture opts even new files into a prompt; that posture is a separate
-  axis, taught in the book's OS-assistant chapter).
+  nothing to clobber — so the opt-out lets it write silently.

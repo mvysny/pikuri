@@ -67,7 +67,8 @@ RSpec.describe 'Workspace trifecta legs' do
     end
 
     it 'gives Edit no legs — its bytes arrived through Read, which is where they are tagged' do
-      tool = Pikuri::Workspace::Edit.new(workspace: workspace(private: true))
+      tool = Pikuri::Workspace::Edit.new(workspace: workspace(private: true),
+                                         confirmer: Pikuri::Workspace::Confirmer::AUTO_APPROVE)
       assert_equal Pikuri::Tool::TrifectaLegs::NONE, tool.trifecta_legs
     end
   end
@@ -78,7 +79,7 @@ RSpec.describe 'Workspace trifecta legs' do
       tools = [Pikuri::Workspace::Read.new(workspace: ws),
                Pikuri::Workspace::Search::Grep.new(workspace: ws),
                Pikuri::Workspace::Search::Glob.new(workspace: ws),
-               Pikuri::Workspace::Edit.new(workspace: ws)]
+               Pikuri::Workspace::Edit.new(workspace: ws, confirmer: Pikuri::Workspace::Confirmer::AUTO_APPROVE)]
       node = Pikuri::Trifecta::Node.new(
         label: 'files-only',
         tool_legs: tools.to_h { |t| [t.name, t.trifecta_legs] }
