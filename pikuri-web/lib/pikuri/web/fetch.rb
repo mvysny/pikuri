@@ -138,8 +138,8 @@ module Pikuri
                           'e.g. "https://example.com/data.json".'
         p.optional_integer :max_chars,
                            'Maximum number of characters of the body to ' \
-                           'return. Defaults to 5000; hard-capped at ' \
-                           '100000. When the body is longer than this, ' \
+                           "return. Defaults to #{Fetch::DEFAULT_MAX_CHARS}; hard-capped at " \
+                           "#{Fetch::MAX_MAX_CHARS}. When the body is longer than this, " \
                            'output is cut and a marker reports the full ' \
                            'length.'
       },

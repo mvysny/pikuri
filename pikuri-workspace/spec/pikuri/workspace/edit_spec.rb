@@ -79,6 +79,63 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
   end
 
+  describe '.edit typographic lookalikes' do
+    def edit(path, old_string)
+      described_class.edit(cancellable: never, workspace: workspace, confirmer: nil, path: path,
+                           old_string: old_string, new_string: 'X', replace_all: false).to_s
+    end
+
+    it 'names the file character an ASCII old_string missed, and leaves the file alone' do
+      write_file('notes.md', "intro\nit’s done\n")
+
+      result = edit('notes.md', "it's done")
+
+      assert_equal "Error: old_string not found in notes.md, but it matches once typographic characters are " \
+                   "folded to ASCII: line 2 has ’ (U+2019) where old_string has ' (U+0027). " \
+                   'Copy these characters exactly as the file has them.', result
+      assert_equal "intro\nit’s done\n", (root + 'notes.md').read
+    end
+
+    it 'names the typographic character old_string sent where the file has ASCII' do
+      write_file('a.txt', "a - b\n")
+
+      result = edit('a.txt', "a — b")
+
+      assert_includes result, "line 1 has - (U+002D) where old_string has — (U+2014)"
+    end
+
+    it 'lists each differing character once, across lines' do
+      write_file('q.txt', "“one”\nx y\n")
+
+      result = edit('q.txt', "\"one\"\nx y")
+
+      assert_includes result, "line 1 has “ (U+201C) where old_string has \" (U+0022); " \
+                              "line 1 has ” (U+201D) where old_string has \" (U+0022); " \
+                              "line 2 has   (U+00A0) where old_string has   (U+0020)"
+    end
+
+    it 'diagnoses a CRLF file on the right line' do
+      write_file('crlf.txt', "a\r\nit’s\r\n")
+
+      assert_includes edit('crlf.txt', "it's"), 'line 2 has'
+    end
+
+    it 'keeps the plain not-found error when folding does not help' do
+      write_file('notes.md', "it’s done\n")
+
+      result = edit('notes.md', "it's gone")
+
+      assert result.start_with?('Error: old_string not found in notes.md. It must match'),
+             "expected plain not-found, got #{result.inspect}"
+    end
+
+    it 'leaves meaningful lookalikes like U+2212 MINUS out of the fold' do
+      write_file('math.txt', "x − y\n")
+
+      assert edit('math.txt', 'x - y').start_with?('Error: old_string not found in math.txt. It must match')
+    end
+  end
+
   describe '.edit replace_all' do
     it 'replaces every occurrence and counts them' do
       write_file('many.txt', "foo\nfoo\nfoo\n")

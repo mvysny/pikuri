@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Add to `Pikuri::Workspace::Edit`'s not-found error the line and codepoint of each smart quote, en/em dash or no-break space that kept `old_string` from matching, so the model stops resending the same ASCII bytes; the file is never edited through the fold.
+- Fix `fetch`, `web_scrape`, `web_read_cached` and `web_search` stating hand-typed limits in their parameter descriptions; they now interpolate the enforcing constant, and `web_search` drops its unverifiable "most providers cap this at 20".
 - **Breaking:** `Pikuri::VectorDb::Reranker::LlamaServer.new(server:, model:, api_key:, around_request:)` reranks over its own `RubyLLM::Context` instead of a hand-rolled Faraday client, so a host's `around_request` throttle gates reranks too, and `model:` is now required. Rename `endpoint:` to `server:` (a trailing `/v1` is fine) and drop `connection:`.
 - Add `around_request:` to `Pikuri::VectorDb::Embedder.new`, the same hook `Agent.new` takes, so a host's llama-server throttle also gates the indexer's embeds (`D_llm_request_throttle`).
 - **Breaking:** `Pikuri::VectorDb::Embedder.new(server:, model:, api_key:)` embeds over its own `RubyLLM::Context` instead of the process-global `RubyLLM.configure`, and `VectorDb::Extension` / `Rag::Extension` now require `embedder:`. Pass the server and key you hand `ChatTransport.from_openai_server`, and drop `provider:` / `assume_model_exists:`.

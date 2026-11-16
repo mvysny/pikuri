@@ -46,10 +46,25 @@ module Pikuri
     # if CRLF. Caveat: a mixed-ending file is treated as CRLF, so bare-LF lines
     # get converted — rare, acceptable for v1.
     #
+    # == Typographic lookalikes are named, never fixed
+    #
+    # Models fold +’+ to +'+ (and back) when copying, then re-read and resend
+    # the same bytes. So a zero-match that matches once {CONFUSABLES} are
+    # folded to ASCII says where:
+    #
+    #   Error: old_string not found in notes.md, but it matches once typographic
+    #   characters are folded to ASCII: line 3 has ’ (U+2019) where old_string
+    #   has ' (U+0027). Copy these characters exactly as the file has them.
+    #
+    # It never edits through the fold the way CRLF does: lookalikes are
+    # sprinkled, not file-wide, so writing back a normalized file would
+    # rewrite every smart quote in it behind a "1 occurrence" confirmation.
+    #
     # == Refusals (all as +"Error: ..."+)
     #
     # Empty +old_string+ ("use the write tool") · +old_string+ == +new_string+
-    # (no-op) · not found ("must match exactly") · multiple matches without
+    # (no-op) · not found ("must match exactly", or the typographic
+    # characters that broke the match) · multiple matches without
     # +replace_all+ or +occurrence+ · +occurrence+ combined with +replace_all+ ·
     # +occurrence+ below 1 or past the match count · missing / directory /
     # binary file · not read this conversation (the gate, after the binary
@@ -185,6 +200,11 @@ module Pikuri
 
         occurrences = content.scan(needle).size
         if occurrences.zero?
+          if (culprits = confusable_mismatches(content, needle))
+            return Tool::Result.error("old_string not found in #{path}, but it matches once typographic " \
+                                      "characters are folded to ASCII: #{culprits}. Copy these characters " \
+                                      'exactly as the file has them.')
+          end
           return Tool::Result.error("old_string not found in #{path}. It must match the file " \
                                     'exactly, including whitespace and indentation; re-read with the ' \
                                     'read tool if uncertain.')
@@ -275,6 +295,62 @@ module Pikuri
         idx
       end
       private_class_method :nth_index
+
+      # Typographic characters a model folds to ASCII (or the reverse) when
+      # copying text, each mapped to the ASCII it is mistaken for.
+      #
+      # Narrow on purpose: only near-always-accidental lookalikes, so +−+
+      # (U+2212) and +×+ (U+00D7), which carry meaning, stay out. Not
+      # {Pikuri::Sanitizer}'s set, which is about deception, not accident.
+      # One char to one char, so +…+ ↔ +...+ is out: it would break the
+      # index alignment {.confusable_mismatches} relies on.
+      #
+      # @return [Hash{String => String}]
+      CONFUSABLES = {
+        "‘" => "'", "’" => "'",                # ‘ ’
+        "“" => '"', "”" => '"',                # “ ”
+        "–" => '-', "—" => '-',                # – —
+        " " => ' ', " " => ' '                 # no-break spaces
+      }.freeze
+
+      # Where +needle+ fails to match +haystack+ only on {CONFUSABLES}.
+      #
+      #   confusable_mismatches("say ’hi’\n".b, "say 'hi’".b)
+      #   # => "line 1 has ’ (U+2019) where old_string has ' (U+0027)"
+      #
+      # Diagnoses the first folded match, listing at most three differing
+      # characters.
+      #
+      # @param haystack [String] BINARY-encoded, LF-normalized file content
+      # @param needle [String] BINARY-encoded, LF-normalized +old_string+
+      # @return [String, nil] the culprits joined by +"; "+, or +nil+ when the
+      #   folded strings don't match either, or either side isn't valid UTF-8
+      def self.confusable_mismatches(haystack, needle)
+        file = haystack.dup.force_encoding(Encoding::UTF_8)
+        sent = needle.dup.force_encoding(Encoding::UTF_8)
+        return nil unless file.valid_encoding? && sent.valid_encoding?
+
+        pattern = Regexp.union(CONFUSABLES.keys)
+        start = file.gsub(pattern, CONFUSABLES).index(sent.gsub(pattern, CONFUSABLES))
+        return nil unless start
+
+        culprits = sent.each_char.with_index.filter_map do |want, i|
+          have = file[start + i]
+          next if have == want
+
+          line = file[0, start + i].count("\n") + 1
+          "line #{line} has #{have} (#{codepoint(have)}) where old_string has #{want} (#{codepoint(want)})"
+        end
+        culprits.uniq.first(3).join('; ')
+      end
+      private_class_method :confusable_mismatches
+
+      # @param char [String] one character
+      # @return [String] e.g. +"U+2019"+
+      def self.codepoint(char)
+        format('U+%04X', char.ord)
+      end
+      private_class_method :codepoint
     end
   end
 end

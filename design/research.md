@@ -458,19 +458,17 @@ inverted, the other does not transfer at all:
   read-a-larger-window nudge as a pair, with "don't trade either back for tokens".
   **[verified 2026-08]** Grok's own product does the opposite of what Grok advised pikuri, and the
   reason is the test to apply to every borrow here: **a first-party model vendor can tune the
-  model to its format; a harness has to meet the model where it already is.** See
-  `design/ideas/grok-build-cheap-borrows.md`.
+  model to its format; a harness has to meet the model where it already is.**
 - **Unicode confusable repair** (`util/unicode_confusables.rs`). Smart quotes, em-dashes,
   ellipses and non-breaking spaces pasted in from Slack or Google Docs render identically to ASCII
   in `read`, so the model's ASCII `old_string` never matches on `edit`. grok-build keeps a
   deliberately narrow map — only substitutions that are near-always accidental, with `U+2212
   MINUS` and `U+00D7 MULTIPLICATION` excluded as semantically meaningful — normalizes for
   *comparison only*, and keeps a byte-offset remap so the write lands on the original
-  bytes. **[src]** Pikuri's `Edit` has the same failure mode with no mitigation, but the half to
-  take is the *diagnosis*, not the repair: `Edit` normalizes CRLF across the whole file, so a
-  normalize-edit-writeback would rewrite every smart quote behind a "1 occurrence" confirmation.
-  Retrying a failed match against a normalized copy and naming the offending codepoint costs
-  nothing and keeps the byte-for-byte contract intact.
+  bytes. **[src]** Pikuri took the *diagnosis* and left the repair: {Pikuri::Workspace::Edit}
+  retries a failed match against a folded copy and names the offending codepoints, editing
+  nothing — its CRLF path normalizes the whole file, so a normalize-edit-writeback would rewrite
+  every smart quote behind a "1 occurrence" confirmation.
 
 ## R_tool_descriptions — What a shipped tool description actually reads like, project by project
 
@@ -612,10 +610,9 @@ in the tool and prevents drift by making the description *derive* from the wirin
 describes. Pikuri's version is cheaper and fits a codebase meant to be read in an evening;
 grok-build's is the only one of the two that cannot go stale. The portable lesson is narrower than
 the machinery: **a number that appears in a description should be interpolated from the constant
-that enforces it, not typed twice.** Pikuri already does this where the cap is a constant
-(`Read`'s `MAX_IMAGE_BYTES_LABEL`, `Grep`'s `MAX_BYTES_LABEL`) and does not where it isn't (`web_search`'s
-"Defaults to 10; most providers cap this at 20" sits next to a hard-coded `max_results: 10`).
-Closing that gap is the whole portable half of grok-build's template machinery.
+that enforces it, not typed twice.** That is the whole portable half of grok-build's template
+machinery, and pikuri's tools follow it (`Read`'s `MAX_IMAGE_BYTES_LABEL`, `Grep`'s
+`MAX_BYTES_LABEL`, the web tools' `max_chars` and `max_results`).
 
 ## R_message_types — Message stores, event streams and token bookkeeping across the field
 

@@ -90,8 +90,8 @@ module Pikuri
                           'the scheme, e.g. "https://example.com/article".'
         p.optional_integer :max_chars,
                            'Maximum number of characters of Markdown to ' \
-                           'return. Defaults to 20000; hard-capped at ' \
-                           '100000. When the page is longer than this, ' \
+                           "return. Defaults to #{Scrape::DEFAULT_MAX_CHARS}; hard-capped at " \
+                           "#{Scrape::MAX_MAX_CHARS}. When the page is longer than this, " \
                            'output is cut and a marker reports the full ' \
                            'length.'
       },

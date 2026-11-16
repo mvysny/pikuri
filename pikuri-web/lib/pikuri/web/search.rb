@@ -41,6 +41,10 @@ module Pikuri
     # {Workspace::Confirmer::Terminal} is +P_one_agent+, so share that build
     # only as far as the confirmer allows.
     module Search
+      # @return [Integer] result entries per search when the model names no
+      #   +max_results+
+      DEFAULT_MAX_RESULTS = 10
+
       # Description shown to the LLM, opencode-shape (summary + +Usage:+).
       #
       # @return [String]
@@ -148,12 +152,12 @@ module Pikuri
                               'The search query, e.g. "BigDecimal precision Ruby".'
             p.optional_integer :max_results,
                                'Maximum number of result entries to return. ' \
-                               'Defaults to 10; most providers cap this at 20.'
+                               "Defaults to #{DEFAULT_MAX_RESULTS}, e.g. 5."
           },
           # +wants_context:+ opts in to the per-call {Tool::ExecuteContext}, so
           # a shared instance still honours whichever agent is waiting.
           wants_context: true,
-          execute: lambda { |query:, max_results: 10, context:|
+          execute: lambda { |query:, context:, max_results: DEFAULT_MAX_RESULTS|
             asked = query
             if confirmer
               case decision = confirmer.ask(request: Workspace::Confirmer::Request.new(
