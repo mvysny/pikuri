@@ -557,9 +557,11 @@ reindex Housing/lease-agreement.odt: unindexable (… appears to be binary; cann
 reindex Work/meeting-notes-board.docx: unindexable (… appears to be binary; cannot extract as text)
 ```
 
-Office formats need extractors that run in a container, and those
-live in book 2. A real `~/Documents` is full of them, so expect gaps;
-a PDF twin of a document is found where the original isn't.
+The demo stops at PDFs on purpose. Office formats need extractors
+that run in a container, and those live in book 2. A real
+`~/Documents` is full of them, so expect gaps; a PDF twin of a
+document is found where the original isn't. The secretary with every
+bell and whistle is [Puri](apps.md#puri).
 
 ## The prompt, fixed by watching transcripts
 
@@ -663,7 +665,8 @@ guard's new-recipient note reaches you only if the model repeats it.
 - **The machine itself.** Installed programs, settings, files outside
   `~/Documents`: the secretary tells you to use another assistant.
   That one is book 2's OS assistant, and it lives in a sandbox.
-- **Office formats.** Book 2's extractors.
+- **Office formats.** PDFs make the point; book 2's extractors read
+  the rest, and [Puri](apps.md#puri) is the full secretary.
 - **Visiting web pages.** On purpose: it's the cut this whole chapter
   is built around. With a Brave or Exa key it reads the engine's copy
   of a result instead, as [Search, never fetch](#search-never-fetch)

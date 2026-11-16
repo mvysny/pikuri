@@ -9,7 +9,7 @@ holds all three of the trifecta's legs on purpose, in a plain command
 line, giving up every comfort for code you can read in an evening.
 An assistant you'd use every day wants the comforts back — a window
 you summon with a shortcut, answers that stream in, a history of past
-conversations, reminders that fire when you aren't looking. How much
+conversations. How much
 of that fits without weakening the cuts the secretary made isn't a
 question a library can answer up front. Only an app people actually
 use can answer it.
@@ -27,7 +27,7 @@ streamed as it's written. Its trifecta cut is the secretary's, pushed
 one step: it searches the web but never opens a URL, so the only way
 out is the vouched search, here with each result's page text served
 from the engine's own index rather than snippets alone. Beside it sit
-your notes, calendar, mail and reminders. Its `design/ideas/` folder is
+your notes, calendar and mail. Its `design/ideas/` folder is
 where the questions this book leaves open are being worked through.
 One example is a *federation*: several agents, with you passing text
 between them.

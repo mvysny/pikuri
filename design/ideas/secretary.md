@@ -6,9 +6,6 @@ transcripts.
 
 ## Open questions
 
-- `Q_office_formats`: `.doc`/`.docx`/`.odt` are unreadable (the Docker office extractors are
-  book 2's), and a real `~/Documents` is full of them. The chapter accepts it and says so. Is a
-  pure-Ruby `.docx`/`.odt` reader (both are zipped XML) a `pikuri-pdf`-sized gem worth having?
 - `Q_two_readers`: the notes folder has two read tools, `rag_read` and workspace `read`, because
   edit only touches a file read through `read` (the read-before-edit gate). Seen twice
   (2026-11-13): the model tried `read` on a document outside the notes folder, and

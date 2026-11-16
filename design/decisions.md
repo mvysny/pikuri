@@ -485,7 +485,11 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
 - **A clock tool, or `date.today() + timedelta(…)` in the calculator.** A feature, and the model
   must think to call it. Worth reopening only if transcripts show botched date arithmetic.
 - **Reminders.** `pikuri-thunderbird` reads no tasks (VTODO), and a reminder that fires needs a
-  resident process a CLI doesn't have. Puri leaves them out too, to start with.
+  resident process a CLI doesn't have. Puri leaves them out too: reminders are an Apple thing,
+  with no Linux desktop counterpart to hand one to.
+- **A pure-Ruby `.docx`/`.odt` reader**, a `pikuri-pdf`-sized gem (both are zipped XML). The demo
+  makes its point on PDFs alone; reading a real `~/Documents` whole is a feature, and the secretary
+  with every feature is Puri (`D_gem_placement`). The gaps are stated in the chapter.
 
 **Consequences.**
 
