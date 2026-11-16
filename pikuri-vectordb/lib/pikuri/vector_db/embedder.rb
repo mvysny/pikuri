@@ -28,6 +28,18 @@ module Pikuri
     # the same values, but not a +ChatTransport+ itself: its +context_window+,
     # +params+ and +modalities+ mean nothing to an embed.
     #
+    # == Throttling
+    #
+    # +around_request:+ takes the same hook as {Pikuri::Agent#initialize}'s and
+    # runs it around every embed request, so a host's throttle on a small
+    # llama-server sees the {Watcher}'s reindex barrage beside the chat's
+    # completions. Pass it the hook the host's agents get:
+    #
+    #   Embedder.new(server: s, model: m, around_request: agent_hook)
+    #
+    # The hook's +cancellable+ is always +nil+: an embed belongs to no turn,
+    # even when a tool's call made it.
+    #
     # RubyLLM exceptions propagate verbatim: this is internal code, not an
     # LLM-facing tool, so there is no +"Error: ..."+ return path.
     class Embedder
@@ -45,14 +57,20 @@ module Pikuri
       #   +"nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0"+.
       # @param api_key [String] API key; the +"not-needed"+ placeholder for a
       #   keyless local server.
+      # @param around_request [#call, nil] runs around every embed request (see
+      #   "Throttling"); +nil+ for none.
       # @return [Embedder]
-      def initialize(server:, model:, api_key: 'not-needed')
+      def initialize(server:, model:, api_key: 'not-needed', around_request: nil)
         @model    = model
         @api_base = "#{server.to_s.strip.chomp('/').delete_suffix('/v1')}/v1"
         base      = @api_base
         @context  = RubyLLM.context do |c|
           c.openai_api_base = base
           c.openai_api_key  = api_key
+          if around_request
+            Pikuri::Agent::RequestInstrumenter.install(c, hook: around_request, api_base: base,
+                                                          cancellable: nil)
+          end
         end
       end
 

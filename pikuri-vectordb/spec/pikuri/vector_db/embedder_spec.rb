@@ -91,3 +91,59 @@ describe Pikuri::VectorDb::Embedder do
     end
   end
 end
+
+# The hook sits in ruby_llm's HTTP layer, below the +Embedding.embed+ stub
+# above, so these run the real request path against Faraday's test adapter
+# (the technique pikuri-core/spec/integration_spec.rb uses).
+describe Pikuri::VectorDb::Embedder, 'around_request' do
+  let(:events) { [] }
+  let(:hook) do
+    log = events
+    lambda do |api_base, cancellable, &request|
+      log << [:enter, api_base, cancellable]
+      request.call.tap { log << :leave }
+    end
+  end
+
+  before do
+    # ruby_llm caches Faraday connections process-wide; drop any an earlier
+    # spec built, or the Faraday.new stub below is never reached.
+    RubyLLM::Transport::Connection.cache.clear
+    log = events
+    stubs = Faraday::Adapter::Test::Stubs.new
+    stubs.post('/v1/embeddings') do |env|
+      log << :http
+      count = JSON.parse(env.body)['input'].size
+      data = Array.new(count) { |i| { object: 'embedding', index: i, embedding: [i.to_f, 1.0] } }
+      [200, { 'Content-Type' => 'application/json' }, JSON.generate(object: 'list', model: 'm', data: data)]
+    end
+    @original_faraday_new = Faraday.method(:new)
+    original = @original_faraday_new
+    Faraday.define_singleton_method(:new) do |*args, **kwargs, &user_block|
+      original.call(*args, **kwargs) do |faraday|
+        user_block&.call(faraday)
+        faraday.adapter :test, stubs
+      end
+    end
+  end
+
+  after do
+    original = @original_faraday_new
+    Faraday.define_singleton_method(:new) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) }
+    RubyLLM::Transport::Connection.cache.clear
+  end
+
+  it 'brackets each embed request, handing the hook the api_base and no cancellable' do
+    embedder = described_class.new(server: 'http://emb.test', model: 'm', around_request: hook)
+
+    assert_equal [[0.0, 1.0], [1.0, 1.0]], embedder.embed(%w[a b])
+    assert_equal [[:enter, 'http://emb.test/v1', nil], :http, :leave], events
+  end
+
+  it 'embeds without a hook too' do
+    embedder = described_class.new(server: 'http://emb.test', model: 'm')
+
+    assert_equal [[0.0, 1.0]], embedder.embed(%w[a])
+    assert_equal [:http], events
+  end
+end

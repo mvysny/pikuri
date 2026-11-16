@@ -843,10 +843,8 @@ module Pikuri
         # +<think>…</think>+; a server sending +reasoning_content+ is untouched.
         c.split_think_tags = true
         if @around_request
-          c.instrumenter = RequestInstrumenter.new(
-            hook: @around_request, api_base: dialed_api_base(slug, c),
-            cancellable: @cancellable, chain: c.instrumenter
-          )
+          RequestInstrumenter.install(c, hook: @around_request, api_base: dialed_api_base(slug, c),
+                                         cancellable: @cancellable)
         end
       end
     end

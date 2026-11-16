@@ -84,7 +84,7 @@ module Tripwires
 
     Check.new(
       'per-request hook',
-      "Every ruby_llm request rides a Context whose instrumenter runs the agent's around_request.",
+      "Every ruby_llm request rides a Context whose instrumenter runs its around_request.",
       # Two halves of one seam, both of which a plausible tidy-up breaks
       # silently — a host's throttle would simply stop gating, with every
       # spec still green. A +RubyLLM.chat+ call is a chat built off the
@@ -94,7 +94,7 @@ module Tripwires
       # over it).
       -> {
         hits(/RubyLLM\.chat\b/) +
-          confined(/instrumenter\s*=[^=]/, allowed: ['pikuri-core/lib/pikuri/agent.rb'])
+          confined(/instrumenter\s*=[^=]/, allowed: ['pikuri-core/lib/pikuri/agent/request_instrumenter.rb'])
       }
     ),
 

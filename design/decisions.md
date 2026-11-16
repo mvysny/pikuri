@@ -1499,8 +1499,13 @@ Measured against ruby_llm 1.16.0 and a live llama.cpp router on
 - **Inheritance is explicit.** Whoever builds a child agent passes
   `parent.around_request` on, as `SubAgentTool` passes the `Cancellable`; a
   forwarding site that forgets runs its child unthrottled.
-- {Pikuri::VectorDb::Embedder} embeds on its own `RubyLLM::Context`, outside
-  any `Agent`, so embedding stays outside the hook.
+- **The embedder takes the same hook.** {Pikuri::VectorDb::Embedder} embeds on
+  its own `RubyLLM::Context`, outside any `Agent`, so it reaches the hook only
+  through its own `around_request:`, where the host passes the one its agents
+  get. An indexer's reindex is a barrage of embeds against the same llama.cpp,
+  exactly the load a throttle exists for. Its `cancellable` is `nil`: an embed
+  belongs to no turn. {Pikuri::Agent::RequestInstrumenter.install} is the one
+  place either connection's instrumenter slot is assigned.
 
 ## D_no_step_limit — Why no step cap on the loop?
 

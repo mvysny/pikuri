@@ -148,9 +148,7 @@ assistant, the coding agent, MCP, skills, language servers — is
   concrete case: concurrent conversations plus the one-off jobs
   that caption and summarize them. The two agent shapes, why
   `Agent` is thread-unsafe on purpose and what the two doors in
-  from another thread are, the queueing problem N agents create
-  for one llama.cpp and the per-request permit that fixes it
-  (with the measurements), why a connection rides the transport
+  from another thread are, why a connection rides the transport
   instead of `RubyLLM.configure`, the tool sharing postures
   finally with a scene behind them, and why a stored conversation
   and a rendered transcript are two artifacts that don't

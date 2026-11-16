@@ -2,10 +2,18 @@
 
 module Pikuri
   class Agent
-    # Runs an agent's +around_request:+ hook around every LLM HTTP request, by
-    # sitting in ruby_llm's +instrumenter+ slot on the agent's own
-    # +RubyLLM::Context+. Built by {Agent#build_context}, only when the agent
-    # has a hook; what a hook looks like is on {Agent#initialize}.
+    # Runs an +around_request:+ hook around every LLM HTTP request, by sitting
+    # in ruby_llm's +instrumenter+ slot on one +RubyLLM::Context+ — an agent's
+    # own, or any other connection that takes the same hook:
+    #
+    #   RubyLLM.context do |c|
+    #     c.openai_api_base = base
+    #     RequestInstrumenter.install(c, hook: around_request, api_base: base, cancellable: nil)
+    #   end
+    #
+    # What a hook looks like is on {Agent#initialize}. {.install} is the one
+    # place the slot is assigned: it holds a single instrumenter, so a second
+    # assignment would silently displace the hook.
     #
     # Only +request.ruby_llm+ reaches the hook. Every other event ruby_llm emits
     # (+chat.ruby_llm+, +tool_call.ruby_llm+, ...) passes straight through —
@@ -33,10 +41,26 @@ module Pikuri
       # The one instrumented event that is exactly one HTTP request.
       REQUEST_EVENT = 'request.ruby_llm'
 
-      # @param hook [#call] the agent's +around_request:+
+      # Install +hook+ on +config+'s instrumenter slot, chaining whatever it
+      # displaces (see +chain+ on {#initialize}).
+      #
+      # @param config [RubyLLM::Configuration] a context's config, inside its
+      #   +RubyLLM.context+ block.
+      # @param hook [#call] an +around_request:+ hook.
+      # @param api_base [String, nil] the base URL the connection dials.
+      # @param cancellable [Control::Cancellable, nil] the turn's token, or
+      #   +nil+ when no turn owns the requests.
+      # @return [RequestInstrumenter] the installed instrumenter.
+      def self.install(config, hook:, api_base:, cancellable:)
+        config.instrumenter = new(hook: hook, api_base: api_base, cancellable: cancellable,
+                                  chain: config.instrumenter)
+      end
+
+      # @param hook [#call] an +around_request:+ hook
       # @param api_base [String, nil] the base URL the connection dials, handed
       #   to +hook+
-      # @param cancellable [Control::Cancellable, nil] handed to +hook+
+      # @param cancellable [Control::Cancellable, nil] handed to +hook+; +nil+
+      #   when no turn owns the requests
       # @param chain [#instrument, nil] the instrumenter this one displaces —
       #   +RubyLLM.context+ dups the global config, so a host that installed
       #   +ActiveSupport::Notifications+ would otherwise have it silently

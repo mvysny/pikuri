@@ -127,130 +127,6 @@ The `bin/` demos use neither control, and that's exactly the
 no other thread to inject from. A host running the agent on a
 worker injects through `agent.interloper` with no other changes.
 
-## One server, N agents
-
-Here's the problem that motivated most of this chapter.
-
-Your twenty session agents point at *one* llama.cpp. Your caption
-jobs point at the same one. Nothing in what we've built so far
-stops all of them issuing completions simultaneously — and
-llama.cpp, started with `--parallel 1`, does not fall over. It
-queues.
-
-That queueing is the problem, not the fix. Three things go wrong
-once a request is sitting in the server's queue rather than in
-yours:
-
-- **ruby_llm's `request_timeout` is ticking.** It doesn't know the
-  difference between "the server is slow" and "the server hasn't
-  looked at my request yet."
-- **A timeout on POST gets retried.** So the client re-enqueues
-  work *behind* an original that may still be generating. The
-  stampede feeds itself.
-- **You can't cancel it.** A request parked inside llama.cpp is
-  beyond the reach of your stop button. It will be served, the
-  tokens will be generated, and the user who pressed stop thirty
-  seconds ago will pay for them.
-
-Parked in *your* queue, all three are fixable. pikuri doesn't ship
-that queue — a single `bin/` script never needs one, since tools run
-one at a time and sub-agents run inline, so one agent tree sends one
-request at a time. What pikuri ships is the place to hang it:
-`Agent.new(around_request:)`, a callable the agent runs around every
-HTTP request it makes. Here is a whole throttle:
-
-```ruby
-# One permit pool per server, shared by every agent in the process.
-class Throttle
-  def initialize(slots) # { 'http://localhost:8080/v1' => 1 }
-    @slots = slots
-    @busy = Hash.new(0)
-    @lock = Mutex.new
-    @freed = ConditionVariable.new
-  end
-
-  def call(api_base, cancellable)
-    limit = @slots[api_base]
-    return yield unless limit # a server you didn't size: unlimited
-
-    @lock.synchronize do
-      until @busy[api_base] < limit
-        cancellable&.check!         # Stop reaches a parked request
-        @freed.wait(@lock, 0.1)
-      end
-      @busy[api_base] += 1
-    end
-    begin
-      yield
-    ensure
-      @lock.synchronize { @busy[api_base] -= 1; @freed.broadcast }
-    end
-  end
-end
-
-THROTTLE = Throttle.new('http://localhost:8080/v1' => 1)
-agent = Pikuri::Agent.new(transport: t, system_prompt: p, around_request: THROTTLE)
-```
-
-The wait is timed rather than a plain `wait` because a cancel is a
-bare flag write — it has to be safe from a signal trap — so nothing
-signals the condition variable when the user presses Stop; the
-waiter has to look.
-
-Two things about the scope, both of which are the point rather than
-an implementation detail.
-
-**The key is the server, not the agent.** One `THROTTLE` for the
-whole process, and it is handed the base URL each request dials, so
-twenty agents pointing at the same URL share its permits — even
-after one of them switches model to another server. This is the
-same rule as the web-search rate limiter from the earlier chapters:
-what you're protecting is one inference server's slots, and that is
-not a property of any agent talking to it. A limiter per agent
-would let twenty agents fire twenty simultaneous requests and
-change nothing about how many arrive.
-
-**The hook covers one HTTP request, not one turn.** This one is
-load-bearing. A turn is inference *plus* tools, so a turn that
-spends five seconds in `web_search` would hold a slot while the
-server idles. Worse, a whole-turn permit deadlocks the moment a
-parent's tool spawns a sub-agent: the parent holds the only permit
-and waits for a child that's waiting for a permit. Per-request
-avoids both. The hook runs around ruby_llm's `request.ruby_llm`
-instrumenter event, and it spans the whole streamed response —
-measured, not assumed, because releasing at the first byte would
-gate nothing at all. The `agent` tool hands its children the
-parent's hook, so the whole tree queues in one line.
-
-How many slots does your server have? You don't have to guess:
-llama.cpp's `/props` document reports it, beside the context window
-(on a router, ask `/props?model=<id>`).
-
-```
-$ curl -s http://localhost:8080/props | jq .total_slots
-4
-```
-
-Does it matter? Measured against a live llama.cpp router, three
-agents running the same prompt:
-
-| Permits | Total | Individual completions |
-|---|---|---|
-| 1 | 21.3 s | 7.1 / 14.2 / 21.3 s |
-| 4 | 9.1 s | all three together |
-
-The server reported `total_slots: 4`. The staircase in the first row is what
-serialization looks like; the second row is what the hardware could
-do all along. Neither number is the lesson — the lesson is that
-*you* chose which one you got, instead of discovering it inside a
-queue you can't see.
-
-And one thing the throttle above doesn't do, because a host author
-will hit it: it is undifferentiated, not even FIFO, so a burst of
-six caption jobs can park the next interactive turn behind all six.
-The hook is yours, so is the priority lane — a ticket queue goes
-exactly where `until` is.
-
 ## Why the connection can't be global
 
 ruby_llm's obvious configuration door is the process-global one:
@@ -285,10 +161,7 @@ end
 ```
 
 Every chat rides one of these; nothing in pikuri calls
-`RubyLLM.chat` bare. That's also where the permit gate gets
-installed, which is why the throttle needs no host wiring: the
-context that carries your connection carries the instrumenter that
-rations it.
+`RubyLLM.chat` bare.
 
 The bundle matters for a reason that's easy to miss. `with_model`
 swaps only the model against the chat's *existing* connection — so
@@ -455,16 +328,13 @@ If you're building a host, the short version:
    `Thread.current`.
 2. **Two doors in from other threads** — `Cancellable` and
    `Interloper`. Everything else is your serialization problem.
-3. **Size your inference server once**, per server, from what its
-   `/props` reports. Cancellation only works on a
-   request queued in *your* process.
-4. **Split tool construction** — shared instances at boot,
+3. **Split tool construction** — shared instances at boot,
    `P_one_agent` tools per agent. Read the `Sharing:` line before
    you hoist a tool into a constant.
-5. **A connection rides the transport**, never
+4. **A connection rides the transport**, never
    `RubyLLM.configure` — different conversations legitimately run
    different models.
-6. **Two artifacts, not one** — the history is pikuri's, the
+5. **Two artifacts, not one** — the history is pikuri's, the
    rendered transcript is yours, and neither reconstructs the
    other.
 
