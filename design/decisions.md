@@ -1184,7 +1184,12 @@ pikuri targets is known to.
 - **Splitting in pikuri.** pikuri did, from the 2.1 upgrade until 2.2 shipped, but the
   streaming half needs a stateful splitter threaded through `after_message`, `streaming_block`
   and `emit_chunk`, and the stored message had to be rewritten through its instance variables.
-- **Repairing histories saved with the tags at load.** Only pre-release builds wrote them.
+- **Repairing histories saved with the tags at load.** Only v0.1.0, the last release before
+  live replies were split, wrote them, and nothing in production runs it. Inline `<think>` is
+  wasteful, never refused, so it is not a `D_history_load_repairs` case; and a repair would need
+  ruby_llm's `# :nodoc:` `ThinkTags` or a second splitter free to drift from the live one, plus
+  a public `History` method for hosts that replay for display. A host that must read such a file
+  owns its format and version (`D_history_value_type`) and migrates there.
 
 ---
 
