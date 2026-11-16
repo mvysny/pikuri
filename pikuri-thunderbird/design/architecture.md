@@ -423,6 +423,20 @@ retained** (probed: present in 1 of 3 idle samples, exactly while the counter
 was mid-bump), so its presence is a valid "write in flight → retry" signal for
 the snapshot bracket.
 
+**Across a real poll** (testbed, Thunderbird 159, an IMAP poll bringing N new
+messages to an offline INBOX, `-journal` sampled every 20 ms). Gloda indexes such
+a message only once its body is local, so the burst starts at the body download,
+not at the header fetch. It commits in batches, not per message: N=3 → +3, N=20
+→ +2, N=100 → +2, N=400 → +3 on the counter. One transaction holds the
+`-journal` for most of the burst, and it **grows with the poll, about 11 ms a
+message**: 0.65 s at N=20, 1.1 s at N=100, 4.4 s at N=400. After that, nothing
+for the next 40–60 s. So the bracket's retry budget (6 × 80 ms) is shorter than
+a 100-message poll: two of the 22 default-budget refreshes taken during that
+burst raised `TornError` ("journal true/true" on every try). No fixed budget
+covers every poll. (In a headless session autosync never fetched the new bodies
+on its own within 90 s; the measurement fetched them with
+`downloadMessagesForOffline`, which is what autosync does.)
+
 **Gmail label fan-out (why dedup is mandatory).** Gmail exposes each label as
 an IMAP folder, so a message with N labels yields N Gloda rows.
 **`[Gmail]/All Mail` is indexed** (`indexingPriority` 20, **5974 messages** —
