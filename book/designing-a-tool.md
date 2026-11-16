@@ -346,8 +346,10 @@ One line in the tool's comments answers a question you'll only meet
 when a program runs several agents at once: *Sharing: P_stateless.*
 The calculator keeps no state between calls, so one instance can
 serve every agent in the process. A tool that remembers things per
-conversation can't. The [hosting chapter](hosting.md) is where that
-matters; for now, know that every tool in pikuri answers it.
+conversation can't. Every tool in pikuri answers it with one of four
+postures; the four, and the app that runs many conversations where they
+matter, are in
+[book 2's hosting chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/conversations.md#a-tool-two-agents-can-reach).
 
 ## What's next
 

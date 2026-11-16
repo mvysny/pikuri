@@ -139,22 +139,6 @@ assistant, the coding agent, MCP, skills, language servers — is
   chapter says why from the map alone, then what the map still can't
   see.
 
-### Hosting
-
-- **[Hosting many agents at once](hosting.md).** Every binary in
-  the book runs one agent at a time; a real host doesn't. What
-  changes when N agents share one process, with
-  [pikuri-web](https://codeberg.org/mvysny/pikuri-web) as the
-  concrete case: concurrent conversations plus the one-off jobs
-  that caption and summarize them. The two agent shapes, why
-  `Agent` is thread-unsafe on purpose and what the two doors in
-  from another thread are, why a connection rides the transport
-  instead of `RubyLLM.configure`, the tool sharing postures
-  finally with a scene behind them, and why a stored conversation
-  and a rendered transcript are two artifacts that don't
-  reconstruct each other. No demo — the honest version is a few
-  hundred lines of plumbing; read pikuri-web instead.
-
 ### Coda
 
 - **[Apps built on pikuri](apps.md).** The book's coda. What an
@@ -163,13 +147,15 @@ assistant, the coding agent, MCP, skills, language servers — is
   [Puri](https://github.com/mvysny/puri), the secretary with all the
   bells and whistles, then
   [pikuri-tui](https://codeberg.org/mvysny/pikuri-tui)'s terminal
-  shells and [pikuri-web](https://codeberg.org/mvysny/pikuri-web)'s
+  shells and [pikuri-webui](https://codeberg.org/mvysny/pikuri-webui)'s
   browser chat. A piece that proves itself there moves back into a
-  gem.
+  gem. Running many conversations at once, as those apps do, is
+  book 2's last chapter.
 
 ### Book 2
 
 - **[The workshop](https://github.com/mvysny/pikuri-workshop/blob/master/book/README.md).**
-  Power, which needs a cage: the shell and its sandbox, the OS
-  assistant, memories, skills, MCP, language intelligence and the
-  coding agent. A separate repo that builds on everything here.
+  Power, most of which needs a cage: the shell and its sandbox, the
+  OS assistant, memories, skills, MCP, language intelligence and the
+  coding agent; then hosting many conversations at once. A separate
+  repo that builds on everything here.

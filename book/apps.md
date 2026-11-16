@@ -53,21 +53,38 @@ several models you switch between at runtime, a log pane beside the
 conversation, and a confirmer that asks inside the UI instead of on
 stdin.
 
-## pikuri-web
+## pikuri-webui
 
-[pikuri-web](https://codeberg.org/mvysny/pikuri-web) is the browser
-version of the same chat: a Sinatra page that streams the conversation
-over SSE. It is the host [the hosting chapter](hosting.md) was written
-from, with many conversations in one process plus the background jobs
-that title them. (Don't confuse it with the `pikuri-web` *gem* that
-ships the web tools; the app uses that gem.)
+[pikuri-webui](https://codeberg.org/mvysny/pikuri-webui) is the
+browser version of the same chat: a Sinatra page that streams the
+conversation over SSE, with many conversations in one process plus the
+background jobs that title them.
+
+## Running many conversations
+
+Every binary in this book runs one agent at a time; each app above runs
+many, and that changes the rules. An `Agent` is one conversation,
+synchronous and thread-unsafe on purpose: drive it from any thread you
+like, but never from two at once. From outside its turn, only its two
+controls are safe to touch, `Cancellable` to stop it and `Interloper` to
+hand it a message mid-turn:
+
+```ruby
+agents.map { |a| Thread.new { a.run_loop(user_message: task_for(a)) } }.each(&:join)
+```
+
+The rest — which tools two agents may share (each tool's `Sharing:`
+line), one server's slots, saving and resuming — is
+[book 2's chapter on hosting many conversations](https://github.com/mvysny/pikuri-workshop/blob/master/book/conversations.md),
+told through `pikuri-conversations`, the gem pikuri-webui and
+pikuri-tui are now built on.
 
 ## What's next
 
 This is the end of the guide. You now have the vocabulary to read
 any pikuri-\* gem's sources and any of the apps above: `Pikuri::Agent`,
-`Tool`, listeners, the Extension protocol, configure/bind, the
-workspace and the confirmer, sub-agent privilege separation and the
+`Tool`, listeners, the Extension protocol, the workspace and the
+confirmer, sub-agent privilege separation and the
 kit from [the security chapter](security.md).
 
 If you want the power tools (a shell, a coding agent, MCP servers,

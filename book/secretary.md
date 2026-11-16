@@ -675,10 +675,8 @@ guard's new-recipient note reaches you only if the model repeats it.
 
 That's the book's last binary: all three legs, each one you can name
 on the map, and the one that leaves weakened by what it shows you and
-where it can reach. [Hosting many agents at once](hosting.md) steps
-outside the single-agent shape every binary so far has had. Then the
-coda points at [Puri](apps.md), which is this secretary with the bells
-and whistles: a popup on a global shortcut, streamed answers, a
-conversation history.
+where it can reach. The coda points at [Puri](apps.md), which is this
+secretary with the bells and whistles: a popup on a global shortcut,
+streamed answers, a conversation history.
 
-→ Continue to [Hosting many agents at once](hosting.md).
+→ Continue to [Apps built on pikuri](apps.md).

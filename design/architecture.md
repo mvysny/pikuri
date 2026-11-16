@@ -81,6 +81,7 @@ gem's tools take, and any `bin/pikuri-*` for forty lines that wire a whole agent
 
 - **No provider abstraction of our own** — multi-provider config, vision/audio and embeddings are ruby_llm's (`bin/pikuri-corpus` already uses its `embed`).
 - **No compaction policy** — core ships only the actuator, `Configurator#replace_compacted_history`; when and how to compact is pikuri-workshop's (`D_compaction_in_place`). The `bin/` scripts `exit 1` on overflow, a demo shortcut rather than a library position.
+- **No conversation storage** — core ships only the seam: `Agent#export_history`, `Agent.new(history:)` and the in-memory `Agent::History` they trade. Storing, listing and resuming a conversation is pikuri-workshop's pikuri-conversations (`D_history_value_type`), so no `bin/` script here resumes one.
 - **No step cap on the loop**, at any depth (`D_no_step_limit`).
 - **No batch or patch edit tool**, and no fuzzy edit addressing (`D_single_hunk_edit`).
 - **No session store**, so no resumable or worktree-isolated sub-agents.
