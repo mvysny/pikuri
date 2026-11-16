@@ -82,8 +82,8 @@ Here's what it prints at boot. The advisory's tool lists are cut for
 width; the map below it is complete:
 
 ```
-[TRIFECTA: soft] pikuri-secretary — private(rag_search, …, read)
-+ untrusted(rag_search, …, read, web_search) + egress(thunderbird_mail_compose,
+[TRIFECTA: soft] pikuri-secretary — private(rag_search, …, file_list)
++ untrusted(rag_search, …, file_list, web_search) + egress(thunderbird_mail_compose,
 thunderbird_calendar_create, web_search). An injection in what this agent
 reads can drive an exfiltration. Break a leg: privilege-separate the step that
 reads untrusted content, or declare the workspace trusted if you vouch for
@@ -104,6 +104,8 @@ pikuri-secretary [:private, :untrusted_hard, :egress_reviewed]
   thunderbird_mail_compose [:egress_reviewed]
   thunderbird_calendar_create [:egress_reviewed]
   read [:private, :untrusted_hard]
+  glob [:private, :untrusted_hard]
+  file_list [:private, :untrusted_hard]
   edit []
   write []
   web_search [:untrusted_hard, :egress_reviewed_vouched]
@@ -271,6 +273,10 @@ file to every tool. That's not a detail. With the file tools rooted at
 and created `Notes/Notes/kettle-co.md`. Nothing warned anyone: the
 write was inside the notes folder, so it was allowed. A model reuses
 the paths it's shown, so every tool should read them the same way.
+
+The file tools come as the usual set, minus `grep`. It reads a file's
+raw bytes, so it can't see inside a PDF: asked for "Kettle", it would
+answer "no match" while `rag_search_keywords` finds the invoice.
 
 `read` also reaches the folders you `--exclude`d. The prompt names
 them, so a search that finds nothing there means "not indexed", not

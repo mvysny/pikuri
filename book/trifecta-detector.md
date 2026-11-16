@@ -45,7 +45,7 @@ harness, and its first step was:
 The detector is that step, done by machine, over the wiring that
 actually booted rather than the one you meant to write. That
 distinction is the whole value. You can hold a four-tool agent in
-your head. The secretary at the end of this book wires seventeen
+your head. The secretary at the end of this book wires nineteen
 tools from five gems, and "which of them can send bytes out, and
 does a human see those bytes first?" has an answer spread across
 their constructors. The map gathers it into one screen.

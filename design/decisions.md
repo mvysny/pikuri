@@ -456,6 +456,13 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   `~/Documents` writable would leave the diff as the only check, and the diff weakens with every
   approval you click through. Folders kept out of the index are named in the prompt, so the
   model doesn't take "search found nothing" to mean "you have nothing".
+- ***The file tools come through `Workspace::Extension(grep: false)`, not hand-wired.*** The
+  first wiring took only `read` / `edit` / `write` by hand, and so lost the extension's
+  decline-is-final prompt line and its root snapshot, and would have missed every later fix to
+  either: `D_thunderbird_surfaces`' reason for narrowing an extension rather than bypassing it.
+  `grep` is the one tool dropped because it misleads here: it reads raw bytes, skips a PDF, and
+  answers "no match" where `rag_search_keywords` finds the invoice. `glob` and `file_list` stay;
+  they match names, which rag can't.
 - ***Every note write confirmed, with its diff.*** It guards integrity, which no leg measures.
   Loosening it (say, confirming only edits to notes the agent didn't write) is to be decided from
   practice, not up front.
@@ -477,7 +484,7 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   Stale after midnight in a long session; accepted.
 - ***The index stays live under the vectordb `Watcher`***, so a note the agent just wrote is
   findable in the same session. It comes free with the copy.
-- ***About 17 tools on the book's default model, Ornith-1.5.*** Designed for the best tool set,
+- ***About 19 tools on the book's default model, Ornith-1.5.*** Designed for the best tool set,
   not the smallest, counting on local models improving: Siri's on-device 4B dense model routes
   among as many. The chapter's transcripts were the test, and routing held, at the odd wasted call.
 

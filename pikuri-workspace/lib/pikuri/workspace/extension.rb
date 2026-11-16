@@ -93,10 +93,16 @@ module Pikuri
       #   (default) confirms every writable write and edit with a diff; +false+
       #   leaves {Edit} promptless and {Write} asking only before an overwrite.
       #   See book/touching-files.md.
-      def initialize(filesystem:, confirmer:, confirm_all_writes: true)
+      # @param grep [Boolean] +false+ leaves {Search::Grep} unwired, for a
+      #   host whose root a rag index also covers: grep sees a PDF's raw bytes
+      #   and skips it, so on a documents folder it answers "no match" where
+      #   rag's keyword search finds the invoice. Narrows only; see
+      #   +design/decisions.md+ +D_secretary_wiring+.
+      def initialize(filesystem:, confirmer:, confirm_all_writes: true, grep: true)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer
         @confirm_all_writes = confirm_all_writes
+        @grep = grep
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -111,7 +117,7 @@ module Pikuri
         end
 
         c.add_tool Read.new(workspace: @workspace)
-        c.add_tool Search::Grep.new(workspace: @workspace)
+        c.add_tool Search::Grep.new(workspace: @workspace) if @grep
         c.add_tool Search::Glob.new(workspace: @workspace)
         c.add_tool FileList.new(workspace: @workspace)
         c.add_tool Edit.new(workspace: @workspace, confirmer: @confirmer,

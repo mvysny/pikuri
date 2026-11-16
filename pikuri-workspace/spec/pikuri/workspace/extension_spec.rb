@@ -90,6 +90,12 @@ RSpec.describe Pikuri::Workspace::Extension do
       assert_includes names, 'write'
     end
 
+    it 'leaves only grep out under grep: false' do
+      described_class.new(filesystem: filesystem, confirmer: confirmer, grep: false).configure(configurator)
+
+      assert_equal %w[read glob file_list edit write], configurator.tools.map(&:name)
+    end
+
     it 'raises if any of its tools was already registered' do
       configurator.add_tool(Pikuri::Workspace::Read.new(workspace: described_class.new(filesystem: filesystem, confirmer: confirmer).workspace))
 
