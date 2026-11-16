@@ -51,10 +51,14 @@ want it for long.
 **The embedding bill.** The secretary indexes all of `~/Documents` by
 default: a secretary is only as useful as what it can see. That has a
 price, and it's worth measuring before you pay it. On a laptop's
-integrated GPU (a Ryzen AI HX 370 with two sticks of DDR5-5600), a
-137-page PDF took 8.5 seconds to extract and 36 seconds to embed: 242
-chunks, about seven a second. That's close to the most this machine
-can do, measured, and not a setting someone forgot to tune. A folder with a
+integrated GPU (the Radeon 890M in a Ryzen AI HX 370), embedding with
+bge-m3, a 137-page PDF took 8.5 seconds to extract and 36 seconds to
+embed: 242 chunks, about seven a second. That's the GPU's ceiling, and
+the arithmetic agrees: bge-m3 costs about 0.65 billion operations per
+token, so seven 500-token chunks a second is some 2.3 trillion
+operations a second, about what llama.cpp gets out of an integrated
+GPU this size. The secretary's default embedder, nomic-embed-text,
+needs under a third of that work per token. A folder with a
 library of books in it is hours of a busy machine, and the chat
 shares the GPU with it the whole time: an answer that took 21 seconds
 alone took 78 while the embedder ran, its words coming five times
