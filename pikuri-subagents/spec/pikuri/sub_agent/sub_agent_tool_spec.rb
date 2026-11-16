@@ -278,6 +278,28 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       assert_equal 'web_search', sub_chat.tools.first.name
     end
 
+    it "answers a child's context overflow as a tool error instead of ending the parent's turn" do
+      tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
+      closed = false
+      original_new = Pikuri::Agent.method(:new)
+      Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
+        original_new.call(**kwargs, &block).tap do |a|
+          a.define_singleton_method(:run_loop) { |**_| raise RubyLLM::ContextLengthExceededError }
+          a.define_singleton_method(:close) { closed = true }
+        end
+      end
+
+      begin
+        result = tool.run('name' => 'researcher', 'task' => 'read the whole internet')
+      ensure
+        Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
+      end
+
+      assert result.error?
+      assert_match(/ran out of context.*narrower task/, result.content)
+      assert closed, 'the child must still be closed'
+    end
+
     it 'returns an Error: when the LLM passes a persona name not in the enum' do
       tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
 

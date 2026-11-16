@@ -1098,7 +1098,7 @@ Cross-cutting by role:
 | read-only recon (cheap model) | `RESEARCHER` (web) + `FILE_MINER` (fs) + `GIT_REPO_RESEARCHER` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
 | planner (read-only, intent-shaping) | — | `planner` (Sonnet) | `plan` (primary mode, not subagent) | `Plan` |
 | reviewer (read-only correctness) | queued | `reviewer` (Sonnet, bash for git) | — | — |
-| general-purpose catch-all | — (escape hatch documented in `design/ideas/subagent-deferrals.md`) | `worker` | `general` | `general-purpose` |
+| general-purpose catch-all | — | `worker` | `general` | `general-purpose` |
 | infra housekeeping | — | — | `compaction`, `title`, `summary` (tools: none) | — |
 | UX helpers (slash-command-driven) | — | — | — | `statusline-setup`, `claude-code-guide` |
 
@@ -1120,8 +1120,8 @@ Cross-cutting by role:
 
 **Takeaway.** Pikuri ships a lean set — three against pi's four, opencode's eight and Claude Code's
 five — which matches the read-it-in-an-evening ceiling: ship the personas that demonstrate the
-mechanism along each axis, document the rest as queued in `design/ideas/subagent-deferrals.md`, and
-let downstream gems publish more. `RESEARCHER` and `FILE_MINER` are the direct analogues of pi's
+mechanism along each axis, and let downstream gems publish
+more. `RESEARCHER` and `FILE_MINER` are the direct analogues of pi's
 `scout` / opencode's `explore` / Claude Code's `Explore`, split by *what* gets read;
 `GIT_REPO_RESEARCHER` is a third axis with no direct analogue in the set — the closest move
 elsewhere is letting `bash` (with `git`) reach inside a sandbox, where the persona shape collapses
@@ -1131,6 +1131,5 @@ is now four-for-four across the projects that ship personas at all, and pikuri h
 either way. opencode's hidden-housekeeping trick is worth knowing for a compaction policy
 (`D_compaction_in_place`) — pikuri's one equivalent, a hard-coded
 step-exhaustion synthesizer, went with the step limit (`D_no_step_limit`). Per-persona model pinning
-is deferred in `design/ideas/subagent-deferrals.md`, since it needs `ChatTransport` variations per
-sub-agent.
+is a pikuri-workshop idea (`persona-model.md`), weak against one local llama.cpp server.
 

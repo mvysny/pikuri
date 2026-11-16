@@ -34,6 +34,12 @@ module Pikuri
     # step budget. It stops on the shared +cancellable+ (one Ctrl+C stops the
     # whole tree) or on its own context window — which starts empty, so a
     # child that will not stop exhausts that window rather than the parent's.
+    # That overflow comes back as a tool error, not a raise: the parent can
+    # react by sending a narrower task, so it must not lose its turn ("errors
+    # are loud" in the root AGENTS.md). The child's partial work is dropped; a
+    # policy that compacts the child instead is pikuri-workshop's
+    # (+D_compaction_in_place+). Only the child's overflow is caught here — the
+    # parent's own comes from the parent's request, outside this tool.
     #
     # A tool holding state the child must see a narrower version of defines a
     # no-arg +for_sub_agent+, and the child gets what it returns. A tool
@@ -168,6 +174,9 @@ module Pikuri
                 content: answer,
                 summary: "Answered, #{Pikuri::Tool.format_bytes(answer.bytesize)}"
               )
+            rescue RubyLLM::ContextLengthExceededError
+              Pikuri::Tool::Result.error('The agent ran out of context before answering. ' \
+                                         'Give it a narrower task.')
             ensure
               sub.close
             end

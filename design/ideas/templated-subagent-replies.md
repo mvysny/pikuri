@@ -30,9 +30,7 @@ Prior art (same two papers as the sibling note, different reading):
 Siblings: [`private-context-taint.md`](private-context-taint.md) (the
 two-bit taint reframing below is arguably that note's vocabulary),
 [`injection-tripwire.md`](injection-tripwire.md) (the heuristic
-counterpart — detect the injection; this one doesn't detect anything),
-[`subagent-deferrals.md`](subagent-deferrals.md) (if this ever ships as
-a `Persona` field, the deferral belongs there).
+counterpart — detect the injection; this one doesn't detect anything).
 
 ## The idea
 

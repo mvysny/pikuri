@@ -32,6 +32,14 @@ module Pikuri
     # wiring pikuri-workshop's skills may still name +skill+ in +tool_names+;
     # why no bundled persona does is +pikuri-workshop:D_no_skills_in_sub_agents+.)
     #
+    # == The host writes personas, never the model
+    #
+    # A persona's +tool_names+ is the unit the trifecta map places, at most
+    # two legs per node ({Pikuri::Trifecta}). A persona the model writes at
+    # runtime would choose its own legs, and an injected model would choose
+    # all three — so there is no +agent+ argument that names tools or a
+    # prompt, only +name:+ picking from the host's set.
+    #
     # @example bundled researcher
     #   Pikuri::SubAgent::RESEARCHER
     #   # => #<data Pikuri::SubAgent::Persona name="researcher", ...>
