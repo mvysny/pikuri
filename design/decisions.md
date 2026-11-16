@@ -506,7 +506,12 @@ and sandbox, a language server and MCP's container model can't do both. Split, e
 one promise: pikuri stays readable in an evening, and the workshop may be as complex as the real
 world makes it, explaining the hard parts rather than every line.
 
-**Decision.** Two tests, and failing either sends a gem to the workshop:
+On 2026-11-16, after the leaner-pikuri audit had cut about 2,700 lines, pikuri was declared
+feature-complete: core's `lib/` was about 2,540 lines of code without its yardoc, and the family
+led where it should, to the secretary. From then on the placement question is asked of every
+feature, not only of every gem.
+
+**Decision.** Three tests, and failing any of them sends the gem or the feature to the workshop:
 
 1. **Is its future "explain it better" or "more features"?** pikuri grows by teaching a concept
    better, never by gaining features, so a feature gem goes even when it's safe on your host. This
@@ -515,6 +520,12 @@ world makes it, explaining the hard parts rather than every line.
    container, a network the kernel has cut), it goes, however well it teaches. This placed the
    shell, MCP, skills, LSP, the coding agent and the OS assistant, and kept `pikuri-thunderbird`:
    the secretary reads your real mail on your real machine, and that's fine.
+3. **Does a new feature have to be in pikuri?** pikuri is feature-complete, so a feature goes to
+   the workshop by default, even one that would sit in a gem that stays. It lands here only to fix
+   a bug, to close a hole in a promise (privacy, the trifecta), or because the secretary or a book
+   chapter can't make its point without it. What pikuri adds instead is the seam a workshop
+   feature hooks into, and only the seam that feature needs now: a seam is code every deployment
+   reads, so "it's only a seam" must not become the way features come back.
 
 pikuri is safe because of what's *missing*: no shell, no stranger's code, writes confined to one
 folder, egress only to an engine the code picks. The workshop is safe because of what *surrounds*
@@ -551,7 +562,8 @@ and they stay because they pass both.
 - **Keep the OS assistant.** It's an app built from domain tools (Recoll, the GNOME file index,
   `system_info`, `MACHINE.md`), not a concept, and it needs the coding agent's sandbox.
 
-**Consequences.** Placement is asked again whenever a gem grows, by the first test. The ones to
+**Consequences.** Placement is asked again whenever a gem grows, by the first test, and of every
+new feature, by the third. The ones to
 watch: `pikuri-web`, since search engines pile up, and `pikuri-workspace`, whose `.gitignore`-aware
 listing leans towards coding and would move into the workshop's `pikuri-code` if it grows;
 `ProjectRoot`, which only a coding agent called, already has (now `Pikuri::Code::ProjectRoot`).
