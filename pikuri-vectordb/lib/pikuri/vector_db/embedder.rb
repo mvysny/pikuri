@@ -4,71 +4,66 @@ require 'ruby_llm'
 
 module Pikuri
   module VectorDb
-    # Thin wrapper over +RubyLLM.embed+ that pins one contract: {#embed} always
-    # takes +Array<String>+ and returns +Array<Array<Float>>+ parallel to it.
-    # +RubyLLM.embed+'s shape isn't fixed (a single-String input returns a flat
-    # +Array<Float>+), and the {Indexer} only wants the array shape, so pinning
-    # it here keeps downstream code from branching on input type — and lets
-    # consumers inject a fake +#embed+ in tests instead of monkey-patching
-    # ruby_llm. Batching is the {Indexer}'s concern: +RubyLLM.embed+ takes the
-    # array verbatim and the provider decides, so the Indexer slices a corpus
-    # and calls +#embed+ once per batch. RubyLLM exceptions propagate verbatim
-    # (internal code, not an LLM-facing tool — no +"Error: ..."+ return path).
+    # Turns text into vectors through an OpenAI-compatible +/v1/embeddings+
+    # endpoint, a local llama.cpp server by default:
+    #
+    #   embedder = Embedder.new(server: 'http://localhost:8080',
+    #                           model: 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0')
+    #   embedder.embed(%w[alpha beta])   # => [[0.018, ...], [-0.027, ...]]
+    #
+    # {#embed} always takes +Array<String>+ and returns one vector per text, in
+    # order; +RubyLLM.embed+ answers a flat vector for a lone String, and
+    # pinning the array shape keeps the {Indexer} from branching on it.
+    # Batching is the {Indexer}'s: it slices a corpus and calls {#embed} once
+    # per batch. Tests hand the {Indexer} any object with a matching +#embed+
+    # instead of this class.
+    #
+    # == Connection
+    #
+    # The embedder owns its connection: one +RubyLLM::Context+, built from
+    # +server+ and +api_key+ at construction, so an embed never reads the
+    # process-global +RubyLLM.config+ (the Connection seam in the root
+    # +AGENTS.md+). The arguments are
+    # {Pikuri::Agent::ChatTransport.from_openai_server}'s, so a bin hands both
+    # the same values, but not a +ChatTransport+ itself: its +context_window+,
+    # +params+ and +modalities+ mean nothing to an embed.
+    #
+    # RubyLLM exceptions propagate verbatim: this is internal code, not an
+    # LLM-facing tool, so there is no +"Error: ..."+ return path.
     class Embedder
-      # @return [String, nil] the embedding model name, or +nil+
-      #   to use whichever default +RubyLLM.config.default_embedding_model+
-      #   resolves to at call time.
+      # @return [String] the embedding model id, trusted verbatim: RubyLLM's
+      #   model registry is bypassed, since a local server's ids (router
+      #   aliases, HF repo paths) are not in its catalog.
       attr_reader :model
 
-      # @return [Symbol, nil] the explicit provider symbol (e.g.
-      #   +:openai+), or +nil+ to let RubyLLM infer from the model
-      #   name. Required by RubyLLM when +assume_model_exists+ is
-      #   +true+.
-      attr_reader :provider
+      # @return [String] the OpenAI base URL the embeds dial, ending in +/v1+.
+      attr_reader :api_base
 
-      # @return [Boolean] whether to bypass RubyLLM's local model
-      #   registry. +true+ when pointing at a local llama.cpp
-      #   endpoint whose model identifiers (router aliases, HF
-      #   repo paths like +"nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0"+)
-      #   are not in RubyLLM's built-in catalog.
-      attr_reader :assume_model_exists
-
-      # @param model [String, nil] embedding model name, e.g.
-      #   +"nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0"+ for a
-      #   local llama-server router, +"text-embedding-3-small"+
-      #   for hosted OpenAI. +nil+ defers to
-      #   +RubyLLM.config.default_embedding_model+.
-      # @param provider [Symbol, nil] explicit provider symbol
-      #   (e.g. +:openai+). Required when +assume_model_exists+
-      #   is +true+. +nil+ lets RubyLLM infer from the model id.
-      # @param assume_model_exists [Boolean] mirrors the chat-side
-      #   {Pikuri::Agent::ChatTransport#assume_model_exists} flag.
-      #   Set to +true+ for local llama-server endpoints whose
-      #   model identifiers are not in RubyLLM's catalog;
-      #   otherwise +RubyLLM.embed+ raises +ModelNotFoundError+
-      #   before any HTTP call is made.
+      # @param server [String] server origin, with or without a trailing
+      #   +/v1+, e.g. +"http://localhost:8080"+.
+      # @param model [String] embedding model id served there, e.g.
+      #   +"nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0"+.
+      # @param api_key [String] API key; the +"not-needed"+ placeholder for a
+      #   keyless local server.
       # @return [Embedder]
-      # @raise [ArgumentError] if +assume_model_exists+ is +true+
-      #   but +provider+ is +nil+ (RubyLLM requires the pair).
-      def initialize(model: nil, provider: nil, assume_model_exists: false)
-        if assume_model_exists && provider.nil?
-          raise ArgumentError, 'provider: must be specified when assume_model_exists is true'
+      def initialize(server:, model:, api_key: 'not-needed')
+        @model    = model
+        @api_base = "#{server.to_s.strip.chomp('/').delete_suffix('/v1')}/v1"
+        base      = @api_base
+        @context  = RubyLLM.context do |c|
+          c.openai_api_base = base
+          c.openai_api_key  = api_key
         end
-
-        @model               = model
-        @provider            = provider
-        @assume_model_exists = assume_model_exists
       end
 
-      # Embed +texts+ as a single call to the underlying provider.
-      # Empty input short-circuits to +[]+ — no HTTP round-trip.
+      # Embed +texts+ as a single call to the server. Empty input
+      # short-circuits to +[]+ with no HTTP round-trip.
       #
-      # @param texts [Array<String>] non-nil; every element must
-      #   be a String.
-      # @return [Array<Array<Float>>] parallel to +texts+. The
-      #   i-th vector is the embedding of +texts[i]+.
-      # @raise [ArgumentError] if +texts+ isn't an Array, or any
-      #   element isn't a String.
+      # @param texts [Array<String>] non-nil; every element must be a String.
+      # @return [Array<Array<Float>>] parallel to +texts+: the i-th vector is
+      #   the embedding of +texts[i]+.
+      # @raise [ArgumentError] if +texts+ isn't an Array, or any element isn't
+      #   a String.
       def embed(texts)
         unless texts.is_a?(Array)
           raise ArgumentError, "expected Array<String>, got #{texts.class}"
@@ -79,13 +74,7 @@ module Pikuri
           raise ArgumentError, "all elements must be String, got #{bad.class}"
         end
 
-        kwargs = {}
-        kwargs[:model]               = @model if @model
-        kwargs[:provider]            = @provider if @provider
-        kwargs[:assume_model_exists] = true if @assume_model_exists
-
-        embedding = kwargs.empty? ? RubyLLM.embed(texts) : RubyLLM.embed(texts, **kwargs)
-        embedding.vectors
+        @context.embed(texts, model: @model, provider: :openai, assume_model_exists: true).vectors
       end
     end
   end

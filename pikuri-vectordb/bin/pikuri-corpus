@@ -46,10 +46,10 @@ require 'pikuri-pdf'
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 
-server          = examples_config['llm_server'] || 'http://localhost:8080'
+llm_server      = examples_config['llm_server'] || 'http://localhost:8080'
 model           = examples_config['llm_model'] || 'ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'
 embed_model     = examples_config['embed_model'] || 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
-reranker_server = examples_config['reranker_server'] # nil ⇒ defaults to +server+ below
+reranker_server = examples_config['reranker_server'] # nil ⇒ defaults to +llm_server+ below
 reranker_model  = examples_config['reranker_model'] || 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
 use_reranker    = true
 source          = File.expand_path('../../book', __dir__)
@@ -93,33 +93,14 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-# Normalize the origin once: strip a trailing +/v1+ (and slash) so a
-# server value works with or without it, then re-append +/v1+ for the
-# OpenAI base. The reranker endpoint stays a bare origin (it appends
-# +/v1/rerank+ itself), so it gets the +/v1+-free form.
-server          = server.chomp('/').delete_suffix('/v1')
-reranker_server = (reranker_server || server).chomp('/').delete_suffix('/v1')
-openai_api_base = "#{server}/v1"
-
-# Unlike the other bins, this one keeps a process-global
-# +RubyLLM.configure+: a single +llama-server+ in router mode serves all
-# three models — chat, embedder, and reranker — and the embedder/Indexer
-# run *outside* any Agent (the +--watch+ daemon and +vectordb_reindex+
-# call +RubyLLM.embed+ on their own), so the connection can't ride a
-# per-agent +ChatTransport+ the way the chat-only bins now do. RubyLLM's
-# OpenAI provider shares this one +openai_api_base+ between
-# +RubyLLM.chat+ and +RubyLLM.embed+, which is fine here because both
-# naturally live at +server+. The reranker is *not* an OpenAI-shape call
-# (it goes through +Reranker::LlamaServer+ against +POST /v1/rerank+) so
-# it takes its own endpoint argument — defaulted to +server+ above,
-# overridable via the +reranker_server+ config key if you'd rather keep
-# the reranker pinned in its own llama-server instance instead of
-# sharing the router's swap budget.
-RubyLLM.configure do |c|
-  c.openai_api_base           = openai_api_base
-  c.openai_api_key            = examples_config.fetch('llm_api_key', 'not-needed')
-  c.default_embedding_model   = embed_model
-end
+# One llama-server in router mode serves all three models: chat, embedder
+# and reranker. The chat transport and the embedder each build their own
+# connection from +llm_server+ (both normalize a trailing +/v1+); the reranker
+# takes a bare origin (it appends +/v1/rerank+ itself), defaulting to
+# +llm_server+, and the +reranker_server+ config key pins it to its own
+# llama-server instead of sharing the router's swap budget.
+api_key         = examples_config.fetch('llm_api_key', 'not-needed')
+reranker_server = (reranker_server || llm_server).chomp('/').delete_suffix('/v1')
 
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing): from
 # here on the Extractor registry — and so the Indexer, the Watcher,
@@ -138,16 +119,7 @@ reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
   api_key:  examples_config['llm_api_key']
 ) : nil
 
-# Mirror the chat-side +assume_model_exists: true+ so RubyLLM's
-# local model registry doesn't reject the router's HF-repo-style
-# embed model id (+RubyLLM.embed+ otherwise raises
-# +ModelNotFoundError+ before any HTTP call). Provider is
-# required by RubyLLM whenever +assume_model_exists+ is set.
-embedder = Pikuri::VectorDb::Embedder.new(
-  model:               embed_model,
-  provider:            :openai,
-  assume_model_exists: true
-)
+embedder = Pikuri::VectorDb::Embedder.new(server: llm_server, model: embed_model, api_key: api_key)
 
 # Backend choice, via the uniform Server protocol: pick a supervisor,
 # ensure it's running, open a client on it. InMemory (default) is the
@@ -212,11 +184,7 @@ ensure
 end
 
 agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
-    model: model,
-    provider: :openai,
-    assume_model_exists: true
-  ),
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(server: llm_server, model: model, api_key: api_key),
   system_prompt: system_prompt,
   cancellable: cancel_flag,
   streaming: streaming

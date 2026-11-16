@@ -121,9 +121,9 @@ module Pikuri
       #   (see {Indexer::DENYLIST}). Single source only in v1
       #   — multi-source is deferred (see
       #   +design/ideas/vectordb-deferrals.md+ §"Multi-source indexing").
-      # @param embedder [#embed, nil] anything implementing
-      #   +embed(Array<String>) -> Array<Array<Float>>+; +nil+
-      #   constructs {Embedder} with the default model.
+      # @param embedder [#embed] anything implementing
+      #   +embed(Array<String>) -> Array<Array<Float>>+, usually an
+      #   {Embedder}. No default: an embedder needs a server to dial.
       # @param reranker [#rerank, nil] optional cross-encoder
       #   reranker. +nil+ skips reranking — {Tools::Search} retrieves
       #   the final top-k from the backend directly.
@@ -139,11 +139,11 @@ module Pikuri
       # @param exclude [Array<String, Pathname>] folders under +source+ never
       #   indexed; see {Indexer#initialize}.
       # @return [Extension]
-      def initialize(backend:, source:,
-                     embedder: nil, reranker: nil, chunker: nil,
+      def initialize(backend:, source:, embedder:,
+                     reranker: nil, chunker: nil,
                      private: false, trusted: false, exclude: [])
         @backend  = backend
-        @embedder = embedder || Embedder.new
+        @embedder = embedder
         @reranker = reranker
         @chunker  = chunker  || Chunker::FixedWindow.new(size: 512, overlap: 50)
         @private  = private

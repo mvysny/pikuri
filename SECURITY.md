@@ -51,10 +51,11 @@ running their intended code.
   [`AGENTS.md`](AGENTS.md) for the design map. Audit it; you're
   meant to.
 - **Your LLM provider — *the* trust choice.** Defaults wire local
-  llama.cpp: your prompts never leave the box. The moment you
-  `RubyLLM.configure` OpenAI / Anthropic / anything else, every byte
-  of context (file contents, scraped pages, tool results) is shipped
-  to that third party. A malicious LLM is downstream of every other
+  llama.cpp: your prompts never leave the box. The moment you point
+  the chat's transport at OpenAI / Anthropic / anything else, every
+  byte of context (file contents, scraped pages, tool results) is
+  shipped to that third party, and pointing the embedder there ships
+  your whole indexed corpus. A malicious LLM is downstream of every other
   defense in this document — there is no structural recovery if the
   model itself is the adversary. Pick a reputable provider.
 - **Code you didn't write — none.** pikuri runs no shell, no MCP

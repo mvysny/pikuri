@@ -360,10 +360,12 @@ summaries below tell you what each owns.
   chunker knows when a window is full: one token per four
   characters, offline and fast. It's an approximation: close for
   English prose, off for code or Chinese.
-- **Embedder** (`Embedder`) — a thin wrapper over `RubyLLM.embed`.
-  Pins the return shape to `Array<Array<Float>>` (the indexer
-  always wants the batched form) and lets tests inject a fake
-  `#embed` without monkey-patching ruby_llm.
+- **Embedder** (`Embedder`) — sends text to the server's
+  `/v1/embeddings` over its own connection, built from the same
+  server and key as the chat's. Pins the return shape to
+  `Array<Array<Float>>` (the indexer always wants the batched form)
+  and lets tests inject a fake `#embed` without monkey-patching
+  ruby_llm.
 - **Backend** (`Backend::InMemory` / `Backend::Qdrant`) — stores
   chunks alongside vectors and answers nearest-neighbour queries.
   `InMemory` is pure-Ruby cosine over `Array<Float>`, ~40 lines,

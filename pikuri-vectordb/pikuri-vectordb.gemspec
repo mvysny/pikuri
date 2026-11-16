@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
     you pass here. Ships a swappable backend (a
     pure-Ruby +Backend::InMemory+ for teaching, plus a thin
     +Backend::Qdrant+ HTTP client for persistence), a chunker, an
-    embedder wrapper over +RubyLLM.embed+, and an optional
+    embedder over +/v1/embeddings+, and an optional
     +Reranker::LlamaServer+ that speaks +/v1/rerank+ against a
     cross-encoder model. Text extraction goes through
     +Pikuri::FileType.read_as_text+ in pikuri-core, which handles
@@ -31,7 +31,7 @@ Gem::Specification.new do |spec|
     +pikuri-skills+.
 
     Three model endpoints in the full setup — chat (via ruby_llm),
-    an embedder (via +RubyLLM.embed+), and an optional reranker
+    an embedder (+/v1/embeddings+, via ruby_llm), and an optional reranker
     (HTTP +/v1/rerank+). A single +llama-server+ in router mode
     serves all three by default, loading each cached GGUF on
     demand; see the gem's README for details.
@@ -58,7 +58,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # pikuri-core ships the +Agent+ runtime + +Pikuri::Tool+ base
-  # class that the search tool subclasses, +RubyLLM.embed+ wired
+  # class that the search tool subclasses, the embedder's ruby_llm wired
   # through ruby_llm, Faraday for HTTP, and the +Extractor+ registry
   # the indexer's text extraction routes through (plain text /
   # Markdown out of the box; a host indexing a PDF corpus registers

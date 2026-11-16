@@ -1499,8 +1499,8 @@ Measured against ruby_llm 1.16.0 and a live llama.cpp router on
 - **Inheritance is explicit.** Whoever builds a child agent passes
   `parent.around_request` on, as `SubAgentTool` passes the `Cancellable`; a
   forwarding site that forgets runs its child unthrottled.
-- {Pikuri::VectorDb::Embedder} calls `RubyLLM.embed` outside any `Agent`, on
-  the global config, so embedding stays outside the hook.
+- {Pikuri::VectorDb::Embedder} embeds on its own `RubyLLM::Context`, outside
+  any `Agent`, so embedding stays outside the hook.
 
 ## D_no_step_limit — Why no step cap on the loop?
 
@@ -3778,8 +3778,7 @@ streaming error-parse patch lived one release (ruby_llm #837, gone in 2.0).
   against the symbols we touch puts the *client* at ~550 LOC — believable.
   But the *swap* is 2–3× that: ~100 `RubyLLM` references in `lib/` are
   matched by ~106 more in `spec/`, and four consumers fall outside the
-  client entirely — `VectorDb::Embedder`'s `RubyLLM.embed` (the documented
-  lone Connection-seam exception), `Mcp::Servers` synthesizing raw
+  client entirely — `VectorDb::Embedder`'s `Context#embed`, `Mcp::Servers` synthesizing raw
   `RubyLLM::Tool` subclasses, `Workspace::Read`'s shipped image
   observations (real multimodal `RubyLLM::Attachment`s, not the stub a first
   pass assumed), and pikuri-tui downstream. We would also own the exact surface

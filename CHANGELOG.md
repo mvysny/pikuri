@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::VectorDb::Embedder.new(server:, model:, api_key:)` embeds over its own `RubyLLM::Context` instead of the process-global `RubyLLM.configure`, and `VectorDb::Extension` / `Rag::Extension` now require `embedder:`. Pass the server and key you hand `ChatTransport.from_openai_server`, and drop `provider:` / `assume_model_exists:`.
 - **Breaking:** `Pikuri::Workspace::Extension`, `Write` and `Edit` default to `confirm_all_writes: true`, so a new file and every edit now ask first, and `Edit.new` requires a `confirmer:` (`D_confirm_all_writes_default`). Pass `confirm_all_writes: false` to keep the old promptless behaviour.
 - Fix the bundled `RESEARCHER` persona's prompt sending a PDF to `fetch`, which refuses it; it now reads documents with `web_scrape`, and `bin/pikuri-minions` registers pikuri-pdf so that works there.
 - Fix `thunderbird_mail_search` and `thunderbird_mail_read` showing the model a literal `undefined` after every From/To address, which Gloda writes into its author and recipient text; `Gloda.strip_undefined` removes it, and `thunderbird_contact_search` now keeps a person named "Undefined".

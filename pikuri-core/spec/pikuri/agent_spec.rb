@@ -375,6 +375,8 @@ RSpec.describe Pikuri::Agent do
       # A switch back to a global-config model must not keep the old
       # transport's server: the rebuilt context dups the global config.
       it 'rebuilds the context on a same-server switch too' do
+        original_base = RubyLLM.config.openai_api_base
+        RubyLLM.config.openai_api_base = 'http://global:8080/v1'
         agent = build_agent
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
@@ -382,8 +384,10 @@ RSpec.describe Pikuri::Agent do
                        ))
 
         assert_equal 1, fake_chat.contexts.size
-        assert_equal RubyLLM.config.openai_api_base, fake_chat.contexts.first.config.openai_api_base
+        assert_equal 'http://global:8080/v1', fake_chat.contexts.first.config.openai_api_base
         assert_equal [['big', :openai, true]], fake_chat.model_switches
+      ensure
+        RubyLLM.config.openai_api_base = original_base
       end
 
       it 'carries the new connection on ModelSwitched.to' do

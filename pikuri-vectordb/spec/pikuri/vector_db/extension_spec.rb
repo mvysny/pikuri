@@ -57,17 +57,6 @@ describe Pikuri::VectorDb::Extension do
       ext.indexer.index_all!
       assert_operator backend.count, :>, 0
     end
-
-    it 'defaults the embedder to Embedder when not provided' do
-      # Construct without an explicit embedder; verify the
-      # default is wired through. We don't run #configure here
-      # because the real Embedder would actually try to call
-      # RubyLLM.embed.
-      ext = Pikuri::VectorDb::Extension.new(
-        backend: backend, source: root.to_s
-      )
-      assert_kind_of Pikuri::VectorDb::Indexer, ext.indexer
-    end
   end
 
   describe '#configure' do

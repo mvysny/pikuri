@@ -117,8 +117,8 @@ module Pikuri
       # @param source [String, Pathname] path to index. A file indexes
       #   directly; a directory is walked recursively. Single source only, as
       #   {Pikuri::VectorDb::Indexer}.
-      # @param embedder [#embed, nil] +nil+ constructs
-      #   {Pikuri::VectorDb::Embedder} with the default model.
+      # @param embedder [#embed] usually a {Pikuri::VectorDb::Embedder}; see
+      #   {Pikuri::VectorDb::Extension#initialize}.
       # @param reranker [#rerank, nil] optional cross-encoder reranker over
       #   the fused candidates; +nil+ returns the fused top-k directly.
       # @param chunker [#chunk, nil] +nil+ constructs
@@ -133,13 +133,13 @@ module Pikuri
       # @param exclude [Array<String, Pathname>] folders under +source+ never
       #   indexed; see {Pikuri::VectorDb::Indexer#initialize}.
       # @return [Extension]
-      def initialize(backend:, source:,
-                     embedder: nil, reranker: nil, chunker: nil,
+      def initialize(backend:, source:, embedder:,
+                     reranker: nil, chunker: nil,
                      private: false, trusted: false,
                      store: Backend::Fts5::MEMORY_STORE, stemmer: Stemmer::Identity, exclude: [])
         @backend  = Backend::Hybrid.new(vectors: backend,
                                         keywords: Backend::Fts5.new(store: store, stemmer: stemmer))
-        @embedder = embedder || Pikuri::VectorDb::Embedder.new
+        @embedder = embedder
         @reranker = reranker
         @chunker  = chunker || Pikuri::VectorDb::Chunker::FixedWindow.new(size: 512, overlap: 50)
         @private  = private

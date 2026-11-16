@@ -113,8 +113,10 @@ piece — each swappable via the Extension's keyword arguments:
   the chunker, by the offline ~4-chars-per-token rule. Anything with
   a `count(text)` method plugs into `Chunker::FixedWindow` instead,
   for a corpus the rule miscounts.
-- **Embedder** — thin wrapper over `RubyLLM.embed`; tests inject a
-  fake `#embed` without monkey-patching ruby_llm.
+- **Embedder** — calls an OpenAI-compatible `/v1/embeddings` over
+  its own connection: `Embedder.new(server:, model:, api_key:)`, the
+  same arguments as the chat's `ChatTransport.from_openai_server`.
+  Tests inject a fake `#embed` without monkey-patching ruby_llm.
 - **Reranker** (`Reranker::LlamaServer`, optional) — cross-encoder
   over `POST /v1/rerank`. Pass `reranker: nil` to skip it;
   retrieval falls back to vector-only top-k — less precision, same
@@ -146,7 +148,7 @@ reranker requirement. The guide's
 ## Three model endpoints
 
 A full setup wants three LLM endpoints: chat (via `ruby_llm`), an
-embedder (via `RubyLLM.embed`), and an optional reranker (HTTP
+embedder (`/v1/embeddings`, via ruby_llm), and an optional reranker (HTTP
 `/v1/rerank`). Recommended setup: **one `llama-server` running in
 router mode** — started with no `--model` flag, it serves every
 GGUF in `~/.cache/llama.cpp/` from a single port and loads

@@ -138,22 +138,12 @@ unless File.directory?(source)
   exit 2
 end
 
-# Normalize the origin once: strip a trailing +/v1+ (and slash) so a
-# server value works with or without it, then re-append +/v1+ for the
-# OpenAI base. The reranker endpoint stays a bare origin (it appends
-# +/v1/rerank+ itself), so it gets the +/v1+-free form.
+# The chat transport and the embedder each build their own connection from
+# +server+, re-appending +/v1+ themselves. The reranker endpoint stays a bare
+# origin (it appends +/v1/rerank+ itself), so both get the +/v1+-free form.
+api_key         = examples_config.fetch('llm_api_key', 'not-needed')
 server          = server.chomp('/').delete_suffix('/v1')
 reranker_server = (reranker_server || server).chomp('/').delete_suffix('/v1')
-
-# As bin/pikuri-corpus: a process-global RubyLLM.configure, because the
-# embedder and Indexer run *outside* any Agent (the watcher thread and
-# rag_reindex call RubyLLM.embed on their own), so the connection can't
-# ride a per-agent ChatTransport.
-RubyLLM.configure do |c|
-  c.openai_api_base         = "#{server}/v1"
-  c.openai_api_key          = examples_config.fetch('llm_api_key', 'not-needed')
-  c.default_embedding_model = embed_model
-end
 
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing).
 Pikuri::Extractors::PDF.register
@@ -178,11 +168,7 @@ reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
   api_key:  examples_config['llm_api_key']
 ) : nil
 
-embedder = Pikuri::VectorDb::Embedder.new(
-  model:               embed_model,
-  provider:            :openai,
-  assume_model_exists: true
-)
+embedder = Pikuri::VectorDb::Embedder.new(server: server, model: embed_model, api_key: api_key)
 
 # One collection per notes root, not one fixed name: a persistent backend
 # keeps whatever it was given, so a shared name would serve yesterday's
@@ -248,11 +234,7 @@ end
 tb_ext = with_mail ? Pikuri::Thunderbird::Extension.new(surfaces: %i[mail contacts]) : nil
 
 agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
-    model: model,
-    provider: :openai,
-    assume_model_exists: true
-  ),
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(server: server, model: model, api_key: api_key),
   system_prompt: system_prompt,
   cancellable: cancel_flag,
   streaming: false

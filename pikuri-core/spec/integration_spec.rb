@@ -56,13 +56,6 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
         faraday.adapter :test, stubs
       end
     end
-
-    # Pikuri's bin/pikuri-chat does this for the local llama.cpp server; the spec
-    # has to do the same so RubyLLM::Connection#ensure_configured! is happy.
-    RubyLLM.configure do |c|
-      c.openai_api_base = 'https://example.test/v1'
-      c.openai_api_key  = 'test-key'
-    end
   end
 
   after do
@@ -122,10 +115,8 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
     )
 
     agent = Pikuri::Agent.new(
-      transport: Pikuri::Agent::ChatTransport.new(
-        model: 'test-model',
-        provider: :openai,
-        assume_model_exists: true
+      transport: Pikuri::Agent::ChatTransport.from_openai_server(
+        server: 'https://example.test', model: 'test-model', api_key: 'test-key'
       ),
       system_prompt: 'be terse'
     ) do |c|
@@ -187,10 +178,8 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
     )
 
     agent = Pikuri::Agent.new(
-      transport: Pikuri::Agent::ChatTransport.new(
-        model: 'test-model',
-        provider: :openai,
-        assume_model_exists: true
+      transport: Pikuri::Agent::ChatTransport.from_openai_server(
+        server: 'https://example.test', model: 'test-model', api_key: 'test-key'
       ),
       system_prompt: 'be terse'
     ) do |c|

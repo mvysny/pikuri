@@ -40,16 +40,10 @@ gem install pikuri-core
 ```ruby
 require 'pikuri-core'
 
-RubyLLM.configure do |c|
-  c.openai_api_base = 'http://localhost:8080/v1'
-  c.openai_api_key  = 'not-needed'
-end
-
 agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
-    model: 'ornith-ai/Ornith-1.5-35B-A3B-GGUF',
-    provider: :openai,
-    assume_model_exists: true
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(
+    server: 'http://localhost:8080',
+    model: 'ornith-ai/Ornith-1.5-35B-A3B-GGUF'
   ),
   system_prompt: Pikuri.prompt(:'pikuri-chat')
 ) do |c|
