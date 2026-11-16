@@ -549,6 +549,13 @@ feature, not only of every gem.
    feature hooks into, and only the seam that feature needs now: a seam is code every deployment
    reads, so "it's only a seam" must not become the way features come back.
 
+   The default is not a ban. When a small feature is the simplest answer to the problem at hand
+   (fewer lines for a reader than the refactor, workaround or seam that would avoid it), propose
+   it, named as a feature, and the owner adopts it or not. The measure is the reader's evening
+   (`D_read_what_you_run`), not the word "feature": a contorted refactor that dodges the word
+   costs that evening more than the feature would, and so does a feature smuggled in as a
+   refactor.
+
 pikuri is safe because of what's *missing*: no shell, no stranger's code, writes confined to one
 folder, egress only to an engine the code picks. The workshop is safe because of what *surrounds*
 it. Size is no test: core, `pikuri-vectordb` and `pikuri-thunderbird` are pikuri's biggest gems,
@@ -556,6 +563,10 @@ and they stay because they pass both.
 
 **Alternatives rejected.**
 
+- **A hard ban on new features.** The first wording of the third test said a feature lands here
+  *only* for a bug, a promise or the secretary/book. Agents read that as a ban: they sent every
+  idea to the workshop, and they reached for elaborate refactors so that a fix wouldn't look like
+  a feature, which grew the code the ban was meant to keep small.
 - **Keep the shell, split out of the coding agent as a `pikuri-bash`.** It's the tool that writes
   anywhere, so it drags along the passive-command detector, the confirms and the sandbox, and
   needs the cage on its own. The secretary decided against it for the same reason. pikuri trades
