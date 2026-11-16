@@ -22,7 +22,8 @@ module Pikuri
       # ruby_llm 2.2 only GPUStack and OpenRouter speak the Jina-style
       # +POST rerank+ that llama-server serves, and +:openai+ refuses with
       # "OpenAI doesn't support reranking". GPUStack is never otherwise used
-      # here; it is just the provider whose wire matches.
+      # here; it is just the provider whose wire matches. Switch to +:openai+
+      # once https://github.com/crmne/ruby_llm/issues/1684 lands.
       #
       # Every failure surfaces as a +RuntimeError+ naming the endpoint — the
       # one class {Tools::Search} catches to fall back to the unreranked
