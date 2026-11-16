@@ -498,7 +498,9 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   with no egress. mem0 itself is the workshop's (`D_gem_placement`).
 - **An in-memory index, as briefing has.** Measured on the owner's real `~/Documents` (11,685
   files, many books): minutes of silence, then hours of a GPU at 100%, paid again on every start,
-  with the chat queued behind the embedder on the same llama-server.
+  with the chat queued behind the embedder on the same llama-server. Batch flags won't fix it:
+  embedding is compute-bound (a 4096-token ubatch spends <1% of its time reading weights), and
+  ~7 chunks/s of bge-m3 on a Radeon 890M is the iGPU's ceiling; the arithmetic is in the chapter.
 - **A clock tool, or `date.today() + timedelta(…)` in the calculator.** A feature, and the model
   must think to call it. Worth reopening only if transcripts show botched date arithmetic.
 - **Reminders.** `pikuri-thunderbird` reads no tasks (VTODO), and a reminder that fires needs a
