@@ -2,7 +2,7 @@
 
 Status: **v1 shipped, follow-ups deferred.** `pikuri-vectordb` shipped —
 topical retrieval over a local corpus, wired onto an `Agent` via
-`c.add_extension Pikuri::VectorDb::Extension.new(indexer:)`.
+`c.add_extension Pikuri::VectorDb::Extension.new(corpus:)`.
 The hybrid half (a keyword index beside the vectors) shipped separately
 as `pikuri-rag`; see `design/decisions.md` `D_rag_gem`.
 Per-piece rationale (Extension / Backend `InMemory`+`Qdrant` /
@@ -50,7 +50,7 @@ Only the deferrals stay here.
   *not* pikuri-vectordb — so the once-open "could memory ride the same
   primitive?" question is moot for now. Revisit only if consolidating
   the two stores onto one backend ever becomes worth it; not a v1 goal.
-- **Configurable ignore rules.** `Indexer::DENYLIST` ships a fixed
+- **Configurable ignore rules.** `Corpus::DENYLIST` ships a fixed
   set (`.git`, `node_modules`, dot-files), and `exclude:` takes whole
   folders (the secretary's books); `.gitignore`-shaped patterns defer
   until someone asks.
@@ -59,12 +59,12 @@ Only the deferrals stay here.
   new and tries again, an INFO line each. Harmless on a small tree; on a
   real `~/Documents` with hundreds of Office files it's noise and parse
   time on every start. A skip manifest keyed by hash would fix both.
-- **Multi-source indexing.** `Indexer.new(source:)` takes a single
+- **Multi-source indexing.** `Corpus.new(source:)` takes a single
   file-or-directory root in v1. Indexing
   several disjoint roots into one collection (the user's notes dir +
   a checked-out repo + a downloads folder) is deferred — it needs a
   source-list API and a provenance story for which root a hit came
-  from. Referenced from the `Indexer` yardoc
+  from. Referenced from the `Corpus` yardoc
   (that yardoc is the source of truth). **The per-source `trusted:` /
   `private:` flag is part of that API** — design it in from day one
   rather than retrofitting: trust becomes per source, the union follows

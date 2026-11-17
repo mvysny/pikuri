@@ -27,10 +27,10 @@ describe Pikuri::VectorDb::Extension do
 
   after { FileUtils.rm_rf(root) }
 
-  let(:indexer) { Pikuri::VectorDb::Indexer.new(backend: backend, source: root.to_s, embedder: fake_embedder) }
+  let(:corpus) { Pikuri::VectorDb::Corpus.new(backend: backend, source: root.to_s, embedder: fake_embedder) }
 
   def build_extension
-    Pikuri::VectorDb::Extension.new(indexer: indexer)
+    Pikuri::VectorDb::Extension.new(corpus: corpus)
   end
 
   it 'is an Agent::Extension by composition' do
@@ -39,17 +39,17 @@ describe Pikuri::VectorDb::Extension do
   end
 
   describe '#initialize' do
-    it 'exposes the indexer it was given' do
-      assert_same indexer, build_extension.indexer
+    it 'exposes the corpus it was given' do
+      assert_same corpus, build_extension.corpus
     end
 
-    it 'lets two extensions share one indexer, so two agents search one corpus' do
+    it 'lets two extensions share one corpus, so two agents search one corpus' do
       a = Pikuri::Testing.configurator
       b = Pikuri::Testing.configurator
       build_extension.configure(a)
       build_extension.configure(b)
       File.write(root + 'hi.md', 'hello world')
-      indexer.index_all!
+      corpus.index_all!
 
       [a, b].each do |c|
         search = c.tools.find { |t| t.name == 'vectordb_search' }
@@ -105,7 +105,7 @@ describe Pikuri::VectorDb::Extension do
     end
 
     it 'raises if vectordb_reindex has been pre-registered' do
-      pre = Pikuri::VectorDb::Tools::Reindex.new(indexer: build_extension.indexer)
+      pre = Pikuri::VectorDb::Tools::Reindex.new(corpus: build_extension.corpus)
       configurator.add_tool(pre)
 
       err = assert_raises(RuntimeError) do

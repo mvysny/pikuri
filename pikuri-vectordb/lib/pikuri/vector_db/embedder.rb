@@ -13,9 +13,9 @@ module Pikuri
     #
     # {#embed} always takes +Array<String>+ and returns one vector per text, in
     # order; +RubyLLM.embed+ answers a flat vector for a lone String, and
-    # pinning the array shape keeps the {Indexer} from branching on it.
-    # Batching is the {Indexer}'s: it slices a corpus and calls {#embed} once
-    # per batch. Tests hand the {Indexer} any object with a matching +#embed+
+    # pinning the array shape keeps the {Corpus} from branching on it.
+    # Batching is the {Corpus}'s: it calls {#embed} once per file, with all of
+    # that file's chunks. Tests hand the {Corpus} any object with a matching +#embed+
     # instead of this class.
     #
     # == Connection

@@ -1217,7 +1217,7 @@ per section so the path stands in for a position, bends every corpus to the retr
 **Decision.** Every chunk carries `first_line:` / `last_line:` ({Pikuri::VectorDb::Chunk}), both
 `rag_search` legs store them, hits print `lines a-b`, `rag_search_keywords` lists first lines, and the paged
 readers number their lines the same way, so a range is a ready `offset:`. "Line" is
-{Pikuri::Extractor}'s == Lines: LF only, 1-based, over the *extracted* text, which the `Indexer`
+{Pikuri::Extractor}'s == Lines: LF only, 1-based, over the *extracted* text, which the `Corpus`
 and the readers both see through the one registry. A program reads positions from
 `Chunk#metadata` / `Rag::Backend::DocumentMatch` through the library API, never from tool output.
 
@@ -2314,14 +2314,14 @@ tokenizer, so the keyword half costs no new dependency.
 
 **Decision.** A new gem, `pikuri-rag`, depending on `pikuri-vectordb` and
 consuming only its documented ducks (`Backend`, `Embedder`, `Chunker`,
-`Indexer`, `Watcher`, `Reranker`, `Tools::Read` / `Tools::Reindex` under
+`Corpus`, `Watcher`, `Reranker`, `Tools::Read` / `Tools::Reindex` under
 `family: 'rag'`). It ships one `rag_*` tool family — `rag_search` (hybrid
 top-k, fused, optionally reranked), `rag_search_keywords` (every matching document by
 stemmed token match: `source`, match count, size; no cutoff), `rag_read`,
 `rag_reindex` — and a **`Backend` composed of two stores**: `Backend::Fts5`
 (the FTS5 keyword store, the only class in the gem that speaks SQL) held
 beside the host's vector store inside `Backend::Hybrid`, which fans writes
-out to both and keeps their reads separate. So the vectordb `Indexer` and
+out to both and keeps their reads separate. So the vectordb `Corpus` and
 `Watcher` are reused byte-for-byte: one extraction per file, one hash.
 Stemming is FTS5's built-in `porter`, English; other languages are a
 `stemmer:` duck on the extension (`D_ruby_stemming`), not a `languages:` array.
@@ -2345,10 +2345,10 @@ on. The two extensions are mutually exclusive on one agent.
   threat model is *not* novel (same corpus legs, inbound-only, same
   membership gate on the reader) — it qualifies on cohesive lib code alone,
   and its header says so rather than inventing a design/architecture.md it has not earned.
-- **A composite `Indexer`** — a `Rag::Indexer` wrapping SQLite plus the
-  vectordb `Indexer`, handed to the `Watcher` (which is duck-typed over five
+- **A composite indexer** — a `Rag::Indexer` wrapping SQLite plus the
+  vectordb `Corpus`, handed to the `Watcher` (which is duck-typed over five
   methods, so this needs no vectordb change either). Rejected as the larger
-  cut: the vectordb `Indexer` extracts, chunks, hashes and embeds inside
+  cut: the vectordb `Corpus` extracts, chunks, hashes and embeds inside
   private methods and hands finished `Chunk`s to the backend, so a sibling
   indexer re-reads and re-extracts every file and has to merge two
   `reconcile_plan` manifests. Composing at the backend gets one extraction
@@ -2457,7 +2457,7 @@ are read by `Trifecta::Report` and nothing else, and the detector never
 blocks. The reason to fix it is the one `Pikuri::Trifecta`'s header names: an
 agent printing the wrong leg teaches its operator the map is wrong.
 
-**Decision.** The declaration lives on `Indexer.new(private:, trusted:)`,
+**Decision.** The declaration lives on `Corpus.new(private:, trusted:)`,
 beside the `source` it vouches for, both defaulting off, and each extension
 derives one `TrifectaLegs` from it for `Search` and `Read` — the shape
 `Workspace::Read` already uses. Three earlier
@@ -2465,9 +2465,9 @@ entries were checked and none is contradicted: `D_bundle_trust_grading` is the
 precedent (trust declared per root as a plain value, host answers, tool
 derives) and its principle — *a trust claim is about that root, not about "the
 repo"* — decides this; `pikuri-workshop:D_lsp_trifecta_legs` supplies the test and the corpus
-passes it, since `Indexer` walks exactly `source`, `vectordb_search` returns
+passes it, since `Corpus` walks exactly `source`, `vectordb_search` returns
 only chunks that walk produced and `vectordb_read` is rooted at
-`indexer.root`, so the vouching and the reach are the same set (the corpus is
+`corpus.root`, so the vouching and the reach are the same set (the corpus is
 the `read` case, not the `lsp` case); and `D_no_static_poisoned_flag` rejects a
 node-level flag that would *restate a derived value* and silence propagation,
 where this is the *input* to the derivation on the one axis the framework
@@ -2494,7 +2494,7 @@ client's attachment folder each falsify the flag the moment someone else drops
 a file in (`D_write_custody_axis` names the same synced-folder fact on the
 write side and judged it not to be a leg; on the read side it decides whether
 the flag can be honest at all). The third covers a reused persistent
-collection: the same-set argument covers the index `Indexer` builds from
+collection: the same-set argument covers the index `Corpus` builds from
 `source`, not whatever a persistent backend already holds.
 
 **And `Tools::Reindex` declares `TrifectaLegs::NONE`**, independent of both
@@ -2514,9 +2514,9 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
   argument verbatim: it over-warns exactly the operator who did the curation
   work, and an ignored smoke alarm is the failure mode `Pikuri::Trifecta`'s own
   header names.
-- **Declare on `Extension` instead of `Indexer`.** Rejected: an extension is
+- **Declare on `Extension` instead of `Corpus`.** Rejected: an extension is
   one agent's view of the corpus, so two agents over one folder could declare
-  it differently, and the indexer is what the host builds once per folder and
+  it differently, and the `Corpus` is what the host builds once per folder and
   what holds `source`.
 - **Hand the extension a `Filesystem`.** Rejected twice: `D_bundle_trust_grading`
   already settled that a host answers with a *value*, and a corpus root is a

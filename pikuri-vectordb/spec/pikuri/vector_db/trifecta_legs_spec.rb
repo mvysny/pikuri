@@ -23,13 +23,13 @@ RSpec.describe 'vectordb tool trifecta legs' do
     obj
   end
 
-  def indexer(**flags)
-    Pikuri::VectorDb::Indexer.new(backend: Pikuri::VectorDb::Backend::InMemory.new,
+  def corpus(**flags)
+    Pikuri::VectorDb::Corpus.new(backend: Pikuri::VectorDb::Backend::InMemory.new,
                                   source: root.to_s, embedder: fake_embedder, **flags)
   end
 
   def extension(**flags)
-    Pikuri::VectorDb::Extension.new(indexer: indexer(**flags))
+    Pikuri::VectorDb::Extension.new(corpus: corpus(**flags))
   end
 
   # The real Configurator, so the legs asserted below are the ones the
@@ -56,14 +56,14 @@ RSpec.describe 'vectordb tool trifecta legs' do
     end
   end
 
-  describe 'Indexer#private? / #trusted?' do
+  describe 'Corpus#private? / #trusted?' do
     it 'defaults both off — the framework declares neither for you' do
-      refute indexer.private?
-      refute indexer.trusted?
+      refute corpus.private?
+      refute corpus.trusted?
     end
 
     it 'carries the declared flags' do
-      declared = indexer(private: true, trusted: true)
+      declared = corpus(private: true, trusted: true)
       assert declared.private?
       assert declared.trusted?
     end

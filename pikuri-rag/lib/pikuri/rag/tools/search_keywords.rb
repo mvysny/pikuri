@@ -70,7 +70,7 @@ module Pikuri
         # @param backend [#find, #stemmer] a {Pikuri::Rag::Backend::Hybrid};
         #   the terms are stemmed with its +#stemmer+.
         # @param root [Pathname] the corpus root —
-        #   {Pikuri::VectorDb::Indexer#root}. Each listed +source+ is stat'd
+        #   {Pikuri::VectorDb::Corpus#root}. Each listed +source+ is stat'd
         #   relative to it.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's declaration,
         #   as {Search} takes it and for the same reason.
@@ -170,7 +170,7 @@ module Pikuri
           path = root.join(source).expand_path
           base = root.expand_path.to_s
           unless path.to_s == base || path.to_s.start_with?(base + File::SEPARATOR)
-            # Unreachable through the shipped Indexer, whose sources are all
+            # Unreachable through the shipped Corpus, whose sources are all
             # relative_path_from(root); kept because this tool opens the path.
             return "#{source} — #{chunks}, resolves outside the corpus root"
           end

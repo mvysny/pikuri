@@ -363,7 +363,7 @@ summaries below tell you what each owns.
 - **Embedder** (`Embedder`) — sends text to the server's
   `/v1/embeddings` over its own connection, built from the same
   server and key as the chat's. Pins the return shape to
-  `Array<Array<Float>>` (the indexer always wants the batched form)
+  `Array<Array<Float>>` (the corpus always wants the batched form)
   and lets tests inject a fake `#embed` without monkey-patching
   ruby_llm.
 - **Backend** (`Backend::InMemory` / `Backend::Qdrant`) — stores
@@ -381,7 +381,7 @@ summaries below tell you what each owns.
   and returns the vector-only top-k instead — degraded results
   beat a tool error the model has to recover from.
 
-`Pikuri::VectorDb::Indexer` is what composes the first four:
+`Pikuri::VectorDb::Corpus` is what composes the first four:
 walks the configured source, extracts text via
 `Pikuri::FileType.read_as_text` (Markdown / plain text out of the
 box, PDF via the registered `pikuri-pdf` extractor above; HTML is
@@ -462,7 +462,7 @@ no amount of inspection settles it — so, exactly as the file tools take
 tools take them from the object that owns the corpus root:
 
 ```ruby
-Pikuri::VectorDb::Indexer.new(
+Pikuri::VectorDb::Corpus.new(
   backend: backend, source: notes_dir, embedder: embedder,
   private: true,   # these documents are worth exfiltrating
   trusted: true    # and every one of them is mine
@@ -564,7 +564,7 @@ Here, with retrieval as the agent's only job, we don't need it.
 
 `Backend::InMemory` is the educational default — RAM-only, ~40
 lines of pure-Ruby cosine. Reads in one sitting; the same code
-path the boot indexer walks is the one you inspect when you want
+path the boot index run walks is the one you inspect when you want
 to know what "indexing" actually means. Fast enough for thousands
 of chunks (a personal notes folder, a single product's docs);
 slow for millions (a full corporate knowledge base).
@@ -587,14 +587,14 @@ finds-or-starts a qdrant container under a name pikuri owns
 pointed at it:
 
 ```ruby
-indexer = Pikuri::VectorDb::Indexer.new(
+corpus = Pikuri::VectorDb::Corpus.new(
   backend:  Pikuri::VectorDb::Server::Qdrant.ensure_running.client(
     collection: 'guide'
   ),
   source:   '~/path/to/corpus',
   embedder: embedder
 )
-c.add_extension Pikuri::VectorDb::Extension.new(indexer: indexer)
+c.add_extension Pikuri::VectorDb::Extension.new(corpus: corpus)
 ```
 
 [Qdrant](https://qdrant.tech) is a self-hosted open-source vector

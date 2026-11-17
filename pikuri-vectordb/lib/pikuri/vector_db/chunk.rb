@@ -2,7 +2,7 @@
 
 module Pikuri
   module VectorDb
-    # A unit of text after chunking, before storage. The {Indexer} pairs a Chunk
+    # A unit of text after chunking, before storage. The {Corpus} pairs a Chunk
     # with its vector for {Backend#upsert}; {Tools::Search} surfaces query hits
     # as +Chunk+s wrapped in +Backend::Result+s.
     #
@@ -17,7 +17,7 @@ module Pikuri
     #   makes many chunks, so it is *not* unique within a backend — +id+ is.
     # * +text+ — the chunk content: fed to the embedder, surfaced to the LLM as
     #   the snippet.
-    # * +metadata+ — an open Hash, since source types differ. The {Indexer}
+    # * +metadata+ — an open Hash, since source types differ. The {Corpus}
     #   always sets:
     #   * +ordinal:+ — the chunk's 0-based position within its file; the
     #     sweep reads the +ordinal: 0+ chunk as the file's one manifest row.

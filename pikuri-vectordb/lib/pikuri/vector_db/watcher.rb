@@ -7,21 +7,21 @@ module Pikuri
   module VectorDb
     # The auto-watch daemon: keep a persistent index in sync with a corpus on
     # disk without the user ever calling +vectordb_reindex+. A thin layer over
-    # the +listen+ gem driving the {Indexer}'s per-file entry points
-    # ({Indexer#reindex_file!} / {Indexer#remove_file!}) from filesystem events,
-    # plus a boot reconciliation sweep ({Indexer#reconcile_plan}).
+    # the +listen+ gem driving the {Corpus}'s per-file entry points
+    # ({Corpus#reindex_file!} / {Corpus#remove_file!}) from filesystem events,
+    # plus a boot reconciliation sweep ({Corpus#reconcile_plan}).
     #
     # == Host-owned, not agent-owned
     #
     # A web app has many {Agent}s but one corpus and one Watcher, so its
     # lifetime is the host *process*. The host constructs it once around the
-    # same {Indexer} every agent's {Extension} shares:
+    # same {Corpus} every agent's {Extension} shares:
     #
     #   server  = Pikuri::VectorDb::Server::Qdrant.ensure_running
-    #   indexer = Pikuri::VectorDb::Indexer.new(backend: server.client(collection: 'notes'),
+    #   corpus = Pikuri::VectorDb::Corpus.new(backend: server.client(collection: 'notes'),
     #                                           source: '~/notes', embedder: embedder)
-    #   # ... build agents, each with Extension.new(indexer: indexer) ...
-    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
+    #   # ... build agents, each with Extension.new(corpus: corpus) ...
+    #   watcher = Pikuri::VectorDb::Watcher.new(corpus: corpus).start
     #
     # The {Extension} indexes nothing on its own, so the Watcher is the
     # population path: its boot sweep fills an empty backend, uniform across
@@ -54,11 +54,11 @@ module Pikuri
     # == What it deliberately does not do
     #
     # * **No model/parameter awareness.** The change signal is the byte hash
-    #   ({Indexer#file_hash}), so swapping the embedder/chunker config does *not*
+    #   ({Corpus#file_hash}), so swapping the embedder/chunker config does *not*
     #   trigger reindex — recourse is a manual +vectordb_reindex+ (see {Extension}).
     # * **Symlinks are never indexed.** A live event reached through a symlink
     #   below the watch root (leaf or ancestor) is dropped, matching
-    #   {Indexer#list_files} so watch and walk index the same set. Strict on
+    #   {Corpus#list_files} so watch and walk index the same set. Strict on
     #   purpose: a privacy boundary, and it closes an off-tree divergence — a
     #   symlink target changing outside the tree fires no event, so following it
     #   would leave stale chunks.
@@ -75,31 +75,31 @@ module Pikuri
       # @return [Float] seconds
       LATENCY = 10.0
 
-      # @param indexer [Indexer] the indexer to drive — supplies the
-      #   watch {Indexer#root}, the source-vs-directory shape via
-      #   {Indexer#source}, and the per-file + reconcile entry points.
+      # @param corpus [Corpus] the corpus to drive — supplies the
+      #   watch {Corpus#root}, the source-vs-directory shape via
+      #   {Corpus#source}, and the per-file + reconcile entry points.
       # @param listen_factory [#call, nil] dependency-injection seam
       #   for tests: +call(dir) { |modified, added, removed| ... }+
       #   returns an object responding to +#start+ / +#stop+. +nil+
       #   uses the real +Listen.to+ (required lazily — see the
       #   gemspec note).
       # @return [Watcher]
-      def initialize(indexer:, listen_factory: nil)
-        @indexer = indexer
+      def initialize(corpus:, listen_factory: nil)
+        @corpus = corpus
         @listen_factory = listen_factory || lambda do |dir, &blk|
           require 'listen'
           Listen.to(dir, latency: LATENCY, &blk)
         end
 
         # Resolve the watch shape once, here, rather than re-stat'ing
-        # per event. {Indexer#root} is the source for a directory tree
+        # per event. {Corpus#root} is the source for a directory tree
         # and the *parent* for a single file, so +source != watch_dir+
         # distinguishes the two without touching the filesystem — and
         # stays correct even if the single watched file is later
         # deleted (a +source.file?+ check would flip to directory mode
         # and start indexing its siblings).
-        @source    = @indexer.source.expand_path
-        @watch_dir = @indexer.root.expand_path
+        @source    = @corpus.source.expand_path
+        @watch_dir = @corpus.root.expand_path
         @single_file = @source != @watch_dir
 
         @pending  = {} # path (String) → :reindex / :remove
@@ -234,7 +234,7 @@ module Pikuri
       # a long silence — hence the line before it.
       def enqueue_plan
         LOGGER.info("reconcile: scanning #{@watch_dir}…")
-        plan = @indexer.reconcile_plan
+        plan = @corpus.reconcile_plan
         @monitor.synchronize do
           (plan[:reindex] + plan[:remove]).each { |path| @sweep_left[path.to_s] = true }
           @sweep_total = @sweep_left.size
@@ -307,8 +307,8 @@ module Pikuri
       def process(path, intent)
         progress = sweep_progress(path)
         case intent
-        when :reindex then @indexer.reindex_file!(path, progress: progress)
-        when :remove  then @indexer.remove_file!(path)
+        when :reindex then @corpus.reindex_file!(path, progress: progress)
+        when :remove  then @corpus.remove_file!(path)
         end
       rescue StandardError => e
         LOGGER.warn("watch #{intent} #{path} failed: #{e.class}: #{e.message}")
@@ -317,8 +317,8 @@ module Pikuri
       end
 
       # Should a changed path be acted on? For a directory source:
-      # the path is under {Indexer#root}, not {Indexer#excluded?}, and no
-      # path component is a dot-entry or in {Indexer::DENYLIST}. For a single-file source:
+      # the path is under {Corpus#root}, not {Corpus#excluded?}, and no
+      # path component is a dot-entry or in {Corpus::DENYLIST}. For a single-file source:
       # the path is exactly that file (the listener watches the
       # parent dir, so siblings must be filtered out). Works on
       # removed paths too — it's pure path math, no +stat+.
@@ -328,10 +328,10 @@ module Pikuri
 
         rel = path.relative_path_from(@watch_dir)
         return false if rel.to_s.start_with?('..')
-        return false if @indexer.excluded?(path)
+        return false if @corpus.excluded?(path)
 
         rel.each_filename.none? do |part|
-          part.start_with?('.') || Indexer::DENYLIST.include?(part)
+          part.start_with?('.') || Corpus::DENYLIST.include?(part)
         end
       rescue ArgumentError
         # relative_path_from raises when path is on a different prefix
@@ -341,7 +341,7 @@ module Pikuri
 
       # Is +path+ reached through a symlink at or below the watch root? +lstat+s
       # each component from +@watch_dir+ down to the leaf, catching both a
-      # symlinked leaf and a symlinked ancestor — matching {Indexer#list_files}.
+      # symlinked leaf and a symlinked ancestor — matching {Corpus#list_files}.
       # The watch root's own prefix isn't checked (the host pointed at it, so
       # it's descended even through a link — as the walk does).
       #

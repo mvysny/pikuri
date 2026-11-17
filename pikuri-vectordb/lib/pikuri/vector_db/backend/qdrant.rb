@@ -63,13 +63,13 @@ module Pikuri
         MANIFEST_PAGE_SIZE = 1_000
 
         # Payload keys reserved for the {Chunk}'s fixed fields; user metadata
-        # with these keys would collide, so the {Indexer} never sets them.
+        # with these keys would collide, so the {Corpus} never sets them.
         RESERVED_PAYLOAD_KEYS = %w[id source text].freeze
 
         # @param host [String]
         # @param port [Integer]
         # @param collection [String] Qdrant collection name — an engine-specific
-        #   identifier, so it lives here, not on the {Indexer} (a no-op for
+        #   identifier, so it lives here, not on the {Corpus} (a no-op for
         #   {InMemory}).
         # @param connection [Faraday::Connection, nil] DI point for tests.
         # @return [Qdrant]
@@ -212,12 +212,12 @@ module Pikuri
         end
 
         # Replace all chunks for one +source+: delete the old set, then upsert
-        # the new (the incremental-reindex unit, {Indexer#reindex_file!}).
+        # the new (the incremental-reindex unit, {Corpus#reindex_file!}).
         #
         # *Not transactional* (the InMemory divergence): two HTTP calls, so a
         # +#query+ between them can see the source with zero chunks — a window
         # {InMemory#replace_source} closes with its monitor but Qdrant can't. The
-        # {Indexer} mitigates the common failure by embedding *before* calling
+        # {Corpus} mitigates the common failure by embedding *before* calling
         # here, so an embedder outage never reaches this and the old chunks stay.
         # Delete-then-upsert, not the reverse — the reverse would delete the
         # just-written chunks.

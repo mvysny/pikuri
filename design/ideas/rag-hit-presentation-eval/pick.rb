@@ -59,12 +59,12 @@ QUESTIONS.each do |entry|
   # HARD=1: only the questions whose fused top 5 holds the gold below #1 — the only ones where
   # the fused variants (same list, same order) can differ.
   if ENV['HARD']
-    fused = variant_execute('none', embedder: EMBEDDER, backend: INDEXER.backend, reranker: nil, query: entry['q'])
+    fused = variant_execute('none', embedder: EMBEDDER, backend: RAG_CORPUS.backend, reranker: nil, query: entry['q'])
     hits = gold_hits(fused.content, gold_of(entry))
     next if hits.empty? || hits.min == 1
   end
   variants.each do |variant|
-    content = variant_execute(variant, embedder: EMBEDDER, backend: INDEXER.backend, reranker: nil,
+    content = variant_execute(variant, embedder: EMBEDDER, backend: RAG_CORPUS.backend, reranker: nil,
                                        query: entry['q']).content
     repeats.times do |rep|
       jobs << [entry, variant, content, rep] unless done.include?([entry['q'], variant, rep])

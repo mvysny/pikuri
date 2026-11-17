@@ -22,15 +22,15 @@ describe Pikuri::Rag::Extension do
     c
   end
 
-  def indexer(source: Dir.tmpdir, keywords: Pikuri::Rag::Backend::Fts5.new, **flags)
-    Pikuri::VectorDb::Indexer.new(
+  def corpus(source: Dir.tmpdir, keywords: Pikuri::Rag::Backend::Fts5.new, **flags)
+    Pikuri::VectorDb::Corpus.new(
       backend: Pikuri::Rag::Backend::Hybrid.new(vectors: inner, keywords: keywords),
       source: source, embedder: embedder, **flags
     )
   end
 
   def build(**flags)
-    Pikuri::Rag::Extension.new(indexer: flags.delete(:indexer) || indexer(**flags))
+    Pikuri::Rag::Extension.new(corpus: flags.delete(:corpus) || corpus(**flags))
   end
 
   describe '#configure' do
@@ -89,29 +89,29 @@ describe Pikuri::Rag::Extension do
     end
   end
 
-  describe 'the indexer' do
-    it 'refuses an indexer over a bare vector backend: the keyword tools would have no store' do
-      bare = Pikuri::VectorDb::Indexer.new(backend: inner, source: Dir.tmpdir, embedder: embedder)
-      error = assert_raises(ArgumentError) { build(indexer: bare) }
+  describe 'the corpus' do
+    it 'refuses a corpus over a bare vector backend: the keyword tools would have no store' do
+      bare = Pikuri::VectorDb::Corpus.new(backend: inner, source: Dir.tmpdir, embedder: embedder)
+      error = assert_raises(ArgumentError) { build(corpus: bare) }
       assert_includes error.message, 'Pikuri::VectorDb::Backend::InMemory'
     end
 
-    it 'searches what the indexer filled, keyword index included' do
+    it 'searches what the corpus filled, keyword index included' do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, 'note.md'), 'Acme pricing was agreed.')
-        ext = build(indexer: indexer(source: dir))
-        ext.indexer.index_all!
+        ext = build(corpus: corpus(source: dir))
+        ext.corpus.index_all!
         assert_equal [Pikuri::Rag::Backend::DocumentMatch.new(source: 'note.md', first_lines: [1])],
-                     ext.indexer.backend.find(terms: ['"acme"'])
-        ext.indexer.close
+                     ext.corpus.backend.find(terms: ['"acme"'])
+        ext.corpus.close
       end
     end
 
-    it 'closes the keyword store when the indexer closes' do
+    it 'closes the keyword store when the corpus closes' do
       Dir.mktmpdir do |dir|
         path = File.join(dir, 'fts.sqlite3')
         keywords = Pikuri::Rag::Backend::Fts5.new(store: path)
-        indexer(keywords: keywords).close
+        corpus(keywords: keywords).close
         assert_raises(StandardError) { keywords.count }
         assert File.exist?(path)
       end

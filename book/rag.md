@@ -232,7 +232,7 @@ the only place in the gem that speaks SQL. `Hybrid` holds both stores,
 fans every write out to the two, and keeps their reads separate for the
 search tool to fuse.
 
-To everything upstream — the indexer that walks your folder, the
+To everything upstream — the corpus that walks your folder, the
 watcher that reindexes on save, the read tool — `hybrid` simply *is* a
 backend, because it answers the same methods. So the whole indexing
 pipeline from the last chapter is reused byte-for-byte: one walk of the
@@ -240,11 +240,11 @@ folder, one text extraction per file, one content hash. Nothing
 re-reads your files to build the keyword half:
 
 ```ruby
-indexer = Pikuri::VectorDb::Indexer.new(backend: hybrid, source: '~/notes', embedder: embedder)
-c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
+corpus = Pikuri::VectorDb::Corpus.new(backend: hybrid, source: '~/notes', embedder: embedder)
+c.add_extension Pikuri::Rag::Extension.new(corpus: corpus)
 ```
 
-The indexer is the corpus: your app builds one per folder, hands it to
+The corpus is your folder plus its index: your app builds one per folder, hands it to
 every agent that reads that folder, and closes it at the end, which
 closes both stores.
 
@@ -261,7 +261,7 @@ useful alone: a corpus with no embedder at all can be indexed into an
 a vector backend anywhere in sight.
 
 The alternative — a `Rag::Indexer` that wraps SQLite plus the vectordb
-indexer — was the larger cut and got rejected. It would re-read and
+corpus — was the larger cut and got rejected. It would re-read and
 re-extract every file, and it would have to merge two "what's indexed?"
 manifests. `design/decisions.md` `D_rag_gem` has the full comparison.
 
@@ -407,7 +407,7 @@ somebody else wrote — indexed within seconds by the watcher, and
 retrieved as *vouched* content from then on. Nothing can detect it.
 The three clauses behind that flag are the vector-DB chapter's
 ["Why this agent can't leak your corpus"](vectordb.md#why-this-agent-cant-leak-your-corpus)
-and `Indexer#trusted?`'s yardoc; the one-line rule is: **the trusted
+and `Corpus#trusted?`'s yardoc; the one-line rule is: **the trusted
 corpus holds only what you typed or reviewed as text.**
 
 ### Local inference is this agent's first invariant

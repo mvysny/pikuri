@@ -16,14 +16,14 @@ rank worst). That is [`pikuri-rag`](../pikuri-rag/README.md), which
 wraps your vector backend beside a keyword index and replaces this
 extension's tool set with its own.
 
-Build one `Indexer` per folder, then wire it onto each `pikuri-core`
+Build one `Corpus` per folder, then wire it onto each `pikuri-core`
 agent the same way as `pikuri-tasks` / `pikuri-memory` —
 `c.add_extension` inside the `Agent.new` block:
 
 ```ruby
 require 'pikuri-vectordb'
 
-indexer = Pikuri::VectorDb::Indexer.new(
+corpus = Pikuri::VectorDb::Corpus.new(
   backend:  Pikuri::VectorDb::Backend::InMemory.new,
   source:   '~/notes',
   embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
@@ -32,14 +32,14 @@ indexer = Pikuri::VectorDb::Indexer.new(
 )
 
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_extension Pikuri::VectorDb::Extension.new(indexer: indexer)
+  c.add_extension Pikuri::VectorDb::Extension.new(corpus: corpus)
 end
 ```
 
 Those last two are what the corpus tells the lethal-trifecta map about
 itself; both default off, so leaving them out prints the pessimistic
 reading. `trusted: true` is a bigger claim than it looks — read
-`Indexer#trusted?` (or the guide's
+`Corpus#trusted?` (or the guide's
 [vector-DB chapter](../book/vectordb.md)) before you make it about a
 folder holding PDFs or shared with anyone.
 
@@ -63,29 +63,29 @@ The extension registers the tools and nothing else — *populating*
 the index is the host's call, never something done behind your
 back. Three equally valid shapes:
 
-- Index at boot: `indexer.index_if_empty!`.
+- Index at boot: `corpus.index_if_empty!`.
 - Keep it live: run a `Pikuri::VectorDb::Watcher` around the
-  indexer — a filesystem-event daemon (the `listen` gem) that sweeps
+  corpus — a filesystem-event daemon (the `listen` gem) that sweeps
   once on boot and reindexes files as they change.
 - Leave it empty and let the user drive: the agent calls
   `vectordb_reindex` when asked.
 
-## One indexer per folder
+## One corpus per folder
 
-Several agents reading the same folder share one indexer: build it
-once and hand it to every agent's extension. Two indexers over one
+Several agents reading the same folder share one corpus: build it
+once and hand it to every agent's extension. Two corpora over one
 folder each embed every file again. A different folder gets its own
-indexer, and with Qdrant its own collection.
+corpus, and with Qdrant its own collection.
 
-The indexer owns the backend you hand it, and closing it closes the
+The corpus owns the backend you hand it, and closing it closes the
 backend; closing an agent leaves it alone. A `Server::Qdrant` is not
 part of it, so close that separately. At teardown, close in reverse
-order — watcher, agents, indexer, server:
+order — watcher, agents, corpus, server:
 
 ```ruby
 watcher.close
 agent.close
-indexer.close
+corpus.close
 server.close   # if you started one
 ```
 
@@ -121,13 +121,13 @@ backend = Pikuri::VectorDb::Backend::Qdrant.new(
 ```
 
 Collection naming is engine-specific so it lives on the backend
-constructor, not on the Indexer — `Backend::InMemory` has no
+constructor, not on the Corpus — `Backend::InMemory` has no
 collection concept.
 
 ## The indexing pipeline
 
 What `vectordb_reindex` (and the `Watcher`) actually runs, piece by
-piece — each swappable via the Indexer's keyword arguments (the
+piece — each swappable via the Corpus's keyword arguments (the
 reranker via the Extension's):
 
 - **Chunker** (`Chunker::FixedWindow`) — overlapping windows,

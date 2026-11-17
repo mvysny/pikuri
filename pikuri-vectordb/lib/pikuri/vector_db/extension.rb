@@ -5,22 +5,22 @@ module Pikuri
     # The host-facing API: wire topical retrieval over a local corpus onto a
     # {Pikuri::Agent} via +c.add_extension+ in the +Agent.new+ block.
     #
-    #   indexer = Pikuri::VectorDb::Indexer.new(
+    #   corpus = Pikuri::VectorDb::Corpus.new(
     #     backend:  Pikuri::VectorDb::Backend::InMemory.new,
     #     source:   '~/notes',
     #     embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
     #     private:  true, trusted: true   # what this corpus is; both default off
     #   )
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-    #     c.add_extension Pikuri::VectorDb::Extension.new(indexer: indexer)
+    #     c.add_extension Pikuri::VectorDb::Extension.new(corpus: corpus)
     #   end
     #
-    # The {Indexer} is the corpus and the extension is one agent's view of it:
-    # build the indexer once per folder, an extension per agent over it, and
-    # close the indexer at teardown (see {Indexer}'s "One indexer per corpus").
+    # The extension is one agent's view of a {Corpus}: build the corpus once
+    # per folder, an extension per agent over it, and close the corpus at
+    # teardown (see {Corpus}'s "One corpus per folder").
     #
     # {Tools::Search} and {Tools::Read} derive their trifecta legs from the
-    # indexer's {Indexer#private?} / {Indexer#trusted?}, so every agent over
+    # corpus's {Corpus#private?} / {Corpus#trusted?}, so every agent over
     # one folder gets the same legs.
     #
     # On +configure+ it registers three tools ({Tools::Search} +
@@ -35,15 +35,15 @@ module Pikuri
     # sample, and cosine has no calibrated zero to cut at) or exactness
     # ("invoice #4471" — rare tokens are what embedders rank worst). Those
     # need a keyword index beside the vectors, which is +pikuri-rag+: it
-    # decorates the indexer's vector backend and ships +rag_search+ /
+    # decorates the corpus's vector backend and ships +rag_search+ /
     # +rag_search_keywords+ over the same corpus. The two extensions are **mutually
     # exclusive on one agent** — {#configure} refuses a pre-registered
     # +rag_*+ tool, and {Pikuri::Rag::Extension} refuses +vectordb_*+.
     #
     # == The host owns population
     #
-    # The host holds the {Indexer} and fills the corpus however it likes — an
-    # explicit +indexer.index_if_empty!+ at boot, a
+    # The host holds the {Corpus} and fills the corpus however it likes — an
+    # explicit +corpus.index_if_empty!+ at boot, a
     # {Watcher} around it (whose boot sweep populates an empty backend then
     # tracks edits), or nothing (the agent calls +vectordb_reindex+ when asked;
     # {Tools::Search} returns no hits and says so until then). All equally valid;
@@ -65,19 +65,19 @@ module Pikuri
     class Extension
       include Pikuri::Agent::Extension
 
-      # @return [Indexer] the corpus this extension's tools search.
-      attr_reader :indexer
+      # @return [Corpus] the corpus this extension's tools search.
+      attr_reader :corpus
 
-      # @param indexer [Indexer] the corpus, shared with every other extension
+      # @param corpus [Corpus] the corpus, shared with every other extension
       #   and {Watcher} over the same folder; the host closes it, not this.
       # @param reranker [#rerank, nil] optional cross-encoder
       #   reranker. +nil+ skips reranking — {Tools::Search} retrieves
       #   the final top-k from the backend directly.
       # @return [Extension]
-      def initialize(indexer:, reranker: nil)
-        @indexer  = indexer
+      def initialize(corpus:, reranker: nil)
+        @corpus  = corpus
         @reranker = reranker
-        @legs = CorpusLegs.derive(private: indexer.private?, trusted: indexer.trusted?)
+        @legs = CorpusLegs.derive(private: corpus.private?, trusted: corpus.trusted?)
       end
 
       # Register {Tools::Search} + {Tools::Read} + {Tools::Reindex} onto +c+; does
@@ -87,7 +87,7 @@ module Pikuri
       # @return [void]
       # @raise [RuntimeError] if any of the three names is pre-registered — the
       #   extension is their single owner, and a duplicate would point at a
-      #   different Indexer / Embedder / backend — or if any +rag_*+ tool is,
+      #   different Corpus / Embedder / backend — or if any +rag_*+ tool is,
       #   since +pikuri-rag+ is the alternative to this extension rather than a
       #   companion (see "This is the primitive").
       def configure(c)
@@ -104,13 +104,13 @@ module Pikuri
 
           raise "#{name} cannot be pre-registered (in tools: or via c.add_tool) " \
                 'when adding Pikuri::VectorDb::Extension — the extension auto-registers ' \
-                'all three tools so they share the same Indexer / Embedder / backend.'
+                'all three tools so they share the same Corpus / Embedder / backend.'
         end
 
-        c.add_tool Tools::Search.new(embedder: @indexer.embedder, backend: @indexer.backend,
+        c.add_tool Tools::Search.new(embedder: @corpus.embedder, backend: @corpus.backend,
                                      reranker: @reranker, legs: @legs)
-        c.add_tool Tools::Read.new(backend: @indexer.backend, root: @indexer.root, legs: @legs)
-        c.add_tool Tools::Reindex.new(indexer: @indexer)
+        c.add_tool Tools::Read.new(backend: @corpus.backend, root: @corpus.root, legs: @legs)
+        c.add_tool Tools::Reindex.new(corpus: @corpus)
         nil
       end
     end

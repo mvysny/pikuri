@@ -12,7 +12,7 @@ module Pikuri
   # Hybrid retrieval — a keyword index beside the vectors — as one +rag_*+ tool
   # family over a local corpus. Wire it and ask both kinds of question:
   #
-  #   indexer = Pikuri::VectorDb::Indexer.new(
+  #   corpus = Pikuri::VectorDb::Corpus.new(
   #     backend:  Pikuri::Rag::Backend::Hybrid.new(vectors:  Pikuri::VectorDb::Backend::InMemory.new,
   #                                                keywords: Pikuri::Rag::Backend::Fts5.new),
   #     source:   '~/notes',
@@ -20,7 +20,7 @@ module Pikuri
   #     private:  true, trusted: true
   #   )
   #   agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  #     c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
+  #     c.add_extension Pikuri::Rag::Extension.new(corpus: corpus)
   #   end
   #
   # Four tools, split along the two questions a corpus gets asked. *Relevance*
@@ -32,7 +32,7 @@ module Pikuri
   # under +family: 'rag'+, so this gem adds no code for them.
   #
   # Underneath, {Backend::Fts5} is the keyword store and {Backend::Hybrid}
-  # holds it beside the host's vector store, as the indexer's one backend.
+  # holds it beside the host's vector store, as the corpus's one backend.
   #
   # Two things a reader arriving here should know before wiring it.
   #
@@ -45,7 +45,7 @@ module Pikuri
   # {Backend::Fts5} as +stemmer:+; pikuri-workshop's +pikuri-stemmers+ has Finnish.
   #
   # The threat model is +pikuri-vectordb+'s, unchanged — same corpus, same
-  # +private:+ / +trusted:+ declaration ({Pikuri::VectorDb::Indexer#trusted?}
+  # +private:+ / +trusted:+ declaration ({Pikuri::VectorDb::Corpus#trusted?}
   # is still where those clauses live), no egress leg on any tool, same
   # membership gate on the reader. Which is why there is no +design/architecture.md+ here.
   # The fork that made this a gem, and the roads not taken, are +design/decisions.md+

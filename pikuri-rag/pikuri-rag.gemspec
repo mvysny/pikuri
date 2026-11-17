@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
     +rag_reindex+. The keyword index is its own backend
     (+Backend::Fts5+, the only class here that speaks SQL), paired with
     the host's vector store inside one +Backend::Hybrid+ that fans
-    writes out to both — so the vectordb +Indexer+ and +Watcher+ are
+    writes out to both — so the vectordb +Corpus+ and +Watcher+ are
     reused unchanged: one walk, one extraction per file, one content
     hash. Hosts wire it
     via +c.add_extension Pikuri::Rag::Extension.new(...)+ inside the
@@ -62,7 +62,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # pikuri-vectordb ships everything the hybrid half composes over: the
-  # +Backend+ protocol +Hybrid+ implements, the +Indexer+ /
+  # +Backend+ protocol +Hybrid+ implements, the +Corpus+ /
   # +Watcher+ that fill it, the +Embedder+ / +Chunker+ / +Reranker+
   # ducks, +CorpusLegs.derive+, and +Tools::Read+ / +Tools::Reindex+,
   # which ship here verbatim under +family: 'rag'+. It pulls in

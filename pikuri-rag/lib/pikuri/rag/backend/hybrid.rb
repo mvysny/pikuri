@@ -11,9 +11,9 @@ module Pikuri
       #     vectors:  Pikuri::VectorDb::Backend::InMemory.new,
       #     keywords: Pikuri::Rag::Backend::Fts5.new
       #   )
-      #   indexer = Pikuri::VectorDb::Indexer.new(backend: hybrid, source: '~/notes',
+      #   corpus = Pikuri::VectorDb::Corpus.new(backend: hybrid, source: '~/notes',
       #                                           embedder: embedder)
-      #   indexer.index_all!                               # fills both, one extraction
+      #   corpus.index_all!                               # fills both, one extraction
       #
       #   hybrid.query(vector: v, top_k: 5)                # the vector leg
       #   hybrid.keyword_query(match: '"acme"', top_k: 5)  # the keyword leg
@@ -50,7 +50,7 @@ module Pikuri
       # == Implementation details
       #
       # *Writes reach the keyword store first.* The embed already happened by
-      # the time any write is reached ({Pikuri::VectorDb::Indexer} embeds
+      # the time any write is reached ({Pikuri::VectorDb::Corpus} embeds
       # before writing), so the only thing that can fail *between* the two is
       # the vector store's network call — and the local write is the one that
       # cannot.
@@ -174,7 +174,7 @@ module Pikuri
         # @return [Hash{String => String, nil}] +source+ → content hash, for
         #   the sources *both* stores hold (see the class's "Indexed means both
         #   stores hold it"). The hashes are the vector store's, which the
-        #   indexer wrote first.
+        #   corpus wrote first.
         def sources_with_hashes
           known = @keywords.sources_with_hashes
           @vectors.sources_with_hashes.select { |source, _hash| known.key?(source) }

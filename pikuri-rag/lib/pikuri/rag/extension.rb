@@ -5,7 +5,7 @@ module Pikuri
     # The host-facing API: wire hybrid retrieval over a local corpus onto a
     # {Pikuri::Agent} via +c.add_extension+ in the +Agent.new+ block.
     #
-    #   indexer = Pikuri::VectorDb::Indexer.new(
+    #   corpus = Pikuri::VectorDb::Corpus.new(
     #     backend:  Pikuri::Rag::Backend::Hybrid.new(
     #       vectors:  Pikuri::VectorDb::Backend::InMemory.new,
     #       keywords: Pikuri::Rag::Backend::Fts5.new
@@ -15,17 +15,17 @@ module Pikuri
     #     private:  true, trusted: true   # what this corpus is; both default off
     #   )
     #   agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-    #     c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
+    #     c.add_extension Pikuri::Rag::Extension.new(corpus: corpus)
     #   end
-    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
+    #   watcher = Pikuri::VectorDb::Watcher.new(corpus: corpus).start
     #
     # It registers four tools — +rag_search+, +rag_search_keywords+, +rag_read+,
-    # +rag_reindex+ — and nothing else. The {Pikuri::VectorDb::Indexer} is the
-    # corpus and this extension is one agent's view of it: the host builds the
-    # indexer once per folder, an extension per agent over it, populates it
-    # (+index_if_empty!+, a {Pikuri::VectorDb::Watcher}, or nothing — the agent
-    # then calls +rag_reindex+ when asked) and closes it at teardown. See the
-    # indexer's "One indexer per corpus".
+    # +rag_reindex+ — and nothing else. This extension is one agent's view of
+    # a {Pikuri::VectorDb::Corpus}: the host builds the corpus once per folder,
+    # an extension per agent over it, populates it (+index_if_empty!+, a
+    # {Pikuri::VectorDb::Watcher}, or nothing — the agent then calls
+    # +rag_reindex+ when asked) and closes it at teardown. See the corpus's
+    # "One corpus per folder".
     #
     # Same shape as {Pikuri::VectorDb::Extension}, so a host moves a corpus
     # from the vector primitive to hybrid retrieval by wrapping its vector
@@ -33,8 +33,8 @@ module Pikuri
     # {Backend::Hybrid} says which keyword store to pair with which vector
     # store, {Backend::Fts5} how to stem another language.
     #
-    # The tools' trifecta legs come from the indexer's
-    # {Pikuri::VectorDb::Indexer#private?} / {Pikuri::VectorDb::Indexer#trusted?};
+    # The tools' trifecta legs come from the corpus's
+    # {Pikuri::VectorDb::Corpus#private?} / {Pikuri::VectorDb::Corpus#trusted?};
     # nothing about the hybrid index changes what those claim.
     #
     # == Exclusive with Pikuri::VectorDb::Extension
@@ -67,27 +67,27 @@ module Pikuri
       #   which is the whole of what +rag_read+ / +rag_reindex+ needed.
       FAMILY = 'rag'
 
-      # @return [Pikuri::VectorDb::Indexer] the corpus this extension's tools
+      # @return [Pikuri::VectorDb::Corpus] the corpus this extension's tools
       #   search.
-      attr_reader :indexer
+      attr_reader :corpus
 
-      # @param indexer [Pikuri::VectorDb::Indexer] the corpus, over a
+      # @param corpus [Pikuri::VectorDb::Corpus] the corpus, over a
       #   {Backend::Hybrid}; shared with every other extension and watcher over
       #   the same folder, and closed by the host, not by this.
       # @param reranker [#rerank, nil] optional cross-encoder reranker over
       #   the fused candidates; +nil+ returns the fused top-k directly.
       # @return [Extension]
-      # @raise [ArgumentError] if the indexer's backend is not a
+      # @raise [ArgumentError] if the corpus's backend is not a
       #   {Backend::Hybrid}: the keyword tools would have no keyword store.
-      def initialize(indexer:, reranker: nil)
-        unless indexer.backend.is_a?(Backend::Hybrid)
-          raise ArgumentError, "Pikuri::Rag::Extension needs an indexer over a Pikuri::Rag::Backend::Hybrid, " \
-                               "got #{indexer.backend.class}"
+      def initialize(corpus:, reranker: nil)
+        unless corpus.backend.is_a?(Backend::Hybrid)
+          raise ArgumentError, "Pikuri::Rag::Extension needs a corpus over a Pikuri::Rag::Backend::Hybrid, " \
+                               "got #{corpus.backend.class}"
         end
 
-        @indexer  = indexer
+        @corpus  = corpus
         @reranker = reranker
-        @legs = Pikuri::VectorDb::CorpusLegs.derive(private: indexer.private?, trusted: indexer.trusted?)
+        @legs = Pikuri::VectorDb::CorpusLegs.derive(private: corpus.private?, trusted: corpus.trusted?)
       end
 
       # Register the four tools onto +c+; does not index.
@@ -102,18 +102,18 @@ module Pikuri
 
           raise "#{tool.name} cannot be pre-registered (in tools: or via c.add_tool / " \
                 'Pikuri::VectorDb::Extension) when adding Pikuri::Rag::Extension — it ' \
-                'auto-registers all four rag_* tools so they share one Indexer / ' \
+                'auto-registers all four rag_* tools so they share one Corpus / ' \
                 'Embedder / backend, and the vectordb_* tool set is the alternative to ' \
                 'this one, not a companion.'
         end
 
-        backend = @indexer.backend
-        c.add_tool Tools::Search.new(embedder: @indexer.embedder, backend: backend,
+        backend = @corpus.backend
+        c.add_tool Tools::Search.new(embedder: @corpus.embedder, backend: backend,
                                      reranker: @reranker, legs: @legs)
-        c.add_tool Tools::SearchKeywords.new(backend: backend, root: @indexer.root, legs: @legs)
-        c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: backend, root: @indexer.root,
+        c.add_tool Tools::SearchKeywords.new(backend: backend, root: @corpus.root, legs: @legs)
+        c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: backend, root: @corpus.root,
                                                      legs: @legs, family: FAMILY)
-        c.add_tool Pikuri::VectorDb::Tools::Reindex.new(indexer: @indexer, family: FAMILY)
+        c.add_tool Pikuri::VectorDb::Tools::Reindex.new(corpus: @corpus, family: FAMILY)
         nil
       end
     end

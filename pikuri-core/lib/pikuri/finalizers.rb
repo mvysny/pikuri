@@ -26,7 +26,7 @@ module Pikuri
   # == Order: LIFO
   #
   # Last registered, first closed. A registrant depending on an earlier one (a
-  # background indexer writing into {VectorDb::Server::Qdrant}) registers later
+  # background indexing daemon writing into {VectorDb::Server::Qdrant}) registers later
   # and tears down first — registration order is dependency order.
   #
   # == Errors are contained

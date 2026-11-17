@@ -3,14 +3,14 @@
 module Pikuri
   module VectorDb
     # Namespace for chunkers — the layer converting one document's text into the
-    # {Piece}s the {Indexer} feeds to the embedder. One ships: {FixedWindow}
+    # {Piece}s the {Corpus} feeds to the embedder. One ships: {FixedWindow}
     # (sliding-window over whitespace-split words, sized by a {Tokenizer}).
     #
     # == Chunker protocol
     #
     # Duck-typed: +#chunk(text)+ → +Array<Piece>+ (empty/whitespace-only →
     # +[]+), in source order, each carrying its text and line range — the
-    # {Indexer} wraps each into a {Chunk} with +id+/+source+/+metadata+ at
+    # {Corpus} wraps each into a {Chunk} with +id+/+source+/+metadata+ at
     # composition.
     #
     # FixedWindow is enough for v1: fancier chunkers (heading-aware, AST-aware,

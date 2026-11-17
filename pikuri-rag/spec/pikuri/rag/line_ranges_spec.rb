@@ -6,7 +6,7 @@ require 'fileutils'
 require 'pathname'
 
 # A fused rag_search winner can come from either leg, so both must hand back
-# the same +lines a-b+ for a chunk. Indexed through the real Indexer into a
+# the same +lines a-b+ for a chunk. Indexed through the real Corpus into a
 # Hybrid, every chunk's keyword-leg range must equal its vector-leg range;
 # that the vector leg's range reads back right is pikuri-vectordb's
 # line_ranges_spec.
@@ -29,7 +29,7 @@ describe 'Chunk line ranges across the two legs' do
     def tokenizer.count(text) = text.split.length
     embedder = Object.new
     def embedder.embed(texts) = texts.map { [1.0, 0.0] }
-    Pikuri::VectorDb::Indexer.new(
+    Pikuri::VectorDb::Corpus.new(
       backend: hybrid, source: root, embedder: embedder,
       chunker: Pikuri::VectorDb::Chunker::FixedWindow.new(size: 7, overlap: 2, tokenizer: tokenizer)
     ).index_all!

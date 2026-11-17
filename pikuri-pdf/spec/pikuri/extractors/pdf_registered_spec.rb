@@ -53,7 +53,7 @@ RSpec.describe Pikuri::Extractors::PDF, 'registered' do
       it 'returns the empty String for a PDF with no extractable text' do
         # Zero pages → no text. Workspace::Read returns a hint string
         # for the LLM; read_as_text returns '' and lets the caller
-        # decide (the vectordb Indexer simply gets no chunks).
+        # decide (the vectordb Corpus simply gets no chunks).
         path = write_pdf('empty.pdf')
         assert_equal '', Pikuri::FileType.read_as_text(path)
       end

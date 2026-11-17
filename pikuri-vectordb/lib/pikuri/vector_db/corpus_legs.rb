@@ -13,7 +13,7 @@ module Pikuri
     #   legs.egress_payload_review  # => :no_egress, always — retrieval never leaves the machine
     #
     # What the two inputs mean — the three clauses behind +trusted: true+ in
-    # particular — is {Indexer#private?} / {Indexer#trusted?}'s to say;
+    # particular — is {Corpus#private?} / {Corpus#trusted?}'s to say;
     # this module only maps them.
     module CorpusLegs
       # @param private [Boolean] the corpus may hold data worth exfiltrating.

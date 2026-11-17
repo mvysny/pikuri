@@ -7,7 +7,7 @@ module Pikuri
       # re-indexes every source file from scratch. Since {Extension} indexes
       # nothing at boot, this is both the *initial* population path and the
       # refresh path — until a host populates some other way (an explicit
-      # +indexer.index_if_empty!+, a {Watcher}), the index is empty, {Tools::Search}
+      # +corpus.index_if_empty!+, a {Watcher}), the index is empty, {Tools::Search}
       # returns no hits, and the agent calls this when the user asks to build it.
       #
       # "User-asked-only" framing (in the description): reindex is orders of
@@ -23,7 +23,7 @@ module Pikuri
       #
       # == No trifecta legs, whatever the corpus is
       #
-      # {Pikuri::Tool::TrifectaLegs::NONE}, independent of {Indexer}'s
+      # {Pikuri::Tool::TrifectaLegs::NONE}, independent of {Corpus}'s
       # +private:+ / +trusted:+ declaration — the {Search} / {Read} case does
       # not apply here. The observation is a chunk count, a "no indexable
       # files" line, or an infrastructure error; per-file failures — the only
@@ -60,20 +60,20 @@ module Pikuri
           DESC
         end
 
-        # @param indexer [Indexer] the indexer to call +#reindex!+
+        # @param corpus [Corpus] the corpus to call +#reindex!+
         #   on. Captured by the +execute+ closure so the tool can
         #   be registered against the same instance the
         #   {Extension} built at boot.
         # @param family [String] the tool-name prefix, as on {Read#initialize}:
         #   the tool is +"#{family}_reindex"+.
         # @return [Reindex]
-        def initialize(indexer:, family: Read::DEFAULT_FAMILY)
+        def initialize(corpus:, family: Read::DEFAULT_FAMILY)
           super(
             name: "#{family}_reindex",
             description: Reindex.description(family: family),
             parameters: Pikuri::Tool::Parameters.build { |_p| }, # zero params
             execute: lambda {
-              Reindex.execute(indexer: indexer)
+              Reindex.execute(corpus: corpus)
             },
             trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
           )
@@ -82,11 +82,11 @@ module Pikuri
         # Public so specs can drive the tool without constructing
         # a Pikuri::Tool wrapper.
         #
-        # @param indexer [Indexer]
+        # @param corpus [Corpus]
         # @return [Pikuri::Tool::Result] the observation (+"Indexed 412
         #   chunks"+), or {Pikuri::Tool::Result.error}.
-        def self.execute(indexer:)
-          total = indexer.reindex!
+        def self.execute(corpus:)
+          total = corpus.reindex!
           content =
             if total.zero?
               'Reindexed: 0 chunks. No indexable files were found across the configured sources.'

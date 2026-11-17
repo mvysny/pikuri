@@ -45,7 +45,7 @@ module Pikuri
       #
       # Whether the retrieved chunks are confidential, and whether they are
       # bytes pikuri did not write, are properties of the *corpus* — so they
-      # arrive pre-derived in +legs:+ from {Indexer}'s +private:+ /
+      # arrive pre-derived in +legs:+ from {Corpus}'s +private:+ /
       # +trusted:+ (the same shape {Pikuri::Workspace::Read} takes from its
       # {Pikuri::Workspace::Filesystem}), and both default to the pessimistic
       # value. The egress axis is not declared but structural: the query never
@@ -95,7 +95,7 @@ module Pikuri
         #   directly.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's
         #   declaration, derived by {Extension} from its
-        #   indexer's +private:+ / +trusted:+ flags (see "Who declares
+        #   corpus's +private:+ / +trusted:+ flags (see "Who declares
         #   the legs"). Required — a default here would be a
         #   second copy of that derivation.
         # @return [Search]
@@ -179,7 +179,7 @@ module Pikuri
         # with the snippet below, truncated at {SNIPPET_LENGTH} with +...+, in
         # the order given and with no score (see "Why no score is shown"). A
         # chunk without +first_line:+ / +last_line:+ metadata — one not
-        # written by the {Indexer} — prints no range.
+        # written by the {Corpus} — prints no range.
         #
         # Public as the other half of the reusable tail — see
         # {.reranked_or_fallback}.

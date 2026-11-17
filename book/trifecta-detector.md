@@ -272,7 +272,7 @@ Pikuri::Workspace::Filesystem.new(project_root: root, private: true)
 
 and the file tools reading through that workspace inherit it. A
 workspace is not the only object that owns a reachable set of
-documents: `VectorDb::Indexer.new(source:, private:, trusted:)` takes
+documents: `VectorDb::Corpus.new(source:, private:, trusted:)` takes
 the same pair of answers for an indexed corpus, and `vectordb_search` /
 `vectordb_read` derive their legs from it the same way
 ([the vector-DB chapter](vectordb.md#why-this-agent-cant-leak-your-corpus)

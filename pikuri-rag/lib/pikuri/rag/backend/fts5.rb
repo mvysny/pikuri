@@ -122,7 +122,7 @@ module Pikuri
         # Insert-or-replace by +chunk.id+.
         #
         # @param chunks [Array<Pikuri::VectorDb::Chunk>] each carrying the
-        #   +first_line:+ / +last_line:+ metadata {Pikuri::VectorDb::Indexer}
+        #   +first_line:+ / +last_line:+ metadata {Pikuri::VectorDb::Corpus}
         #   always sets — the keyword leg must hand back the same range the
         #   vector leg does.
         # @return [void]
@@ -177,7 +177,7 @@ module Pikuri
 
         # @return [Hash{String => String, nil}] +source+ → the content hash on
         #   its chunks, the change signal
-        #   {Pikuri::VectorDb::Indexer#reconcile_plan} diffs against disk.
+        #   {Pikuri::VectorDb::Corpus#reconcile_plan} diffs against disk.
         def sources_with_hashes
           rows = @lock.synchronize do
             @db.execute('SELECT source, hash FROM chunks GROUP BY source')
@@ -334,7 +334,7 @@ module Pikuri
           end
         end
 
-        # +metadata+ carries no +ordinal+, which the indexer also sets: nothing
+        # +metadata+ carries no +ordinal+, which the corpus also sets: nothing
         # downstream of a keyword hit reads it, so the column would be dead
         # weight in every row.
         #

@@ -6,7 +6,7 @@ require 'pathname'
 
 # pikuri-vectordb's line_ranges_spec over a registered PDF extractor: a
 # PDF's lines are the extractor's output, +"--- Page N ---"+ markers
-# included, so the chunk ranges the Indexer stores must number that output
+# included, so the chunk ranges the Corpus stores must number that output
 # exactly as vectordb_read pages it. The integration of the two gems is this
 # one's concern, as for workspace_read_spec. pikuri-vectordb is a test-only
 # dependency, resolved through the monorepo's top-level Gemfile.
@@ -28,7 +28,7 @@ RSpec.describe 'Chunk line ranges over a registered PDF extractor' do
     def tokenizer.count(text) = text.split.length
     embedder = Object.new
     def embedder.embed(texts) = texts.map { [1.0, 0.0] }
-    Pikuri::VectorDb::Indexer.new(
+    Pikuri::VectorDb::Corpus.new(
       backend: backend, source: root, embedder: embedder,
       chunker: Pikuri::VectorDb::Chunker::FixedWindow.new(size: 7, overlap: 2, tokenizer: tokenizer)
     ).index_all!

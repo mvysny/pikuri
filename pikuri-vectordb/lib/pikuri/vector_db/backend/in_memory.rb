@@ -138,7 +138,7 @@ module Pikuri
         # Atomically replace all chunks for one +source+ (delete-then-upsert
         # under a single monitor hold — the point: a concurrent {#query} sees
         # the old or new chunks, never the empty gap). The incremental-reindex
-        # unit (see {Indexer#reindex_file!}).
+        # unit (see {Corpus#reindex_file!}).
         #
         # @param source [String] the {Chunk#source} being replaced.
         # @param chunks [Array<Chunk>] the new chunk set (each +chunk.source+
@@ -155,7 +155,7 @@ module Pikuri
         end
 
         # The boot-sweep reference: each indexed +source+ → the content hash on
-        # its chunks, which {Indexer#reconcile_plan} diffs against disk. A chunk
+        # its chunks, which {Corpus#reconcile_plan} diffs against disk. A chunk
         # with no +hash+ metadata maps to +nil+, which the diff treats as
         # "changed" and reindexes — self-healing.
         #

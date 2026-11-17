@@ -87,7 +87,7 @@ describe Pikuri::VectorDb::Tools::Search do
       assert_includes observation, "[1] risotto.md lines 1-3\n"
       assert_includes observation, 'Rice should be added gradually'
       assert_includes observation, "[2] risotto.md line 3\n"
-      # paella.md:0 carries no line range — a chunk not written by the Indexer.
+      # paella.md:0 carries no line range — a chunk not written by the Corpus.
       assert_includes observation, "[3] paella.md\n"
       refute_includes observation, 'score'
     end

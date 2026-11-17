@@ -5,34 +5,35 @@ require 'digest'
 
 module Pikuri
   module VectorDb
-    # One corpus: a folder, the backend holding its index, and the pipeline
-    # between them — walks +source+ (skipping {DENYLIST} + dot-files),
+    # A folder of documents, the backend holding their index, and what the
+    # agent may assume about them (+private:+ / +trusted:+). Indexing is one
+    # of its jobs — it walks +source+ (skipping {DENYLIST} + dot-files),
     # extracts text via {Pikuri::FileType.read_as_text}, chunks via the
     # {Chunker}, embeds via the {Embedder}, and {Backend#upsert}s the result.
     #
-    #   indexer = Pikuri::VectorDb::Indexer.new(
+    #   corpus = Pikuri::VectorDb::Corpus.new(
     #     backend:  Pikuri::VectorDb::Backend::InMemory.new,
     #     source:   '~/notes',
     #     embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
     #     private:  true, trusted: true   # what this folder is; both default off
     #   )
-    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
-    #   agent_a = Pikuri::Agent.new(...) { |c| c.add_extension Extension.new(indexer: indexer) }
-    #   agent_b = Pikuri::Agent.new(...) { |c| c.add_extension Extension.new(indexer: indexer) }
+    #   watcher = Pikuri::VectorDb::Watcher.new(corpus: corpus).start
+    #   agent_a = Pikuri::Agent.new(...) { |c| c.add_extension Extension.new(corpus: corpus) }
+    #   agent_b = Pikuri::Agent.new(...) { |c| c.add_extension Extension.new(corpus: corpus) }
     #   # ... at teardown:
     #   watcher.close; agent_a.close; agent_b.close
-    #   indexer.close                   # closes the backend
+    #   corpus.close                   # closes the backend
     #
-    # == One indexer per corpus
+    # == One corpus per folder
     #
     # The host builds it once per folder and hands it to every extension and
     # {Watcher} over that folder; it owns its +backend:+ and {#close}s it.
-    # Two indexers over one folder and one store each walk, embed and write
+    # Two corpora over one folder and one store each walk, embed and write
     # the same files, and if their embedders or chunkers differ, the store
     # silently mixes the two.
     #
     # Not the extension's to own: an extension is per agent, so three agents
-    # would build three indexers. Nor a +Pikuri::Workspace::Workspace+'s: that
+    # would build three corpora. Nor a +Pikuri::Workspace::Workspace+'s: that
     # is per agent too (it holds one conversation's read record), and a
     # corpus is often a folder no file tool is wired over.
     #
@@ -66,8 +67,8 @@ module Pikuri
     # pikuri code, not the LLM — "errors are loud"), leaving the backend partial.
     # Recourse is {#reindex!}. InMemory resets on restart anyway; only Qdrant
     # persists partial state, and a fresh reindex recovers cleanly.
-    class Indexer
-      LOGGER = Pikuri.logger_for('VectorDb::Indexer')
+    class Corpus
+      LOGGER = Pikuri.logger_for('VectorDb::Corpus')
 
       # Basenames skipped during the walk — cruft that accumulates inside a
       # notes folder put under +source:+ (a cloned repo, a Python venv, a build
@@ -86,7 +87,7 @@ module Pikuri
       ].freeze
 
       # @param backend [#upsert, #query, #delete_all, #count, #close] any
-      #   {Backend}; this indexer owns it from here on.
+      #   {Backend}; this corpus owns it from here on.
       # @param source [String, Pathname] path to index (a file directly, a
       #   directory recursively). Tilde-expanded.
       # @param embedder [#embed] +embed(Array<String>) -> Array<Array<Float>>+,
@@ -101,7 +102,7 @@ module Pikuri
       #   library of books inside +~/Documents+, say, which would cost hours
       #   of embedding and crowd every search. Matched by whole path
       #   components, so +Books+ skips +Books/x.pdf+ but not +Bookshelf.md+.
-      # @return [Indexer]
+      # @return [Corpus]
       # @raise [ArgumentError] if an +exclude+ entry lies outside {#root}: it
       #   could never match, and a skip rule that silently does nothing is
       #   exactly the one nobody notices.
@@ -123,7 +124,7 @@ module Pikuri
         @exclude  = exclude.map { |e| exclusion(e) }
       end
 
-      # @return [#upsert, #query, #count] the backend this indexer fills, which
+      # @return [#upsert, #query, #count] the backend this corpus fills, which
       #   the search and read tools query.
       attr_reader :backend
 
@@ -134,7 +135,7 @@ module Pikuri
       # Close the backend, and with it everything the backend owns.
       # Idempotent.
       #
-      # Close the {Watcher} first: it writes through this indexer.
+      # Close the {Watcher} first: it writes through this corpus.
       #
       # @return [void]
       def close
@@ -267,7 +268,7 @@ module Pikuri
       # manual +reindex!+.
       #
       # @return [Integer] total chunks indexed (0 if backend was
-      #   non-empty and the indexer was skipped).
+      #   non-empty and nothing was indexed).
       def index_if_empty!
         existing = @backend.count
         if existing.positive?

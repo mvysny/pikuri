@@ -19,19 +19,19 @@ module Pikuri
       #
       # == The read domain is exactly the search domain
       #
-      # +source+ must be a key the {Indexer} actually produced — checked against
+      # +source+ must be a key the {Corpus} actually produced — checked against
       # {Backend#source_indexed?} before any disk access — so the only legal
       # inputs are the citations search handed the model, and a poisoned chunk
       # saying "read ../../.ssh/id_rsa" fails the membership gate (not an indexed
       # source). That's what keeps this from being a general file reader under a
       # friendly name. A lexical containment check (resolved path under the
-      # corpus {Indexer#root}) backs the gate as defense-in-depth.
+      # corpus {Corpus#root}) backs the gate as defense-in-depth.
       #
       # Reads are line-windowed by {Pikuri::FileType.read_as_text_paged} — the
       # same windower and caps as {Pikuri::Workspace::Read}, returning a
       # {Pikuri::Extractor::Page} rendered by {Pikuri::Tool::Result.page},
       # +cat -n+ numbered like every paged reader. Extraction routes through
-      # the same {Pikuri::Extractor} registry the {Indexer} uses, so a read
+      # the same {Pikuri::Extractor} registry the {Corpus} uses, so a read
       # matches what was indexed exactly (modulo later edits),
       # +"--- Page N ---"+ markers included — and the line numbers in a page
       # are the ones a search hit's +lines a-b+ cites. Images / binaries /
@@ -72,11 +72,11 @@ module Pikuri
 
         # @param backend [#source_indexed?] any {Backend}
         #   implementation; consulted for the membership gate.
-        # @param root [Pathname] the corpus root — {Indexer#root}.
+        # @param root [Pathname] the corpus root — {Corpus#root}.
         #   Relative +source+ paths resolve against it.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's
         #   declaration, derived by {Extension} from its
-        #   indexer's +private:+ / +trusted:+ flags — the same value
+        #   corpus's +private:+ / +trusted:+ flags — the same value
         #   {Search} carries (see its "Who declares the legs").
         #   Required, for the same reason.
         # @param family [String] the tool-name prefix: the tool is
@@ -152,8 +152,8 @@ module Pikuri
 
         # Lexical containment: +resolved+ must be the root or sit beneath it.
         # Lexical, not +realpath+, on purpose — the membership gate already
-        # restricts +source+ to indexer keys, and resolving symlinks here would
-        # wrongly reject a symlinked document the {Indexer} chose to index. Only
+        # restricts +source+ to corpus keys, and resolving symlinks here would
+        # wrongly reject a symlinked document the {Corpus} chose to index. Only
         # catches a +..+ / absolute escape that somehow passed the gate.
         #
         # @param resolved [Pathname]

@@ -94,7 +94,7 @@ describe Pikuri::Rag::Backend::Hybrid do
     it 'gates membership on the vector store alone' do
       populate
       # A keyword-only source must NOT read as indexed: the gate answers "did
-      # the indexer produce this citation?", and a lagging keyword store would
+      # the corpus produce this citation?", and a lagging keyword store would
       # otherwise make a correctly indexed document unreadable.
       keywords.upsert(chunks: [chunk('kw.md:0', 'kw.md', 'Keyword store only.')])
       refute hybrid.source_indexed?('kw.md')

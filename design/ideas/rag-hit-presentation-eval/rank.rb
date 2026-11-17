@@ -19,9 +19,9 @@ end
 lists = { 'vector' => [], 'fused' => [], 'vfirst' => [] }
 QUESTIONS.each do |entry|
   vector = EMBEDDER.embed([entry['q']]).first
-  vec = INDEXER.backend.query(vector: vector, top_k: Search::LEG_K)
-  match = Pikuri::Rag::Query.any(entry['q'], stemmer: INDEXER.backend.stemmer)
-  kw = match ? INDEXER.backend.keyword_query(match: match, top_k: Search::LEG_K) : []
+  vec = RAG_CORPUS.backend.query(vector: vector, top_k: Search::LEG_K)
+  match = Pikuri::Rag::Query.any(entry['q'], stemmer: RAG_CORPUS.backend.stemmer)
+  kw = match ? RAG_CORPUS.backend.keyword_query(match: match, top_k: Search::LEG_K) : []
   gold = gold_of(entry)
   lists['vector'] << first_gold(vec, gold)
   lists['fused'] << first_gold(Search.fuse(vec, kw), gold)

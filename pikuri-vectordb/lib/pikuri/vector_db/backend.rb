@@ -12,7 +12,7 @@ module Pikuri
     # == Backend protocol
     #
     # Duck-typed, like pikuri's other seams (+Confirmer+, +Filesystem+,
-    # +Sandbox+) — no base class. Every backend implements, so the {Indexer} and
+    # +Sandbox+) — no base class. Every backend implements, so the {Corpus} and
     # {Tools::Search} consume them interchangeably:
     #
     # * +#upsert(chunks:, vectors:)+ — insert-or-replace by +chunk.id+; parallel
@@ -28,14 +28,14 @@ module Pikuri
     #   two HTTP calls elsewhere (see each backend). +nil+.
     # * +#sources_with_hashes+ — +Hash{String => String, nil}+, each indexed
     #   +source+ → content hash; the boot-sweep reference
-    #   {Indexer#reconcile_plan} diffs against disk. Inherently O(sources)
+    #   {Corpus#reconcile_plan} diffs against disk. Inherently O(sources)
     #   (removal detection needs the whole set), so once-per-boot, never
     #   per-request.
     # * +#source_indexed?(source)+ — +Boolean+; the scoped counterpart for
     #   {VectorDb::Tools::Read}'s membership gate, distinct so a hot path never
     #   fetches the full manifest to test one key.
     # * +#close+ — release what the backend holds open; idempotent, and no
-    #   other call follows it. The {Indexer} that owns the backend calls it.
+    #   other call follows it. The {Corpus} that owns the backend calls it.
     #
     # The four after +#count+ exist for incremental reindex + auto-watch;
     # nuke-and-reload uses only the first four.
@@ -43,7 +43,7 @@ module Pikuri
     # Because it is a duck, the protocol is *decoratable*: a wrapper that
     # delegates all nine calls to an inner backend and does something extra on
     # the writes (mirror every chunk into a second index, say) is a backend to
-    # {Indexer}, {Watcher} and the tools alike, with no change to any of them.
+    # {Corpus}, {Watcher} and the tools alike, with no change to any of them.
     #
     # == Vector-dim contract
     #

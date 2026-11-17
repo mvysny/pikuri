@@ -8,10 +8,10 @@ describe Pikuri::VectorDb::Watcher do
   let(:root) { Pathname.new(Dir.mktmpdir('pikuri-watcher-')).realpath }
   after { FileUtils.rm_rf(root) }
 
-  # A recording stand-in for {Indexer}: exposes #root / #source and
+  # A recording stand-in for {Corpus}: exposes #root / #source and
   # records the per-file calls the Watcher makes, per the project's
   # define_singleton_method stubbing convention (no rspec-mocks).
-  def fake_indexer(source: root, plan: { reindex: [], remove: [] }, reindex_raises: nil, excluded: [])
+  def fake_corpus(source: root, plan: { reindex: [], remove: [] }, reindex_raises: nil, excluded: [])
     the_root = root # capture as a local; bare `root` would resolve to obj.root and recurse
     calls = []
     prefixes = []
@@ -54,8 +54,8 @@ describe Pikuri::VectorDb::Watcher do
 
   describe '#process_event + #drain!' do
     it 'reindexes modified and added files, removes deleted ones' do
-      idx = fake_indexer
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx)
 
       w.process_event([under('a.md')], [under('b.md')], [under('c.md')])
       w.drain!
@@ -68,8 +68,8 @@ describe Pikuri::VectorDb::Watcher do
     end
 
     it 'collapses repeated events for one path to the latest intent' do
-      idx = fake_indexer
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx)
 
       w.process_event([under('a.md')], [], [])   # reindex a.md
       w.process_event([], [], [under('a.md')])   # then a.md deleted
@@ -79,8 +79,8 @@ describe Pikuri::VectorDb::Watcher do
     end
 
     it 'ignores denylisted dirs, dot-entries, and paths outside the root' do
-      idx = fake_indexer
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx)
 
       w.process_event(
         [under('node_modules/x.js'), under('.env'), under('sub/.hidden/y.md'), '/tmp/elsewhere/z.md'],
@@ -91,9 +91,9 @@ describe Pikuri::VectorDb::Watcher do
       assert_equal [], idx.calls
     end
 
-    it 'ignores paths the indexer excludes' do
-      idx = fake_indexer(excluded: [under('Books')])
-      w = described_class.new(indexer: idx)
+    it 'ignores paths the corpus excludes' do
+      idx = fake_corpus(excluded: [under('Books')])
+      w = described_class.new(corpus: idx)
 
       w.process_event([under('Books/novel.pdf'), under('notes.md')], [], [])
       w.drain!
@@ -102,8 +102,8 @@ describe Pikuri::VectorDb::Watcher do
     end
 
     it 'indexes a nested non-denylisted file' do
-      idx = fake_indexer
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx)
 
       w.process_event([under('notes/cooking/risotto.md')], [], [])
       w.drain!
@@ -114,8 +114,8 @@ describe Pikuri::VectorDb::Watcher do
     context 'with a single-file source' do
       it 'acts only on that exact file, not siblings in the same dir' do
         file = root.join('notes.md')
-        idx = fake_indexer(source: file)
-        w = described_class.new(indexer: idx)
+        idx = fake_corpus(source: file)
+        w = described_class.new(corpus: idx)
 
         w.process_event([file.to_s, under('other.md')], [], [])
         w.drain!
@@ -136,8 +136,8 @@ describe Pikuri::VectorDb::Watcher do
       File.symlink((outside + 'target.md').to_s, (root + 'link.md').to_s)
       File.symlink(outside.to_s, (root + 'linked_dir').to_s)
 
-      idx = fake_indexer
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx)
 
       w.process_event(
         [under('real.md'), under('link.md'), under('linked_dir/sub/deep.md')],
@@ -159,8 +159,8 @@ describe Pikuri::VectorDb::Watcher do
         link = root + 'notes.md'
         File.symlink((outside + 'target.md').to_s, link.to_s)
 
-        idx = fake_indexer(source: link)
-        w = described_class.new(indexer: idx)
+        idx = fake_corpus(source: link)
+        w = described_class.new(corpus: idx)
 
         w.process_event([link.to_s], [], [])
         w.drain!
@@ -172,8 +172,8 @@ describe Pikuri::VectorDb::Watcher do
     end
 
     it 'swallows a per-file failure and keeps draining' do
-      idx = fake_indexer(reindex_raises: RuntimeError.new('embedder 503'))
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus(reindex_raises: RuntimeError.new('embedder 503'))
+      w = described_class.new(corpus: idx)
 
       w.process_event([under('a.md')], [], [under('b.md')])
       w.drain! # must not raise despite reindex_file! blowing up
@@ -183,10 +183,10 @@ describe Pikuri::VectorDb::Watcher do
   end
 
   describe 'boot reconcile sweep' do
-    it 'enqueues the plan returned by Indexer#reconcile_plan' do
+    it 'enqueues the plan returned by Corpus#reconcile_plan' do
       plan = { reindex: [root.join('a.md')], remove: [root.join('gone.md')] }
-      idx = fake_indexer(plan: plan)
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus(plan: plan)
+      w = described_class.new(corpus: idx)
 
       w.send(:enqueue_plan)
       w.drain!
@@ -199,8 +199,8 @@ describe Pikuri::VectorDb::Watcher do
 
     it 'numbers the sweep\'s files and leaves live events unnumbered' do
       plan = { reindex: [root.join('a.md'), root.join('b.md')], remove: [] }
-      idx = fake_indexer(plan: plan)
-      w = described_class.new(indexer: idx)
+      idx = fake_corpus(plan: plan)
+      w = described_class.new(corpus: idx)
 
       w.send(:enqueue_plan)
       w.drain!
@@ -211,9 +211,9 @@ describe Pikuri::VectorDb::Watcher do
     end
 
     it 'logs and survives a reconcile sweep that raises' do
-      idx = fake_indexer
+      idx = fake_corpus
       idx.define_singleton_method(:reconcile_plan) { raise 'backend down' }
-      w = described_class.new(indexer: idx)
+      w = described_class.new(corpus: idx)
 
       w.send(:enqueue_plan) # must not raise
       w.drain!
@@ -225,11 +225,11 @@ describe Pikuri::VectorDb::Watcher do
   describe 'lifecycle (#start / #close)' do
     it 'subscribes the listener and tears it down cleanly' do
       factory, listener = fake_listen
-      idx = fake_indexer
-      w = described_class.new(indexer: idx, listen_factory: factory)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx, listen_factory: factory)
 
       w.start
-      assert_equal root.to_s, listener.dir          # watches the indexer root
+      assert_equal root.to_s, listener.dir          # watches the corpus root
       assert_includes listener.events, :start
 
       w.close
@@ -238,7 +238,7 @@ describe Pikuri::VectorDb::Watcher do
 
     it 'is idempotent on close' do
       factory, = fake_listen
-      w = described_class.new(indexer: fake_indexer, listen_factory: factory)
+      w = described_class.new(corpus: fake_corpus, listen_factory: factory)
       w.start
       w.close
       w.close # no raise, no hang
@@ -246,7 +246,7 @@ describe Pikuri::VectorDb::Watcher do
 
     it 'rejects a double start' do
       factory, = fake_listen
-      w = described_class.new(indexer: fake_indexer, listen_factory: factory)
+      w = described_class.new(corpus: fake_corpus, listen_factory: factory)
       w.start
       assert_raises(RuntimeError) { w.start }
       w.close
@@ -254,8 +254,8 @@ describe Pikuri::VectorDb::Watcher do
 
     it 'routes the real listen callback through process_event' do
       factory, listener = fake_listen
-      idx = fake_indexer
-      w = described_class.new(indexer: idx, listen_factory: factory)
+      idx = fake_corpus
+      w = described_class.new(corpus: idx, listen_factory: factory)
       w.start
       w.close # stop the worker so we drive draining ourselves
 
@@ -267,19 +267,19 @@ describe Pikuri::VectorDb::Watcher do
     end
   end
 
-  # End-to-end through a real Indexer + InMemory backend (fakes only
-  # for the embedder/chunker, mirroring indexer_spec) — proves the
+  # End-to-end through a real Corpus + InMemory backend (fakes only
+  # for the embedder/chunker, mirroring corpus_spec) — proves the
   # Watcher's events actually mutate the index, not just a stub.
-  describe 'integration with a real Indexer + InMemory backend' do
+  describe 'integration with a real Corpus + InMemory backend' do
     let(:backend) { Pikuri::VectorDb::Backend::InMemory.new }
 
-    let(:real_indexer) do
+    let(:real_corpus) do
       tokenizer = Object.new
       def tokenizer.count(text) = text.split.length
       chunker = Pikuri::VectorDb::Chunker::FixedWindow.new(size: 1, tokenizer: tokenizer)
       embedder = Object.new
       def embedder.embed(texts) = texts.map { |t| [t.length.to_f, 0.5, 0.5] }
-      Pikuri::VectorDb::Indexer.new(
+      Pikuri::VectorDb::Corpus.new(
         backend: backend, source: root.to_s, embedder: embedder, chunker: chunker
       )
     end
@@ -293,7 +293,7 @@ describe Pikuri::VectorDb::Watcher do
 
     it 'indexes a new file and removes a deleted one via events' do
       a = write('a.md', 'one two three')
-      w = described_class.new(indexer: real_indexer)
+      w = described_class.new(corpus: real_corpus)
 
       w.process_event([], [a.to_s], [])
       w.drain!
@@ -307,7 +307,7 @@ describe Pikuri::VectorDb::Watcher do
 
     it 'replaces a changed file without orphan chunks' do
       a = write('a.md', 'one two three four')
-      w = described_class.new(indexer: real_indexer)
+      w = described_class.new(corpus: real_corpus)
       w.process_event([], [a.to_s], [])
       w.drain!
       assert_equal 4, backend.count
@@ -321,7 +321,7 @@ describe Pikuri::VectorDb::Watcher do
     it 'reconciles pre-existing on-disk files on the boot sweep' do
       write('a.md', 'alpha beta')
       write('b.md', 'gamma')
-      w = described_class.new(indexer: real_indexer)
+      w = described_class.new(corpus: real_corpus)
 
       w.send(:enqueue_plan) # the boot sweep against an empty backend
       w.drain!

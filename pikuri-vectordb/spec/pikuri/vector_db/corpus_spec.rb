@@ -5,8 +5,8 @@ require 'tmpdir'
 require 'fileutils'
 require 'pathname'
 
-describe Pikuri::VectorDb::Indexer do
-  let(:root) { Pathname.new(Dir.mktmpdir('pikuri-vectordb-indexer-')).realpath }
+describe Pikuri::VectorDb::Corpus do
+  let(:root) { Pathname.new(Dir.mktmpdir('pikuri-vectordb-corpus-')).realpath }
   let(:backend) { Pikuri::VectorDb::Backend::InMemory.new }
 
   # Deterministic fakes. The chunker is a one-word FixedWindow (one
@@ -35,8 +35,8 @@ describe Pikuri::VectorDb::Indexer do
     path
   end
 
-  def build_indexer(source: root.to_s, exclude: [])
-    Pikuri::VectorDb::Indexer.new(
+  def build_corpus(source: root.to_s, exclude: [])
+    Pikuri::VectorDb::Corpus.new(
       backend: backend, source: source,
       embedder: fake_embedder, chunker: fake_chunker, exclude: exclude
     )
@@ -49,7 +49,7 @@ describe Pikuri::VectorDb::Indexer do
       write('a.md', 'one two three')
       write('b.md', 'four five')
 
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
 
       assert_equal 5, total
       assert_equal 5, backend.count
@@ -58,7 +58,7 @@ describe Pikuri::VectorDb::Indexer do
     it 'sets Chunk.source to the path relative to the source root' do
       write('notes/cooking/risotto.md', 'rice butter wine')
 
-      build_indexer.index_all!
+      build_corpus.index_all!
 
       hits = backend.query(vector: [3.0, 0.5, 0.5], top_k: 5)
       sources = hits.map { |r| r.chunk.source }.uniq
@@ -68,7 +68,7 @@ describe Pikuri::VectorDb::Indexer do
     it 'formats Chunk.id as "source:index"' do
       write('doc.md', 'alpha beta gamma')
 
-      build_indexer.index_all!
+      build_corpus.index_all!
 
       hits = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).sort_by { |h| h.chunk.id }
       assert_equal %w[doc.md:0 doc.md:1 doc.md:2], hits.map { |h| h.chunk.id }
@@ -77,7 +77,7 @@ describe Pikuri::VectorDb::Indexer do
     it 'stores the chunk ordinal in metadata' do
       write('doc.md', 'alpha beta gamma')
 
-      build_indexer.index_all!
+      build_corpus.index_all!
 
       hits = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).sort_by { |h| h.chunk.metadata[:ordinal] }
       assert_equal [0, 1, 2], hits.map { |h| h.chunk.metadata[:ordinal] }
@@ -86,7 +86,7 @@ describe Pikuri::VectorDb::Indexer do
     it "stores each chunk's line range in metadata" do
       write('doc.md', "alpha\n\nbeta gamma\r\ndelta")
 
-      build_indexer.index_all!
+      build_corpus.index_all!
 
       hits = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).sort_by { |h| h.chunk.metadata[:ordinal] }
       assert_equal [['alpha', 1, 1], ['beta', 3, 3], ['gamma', 3, 3], ['delta', 4, 4]],
@@ -98,7 +98,7 @@ describe Pikuri::VectorDb::Indexer do
       write('.env', 'SECRET=hunter2')
       write('.obsidian/config.json', '{}')
 
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
 
       assert_equal 2, total
       sources = backend.query(vector: [3.0, 0.5, 0.5], top_k: 10).map { |r| r.chunk.source }.uniq
@@ -111,7 +111,7 @@ describe Pikuri::VectorDb::Indexer do
       write('target/build.log', 'should not')
       write('venv/lib/python3.10/site-packages/foo.py', 'should not')
 
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
 
       assert_equal 1, total
     end
@@ -121,14 +121,14 @@ describe Pikuri::VectorDb::Indexer do
       write('Library/Books/deep.txt', 'should not')
       write('Bookshelf.md', 'kept')
 
-      total = build_indexer(exclude: ['Books', root.join('Library/Books').to_s]).index_all!
+      total = build_corpus(exclude: ['Books', root.join('Library/Books').to_s]).index_all!
 
       assert_equal 1, total
     end
 
     it 'refuses an exclude outside the source root' do
-      assert_raises(ArgumentError) { build_indexer(exclude: ['../elsewhere']) }
-      assert_raises(ArgumentError) { build_indexer(exclude: ['/somewhere/else']) }
+      assert_raises(ArgumentError) { build_corpus(exclude: ['../elsewhere']) }
+      assert_raises(ArgumentError) { build_corpus(exclude: ['/somewhere/else']) }
     end
 
     it 'skips a symlinked file and never descends a symlinked directory' do
@@ -141,7 +141,7 @@ describe Pikuri::VectorDb::Indexer do
       File.symlink((outside + 'target.md').to_s, (root + 'link.md').to_s)
       File.symlink(outside.to_s, (root + 'linked_dir').to_s)
 
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
 
       # Only real.md ("kept content" → 2 chunks); the symlinked file
       # and everything under the symlinked dir are skipped.
@@ -157,7 +157,7 @@ describe Pikuri::VectorDb::Indexer do
       # PNG magic — caught by FileType.read_as_text and surfaced as ArgumentError
       File.binwrite(root + 'photo.png', "\x89PNG\r\n\x1a\n".b + ('x' * 32).b)
 
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
 
       assert_equal 2, total # "kept" + "content"
       sources = backend.query(vector: [4.0, 0.5, 0.5], top_k: 10).map { |r| r.chunk.source }.uniq
@@ -168,16 +168,16 @@ describe Pikuri::VectorDb::Indexer do
       write('empty.md', '')
       write('present.md', 'real content')
 
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
 
       assert_equal 2, total # "real" + "content"
     end
 
     it 'accepts a source that points at a single file' do
       write('docs/b.md', 'two three')
-      indexer = build_indexer(source: (root + 'docs/b.md').to_s)
+      corpus = build_corpus(source: (root + 'docs/b.md').to_s)
 
-      total = indexer.index_all!
+      total = corpus.index_all!
 
       assert_equal 2, total # "two" + "three"
       # Single-file source uses the parent dir as the root, so
@@ -187,15 +187,15 @@ describe Pikuri::VectorDb::Indexer do
     end
 
     it 'WARNs when the source path does not exist' do
-      indexer = build_indexer(source: (root + 'phantom').to_s)
+      corpus = build_corpus(source: (root + 'phantom').to_s)
 
-      total = indexer.index_all!
+      total = corpus.index_all!
 
       assert_equal 0, total
     end
 
     it 'returns 0 when no indexable files are found' do
-      total = build_indexer.index_all!
+      total = build_corpus.index_all!
       assert_equal 0, total
     end
 
@@ -204,7 +204,7 @@ describe Pikuri::VectorDb::Indexer do
       write('a.md', 'first')
       write('m.md', 'middle')
 
-      build_indexer.index_all!
+      build_corpus.index_all!
 
       ids = backend.query(vector: [4.0, 0.5, 0.5], top_k: 10).map { |h| h.chunk.id }.sort
       # Sources sorted alphabetically: a, m, z. Each has one chunk (one word) so id is "name.md:0".
@@ -215,13 +215,13 @@ describe Pikuri::VectorDb::Indexer do
   describe '#reindex!' do
     it 'nukes the backend then indexes everything' do
       write('a.md', 'foo bar')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
       assert_equal 2, backend.count
 
       # Add a second file after the first indexing and reindex.
       write('b.md', 'baz')
-      indexer.reindex!
+      corpus.reindex!
 
       # If reindex weren't nuking first, we'd see 2 (from first) + 3 (from second) = 5.
       assert_equal 3, backend.count
@@ -232,7 +232,7 @@ describe Pikuri::VectorDb::Indexer do
     it 'runs index_all! when the backend is empty' do
       write('a.md', 'word')
 
-      total = build_indexer.index_if_empty!
+      total = build_corpus.index_if_empty!
 
       assert_equal 1, total
     end
@@ -243,7 +243,7 @@ describe Pikuri::VectorDb::Indexer do
       backend.upsert(chunks: [chunk], vectors: [[1.0, 0.0, 0.0]])
       write('a.md', 'new content')
 
-      total = build_indexer.index_if_empty!
+      total = build_corpus.index_if_empty!
 
       assert_equal 0, total
       assert_equal 1, backend.count # unchanged
@@ -260,7 +260,7 @@ describe Pikuri::VectorDb::Indexer do
       path = write('doc.md', 'alpha beta gamma')
       expected = Digest::SHA256.hexdigest(File.binread(path))
 
-      build_indexer.index_all!
+      build_corpus.index_all!
 
       hashes = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).map { |r| r.chunk.metadata[:hash] }.uniq
       assert_equal [expected], hashes
@@ -271,7 +271,7 @@ describe Pikuri::VectorDb::Indexer do
     it 'indexes a single file and returns its chunk count' do
       path = write('a.md', 'one two three')
 
-      total = build_indexer.reindex_file!(path)
+      total = build_corpus.reindex_file!(path)
 
       assert_equal 3, total
       assert_equal 3, backend.count
@@ -279,12 +279,12 @@ describe Pikuri::VectorDb::Indexer do
 
     it 'replaces a shrunk file without leaving orphan chunks' do
       path = write('a.md', 'one two three four')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
       assert_equal 4, backend.count
 
       File.write(path, 'one two') # 4 chunks -> 2
-      indexer.reindex_file!(path)
+      corpus.reindex_file!(path)
 
       assert_equal 2, backend.count # :2 and :3 are gone, not orphaned
       assert_equal ['a.md'], stored_sources
@@ -292,12 +292,12 @@ describe Pikuri::VectorDb::Indexer do
 
     it 'treats a file emptied of text as a removal' do
       path = write('a.md', 'content here')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
       assert_equal 2, backend.count
 
       File.write(path, '')
-      total = indexer.reindex_file!(path)
+      total = corpus.reindex_file!(path)
 
       assert_equal 0, total
       assert_equal 0, backend.count
@@ -305,12 +305,12 @@ describe Pikuri::VectorDb::Indexer do
 
     it 'treats a file that became unreadable (binary) as a removal' do
       path = write('a.md', 'readable text')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
       assert_equal 2, backend.count
 
       File.binwrite(path, "\x89PNG\r\n\x1a\n".b + ('x' * 32).b)
-      total = indexer.reindex_file!(path)
+      total = corpus.reindex_file!(path)
 
       assert_equal 0, total
       assert_equal 0, backend.count
@@ -318,17 +318,17 @@ describe Pikuri::VectorDb::Indexer do
 
     it 'leaves prior chunks intact when the embedder fails (embed-before-delete)' do
       path = write('a.md', 'one two three')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
       assert_equal 3, backend.count
 
       # Swap in an embedder that raises, then change the file and reindex.
       boom = Object.new
       def boom.embed(_texts) = raise(RuntimeError, 'embedder 503')
-      indexer.instance_variable_set(:@embedder, boom)
+      corpus.instance_variable_set(:@embedder, boom)
       File.write(path, 'changed content here now')
 
-      assert_raises(RuntimeError) { indexer.reindex_file!(path) }
+      assert_raises(RuntimeError) { corpus.reindex_file!(path) }
       assert_equal 3, backend.count # untouched — old chunks survive
     end
   end
@@ -337,11 +337,11 @@ describe Pikuri::VectorDb::Indexer do
     it 'drops a file\'s chunks from the index' do
       a = write('a.md', 'one two')
       write('b.md', 'three')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
       assert_equal 3, backend.count
 
-      indexer.remove_file!(a)
+      corpus.remove_file!(a)
 
       assert_equal 1, backend.count
       assert_equal ['b.md'], stored_sources
@@ -349,10 +349,10 @@ describe Pikuri::VectorDb::Indexer do
 
     it 'is a no-op for a source that is not indexed' do
       write('a.md', 'one')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
 
-      indexer.remove_file!(root + 'never-indexed.md')
+      corpus.remove_file!(root + 'never-indexed.md')
 
       assert_equal 1, backend.count
     end
@@ -370,7 +370,7 @@ describe Pikuri::VectorDb::Indexer do
       write('a.md', 'one')
       write('b.md', 'two')
 
-      plan = plan_sources(build_indexer.reconcile_plan)
+      plan = plan_sources(build_corpus.reconcile_plan)
 
       assert_equal %w[a.md b.md], plan[:reindex]
       assert_equal [], plan[:remove]
@@ -379,10 +379,10 @@ describe Pikuri::VectorDb::Indexer do
     it 'reports nothing for an unchanged, already-indexed corpus' do
       write('a.md', 'one two')
       write('b.md', 'three')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
 
-      plan = plan_sources(indexer.reconcile_plan)
+      plan = plan_sources(corpus.reconcile_plan)
 
       assert_equal [], plan[:reindex]
       assert_equal [], plan[:remove]
@@ -391,11 +391,11 @@ describe Pikuri::VectorDb::Indexer do
     it 'reports a changed file for reindex (content hash differs)' do
       a = write('a.md', 'original')
       write('b.md', 'stable')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
 
       File.write(a, 'edited content')
-      plan = plan_sources(indexer.reconcile_plan)
+      plan = plan_sources(corpus.reconcile_plan)
 
       assert_equal ['a.md'], plan[:reindex]
       assert_equal [], plan[:remove]
@@ -404,11 +404,11 @@ describe Pikuri::VectorDb::Indexer do
     it 'reports a file gone from disk for removal' do
       a = write('a.md', 'one')
       write('b.md', 'two')
-      indexer = build_indexer
-      indexer.index_all!
+      corpus = build_corpus
+      corpus.index_all!
 
       FileUtils.rm(a)
-      plan = plan_sources(indexer.reconcile_plan)
+      plan = plan_sources(corpus.reconcile_plan)
 
       assert_equal [], plan[:reindex]
       assert_equal ['a.md'], plan[:remove]
@@ -419,20 +419,20 @@ describe Pikuri::VectorDb::Indexer do
     it 'closes the backend it owns' do
       closed = false
       backend.define_singleton_method(:close) { closed = true }
-      build_indexer.close
+      build_corpus.close
       assert closed
     end
   end
 
   describe '#root' do
     it 'is the directory itself for a directory source' do
-      assert_equal root, build_indexer.root
+      assert_equal root, build_corpus.root
     end
 
     it 'is the parent for a single-file source' do
       path = write('docs/b.md', 'x')
-      indexer = build_indexer(source: path.to_s)
-      assert_equal (root + 'docs'), indexer.root
+      corpus = build_corpus(source: path.to_s)
+      assert_equal (root + 'docs'), corpus.root
     end
   end
 end

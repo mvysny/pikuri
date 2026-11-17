@@ -6,9 +6,9 @@ require 'fileutils'
 require 'pathname'
 
 # The promise a search hit's +lines a-b+ makes, end to end: for every chunk
-# the Indexer stores, vectordb_read at +offset: first_line+ shows the
+# the Corpus stores, vectordb_read at +offset: first_line+ shows the
 # chunk's words, starting on +first_line+ and ending on +last_line+. The
-# chunker, the Indexer and the reader each have their own specs; this one
+# chunker, the Corpus and the reader each have their own specs; this one
 # fails when they stop agreeing — a misnumbering raises nothing, the agent
 # just reads the wrong passage and answers from it.
 describe 'Chunk line ranges, indexed and read back' do
@@ -17,12 +17,12 @@ describe 'Chunk line ranges, indexed and read back' do
 
   # Seven words a chunk, two of overlap: windows start and end mid-line,
   # and consecutive ranges share lines.
-  let(:indexer) do
+  let(:corpus) do
     tokenizer = Object.new
     def tokenizer.count(text) = text.split.length
     embedder = Object.new
     def embedder.embed(texts) = texts.map { [1.0, 0.0] }
-    Pikuri::VectorDb::Indexer.new(
+    Pikuri::VectorDb::Corpus.new(
       backend: backend, source: root, embedder: embedder,
       chunker: Pikuri::VectorDb::Chunker::FixedWindow.new(size: 7, overlap: 2, tokenizer: tokenizer)
     )
@@ -68,7 +68,7 @@ describe 'Chunk line ranges, indexed and read back' do
       'final line without a newline'
     )
     root.join('short.txt').write("one\ntwo three\n")
-    indexer.index_all!
+    corpus.index_all!
 
     stored = chunks
     assert_operator stored.length, :>, 10

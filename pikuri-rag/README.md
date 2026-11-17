@@ -21,14 +21,14 @@ merges the hits from both indexes into one ranking.
 
 ## Wiring
 
-Your app builds one indexer per folder and gives each agent an extension
+Your app builds one corpus per folder and gives each agent an extension
 over it. Compared with `pikuri-vectordb`, the vector store gets wrapped
 in a `Hybrid` beside a keyword store, and the extension class changes:
 
 ```ruby
 require 'pikuri-rag'
 
-indexer = Pikuri::VectorDb::Indexer.new(
+corpus = Pikuri::VectorDb::Corpus.new(
   backend: Pikuri::Rag::Backend::Hybrid.new(
     vectors:  Pikuri::VectorDb::Backend::InMemory.new,
     keywords: Pikuri::Rag::Backend::Fts5.new
@@ -40,15 +40,15 @@ indexer = Pikuri::VectorDb::Indexer.new(
 )
 
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
+  c.add_extension Pikuri::Rag::Extension.new(corpus: corpus)
 end
 
 # Filling the index is up to you, as with pikuri-vectordb.
-watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
+watcher = Pikuri::VectorDb::Watcher.new(corpus: corpus).start
 ```
 
 `trusted: true` is a bigger claim than it looks: read
-`Pikuri::VectorDb::Indexer#trusted?` before you make it about a
+`Pikuri::VectorDb::Corpus#trusted?` before you make it about a
 folder holding PDFs or shared with anyone.
 
 You can't add both this extension and `pikuri-vectordb`'s to one agent.
@@ -61,28 +61,28 @@ vectors are in memory, and put it in a file under `Pikuri::Paths.cache`
 when the vectors are in Qdrant, so both survive a restart. Any other
 pairing still works, but every start re-embeds the whole corpus.
 
-### One indexer per folder
+### One corpus per folder
 
-Several agents reading the same folder share one indexer: build it once
-and hand it to every agent's extension. Build two indexers over the same
+Several agents reading the same folder share one corpus: build it once
+and hand it to every agent's extension. Build two corpora over the same
 folder and each one embeds every file again, and if their settings
 differ, the index ends up mixing them. A different folder gets its own
-indexer, with its own Qdrant collection and keyword file.
+corpus, with its own Qdrant collection and keyword file.
 
-The indexer owns everything you hand it: closing it closes the vector
+The corpus owns everything you hand it: closing it closes the vector
 store, the keyword index and the stemmer. Closing an agent leaves the
-indexer alone, since other agents may still be using it. A Qdrant
-server is not part of the indexer, so close it separately; that takes
+corpus alone, since other agents may still be using it. A Qdrant
+server is not part of the corpus, so close it separately; that takes
 its container down.
 
 Close things in the reverse order you opened them: first the watcher,
-so nothing writes any more, then the agents, then the indexer, then the
+so nothing writes any more, then the agents, then the corpus, then the
 vector server:
 
 ```ruby
 watcher.close
 agent.close
-indexer.close
+corpus.close
 vector_server.close   # if you started one
 ```
 
