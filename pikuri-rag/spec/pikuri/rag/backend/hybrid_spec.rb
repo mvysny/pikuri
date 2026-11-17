@@ -141,10 +141,11 @@ describe Pikuri::Rag::Backend::Hybrid do
   end
 
   describe '#close' do
-    it 'closes the keyword store and leaves the vector store alone' do
-      populate
+    it 'closes both stores' do
+      closed = false
+      vectors.define_singleton_method(:close) { closed = true }
       hybrid.close
-      assert_equal 3, vectors.count, 'the vector store must still answer'
+      assert closed, 'the vector store must be closed too'
       assert_raises(StandardError) { keywords.count }
     end
   end

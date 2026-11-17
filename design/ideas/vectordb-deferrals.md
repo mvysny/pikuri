@@ -2,7 +2,7 @@
 
 Status: **v1 shipped, follow-ups deferred.** `pikuri-vectordb` shipped —
 topical retrieval over a local corpus, wired onto an `Agent` via
-`c.add_extension Pikuri::VectorDb::Extension.new(backend:, source:)`.
+`c.add_extension Pikuri::VectorDb::Extension.new(indexer:)`.
 The hybrid half (a keyword index beside the vectors) shipped separately
 as `pikuri-rag`; see `design/decisions.md` `D_rag_gem`.
 Per-piece rationale (Extension / Backend `InMemory`+`Qdrant` /
@@ -59,12 +59,12 @@ Only the deferrals stay here.
   new and tries again, an INFO line each. Harmless on a small tree; on a
   real `~/Documents` with hundreds of Office files it's noise and parse
   time on every start. A skip manifest keyed by hash would fix both.
-- **Multi-source indexing.** `Extension.new(source:)` takes a single
-  file-or-directory root in v1; `Indexer` walks one root. Indexing
+- **Multi-source indexing.** `Indexer.new(source:)` takes a single
+  file-or-directory root in v1. Indexing
   several disjoint roots into one collection (the user's notes dir +
   a checked-out repo + a downloads folder) is deferred — it needs a
   source-list API and a provenance story for which root a hit came
-  from. Referenced from `VectorDb::Extension` / `Indexer` yardoc
+  from. Referenced from the `Indexer` yardoc
   (that yardoc is the source of truth). **The per-source `trusted:` /
   `private:` flag is part of that API** — design it in from day one
   rather than retrofitting: trust becomes per source, the union follows

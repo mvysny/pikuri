@@ -12,7 +12,7 @@ module Pikuri
       #     keywords: Pikuri::Rag::Backend::Fts5.new
       #   )
       #   indexer = Pikuri::VectorDb::Indexer.new(backend: hybrid, source: '~/notes',
-      #                                           embedder: embedder, chunker: chunker)
+      #                                           embedder: embedder)
       #   indexer.index_all!                               # fills both, one extraction
       #
       #   hybrid.query(vector: v, top_k: 5)                # the vector leg
@@ -28,6 +28,21 @@ module Pikuri
       #
       # A third index would be a third store here, not a rewrite: the writes
       # fan out and the reads stay separate, which is the whole of this class.
+      #
+      # It owns both stores and {#close}s both.
+      #
+      # == Which keyword store to pair with which vector store
+      #
+      # * {Pikuri::VectorDb::Backend::InMemory} → +Fts5.new+ (in RAM). Both
+      #   reload from the corpus every boot, which is the teaching shape.
+      # * Qdrant → +Fts5.new(store:)+ on a file under {Pikuri::Paths.cache},
+      #   keyed by the collection name, so the two persist together.
+      #
+      # A mismatch is *correct* rather than broken — "Indexed means both
+      # stores hold it" below makes the boot sweep repair whichever store is
+      # behind — but a persistent vector store beside an in-RAM keyword index
+      # pays a full re-embed at every boot. Guidance, not a check: nothing here
+      # can tell whether the vector store persists.
       #
       # Thread-safe, by holding no state of its own — both stores lock (see
       # {Fts5}) or serialize server-side.
@@ -65,7 +80,7 @@ module Pikuri
         end
 
         # @return [Fts5] the keyword store, whose +#store+ a host prints at
-        #   boot and whose +#close+ it calls at teardown.
+        #   boot.
         attr_reader :keywords
 
         # @return [#stems, #index_stems, #id] the keyword store's
@@ -165,12 +180,15 @@ module Pikuri
           @vectors.sources_with_hashes.select { |source, _hash| known.key?(source) }
         end
 
-        # Close the keyword store. The vector store is left alone — whoever
-        # opened it closes it, and for a server backend that means taking a
-        # container down.
+        # Close both stores. A server's container stays up: the server owns
+        # it, not the store.
         #
         # @return [void]
-        def close = @keywords.close
+        def close
+          @keywords.close
+          @vectors.close
+          nil
+        end
       end
     end
   end

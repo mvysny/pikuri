@@ -69,8 +69,8 @@ module Pikuri
         # @param host [String]
         # @param port [Integer]
         # @param collection [String] Qdrant collection name — an engine-specific
-        #   identifier, so it lives here, not on +VectorDb::Extension+ (a no-op
-        #   for {InMemory}).
+        #   identifier, so it lives here, not on the {Indexer} (a no-op for
+        #   {InMemory}).
         # @param connection [Faraday::Connection, nil] DI point for tests.
         # @return [Qdrant]
         # @raise [ArgumentError] on empty +host+ or empty +collection+.
@@ -289,6 +289,12 @@ module Pikuri
           n = body.is_a?(Hash) ? body.dig('result', 'count') : nil
           n.is_a?(Integer) && n.positive?
         end
+
+        # A no-op: Faraday's default adapter opens a connection per request, so
+        # none stays open. The container is {Server::Qdrant}'s to close.
+        #
+        # @return [void]
+        def close = nil
 
         private
 

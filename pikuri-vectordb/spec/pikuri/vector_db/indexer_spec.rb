@@ -415,6 +415,15 @@ describe Pikuri::VectorDb::Indexer do
     end
   end
 
+  describe '#close' do
+    it 'closes the backend it owns' do
+      closed = false
+      backend.define_singleton_method(:close) { closed = true }
+      build_indexer.close
+      assert closed
+    end
+  end
+
   describe '#root' do
     it 'is the directory itself for a directory source' do
       assert_equal root, build_indexer.root

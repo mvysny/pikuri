@@ -50,10 +50,12 @@ voikko = Voikko.new(language: 'fi')
 STEMMER = Pikuri::Stemmers::Voikko.new(voikko)
 EMBEDDER = Pikuri::VectorDb::Embedder.new(server: server, model: config.fetch('embed_model'), api_key: api_key)
 vector_server = Pikuri::VectorDb::Server::InMemory.ensure_running
-RAG = Pikuri::Rag::Extension.new(backend: vector_server.client(collection: 'agent-eval'), source: CORPUS,
-                                 embedder: EMBEDDER, reranker: nil, stemmer: STEMMER,
-                                 private: false, trusted: true)
-warn "indexed #{RAG.indexer.index_all!} chunks"
+INDEXER = Pikuri::VectorDb::Indexer.new(
+  backend: Pikuri::Rag::Backend::Hybrid.new(vectors:  vector_server.client(collection: 'agent-eval'),
+                                            keywords: Pikuri::Rag::Backend::Fts5.new(stemmer: STEMMER)),
+  source: CORPUS, embedder: EMBEDDER
+)
+warn "indexed #{INDEXER.index_all!} chunks"
 
 # --- the variants: rag_search's execute, per thread ----------------------------------------------
 Search = Pikuri::Rag::Tools::Search
@@ -211,11 +213,11 @@ def run_one(entry, variant, server:, api_key:)
     system_prompt: SYSTEM_PROMPT, cancellable: cancellable, streaming: false
   ) do |c|
     c.add_listener recorder
-    # The extension's tools over the one shared index (an Extension instance is one agent's).
+    # The extension's tools over the one shared index, by hand: no rag_reindex.
     legs = Pikuri::VectorDb::CorpusLegs.derive(private: false, trusted: true)
-    c.add_tool Search.new(embedder: EMBEDDER, backend: RAG.backend, legs: legs)
-    c.add_tool Pikuri::Rag::Tools::SearchKeywords.new(backend: RAG.backend, root: RAG.indexer.root, legs: legs)
-    c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: RAG.backend, root: RAG.indexer.root, legs: legs,
+    c.add_tool Search.new(embedder: EMBEDDER, backend: INDEXER.backend, legs: legs)
+    c.add_tool Pikuri::Rag::Tools::SearchKeywords.new(backend: INDEXER.backend, root: INDEXER.root, legs: legs)
+    c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: INDEXER.backend, root: INDEXER.root, legs: legs,
                                                  family: Pikuri::Rag::Extension::FAMILY)
   end
   started = Time.now
@@ -250,7 +252,7 @@ Dir.mkdir(out_dir) unless Dir.exist?(out_dir)
 questions = QUESTIONS.first(n_questions)
 if ENV['PREVIEW']
   variants.each do |v|
-    puts "=== #{v}", variant_execute(v, embedder: EMBEDDER, backend: RAG.backend, reranker: nil,
+    puts "=== #{v}", variant_execute(v, embedder: EMBEDDER, backend: INDEXER.backend, reranker: nil,
                                       query: ENV['PREVIEW']).content.gsub(/^(?!\[|Found).*\n?/, '')
   end
   exit
@@ -270,6 +272,5 @@ threads = variants.map do |variant|
   end
 end
 threads.each(&:join)
-RAG.backend.close
-voikko.close
+INDEXER.close # and with it the Voikko handle
 vector_server.close

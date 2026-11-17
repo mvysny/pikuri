@@ -17,11 +17,11 @@ module Pikuri
     # lifetime is the host *process*. The host constructs it once around the
     # same {Indexer} every agent's {Extension} shares:
     #
-    #   server = Pikuri::VectorDb::Server::Qdrant.ensure_running
-    #   backend = server.client(collection: 'notes')
-    #   ext = Pikuri::VectorDb::Extension.new(backend: backend, source: '~/notes')
-    #   # ... build agents with `ext` ...
-    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: ext.indexer).start
+    #   server  = Pikuri::VectorDb::Server::Qdrant.ensure_running
+    #   indexer = Pikuri::VectorDb::Indexer.new(backend: server.client(collection: 'notes'),
+    #                                           source: '~/notes', embedder: embedder)
+    #   # ... build agents, each with Extension.new(indexer: indexer) ...
+    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
     #
     # The {Extension} indexes nothing on its own, so the Watcher is the
     # population path: its boot sweep fills an empty backend, uniform across

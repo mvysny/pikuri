@@ -31,7 +31,7 @@ module Pikuri
       # outside its one query.
       #
       # A single-param surface (+query:+ only): retrieval depth, fusion and
-      # rerank choice are host policy baked into {Pikuri::Rag::Extension}, not
+      # rerank choice are host policy wired through {Pikuri::Rag::Extension}, not
       # something the LLM should tune mid-conversation.
       #
       # == Why fuse by rank rather than by score

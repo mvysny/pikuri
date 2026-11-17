@@ -21,65 +21,69 @@ merges the hits from both indexes into one ranking.
 
 ## Wiring
 
-Same parameters as `pikuri-vectordb`'s extension; only the class name
-changes:
+Your app builds one indexer per folder and gives each agent an extension
+over it. Compared with `pikuri-vectordb`, the vector store gets wrapped
+in a `Hybrid` beside a keyword store, and the extension class changes:
 
 ```ruby
 require 'pikuri-rag'
 
-ext = Pikuri::Rag::Extension.new(
-  backend:  Pikuri::VectorDb::Backend::InMemory.new,
-  embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
+indexer = Pikuri::VectorDb::Indexer.new(
+  backend: Pikuri::Rag::Backend::Hybrid.new(
+    vectors:  Pikuri::VectorDb::Backend::InMemory.new,
+    keywords: Pikuri::Rag::Backend::Fts5.new
+  ),
   source:   '~/notes',
+  embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
   private:  true,   # these documents are worth exfiltrating
   trusted:  true    # and every one of them is yours
 )
 
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_extension ext
+  c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
 end
 
 # Filling the index is up to you, as with pikuri-vectordb.
-watcher = Pikuri::VectorDb::Watcher.new(indexer: ext.indexer).start
+watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
 ```
 
 `trusted: true` is a bigger claim than it looks: read
-`Pikuri::VectorDb::Extension#trusted?` before you make it about a
+`Pikuri::VectorDb::Indexer#trusted?` before you make it about a
 folder holding PDFs or shared with anyone.
 
 You can't add both this extension and `pikuri-vectordb`'s to one agent.
 Doing so raises an error, so the model never gets two search tools that
 promise different things.
 
-**Where the keyword index lives.** `store:` is its SQLite path and
-defaults to `":memory:"`. Keep it in memory when the vectors are in
-memory, and put it in a file under `Pikuri::Paths.cache` when the
-vectors are in Qdrant, so both survive a restart. Any other pairing
-still works, but every start re-embeds the whole corpus.
+**Where the keyword index lives.** `Fts5.new` keeps it in memory; pass
+`store:` an SQLite path to keep it in a file. Keep it in memory when the
+vectors are in memory, and put it in a file under `Pikuri::Paths.cache`
+when the vectors are in Qdrant, so both survive a restart. Any other
+pairing still works, but every start re-embeds the whole corpus.
 
-### Who opens and closes what
+### One indexer per folder
 
-Your app owns the stores, not the agent. One extension can be added to
-several agents, and they all search the same index, so closing an
-agent leaves the index alone, and the extension has no `close`.
+Several agents reading the same folder share one indexer: build it once
+and hand it to every agent's extension. Build two indexers over the same
+folder and each one embeds every file again, and if their settings
+differ, the index ends up mixing them. A different folder gets its own
+indexer, with its own Qdrant collection and keyword file.
 
-- **The vector store** is yours: you build it and you pass it in as
-  `backend:`, so you close it too. Closing a Qdrant server takes its
-  container down.
-- **The keyword index** is opened by the extension from `store:`, but
-  you close it, through `ext.backend.close`. If you skip that, nothing
-  is lost: every write is already on disk, and the file is released
-  when the process exits.
+The indexer owns everything you hand it: closing it closes the vector
+store, the keyword index and the stemmer. Closing an agent leaves the
+indexer alone, since other agents may still be using it. A Qdrant
+server is not part of the indexer, so close it separately; that takes
+its container down.
 
 Close things in the reverse order you opened them: first the watcher,
-so nothing writes any more, then the agents, then the keyword index,
-then the vector store:
+so nothing writes any more, then the agents, then the indexer, then the
+vector server:
 
 ```ruby
 watcher.close
 agent.close
-ext.backend.close
-vector_server.close   # or however your vector backend is shut down
+indexer.close
+vector_server.close   # if you started one
 ```
 
 `bin/pikuri-briefing` ends this way.
@@ -102,14 +106,14 @@ the two indexes are kept in step is in the yardoc of
 ## Other languages
 
 Words are matched by their stem, so "meetings" finds "meeting". The
-default stemmer is English. For another language, pass `stemmer:`;
-Finnish ships in pikuri-workshop's
+default stemmer is English. For another language, pass `stemmer:` to the
+keyword index; Finnish ships in pikuri-workshop's
 [`pikuri-stemmers`](https://github.com/mvysny/pikuri-workshop/tree/master/pikuri-stemmers),
 whose README says what to install:
 
 ```ruby
-Pikuri::Rag::Extension.new(
-  backend: ..., embedder: ..., source: '~/notes',
+Pikuri::Rag::Backend::Fts5.new(
+  store:   ...,
   stemmer: Pikuri::Stemmers::Voikko.new(Voikko.new(language: 'fi'))
 )
 ```

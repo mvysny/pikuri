@@ -5,10 +5,36 @@ require 'digest'
 
 module Pikuri
   module VectorDb
-    # The composing piece of the vectordb pipeline: walks the configured
-    # +source+, enumerates indexable files (skipping {DENYLIST} + dot-files),
+    # One corpus: a folder, the backend holding its index, and the pipeline
+    # between them — walks +source+ (skipping {DENYLIST} + dot-files),
     # extracts text via {Pikuri::FileType.read_as_text}, chunks via the
     # {Chunker}, embeds via the {Embedder}, and {Backend#upsert}s the result.
+    #
+    #   indexer = Pikuri::VectorDb::Indexer.new(
+    #     backend:  Pikuri::VectorDb::Backend::InMemory.new,
+    #     source:   '~/notes',
+    #     embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
+    #     private:  true, trusted: true   # what this folder is; both default off
+    #   )
+    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
+    #   agent_a = Pikuri::Agent.new(...) { |c| c.add_extension Extension.new(indexer: indexer) }
+    #   agent_b = Pikuri::Agent.new(...) { |c| c.add_extension Extension.new(indexer: indexer) }
+    #   # ... at teardown:
+    #   watcher.close; agent_a.close; agent_b.close
+    #   indexer.close                   # closes the backend
+    #
+    # == One indexer per corpus
+    #
+    # The host builds it once per folder and hands it to every extension and
+    # {Watcher} over that folder; it owns its +backend:+ and {#close}s it.
+    # Two indexers over one folder and one store each walk, embed and write
+    # the same files, and if their embedders or chunkers differ, the store
+    # silently mixes the two.
+    #
+    # Not the extension's to own: an extension is per agent, so three agents
+    # would build three indexers. Nor a +Pikuri::Workspace::Workspace+'s: that
+    # is per agent too (it holds one conversation's read record), and a
+    # corpus is often a folder no file tool is wired over.
     #
     # Whole-corpus entry points: {#index_all!} (unconditional), {#reindex!}
     # (nuke-and-reload), {#index_if_empty!} (boot-time — InMemory always
@@ -59,11 +85,17 @@ module Pikuri
         vendor
       ].freeze
 
-      # @param backend [#upsert, #query, #delete_all, #count] any {Backend}.
+      # @param backend [#upsert, #query, #delete_all, #count, #close] any
+      #   {Backend}; this indexer owns it from here on.
       # @param source [String, Pathname] path to index (a file directly, a
       #   directory recursively). Tilde-expanded.
-      # @param embedder [#embed] +embed(Array<String>) -> Array<Array<Float>>+.
-      # @param chunker [#chunk] +chunk(String) -> Array<Chunker::Piece>+.
+      # @param embedder [#embed] +embed(Array<String>) -> Array<Array<Float>>+,
+      #   usually an {Embedder}. No default: an embedder needs a server to dial.
+      # @param chunker [#chunk] +chunk(String) -> Array<Chunker::Piece>+;
+      #   default {Chunker::FixedWindow} with +size: 512, overlap: 50+.
+      # @param private [Boolean] see {#private?}.
+      # @param trusted [Boolean] see {#trusted?} for the three clauses you are
+      #   signing.
       # @param exclude [Array<String, Pathname>] folders or files under
       #   {#root} that are never indexed, relative to it or absolute — a
       #   library of books inside +~/Documents+, say, which would cost hours
@@ -79,12 +111,35 @@ module Pikuri
       # hence identical +"source:ordinal"+ ids, and {Backend#upsert}'s
       # replace-by-id would silently let the second overwrite the first.
       # Multi-source is deferred — see +design/ideas/vectordb-deferrals.md+.
-      def initialize(backend:, source:, embedder:, chunker:, exclude: [])
+      def initialize(backend:, source:, embedder:,
+                     chunker: Chunker::FixedWindow.new(size: 512, overlap: 50),
+                     private: false, trusted: false, exclude: [])
         @backend  = backend
         @source   = Pathname.new(source).expand_path
         @embedder = embedder
         @chunker  = chunker
+        @private  = private
+        @trusted  = trusted
         @exclude  = exclude.map { |e| exclusion(e) }
+      end
+
+      # @return [#upsert, #query, #count] the backend this indexer fills, which
+      #   the search and read tools query.
+      attr_reader :backend
+
+      # @return [#embed] the embedder the index was built with, which a search
+      #   must embed its query with too.
+      attr_reader :embedder
+
+      # Close the backend, and with it everything the backend owns.
+      # Idempotent.
+      #
+      # Close the {Watcher} first: it writes through this indexer.
+      #
+      # @return [void]
+      def close
+        @backend.close
+        nil
       end
 
       # Files with at least this many chunks announce themselves before
@@ -93,6 +148,55 @@ module Pikuri
       # that minute.
       # @return [Integer]
       ANNOUNCE_CHUNKS = 20
+
+      # Whether this corpus may hold data worth exfiltrating — the lethal
+      # trifecta's private leg, which {Tools::Search} and {Tools::Read} inherit
+      # through the {Extension}.
+      #
+      # The framework cannot answer this for you: sensitivity is a property of
+      # the *data*, not of the tool, and +~/notes+ and +~/case-files+ are
+      # indistinguishable from the outside. Same declaration
+      # {Pikuri::Workspace::Filesystem#private?} makes for the file tools, on
+      # the second object that owns a reachable set of documents. A trifecta
+      # declaration, not a defense: it decides what the boot map *prints*.
+      #
+      # @return [Boolean] default +false+
+      def private? = @private
+
+      # Whether every byte in this corpus is yours — the opt-out from the two
+      # reading tools' default +:hard+ untrusted leg. Three clauses, all of
+      # them load-bearing:
+      #
+      # 1. *Every file under +source+ was reviewed by you in the form the
+      #    model will read it.* For plain text that is the file. For anything
+      #    the {Pikuri::Extractor} registry converts it is the *extraction*,
+      #    and the gap is enormous: white-on-white text, hidden-text
+      #    attributes, off-page glyphs, comments, tracked changes, form fields
+      #    and metadata are invisible to a reader of the rendered document and
+      #    fully present after extraction. Reading a rendered PDF approves a
+      #    *proxy*, not the payload — the ingest mirror of why +curl+'s egress
+      #    grades +:unreviewed+. So either keep such files out of a trusted
+      #    corpus, or convert first (+Pikuri::Extractor.extract+), read the
+      #    conversion, and index that text with the original left outside.
+      # 2. *Nobody else writes into that folder.* Trust is a claim about who
+      #    can write, not about today's content — with a {Watcher} a file that
+      #    lands later is indexed within seconds. A shared Nextcloud folder, a
+      #    team Drive, a scanner's output directory and a mail client's
+      #    attachment folder all falsify the flag the moment someone else drops
+      #    a file in.
+      # 3. *The backend collection holds only what this folder filled it with.*
+      #    A persistent backend keeps whatever it was given: point a reused
+      #    collection at a new +source+ and yesterday's documents still answer
+      #    queries under today's declaration. Give each corpus root its own
+      #    collection name.
+      #
+      # Says nothing about *parser* exposure: a hostile PDF exploiting poppler
+      # is a code-exec/DoS vector against the extractor, not an injection
+      # vector against the model, and the extractor gem owns it — never read
+      # this flag as "safe to parse".
+      #
+      # @return [Boolean] default +false+
+      def trusted? = @trusted
 
       # @return [Pathname] the configured source, tilde-expanded (a file or a
       #   directory tree). The {Watcher} reads this to decide what to watch.

@@ -237,7 +237,16 @@ watcher that reindexes on save, the read tool — `hybrid` simply *is* a
 backend, because it answers the same methods. So the whole indexing
 pipeline from the last chapter is reused byte-for-byte: one walk of the
 folder, one text extraction per file, one content hash. Nothing
-re-reads your files to build the keyword half.
+re-reads your files to build the keyword half:
+
+```ruby
+indexer = Pikuri::VectorDb::Indexer.new(backend: hybrid, source: '~/notes', embedder: embedder)
+c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
+```
+
+The indexer is the corpus: your app builds one per folder, hands it to
+every agent that reads that folder, and closes it at the end, which
+closes both stores.
 
 And because both stores hold the same chunks, with the same ids and the
 same `source` citations, fusion is textbook: both legs return the same
@@ -398,7 +407,7 @@ somebody else wrote — indexed within seconds by the watcher, and
 retrieved as *vouched* content from then on. Nothing can detect it.
 The three clauses behind that flag are the vector-DB chapter's
 ["Why this agent can't leak your corpus"](vectordb.md#why-this-agent-cant-leak-your-corpus)
-and `Extension#trusted?`'s yardoc; the one-line rule is: **the trusted
+and `Indexer#trusted?`'s yardoc; the one-line rule is: **the trusted
 corpus holds only what you typed or reviewed as text.**
 
 ### Local inference is this agent's first invariant

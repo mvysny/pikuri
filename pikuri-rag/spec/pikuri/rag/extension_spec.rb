@@ -22,10 +22,15 @@ describe Pikuri::Rag::Extension do
     c
   end
 
-  def build(**overrides)
-    Pikuri::Rag::Extension.new(
-      **{ backend: inner, source: Dir.tmpdir, embedder: embedder }.merge(overrides)
+  def indexer(source: Dir.tmpdir, keywords: Pikuri::Rag::Backend::Fts5.new, **flags)
+    Pikuri::VectorDb::Indexer.new(
+      backend: Pikuri::Rag::Backend::Hybrid.new(vectors: inner, keywords: keywords),
+      source: source, embedder: embedder, **flags
     )
+  end
+
+  def build(**flags)
+    Pikuri::Rag::Extension.new(indexer: flags.delete(:indexer) || indexer(**flags))
   end
 
   describe '#configure' do
@@ -63,14 +68,12 @@ describe Pikuri::Rag::Extension do
   describe 'the corpus declaration' do
     it 'defaults to the pessimistic reading' do
       ext = build
-      refute ext.private?
+      refute tool_legs(ext, 'rag_search').private
       assert_equal :hard, tool_legs(ext, 'rag_search').untrusted
     end
 
     it 'derives the same legs for all three reading tools' do
       ext = build(private: true, trusted: true)
-      assert ext.private?
-      assert ext.trusted?
       %w[rag_search rag_search_keywords rag_read].each do |name|
         legs = tool_legs(ext, name)
         assert legs.private, "#{name} should carry the private leg"
@@ -86,31 +89,30 @@ describe Pikuri::Rag::Extension do
     end
   end
 
-  describe 'the composed backend' do
-    it 'hands the indexer the composite, not the bare vector backend' do
-      ext = build
-      assert_instance_of Pikuri::Rag::Backend::Hybrid, ext.backend
-      # Indexing through the indexer must fill the keyword index too.
+  describe 'the indexer' do
+    it 'refuses an indexer over a bare vector backend: the keyword tools would have no store' do
+      bare = Pikuri::VectorDb::Indexer.new(backend: inner, source: Dir.tmpdir, embedder: embedder)
+      error = assert_raises(ArgumentError) { build(indexer: bare) }
+      assert_includes error.message, 'Pikuri::VectorDb::Backend::InMemory'
+    end
+
+    it 'searches what the indexer filled, keyword index included' do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, 'note.md'), 'Acme pricing was agreed.')
-        ext = build(source: dir)
+        ext = build(indexer: indexer(source: dir))
         ext.indexer.index_all!
         assert_equal [Pikuri::Rag::Backend::DocumentMatch.new(source: 'note.md', first_lines: [1])],
-                     ext.backend.find(terms: ['"acme"'])
-        ext.backend.close
+                     ext.indexer.backend.find(terms: ['"acme"'])
+        ext.indexer.close
       end
     end
 
-    it 'defaults the keyword index to an in-process store' do
-      assert_equal ':memory:', build.backend.keywords.store
-    end
-
-    it 'takes a file store when the host pairs one with a persistent backend' do
+    it 'closes the keyword store when the indexer closes' do
       Dir.mktmpdir do |dir|
         path = File.join(dir, 'fts.sqlite3')
-        ext = build(store: path)
-        assert_equal path, ext.backend.keywords.store
-        ext.backend.close
+        keywords = Pikuri::Rag::Backend::Fts5.new(store: path)
+        indexer(keywords: keywords).close
+        assert_raises(StandardError) { keywords.count }
         assert File.exist?(path)
       end
     end

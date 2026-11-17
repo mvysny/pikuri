@@ -19,6 +19,9 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::VectorDb::Extension.new` and `Pikuri::Rag::Extension.new` take `indexer:` and `reranker:` only, one `Pikuri::VectorDb::Indexer` per folder shared by every agent over it, which owns its backend and the `private:` / `trusted:` declaration and whose `#close` closes the stores and the stemmer (`D_corpus_trust_declaration`). Build the `Indexer` from `backend:`, `source:`, `embedder:`, `chunker:`, `private:`, `trusted:` and `exclude:` (for rag, `backend:` a `Rag::Backend::Hybrid` whose `Fts5.new` takes `store:` and `stemmer:`) and call `indexer.close` instead of `ext.backend.close`.
+- **Breaking:** the vectordb backend and rag stemmer ducks gain `#close`, called by the `Indexer`; add one to a custom backend or stemmer.
+- Fix `Pikuri::Rag::Backend::Fts5` raising `SQLite3::BusyException` at once when another process writes to the same keyword file; it now waits up to five seconds.
 - Fix `thunderbird_calendar_search` with a date range missing every recurring event except on its first date; `Pikuri::Thunderbird::Recurrence` expands each series over the range, one hit per occurrence, listed earliest first from `after` (`D_recurrence_expansion`).
 - Fix `thunderbird_calendar_search` without a date range and `thunderbird_calendar_read` dating a recurring event at its first occurrence; it now shows the next one from today, or the last once the series has ended, marked `repeats: yes`.
 - Fix a sub-agent's context overflow ending the parent's whole turn; `Pikuri::SubAgent::SubAgentTool` now answers it as a tool error telling the parent to give the agent a narrower task.

@@ -5,29 +5,37 @@ module Pikuri
     # The host-facing API: wire hybrid retrieval over a local corpus onto a
     # {Pikuri::Agent} via +c.add_extension+ in the +Agent.new+ block.
     #
-    #   ext = Pikuri::Rag::Extension.new(
-    #     backend: Pikuri::VectorDb::Backend::InMemory.new,
-    #     source:  '~/notes',
-    #     private: true, trusted: true,   # what this corpus is; both default off
+    #   indexer = Pikuri::VectorDb::Indexer.new(
+    #     backend:  Pikuri::Rag::Backend::Hybrid.new(
+    #       vectors:  Pikuri::VectorDb::Backend::InMemory.new,
+    #       keywords: Pikuri::Rag::Backend::Fts5.new
+    #     ),
+    #     source:   '~/notes',
+    #     embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
+    #     private:  true, trusted: true   # what this corpus is; both default off
     #   )
     #   agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-    #     c.add_extension ext
+    #     c.add_extension Pikuri::Rag::Extension.new(indexer: indexer)
     #   end
-    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: ext.indexer).start
+    #   watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
     #
     # It registers four tools — +rag_search+, +rag_search_keywords+, +rag_read+,
-    # +rag_reindex+ — and nothing else. It does *not* index: as with
-    # {Pikuri::VectorDb::Extension}, when and whether to populate the corpus is
-    # host policy, driven through {#indexer} (an explicit +index_if_empty!+, a
-    # {Pikuri::VectorDb::Watcher}, or nothing at all — the agent then calls
-    # +rag_reindex+ when asked).
+    # +rag_reindex+ — and nothing else. The {Pikuri::VectorDb::Indexer} is the
+    # corpus and this extension is one agent's view of it: the host builds the
+    # indexer once per folder, an extension per agent over it, populates it
+    # (+index_if_empty!+, a {Pikuri::VectorDb::Watcher}, or nothing — the agent
+    # then calls +rag_reindex+ when asked) and closes it at teardown. See the
+    # indexer's "One indexer per corpus".
     #
-    # The constructor takes {Pikuri::VectorDb::Extension}'s parameters and
-    # passes them through, so a host swaps one line to move a corpus from the
-    # vector primitive to hybrid retrieval. It pairs +backend:+ with a
-    # {Backend::Fts5} in one {Backend::Hybrid} and builds the vectordb
-    # {Pikuri::VectorDb::Indexer} over that, which is what fills both stores
-    # from one walk.
+    # Same shape as {Pikuri::VectorDb::Extension}, so a host moves a corpus
+    # from the vector primitive to hybrid retrieval by wrapping its vector
+    # backend in a {Backend::Hybrid} and swapping the extension class.
+    # {Backend::Hybrid} says which keyword store to pair with which vector
+    # store, {Backend::Fts5} how to stem another language.
+    #
+    # The tools' trifecta legs come from the indexer's
+    # {Pikuri::VectorDb::Indexer#private?} / {Pikuri::VectorDb::Indexer#trusted?};
+    # nothing about the hybrid index changes what those claim.
     #
     # == Exclusive with Pikuri::VectorDb::Extension
     #
@@ -35,34 +43,6 @@ module Pikuri
     # and {Pikuri::VectorDb::Extension#configure} does the mirror image — so
     # wiring both on one agent fails loudly whichever goes second, instead of
     # handing the model two search tools with different promises.
-    #
-    # == Which store to pair with which backend
-    #
-    # +store:+ is the keyword index's SQLite path, +":memory:"+ by default.
-    # Guidance, not inference:
-    #
-    # * {Pikuri::VectorDb::Backend::InMemory} → +":memory:"+. Both stores
-    #   reload from the corpus every boot, which is the teaching shape.
-    # * Qdrant → a file under {Pikuri::Paths.cache}, keyed by the
-    #   collection name, so the two persist together.
-    #
-    # A mismatch is *correct* rather than broken — {Backend::Hybrid}'s
-    # both-stores rule makes the boot sweep repair whichever store is behind —
-    # but a persistent vector store beside a fresh +":memory:"+ index pays a
-    # full re-embed at every boot. That is why this is a paragraph and not a
-    # check: nothing here can tell whether +backend:+ persists.
-    #
-    # == Stemming
-    #
-    # +stemmer:+ decides what a word is indexed and searched under. The
-    # default, {Stemmer::Identity}, leaves it to FTS5's English +porter+. For
-    # Finnish, add pikuri-workshop's +pikuri-stemmers+ and pass
-    #
-    #   stemmer: Pikuri::Stemmers::Voikko.new(::Voikko.new(language: 'fi'))
-    #
-    # Changing the stemmer of a file-backed +store:+ empties the keyword index
-    # at boot, and the next index run refills both stores, re-embedding the
-    # whole corpus (see {Backend::Fts5}'s "Stemming").
     #
     # == Changed your embedder or chunker? Reindex fully.
     #
@@ -87,71 +67,27 @@ module Pikuri
       #   which is the whole of what +rag_read+ / +rag_reindex+ needed.
       FAMILY = 'rag'
 
-      # @return [Pikuri::VectorDb::Indexer] the indexer, over {#backend} so a
-      #   run fills both stores — exposed so the host can drive population.
+      # @return [Pikuri::VectorDb::Indexer] the corpus this extension's tools
+      #   search.
       attr_reader :indexer
 
-      # @return [Backend::Hybrid] the composed backend the four tools share,
-      #   built here from +backend:+ and +store:+ so a host wires one corpus
-      #   rather than two stores.
-      attr_reader :backend
-
-      # Whether this corpus may hold data worth exfiltrating.
-      #
-      # @return [Boolean] default +false+. What the declaration claims — and
-      #   why the framework cannot answer it for you — is
-      #   {Pikuri::VectorDb::Extension#private?}'s to say.
-      def private? = @private
-
-      # Whether every byte in this corpus is yours, reviewed in the form the
-      # model will read it.
-      #
-      # @return [Boolean] default +false+. The three clauses you are signing
-      #   are {Pikuri::VectorDb::Extension#trusted?}'s — read them before
-      #   passing +true+; nothing about the hybrid index changes them.
-      def trusted? = @trusted
-
-      # @param backend [#upsert, #query, #delete_all, #count] the *vector*
-      #   backend — pass the same value {Pikuri::VectorDb::Extension} would
-      #   take. The keyword store beside it is built here.
-      # @param source [String, Pathname] path to index. A file indexes
-      #   directly; a directory is walked recursively. Single source only, as
-      #   {Pikuri::VectorDb::Indexer}.
-      # @param embedder [#embed] usually a {Pikuri::VectorDb::Embedder}; see
-      #   {Pikuri::VectorDb::Extension#initialize}.
+      # @param indexer [Pikuri::VectorDb::Indexer] the corpus, over a
+      #   {Backend::Hybrid}; shared with every other extension and watcher over
+      #   the same folder, and closed by the host, not by this.
       # @param reranker [#rerank, nil] optional cross-encoder reranker over
       #   the fused candidates; +nil+ returns the fused top-k directly.
-      # @param chunker [#chunk, nil] +nil+ constructs
-      #   {Pikuri::VectorDb::Chunker::FixedWindow} with +size: 512,
-      #   overlap: 50+.
-      # @param private [Boolean] see {#private?}.
-      # @param trusted [Boolean] see {#trusted?}.
-      # @param store [String, Pathname] SQLite path for the keyword index, or
-      #   +":memory:"+ (the default). See "Which store to pair with which
-      #   backend".
-      # @param stemmer [#stems, #index_stems, #id] see "Stemming".
-      # @param exclude [Array<String, Pathname>] folders under +source+ never
-      #   indexed; see {Pikuri::VectorDb::Indexer#initialize}.
       # @return [Extension]
-      def initialize(backend:, source:, embedder:,
-                     reranker: nil, chunker: nil,
-                     private: false, trusted: false,
-                     store: Backend::Fts5::MEMORY_STORE, stemmer: Stemmer::Identity, exclude: [])
-        @backend  = Backend::Hybrid.new(vectors: backend,
-                                        keywords: Backend::Fts5.new(store: store, stemmer: stemmer))
-        @embedder = embedder
+      # @raise [ArgumentError] if the indexer's backend is not a
+      #   {Backend::Hybrid}: the keyword tools would have no keyword store.
+      def initialize(indexer:, reranker: nil)
+        unless indexer.backend.is_a?(Backend::Hybrid)
+          raise ArgumentError, "Pikuri::Rag::Extension needs an indexer over a Pikuri::Rag::Backend::Hybrid, " \
+                               "got #{indexer.backend.class}"
+        end
+
+        @indexer  = indexer
         @reranker = reranker
-        @chunker  = chunker || Pikuri::VectorDb::Chunker::FixedWindow.new(size: 512, overlap: 50)
-        @private  = private
-        @trusted  = trusted
-        @legs = Pikuri::VectorDb::CorpusLegs.derive(private: private, trusted: trusted)
-        @indexer = Pikuri::VectorDb::Indexer.new(
-          backend:  @backend,
-          source:   source,
-          embedder: @embedder,
-          chunker:  @chunker,
-          exclude:  exclude
-        )
+        @legs = Pikuri::VectorDb::CorpusLegs.derive(private: indexer.private?, trusted: indexer.trusted?)
       end
 
       # Register the four tools onto +c+; does not index.
@@ -171,10 +107,11 @@ module Pikuri
                 'this one, not a companion.'
         end
 
-        c.add_tool Tools::Search.new(embedder: @embedder, backend: @backend,
+        backend = @indexer.backend
+        c.add_tool Tools::Search.new(embedder: @indexer.embedder, backend: backend,
                                      reranker: @reranker, legs: @legs)
-        c.add_tool Tools::SearchKeywords.new(backend: @backend, root: @indexer.root, legs: @legs)
-        c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: @backend, root: @indexer.root,
+        c.add_tool Tools::SearchKeywords.new(backend: backend, root: @indexer.root, legs: @legs)
+        c.add_tool Pikuri::VectorDb::Tools::Read.new(backend: backend, root: @indexer.root,
                                                      legs: @legs, family: FAMILY)
         c.add_tool Pikuri::VectorDb::Tools::Reindex.new(indexer: @indexer, family: FAMILY)
         nil

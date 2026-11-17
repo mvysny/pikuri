@@ -57,7 +57,7 @@ streaming       = false
 watch           = false
 use_qdrant      = false
 # The corpus's trifecta declaration, both off by default — see
-# Pikuri::VectorDb::Extension#private? / #trusted?. Flags rather than
+# Pikuri::VectorDb::Indexer#private? / #trusted?. Flags rather than
 # hardcoded values because --source points this demo at your own folder:
 # trusted: true is honest for the bundled book/ (pikuri wrote it) and a lie
 # for an arbitrary path, so the default run prints the pessimistic map.
@@ -73,7 +73,7 @@ parser = OptionParser.new do |opts|
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
   opts.on('--private', 'Declare the corpus as holding sensitive data (adds the private trifecta leg to the printed map)') { corpus_private = true }
-  opts.on('--trusted', 'Declare every source in the corpus as your own, reviewed in the form the model reads it (drops the untrusted leg) — read Extension#trusted? before using this on your own folder') { corpus_trusted = true }
+  opts.on('--trusted', 'Declare every source in the corpus as your own, reviewed in the form the model reads it (drops the untrusted leg) — read Indexer#trusted? before using this on your own folder') { corpus_trusted = true }
   opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires podman or docker) instead of in-RAM InMemory') { use_qdrant = true }
   opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
                                   '(extensions still append their own sections).') do |v|
@@ -131,7 +131,7 @@ server_class = use_qdrant ? Pikuri::VectorDb::Server::Qdrant : Pikuri::VectorDb:
 # One collection per corpus root, not one fixed name: a persistent backend
 # keeps whatever it was given, so a shared name would serve yesterday's
 # --source under today's --private / --trusted declaration (the collection
-# clause of Extension#trusted?). Collections under the old fixed name are
+# clause of Indexer#trusted?). Collections under the old fixed name are
 # orphaned, not migrated — a reindex rebuilds in minutes.
 corpus_key = File.exist?(source) ? File.realpath(source) : File.expand_path(source)
 collection = "pikuri-corpus-#{Digest::SHA256.hexdigest(corpus_key)[0, 12]}"
@@ -145,22 +145,16 @@ rescue StandardError => e
   exit 1
 end
 
-# Hoisted to a local so the optional --watch daemon can be built around
-# the *same* Indexer (and therefore the same backend) the agent uses.
-# The extension indexes nothing on its own — population is the host's
+# One indexer for the corpus: the agent's tools and the optional --watch
+# daemon share it. The extension indexes nothing on its own — population is the host's
 # call. This demo deliberately starts WITHOUT auto-indexing: the exercise
 # is to ask the agent to index the corpus (it calls vectordb_reindex).
 # With InMemory that means an empty corpus every run; with --qdrant
 # the index may already be populated from a previous run. Pass --watch to
 # have the Watcher build the index in the background and keep it live.
-vectordb_ext = Pikuri::VectorDb::Extension.new(
-  backend:  backend,
-  source:   source,
-  embedder: embedder,
-  reranker: reranker,
-  private:  corpus_private,
-  trusted:  corpus_trusted
-)
+indexer = Pikuri::VectorDb::Indexer.new(backend: backend, source: source, embedder: embedder,
+                                        private: corpus_private, trusted: corpus_trusted)
+vectordb_ext = Pikuri::VectorDb::Extension.new(indexer: indexer, reranker: reranker)
 
 # Run one agent turn, trapping SIGINT only for the duration of the turn.
 # Ctrl+C during a turn flips the agent's Cancellable flag — the next
@@ -213,7 +207,7 @@ end
 # that concurrency safe.
 watcher = nil
 if watch
-  watcher = Pikuri::VectorDb::Watcher.new(indexer: vectordb_ext.indexer).start
+  watcher = Pikuri::VectorDb::Watcher.new(indexer: indexer).start
 end
 
 begin
@@ -255,12 +249,13 @@ rescue Interrupt
   # Ctrl+C — fall through to clean exit
 ensure
   # Teardown in reverse of open order: stop the indexing daemon first
-  # (halt writes), release the agent's resources, then close the server
-  # (a podman/docker supervisor removes its container; the InMemory null
-  # supervisor drops the stores). Pikuri::Finalizers backstops the
-  # docker case on an unclean exit — same LIFO order.
+  # (halt writes), release the agent's resources, close the index, then
+  # the server (a podman/docker supervisor removes its container; the
+  # InMemory null supervisor drops the stores). Pikuri::Finalizers
+  # backstops the docker case on an unclean exit — same LIFO order.
   watcher&.close
   agent.close
+  indexer.close
   server.close
 end
 

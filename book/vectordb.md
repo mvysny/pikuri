@@ -462,8 +462,8 @@ no amount of inspection settles it — so, exactly as the file tools take
 tools take them from the object that owns the corpus root:
 
 ```ruby
-Pikuri::VectorDb::Extension.new(
-  backend: backend, source: notes_dir,
+Pikuri::VectorDb::Indexer.new(
+  backend: backend, source: notes_dir, embedder: embedder,
   private: true,   # these documents are worth exfiltrating
   trusted: true    # and every one of them is mine
 )
@@ -587,12 +587,14 @@ finds-or-starts a qdrant container under a name pikuri owns
 pointed at it:
 
 ```ruby
-c.add_extension Pikuri::VectorDb::Extension.new(
+indexer = Pikuri::VectorDb::Indexer.new(
   backend:  Pikuri::VectorDb::Server::Qdrant.ensure_running.client(
     collection: 'guide'
   ),
-  source:   '~/path/to/corpus'
+  source:   '~/path/to/corpus',
+  embedder: embedder
 )
+c.add_extension Pikuri::VectorDb::Extension.new(indexer: indexer)
 ```
 
 [Qdrant](https://qdrant.tech) is a self-hosted open-source vector

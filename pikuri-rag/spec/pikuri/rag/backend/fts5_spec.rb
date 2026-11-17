@@ -176,6 +176,7 @@ describe Pikuri::Rag::Backend::Fts5 do
     let(:stemmer) do
       Object.new.tap do |s|
         s.define_singleton_method(:id) { 'test' }
+        s.define_singleton_method(:close) { nil }
         s.define_singleton_method(:stems) { |w| { 'kadulla' => ['katu'] }.fetch(w, [w]) }
         s.define_singleton_method(:index_stems) do |w|
           { 'kadulla' => ['katu'], 'tietokoneella' => %w[tietokone tieto kone] }.fetch(w, [w])
@@ -212,6 +213,7 @@ describe Pikuri::Rag::Backend::Fts5 do
       def stemmer(id)
         Object.new.tap do |s|
           s.define_singleton_method(:id) { id }
+          s.define_singleton_method(:close) { nil }
           s.define_singleton_method(:index_stems) { |w| [w] }
         end
       end
@@ -283,6 +285,26 @@ describe Pikuri::Rag::Backend::Fts5 do
         assert_equal path, second.store
         assert_equal [match('acme.md', [1])], second.find(terms: ['"pricing"'])
         second.close
+      end
+    end
+
+    it 'waits for another connection holding the write lock instead of raising' do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, 'fts.sqlite3')
+        fts = Pikuri::Rag::Backend::Fts5.new(store: path)
+        other = SQLite3::Database.new(path)
+        other.execute('BEGIN IMMEDIATE')
+        releaser = Thread.new do
+          sleep 0.2
+          other.execute('COMMIT')
+        end
+
+        fts.upsert(chunks: [chunk('acme.md:0', 'acme.md', 'Acme pricing.')])
+        assert_equal 1, fts.count
+      ensure
+        releaser&.join
+        other&.close
+        fts&.close
       end
     end
   end

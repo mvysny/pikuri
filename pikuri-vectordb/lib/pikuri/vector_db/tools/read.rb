@@ -76,7 +76,7 @@ module Pikuri
         #   Relative +source+ paths resolve against it.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's
         #   declaration, derived by {Extension} from its
-        #   +private:+ / +trusted:+ flags — the same value
+        #   indexer's +private:+ / +trusted:+ flags — the same value
         #   {Search} carries (see its "Who declares the legs").
         #   Required, for the same reason.
         # @param family [String] the tool-name prefix: the tool is

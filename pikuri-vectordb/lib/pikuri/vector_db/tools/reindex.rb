@@ -23,7 +23,7 @@ module Pikuri
       #
       # == No trifecta legs, whatever the corpus is
       #
-      # {Pikuri::Tool::TrifectaLegs::NONE}, independent of {Extension}'s
+      # {Pikuri::Tool::TrifectaLegs::NONE}, independent of {Indexer}'s
       # +private:+ / +trusted:+ declaration — the {Search} / {Read} case does
       # not apply here. The observation is a chunk count, a "no indexable
       # files" line, or an infrastructure error; per-file failures — the only

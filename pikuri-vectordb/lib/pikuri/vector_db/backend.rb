@@ -34,12 +34,14 @@ module Pikuri
     # * +#source_indexed?(source)+ — +Boolean+; the scoped counterpart for
     #   {VectorDb::Tools::Read}'s membership gate, distinct so a hot path never
     #   fetches the full manifest to test one key.
+    # * +#close+ — release what the backend holds open; idempotent, and no
+    #   other call follows it. The {Indexer} that owns the backend calls it.
     #
-    # The last four exist for incremental reindex + auto-watch; nuke-and-reload
-    # uses only the first four.
+    # The four after +#count+ exist for incremental reindex + auto-watch;
+    # nuke-and-reload uses only the first four.
     #
     # Because it is a duck, the protocol is *decoratable*: a wrapper that
-    # delegates all eight calls to an inner backend and does something extra on
+    # delegates all nine calls to an inner backend and does something extra on
     # the writes (mirror every chunk into a second index, say) is a backend to
     # {Indexer}, {Watcher} and the tools alike, with no change to any of them.
     #

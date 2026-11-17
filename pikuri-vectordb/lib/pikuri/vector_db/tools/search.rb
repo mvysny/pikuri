@@ -45,7 +45,7 @@ module Pikuri
       #
       # Whether the retrieved chunks are confidential, and whether they are
       # bytes pikuri did not write, are properties of the *corpus* — so they
-      # arrive pre-derived in +legs:+ from {Extension}'s +private:+ /
+      # arrive pre-derived in +legs:+ from {Indexer}'s +private:+ /
       # +trusted:+ (the same shape {Pikuri::Workspace::Read} takes from its
       # {Pikuri::Workspace::Filesystem}), and both default to the pessimistic
       # value. The egress axis is not declared but structural: the query never
@@ -95,7 +95,7 @@ module Pikuri
         #   directly.
         # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's
         #   declaration, derived by {Extension} from its
-        #   +private:+ / +trusted:+ flags (see "Who declares
+        #   indexer's +private:+ / +trusted:+ flags (see "Who declares
         #   the legs"). Required — a default here would be a
         #   second copy of that derivation.
         # @return [Search]

@@ -155,6 +155,7 @@ describe Pikuri::Rag::Tools::SearchKeywords do
       let(:hybrid) do
         stemmer = Object.new.tap do |s|
           s.define_singleton_method(:id) { 'test' }
+          s.define_singleton_method(:close) { nil }
           s.define_singleton_method(:stems) { |w| { 'tietokoneella' => ['tietokone'] }.fetch(w, [w]) }
           s.define_singleton_method(:index_stems) do |w|
             { 'tietokoneella' => %w[tietokone tieto kone] }.fetch(w, [w])

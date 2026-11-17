@@ -27,14 +27,10 @@ describe Pikuri::VectorDb::Extension do
 
   after { FileUtils.rm_rf(root) }
 
-  def build_extension(**overrides)
-    Pikuri::VectorDb::Extension.new(
-      backend: backend,
-      source: root.to_s,
-      embedder: overrides.fetch(:embedder, fake_embedder),
-      reranker: overrides.fetch(:reranker, nil),
-      chunker: overrides.fetch(:chunker, nil)
-    )
+  let(:indexer) { Pikuri::VectorDb::Indexer.new(backend: backend, source: root.to_s, embedder: fake_embedder) }
+
+  def build_extension
+    Pikuri::VectorDb::Extension.new(indexer: indexer)
   end
 
   it 'is an Agent::Extension by composition' do
@@ -43,19 +39,22 @@ describe Pikuri::VectorDb::Extension do
   end
 
   describe '#initialize' do
-    it 'constructs an Indexer exposed via #indexer' do
-      ext = build_extension
-      assert_kind_of Pikuri::VectorDb::Indexer, ext.indexer
+    it 'exposes the indexer it was given' do
+      assert_same indexer, build_extension.indexer
     end
 
-    it 'defaults the chunker to FixedWindow when not provided' do
-      ext = build_extension(chunker: nil)
-      # Indirect: the Indexer should produce chunks for a short file
-      # (the default chunker handles a short text). configure no longer
-      # indexes, so drive the indexer directly.
+    it 'lets two extensions share one indexer, so two agents search one corpus' do
+      a = Pikuri::Testing.configurator
+      b = Pikuri::Testing.configurator
+      build_extension.configure(a)
+      build_extension.configure(b)
       File.write(root + 'hi.md', 'hello world')
-      ext.indexer.index_all!
-      assert_operator backend.count, :>, 0
+      indexer.index_all!
+
+      [a, b].each do |c|
+        search = c.tools.find { |t| t.name == 'vectordb_search' }
+        assert_includes search.run('query' => 'hello').to_s, 'hi.md'
+      end
     end
   end
 

@@ -22,6 +22,11 @@ module Pikuri
         # @param word [String] one {Query.tokenize} token.
         # @return [Array<String>] +[word]+.
         def self.index_stems(word) = [word]
+
+        # A no-op: nothing is held open.
+        #
+        # @return [void]
+        def self.close = nil
       end
     end
   end

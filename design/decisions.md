@@ -1306,7 +1306,7 @@ dictionary) are more features — `D_gem_placement`.
 **Alternatives rejected.**
 
 - **Splitting the query too** would make `rag_search_keywords tietokone` list every note mentioning *kone*.
-- **Raising on a mismatch.** `Rag::Extension.new` opens the store, so the host would not boot and
+- **Raising on a mismatch.** `Fts5.new` opens the store, so the host would not boot and
   the `rag_reindex` the message named would be unreachable. The rebuild instead costs one full
   re-embed per stemmer change.
 - **Keeping the Finnish stemmer in pikuri-rag.** Its one root was a `pikuri-briefing --finnish`
@@ -2457,9 +2457,10 @@ are read by `Trifecta::Report` and nothing else, and the detector never
 blocks. The reason to fix it is the one `Pikuri::Trifecta`'s header names: an
 agent printing the wrong leg teaches its operator the map is wrong.
 
-**Decision.** The declaration lives on `Extension.new(private:, trusted:)`,
-both defaulting off, and `#configure` derives one `TrifectaLegs` from it for
-`Search` and `Read` — the shape `Workspace::Read` already uses. Three earlier
+**Decision.** The declaration lives on `Indexer.new(private:, trusted:)`,
+beside the `source` it vouches for, both defaulting off, and each extension
+derives one `TrifectaLegs` from it for `Search` and `Read` — the shape
+`Workspace::Read` already uses. Three earlier
 entries were checked and none is contradicted: `D_bundle_trust_grading` is the
 precedent (trust declared per root as a plain value, host answers, tool
 derives) and its principle — *a trust claim is about that root, not about "the
@@ -2513,10 +2514,10 @@ verdict moves, because `Search` / `Read` keep whatever `Reindex` had.
   argument verbatim: it over-warns exactly the operator who did the curation
   work, and an ignored smoke alarm is the failure mode `Pikuri::Trifecta`'s own
   header names.
-- **Declare on `Indexer` instead of `Extension`.** Rejected: `Indexer` is a
-  population mechanism a host may never touch (population is host policy, and
-  a host may drive a `Watcher` or nothing at all), while `Extension` is where
-  the host wires the corpus and already owns `source`.
+- **Declare on `Extension` instead of `Indexer`.** Rejected: an extension is
+  one agent's view of the corpus, so two agents over one folder could declare
+  it differently, and the indexer is what the host builds once per folder and
+  what holds `source`.
 - **Hand the extension a `Filesystem`.** Rejected twice: `D_bundle_trust_grading`
   already settled that a host answers with a *value*, and a corpus root is a
   path, not a workspace — a `Filesystem` would drag in `readable:` roots the

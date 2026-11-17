@@ -42,6 +42,10 @@ module Pikuri
       # a {Pikuri::Rag::Query} built with the same stemmer searches their
       # +#stems+. {#stemmer} is that one stemmer, so the tools ask the backend
       # for it rather than being handed a second, possibly different one.
+      # The default, {Pikuri::Rag::Stemmer::Identity}, leaves stemming to
+      # FTS5's English +porter+; Finnish is pikuri-workshop's +pikuri-stemmers+:
+      #
+      #   Fts5.new(store: path, stemmer: Pikuri::Stemmers::Voikko.new(::Voikko.new(language: 'fi')))
       #
       # An index records the stemmer's +#id+ and {SCHEMA_VERSION}. Opened with
       # any other, or built before either was recorded, it drops its table and
@@ -87,9 +91,14 @@ module Pikuri
           )
         SQL
 
+        # @return [Integer] milliseconds a write waits for another
+        #   connection's write lock — another process on the same file —
+        #   before raising +SQLite3::BusyException+. SQLite's default is to
+        #   raise at once.
+        BUSY_TIMEOUT_MS = 5_000
+
         # @param store [String, Pathname] SQLite path, or {MEMORY_STORE} (the
-        #   default). {Pikuri::Rag::Extension} says which to pair with which
-        #   vector backend.
+        #   default). {Hybrid} says which to pair with which vector backend.
         # @param stemmer [#stems, #index_stems, #id] see {Pikuri::Rag::Stemmer}.
         # @return [Fts5]
         def initialize(store: MEMORY_STORE, stemmer: Pikuri::Rag::Stemmer::Identity)
@@ -97,6 +106,9 @@ module Pikuri
           @stemmer = stemmer
           @lock = Monitor.new
           @db = SQLite3::Database.new(@store)
+          # Not +busy_timeout=+: that sleeps holding the GVL, freezing every
+          # other thread for the whole wait.
+          @db.busy_handler_timeout = BUSY_TIMEOUT_MS
           open_table
         end
 
@@ -243,17 +255,15 @@ module Pikuri
           end
         end
 
-        # Close the connection; every other method raises afterwards.
-        # Idempotent.
-        #
-        # Skipping it loses nothing: writes are eager and process exit closes
-        # the fd.
+        # Close the connection and the {#stemmer}; every other method raises
+        # afterwards. Idempotent.
         #
         # @return [void]
         def close
           @lock.synchronize do
             @db&.close
             @db = nil
+            @stemmer.close
           end
           nil
         end

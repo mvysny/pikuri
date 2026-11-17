@@ -9,8 +9,9 @@ require 'pikuri-core'
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri
-  # Namespace for the local-corpus vector search feature. The host wires it via
-  # {Extension} (+c.add_extension+); the {Indexer} orchestrates sources → text →
+  # Namespace for the local-corpus vector search feature. The host builds one
+  # {Indexer} per corpus and wires it onto each agent via {Extension}
+  # (+c.add_extension+); the {Indexer} orchestrates sources → text →
   # {Chunker} → {Embedder} → +Backend#upsert+; a swappable +Backend+
   # ({Backend::InMemory} / {Backend::Qdrant}) stores and
   # queries; the optional {Reranker::LlamaServer} is a quality knob. The

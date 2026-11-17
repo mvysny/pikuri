@@ -13,30 +13,33 @@ other questions need a keyword index beside the vectors —
 *completeness* ("every note mentioning Acme", where top-k is a sample)
 and *exactness* ("invoice #4471", where rare tokens are what embedders
 rank worst). That is [`pikuri-rag`](../pikuri-rag/README.md), which
-decorates whatever `backend:` you pass here and replaces this
+wraps your vector backend beside a keyword index and replaces this
 extension's tool set with its own.
 
-Wire it onto a `pikuri-core` agent the same way as `pikuri-tasks` /
-`pikuri-memory` — `c.add_extension` inside the `Agent.new` block:
+Build one `Indexer` per folder, then wire it onto each `pikuri-core`
+agent the same way as `pikuri-tasks` / `pikuri-memory` —
+`c.add_extension` inside the `Agent.new` block:
 
 ```ruby
 require 'pikuri-vectordb'
 
-Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_extension Pikuri::VectorDb::Extension.new(
-    backend:  Pikuri::VectorDb::Backend::InMemory.new,
-    embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
-    source:   '~/notes',
-    private:  true,   # these documents are worth exfiltrating
-    trusted:  true    # and every one of them is yours
-  )
+indexer = Pikuri::VectorDb::Indexer.new(
+  backend:  Pikuri::VectorDb::Backend::InMemory.new,
+  source:   '~/notes',
+  embedder: Pikuri::VectorDb::Embedder.new(server: ..., model: ...),
+  private:  true,   # these documents are worth exfiltrating
+  trusted:  true    # and every one of them is yours
+)
+
+agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
+  c.add_extension Pikuri::VectorDb::Extension.new(indexer: indexer)
 end
 ```
 
 Those last two are what the corpus tells the lethal-trifecta map about
 itself; both default off, so leaving them out prints the pessimistic
 reading. `trusted: true` is a bigger claim than it looks — read
-`Extension#trusted?` (or the guide's
+`Indexer#trusted?` (or the guide's
 [vector-DB chapter](../book/vectordb.md)) before you make it about a
 folder holding PDFs or shared with anyone.
 
@@ -60,12 +63,31 @@ The extension registers the tools and nothing else — *populating*
 the index is the host's call, never something done behind your
 back. Three equally valid shapes:
 
-- Index at boot: `extension.indexer.index_if_empty!`.
-- Keep it live: run a `Pikuri::VectorDb::Watcher` around
-  `extension.indexer` — a filesystem-event daemon (the `listen`
-  gem) that sweeps once on boot and reindexes files as they change.
+- Index at boot: `indexer.index_if_empty!`.
+- Keep it live: run a `Pikuri::VectorDb::Watcher` around the
+  indexer — a filesystem-event daemon (the `listen` gem) that sweeps
+  once on boot and reindexes files as they change.
 - Leave it empty and let the user drive: the agent calls
   `vectordb_reindex` when asked.
+
+## One indexer per folder
+
+Several agents reading the same folder share one indexer: build it
+once and hand it to every agent's extension. Two indexers over one
+folder each embed every file again. A different folder gets its own
+indexer, and with Qdrant its own collection.
+
+The indexer owns the backend you hand it, and closing it closes the
+backend; closing an agent leaves it alone. A `Server::Qdrant` is not
+part of it, so close that separately. At teardown, close in reverse
+order — watcher, agents, indexer, server:
+
+```ruby
+watcher.close
+agent.close
+indexer.close
+server.close   # if you started one
+```
 
 ## Backends
 
@@ -99,13 +121,14 @@ backend = Pikuri::VectorDb::Backend::Qdrant.new(
 ```
 
 Collection naming is engine-specific so it lives on the backend
-constructor, not on the Extension — `Backend::InMemory` has no
+constructor, not on the Indexer — `Backend::InMemory` has no
 collection concept.
 
 ## The indexing pipeline
 
 What `vectordb_reindex` (and the `Watcher`) actually runs, piece by
-piece — each swappable via the Extension's keyword arguments:
+piece — each swappable via the Indexer's keyword arguments (the
+reranker via the Extension's):
 
 - **Chunker** (`Chunker::FixedWindow`) — overlapping windows,
   default 512 tokens with 50 of overlap, so an answer straddling a

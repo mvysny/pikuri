@@ -184,6 +184,13 @@ module Pikuri
           end
         end
 
+        # A no-op: the chunks are plain Ruby objects, and a
+        # {Server::InMemory} client's store belongs to that server, whose
+        # +#close+ empties it.
+        #
+        # @return [void]
+        def close = nil
+
         private
 
         # Cosine similarity (readable two-pass — see the class header).

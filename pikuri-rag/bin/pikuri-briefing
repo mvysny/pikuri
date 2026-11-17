@@ -65,7 +65,7 @@ require 'pikuri-rag'
 # Checkout-mode-only require (this gem's gemspec doesn't declare it —
 # bins run from the monorepo Gemfile): plugs PDF extraction into the
 # Extractor registry below, so a customer's PDF dropped in the notes
-# folder indexes alongside the Markdown. Read Extension#trusted?'s first
+# folder indexes alongside the Markdown. Read Indexer#trusted?'s first
 # clause before you do that: a rendered PDF is a proxy for the bytes the
 # model reads.
 require 'pikuri-pdf'
@@ -171,12 +171,12 @@ embedder = Pikuri::VectorDb::Embedder.new(server: server, model: embed_model, ap
 # One collection per notes root, not one fixed name: a persistent backend
 # keeps whatever it was given, so a shared name would serve yesterday's
 # --source under today's declaration (the collection clause of
-# Extension#trusted?).
+# Indexer#trusted?).
 corpus_key = File.realpath(source)
 collection = "pikuri-briefing-#{Digest::SHA256.hexdigest(corpus_key)[0, 12]}"
 
-# The two stores are paired, per Rag::Extension's "which store to pair
-# with which backend": RAM with RAM, and a file beside Qdrant so both
+# The two stores are paired, per Rag::Backend::Hybrid's "which keyword store
+# to pair with which vector store": RAM with RAM, and a file beside Qdrant so both
 # survive a restart. A mismatch would still be *correct* — Hybrid's
 # both-stores rule repairs it — just slower, at a full re-embed per boot.
 server_class = use_qdrant ? Pikuri::VectorDb::Server::Qdrant : Pikuri::VectorDb::Server::InMemory
@@ -195,18 +195,16 @@ rescue StandardError => e
   exit 1
 end
 
-# Hoisted to a local so the watcher below is built around the *same*
-# Indexer (and therefore the same pair of stores) the agent uses.
-rag_ext = Pikuri::Rag::Extension.new(
-  backend:  vector_backend,
+# One indexer for the corpus: the agent's tools and the watcher below share it.
+indexer = Pikuri::VectorDb::Indexer.new(
+  backend:  Pikuri::Rag::Backend::Hybrid.new(vectors: vector_backend, keywords: Pikuri::Rag::Backend::Fts5.new(store: store)),
   source:   source,
   embedder: embedder,
-  reranker: reranker,
-  store:    store,
   # Constants, not flags — see the header and design/decisions.md D_briefing_wiring.
   private:  true,
   trusted:  true
 )
+rag_ext = Pikuri::Rag::Extension.new(indexer: indexer, reranker: reranker)
 
 # Run one agent turn, trapping SIGINT only for the duration of the turn.
 def run_turn(agent, message)
@@ -260,14 +258,14 @@ if with_mail && !tb_ext.mail_wired?
   exit 2
 end
 
-watcher = watch ? Pikuri::VectorDb::Watcher.new(indexer: rag_ext.indexer).start : nil
+watcher = watch ? Pikuri::VectorDb::Watcher.new(indexer: indexer).start : nil
 unless watch
   # The --watch path degrades on its own (the Watcher logs a failed file and
   # moves on), but this synchronous call would take the whole boot down before
   # the trifecta map ever prints — and the likeliest cause is a llama-server
   # that isn't up yet, which is worth a sentence rather than a backtrace.
   begin
-    rag_ext.indexer.index_if_empty!
+    indexer.index_if_empty!
   rescue StandardError => e
     warn "Could not index #{source}: #{e.class}: #{e.message}"
     warn "Is the embedder reachable at #{server}? Starting anyway — ask me to reindex once it is."
@@ -306,7 +304,7 @@ begin
   end
   puts "Backend: #{use_qdrant ? 'Qdrant (persistent)' : 'InMemory (RAM-only)'}, " \
        "keyword index: #{store == Pikuri::Rag::Backend::Fts5::MEMORY_STORE ? 'in-memory' : store}"
-  indexed = rag_ext.backend.count
+  indexed = indexer.backend.count
   if indexed.positive?
     puts "Index populated (#{indexed} chunk(s))."
   elsif watch
@@ -333,11 +331,11 @@ rescue Interrupt
   # Ctrl+C — fall through to clean exit
 ensure
   # Teardown in reverse of open order: stop the indexing daemon first
-  # (halt writes), release the agent, close the keyword index, then the
-  # vector server (a podman/docker supervisor removes its container).
+  # (halt writes), release the agent, close the index, then the vector
+  # server (a podman/docker supervisor removes its container).
   watcher&.close
   agent.close
-  rag_ext.backend.close
+  indexer.close
   vector_server.close
 end
 

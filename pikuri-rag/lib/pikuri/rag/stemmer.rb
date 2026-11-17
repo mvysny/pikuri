@@ -12,7 +12,7 @@ module Pikuri
     #   stemmer.index_stems('tietokoneella')   # => ["tietokone", "tieto", "kone"] a document word
     #   stemmer.id                             # => "voikko-fi+compounds"
     #
-    # A stemmer is a duck answering those three:
+    # A stemmer is a duck answering those three, plus +#close+:
     #
     # * +#stems(word)+ → +Array<String>+, the forms a query word searches
     #   for: lower-cased, never empty, an unknown word answering itself.
@@ -25,6 +25,8 @@ module Pikuri
     # * +#id+ → +String+, naming the stemmer and its configuration. The index
     #   stores it and rebuilds on a mismatch, so it must change whenever any
     #   word's stems do.
+    # * +#close+ — release what the stemmer holds open (Voikko's dictionary
+    #   handle); idempotent. The {Backend::Fts5} it was handed calls it.
     #
     # +word+ is one token of {Query.tokenize}: lower-case letters and digits.
     module Stemmer
