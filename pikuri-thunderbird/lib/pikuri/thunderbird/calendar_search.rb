@@ -141,7 +141,7 @@ module Pikuri
         loc = event[:location].to_s.strip
         tail = +''
         tail << "  |  where: #{loc}" unless loc.empty?
-        tail << '  |  recurring' if event[:recurring]
+        tail << '  |  repeats: yes' if event[:recurring]
         <<~EV.chomp
           #{event[:title].to_s.strip.empty? ? '(untitled)' : event[:title].strip}
             when: #{DateHelpers.when_label(event)}#{tail}

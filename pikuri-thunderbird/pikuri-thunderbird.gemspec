@@ -66,4 +66,13 @@ Gem::Specification.new do |spec|
   # used to send: `require 'mail'` loads Net::SMTP, but nothing here calls
   # Mail#deliver or delivery_method.
   spec.add_dependency 'mail', '~> 2.9'
+
+  # Expands a recurring event's RRULE into its dates within a search window.
+  # 0.17.0 audited: no network, IPC, eval or file writes; it has no loop
+  # guard of its own, so Recurrence bounds frequency, COUNT and the window.
+  spec.add_dependency 'ice_cube', '~> 0.17'
+
+  # The event's Olson zone, so a 10:00 Helsinki weekly stays 10:00 across
+  # DST. Reads the system's /usr/share/zoneinfo; no tzinfo-data needed.
+  spec.add_dependency 'tzinfo', '~> 2.0'
 end

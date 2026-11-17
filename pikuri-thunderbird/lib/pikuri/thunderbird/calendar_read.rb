@@ -56,6 +56,7 @@ module Pikuri
         detail = [
           "Title: #{ev[:title]}",
           "When: #{DateHelpers.when_label(ev)}",
+          *('Repeats: yes' if ev[:recurring]),
           "Where: #{ev[:location].to_s.strip.empty? ? '(none)' : ev[:location].strip}",
           "Status: #{ev[:status] || '(none)'}",
           *attendee_lines(ev[:attendees]),

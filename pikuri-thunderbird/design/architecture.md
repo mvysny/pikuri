@@ -548,11 +548,20 @@ calendar tools register regardless and self-explain the empty state.
   "single" and floods plain search with the same event; `Calendar#search` folds
   rows by UID (`#fold_series`) and classifies the *series* recurring if any row
   is a master or an occurrence.
+- The master's `event_start` is the series' **first** occurrence; no row holds
+  any later one that wasn't edited. So a date range can't select a master:
+  `Calendar#search` fetches every master alongside the range's rows and
+  `Recurrence` expands it; a search without a range, and a read, date it at
+  its current occurrence instead. An edited occurrence's `recurrence_id` is the
+  instant it replaces, so the expansion drops that date and the row reports it
+  (`D_recurrence_expansion`).
 
 Companions: `cal_todos` (VTODO, same shape); `cal_properties(item_id, key,
-value)` (DESCRIPTION, LOCATION, …); `cal_recurrence`/`cal_attendees`/
-`cal_alarms`/`cal_relations`/`cal_attachments` (iCal-shaped `icalString`
-fragments — parse with the `icalendar` gem only if wanted).
+value)` (DESCRIPTION, LOCATION, …); `cal_recurrence(item_id, cal_id,
+icalString)` holds a series' `RRULE` / `EXDATE` / `RDATE` content lines
+verbatim, one per row, `EXDATE` and `RDATE` with their `TZID` param;
+`cal_attendees`/`cal_alarms`/`cal_relations`/`cal_attachments` are likewise
+iCal-shaped `icalString` fragments.
 
 ### SQLite locking
 

@@ -21,6 +21,38 @@ what it already says.
 
 ---
 
+## D_recurrence_expansion — Why expand a recurring event with ice_cube on its wall clock, rather than with the `rrule` gem or our own expander?
+
+**Context.** Thunderbird stores a series as one master row dated at its first occurrence, plus
+its raw `RRULE` / `EXDATE` / `RDATE` lines in `cal_recurrence`. A date-ranged
+`thunderbird_calendar_search` filtered on that one date, so a weekly meeting begun in January
+never showed in this week's listing: on a real profile every missing event was a recurring one.
+The rule parts that profile used: `UNTIL`, `BYDAY`, `INTERVAL`, `WKST`, `RDATE`, `COUNT`,
+`BYMONTHDAY`, `BYMONTH`, and 687 `TZID` params, mostly on `EXDATE`; no `BYSETPOS`.
+
+**Decision.** {Pikuri::Thunderbird::Recurrence} expands a series over the search range, using
+ice_cube 0.17 for the `RRULE` value only, and tzinfo for the event's zone. Expansion runs on the
+event's wall clock rewritten as UTC, so DST can't move a 09:00 meeting, and each date goes back
+through the zone. It parses `UNTIL`, `EXDATE` and `RDATE` itself, because ice_cube's iCal reader
+drops `TZID`. It refuses `HOURLY` and finer, a `COUNT` over 1000 and a window over two years,
+since ice_cube has no loop guard and a stranger's invitation can write the rule. A series it
+refuses keeps its one stored row.
+
+**Alternatives rejected.**
+
+- **The `rrule` gem (Square)** — built for exactly this input (an RRULE string plus `tzid:`), but
+  it requires ActiveSupport and its ten-odd dependencies, at a twentieth of ice_cube's downloads
+  (4.8 M vs 94 M). ice_cube has no runtime dependency; its 0.17.0 gem was audited byte-identical
+  to the `v0.17.0` tag, with no network, process, `eval` or file-writing code.
+- **ice_cube's own `Schedule.from_ical`** — splits `TZID` off and parses the time as the machine's
+  zone, which misplaces every `EXDATE` of an event in another zone.
+- **Expanding in the machine's zone, without tzinfo** — plain Ruby `Time` gives ice_cube only
+  UTC, the machine zone or a fixed offset, so a New York series drifts an hour while the two
+  zones' DST dates differ. ice_cube's fix for that is ActiveSupport too.
+- **Our own expander for the parts in use** — smaller to read, but `BYDAY` ordinals, `WKST` with
+  `INTERVAL` and month-end arithmetic are where expanders go wrong; the ice_cube glue that remains
+  is the zone and date handling, which any choice needs.
+
 ## D_confirm_all_writes_default — Why do the file tools confirm every write unless told otherwise?
 
 **Context.** `Write` and `Edit` have two postures. In one, every writable change is shown to the

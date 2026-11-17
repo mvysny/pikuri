@@ -22,6 +22,7 @@ describe Pikuri::Thunderbird::Calendar do
         flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
       CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
       CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
+      CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
     SQL
     ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
     ev.execute('c1', 'e1', 'Team standup', E1.to_i * 1_000_000, (E1.to_i + 1800) * 1_000_000,
@@ -97,6 +98,7 @@ describe Pikuri::Thunderbird::Calendar do
           event_start_tz TEXT, event_end_tz TEXT,
           flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
         INSERT INTO cal_events VALUES
           ('c1','a1','Hammer Dröp on a boat',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
            'UTC','UTC',262,'CONFIRMED',NULL);
@@ -138,6 +140,7 @@ describe Pikuri::Thunderbird::Calendar do
         CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
           event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
         INSERT INTO cal_events VALUES
           ('c1','both','Kickoff for the big meeting',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
            'UTC','UTC',262,'CONFIRMED',NULL),
@@ -167,6 +170,7 @@ describe Pikuri::Thunderbird::Calendar do
         CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
           event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
         INSERT INTO cal_events VALUES
           ('c1','phrase','Hammer Dröp hang around',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
            'UTC','UTC',262,'CONFIRMED',NULL),
@@ -201,6 +205,7 @@ describe Pikuri::Thunderbird::Calendar do
         CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
           event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
         INSERT INTO cal_events VALUES
           ('c1','#{base}','Weekly hangout',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
            'UTC','UTC',278,'CONFIRMED',NULL),
@@ -257,6 +262,7 @@ describe Pikuri::Thunderbird::Calendar do
         CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
           event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
       SQL
       uid = 'series@google.com'
       master = Time.utc(2026, 2, 6, 11, 30, 0)
@@ -291,7 +297,103 @@ describe Pikuri::Thunderbird::Calendar do
     end
   end
 
-  it 'filters by date and orders newest first' do
+  it 'lists each occurrence of a recurring series in a date range, earliest first' do
+    # A series is one master row dated at its first occurrence, so before
+    # expansion a week's listing never saw a meeting that started in January.
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
+      SQL
+      us = ->(t) { t.to_i * 1_000_000 }
+      ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
+      # 09:00 Helsinki Mon/Wed/Fri since January; Wednesday the 18th moved to 11:00.
+      ev.execute('c1', 'standup', 'Standup', us[Time.utc(2026, 1, 5, 7)], us[Time.utc(2026, 1, 5, 7, 15)],
+                 'Europe/Helsinki', 'Europe/Helsinki', 278, 'CONFIRMED', nil)
+      ev.execute('c1', 'standup', 'Standup', us[Time.utc(2026, 11, 18, 9)], us[Time.utc(2026, 11, 18, 9, 15)],
+                 'Europe/Helsinki', 'Europe/Helsinki', 262, 'CONFIRMED', us[Time.utc(2026, 11, 18, 7)])
+      ev.execute('c1', 'solo', 'Planning', us[Time.utc(2026, 11, 19, 10)], us[Time.utc(2026, 11, 19, 11)],
+                 'UTC', 'UTC', 262, 'CONFIRMED', nil)
+      # Hourly rules don't expand: the stored row stands in when it is in range.
+      ev.execute('c1', 'pinger', 'Pinger', us[Time.utc(2026, 11, 17, 12)], us[Time.utc(2026, 11, 17, 13)],
+                 'UTC', 'UTC', 278, 'CONFIRMED', nil)
+      ev.execute('c1', 'old-pinger', 'Old pinger', us[Time.utc(2025, 1, 1)], us[Time.utc(2025, 1, 1, 1)],
+                 'UTC', 'UTC', 278, 'CONFIRMED', nil)
+      ev.close
+      db.execute("INSERT INTO cal_recurrence VALUES ('standup','c1','RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR')")
+      db.execute("INSERT INTO cal_recurrence VALUES ('pinger','c1','RRULE:FREQ=HOURLY')")
+      db.execute("INSERT INTO cal_recurrence VALUES ('old-pinger','c1','RRULE:FREQ=HOURLY')")
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        week = { after: Time.utc(2026, 11, 15, 22), before: Time.utc(2026, 11, 20, 21, 59, 59) }
+        hits = cal.search(query: '', limit: 50, **week)
+        assert_equal [['standup', Time.utc(2026, 11, 16, 7)], ['pinger', Time.utc(2026, 11, 17, 12)],
+                      ['standup', Time.utc(2026, 11, 18, 9)], ['solo', Time.utc(2026, 11, 19, 10)],
+                      ['standup', Time.utc(2026, 11, 20, 7)]],
+                     hits.map { |h| [h[:event_id], h[:start]] }
+        assert_equal Time.utc(2026, 11, 16, 7, 15), hits.first[:end]
+        assert_equal ['solo'], cal.search(query: '', limit: 50, recurring: false, **week).map { |h| h[:event_id] }
+        # Without a range the series is still one hit.
+        assert_equal ['standup'], cal.search(query: 'standup', limit: 50).map { |h| h[:event_id] }
+      ensure
+        cal.close
+      end
+    end
+  end
+
+  it "dates a recurring series at its current occurrence, not its first" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
+        CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
+      SQL
+      us = ->(t) { t.to_i * 1_000_000 }
+      ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
+      # Mondays 09:00 UTC since January; Monday the 23rd moved to Tuesday 10:00.
+      ev.execute('c1', 'weekly', 'Weekly review', us[Time.utc(2026, 1, 5, 9)], us[Time.utc(2026, 1, 5, 10)],
+                 'UTC', 'UTC', 278, 'CONFIRMED', nil)
+      ev.execute('c1', 'weekly', 'Weekly review', us[Time.utc(2026, 11, 24, 10)], us[Time.utc(2026, 11, 24, 11)],
+                 'UTC', 'UTC', 262, 'CONFIRMED', us[Time.utc(2026, 11, 23, 9)])
+      # Ended in May: its last meeting, not its first.
+      ev.execute('c1', 'ended', 'Spring course', us[Time.utc(2026, 1, 5, 9)], us[Time.utc(2026, 1, 5, 10)],
+                 'UTC', 'UTC', 278, 'CONFIRMED', nil)
+      ev.close
+      db.execute("INSERT INTO cal_recurrence VALUES ('weekly','c1','RRULE:FREQ=WEEKLY;BYDAY=MO')")
+      db.execute("INSERT INTO cal_recurrence VALUES ('ended','c1','RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260601T000000Z')")
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        now = Time.utc(2026, 11, 18, 12) # a Wednesday
+        hits = cal.search(query: 'weekly course', limit: 10, now:).to_h { |h| [h[:event_id], h] }
+        assert_equal Time.utc(2026, 11, 24, 10), hits['weekly'][:start], 'the moved Monday is the next one'
+        assert hits['weekly'][:recurring]
+        assert_equal Time.utc(2026, 5, 25, 9), hits['ended'][:start]
+        assert_equal Time.utc(2026, 5, 25, 10), hits['ended'][:end]
+        read = cal.read(event_id: 'weekly', now:)
+        assert_equal [Time.utc(2026, 11, 24, 10), Time.utc(2026, 11, 24, 11)], [read[:start], read[:end]]
+        assert read[:recurring]
+        assert_equal Time.utc(2026, 11, 30, 9), cal.read(event_id: 'weekly', now: Time.utc(2026, 11, 25, 12))[:start]
+        assert_includes Pikuri::Thunderbird::CalendarSearch.run_search(backend: cal, query: 'weekly', after: nil,
+                                                                       before: nil, limit: 5).content, 'repeats: yes'
+        assert_includes Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'weekly').content,
+                        'Repeats: yes'
+      ensure
+        cal.close
+      end
+    end
+  end
+
+  it 'filters by date' do
     with_calendar do |cal|
       ids = cal.search(query: '', limit: 10, after: Time.utc(2026, 5, 20)).map { |h| h[:event_id] }
       assert_equal ['e2'], ids # only the June all-day event starts after May 20
@@ -361,6 +463,7 @@ describe Pikuri::Thunderbird::Calendar do
           event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
         CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
         INSERT INTO cal_events VALUES
           ('c1','big','All Hands',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},'UTC','UTC',262,'CONFIRMED',NULL);
       SQL

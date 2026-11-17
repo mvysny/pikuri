@@ -2,9 +2,9 @@
 
 module Pikuri
   module Thunderbird
-    # Parses the little iCalendar that Thunderbird leaves opaque — pikuri needs
-    # it only for +cal_attendees+, whose rows are raw +ATTENDEE+/+ORGANIZER+
-    # content lines (everything else is already in normalized columns). The
+    # Parses the little iCalendar that Thunderbird leaves opaque — the raw
+    # content lines of +cal_attendees+ and +cal_recurrence+ (everything else
+    # is already in normalized columns). The
     # inbound counterpart to {IcsEvent}'s outbound line *building*. Two entry
     # points:
     #

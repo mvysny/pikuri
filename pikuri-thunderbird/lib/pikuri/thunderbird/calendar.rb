@@ -8,8 +8,9 @@ module Pikuri
     # (+cache.sqlite+ for cached network/CalDAV calendars, +local.sqlite+ for
     # local "storage" calendars). Event fields are *normalized columns*, not
     # opaque ICS, so basic reads are a plain +SELECT+ — no ICS parser for the
-    # common case. The one exception is the guest list ({#attendees}), which
-    # Thunderbird keeps as raw +ATTENDEE+/+ORGANIZER+ content lines.
+    # common case. The exceptions are the guest list ({#attendees}) and a
+    # series' recurrence ({Recurrence}), which Thunderbird keeps as raw
+    # content lines.
     #
     #   cal = Calendar.new(calendar_dbs: profile.calendar_dbs, cache_dir: dir)
     #   cal.event_count     # 0 → nothing cached (prompt the user to enable Offline Support)
@@ -88,11 +89,19 @@ module Pikuri
       # newest breaks ties. A single-word query has no adjacency to enforce, so
       # it stays pure substring recall.
       #
-      # A recurring series is stored as a master row plus one row per modified
-      # occurrence; Google additionally splits a "this-and-following" edit into
-      # separate masters +UID_R<ical-datetime>@google.com+. {#base_uid} strips
-      # that suffix and {#fold_series} collapses the whole lot to one hit, so a
-      # weekly meeting surfaces once — not once per occurrence *or* per split.
+      # A recurring series is stored as a master row dated at its first
+      # occurrence, plus one row per modified occurrence. With a date range,
+      # {Recurrence} expands it and each occurrence in the range is a hit of
+      # its own, earliest first from an +after+:
+      #
+      #   cal.search(query: '', limit: 15, after: monday, before: friday_night)
+      #   # => standup Mon, standup Wed, planning Thu, standup Fri
+      #
+      # Without one, the series surfaces once, dated at its current occurrence
+      # (see {#current_of}), newest first. Google additionally splits a
+      # "this-and-following" edit into separate masters
+      # +UID_R<ical-datetime>@google.com+; {#base_uid} plus {#fold_series}
+      # collapse the whole lot to that one hit.
       #
       # @param query [String] substring over title + DESCRIPTION + LOCATION.
       # @param limit [Integer] max events.
@@ -100,19 +109,27 @@ module Pikuri
       # @param before [Time, nil] only events starting on/before this instant.
       # @param recurring [Boolean, nil] +true+ → only recurring events, +false+
       #   → only single (non-recurring) events, +nil+ → both.
+      # @param now [Time] the clock {#current_of} reads.
       # @return [Array<Hash>] +[{event_id:, title:, start: Time, end: Time,
       #   all_day: Boolean, recurring: Boolean, start_tz:, end_tz:, location:}, …]+
-      def search(query:, limit:, after: nil, before: nil, recurring: nil)
+      def search(query:, limit:, after: nil, before: nil, recurring: nil, now: Time.now)
         words = query.to_s.scan(/[[:alnum:]]+/).map { |w| fold(w) }
+        ranged = !(after || before).nil?
+        today = local_midnight(now)
         # Only the fetch is guarded — the folding and ranking below run on
         # materialized rows and touch no connection.
         rows = @lock.synchronize do
           ensure_fresh
-          @conns.values.flat_map { |db| search_db(db, words:, after:, before:) }
+          @conns.values.flat_map { |db| search_db(db, words:, after:, before:, today:) }
         end
-        # Group on the *base* UID (see #base_uid), not the raw id, so Google's
-        # this-and-following splits fold into one series instead of 20+ hits.
-        series = rows.group_by { |h| base_uid(h[:event_id]) }.map { |_uid, group| fold_series(group) }
+        series =
+          if ranged
+            rows.map { |h| h.merge(recurring: h[:recurring] || h[:occurrence]).except(:occurrence) }
+          else
+            # Group on the *base* UID (see #base_uid), not the raw id, so Google's
+            # this-and-following splits fold into one series instead of 20+ hits.
+            rows.group_by { |h| base_uid(h[:event_id]) }.map { |_uid, group| fold_series(group, today) }
+          end
         # Phrase-first: once any event matches the words adjacently, drop the
         # OR-any-word matches — else a two-word query floods with events sharing
         # only a common word (e.g. "around") in a description. The OR set is the
@@ -123,31 +140,43 @@ module Pikuri
         # every occurrence "single" and leaked the whole series under
         # recurrence:single. Folding classifies the series as a whole first.
         series.select! { |h| h[:recurring] == recurring } unless recurring.nil?
-        # Rank across stores by matched-word count, then recency. :score/:phrase
+        # Rank across stores by matched-word count, then date. :score/:phrase
         # are internal ranking keys (see #search_db), dropped from the shape.
-        series.sort_by { |h| [-h[:score], -(h[:start]&.to_i || 0)] }
+        # From an +after+ the cap must cut the far end, not the days nearest it.
+        order = after ? 1 : -1
+        series.sort_by { |h| [-h[:score], order * (h[:start]&.to_i || 0)] }
               .first(limit).map { |h| h.except(:score, :phrase) }
       end
 
-      # Full event detail for one event UID.
+      # Full event detail for one event UID; a recurring one is dated at its
+      # current occurrence (see {#current_of}).
       #
       # @param event_id [String] the {#search} handle (the event UID).
+      # @param now [Time] the clock {#current_of} reads.
       # @return [Hash, nil] the search shape plus +:description+, +:status+,
       #   and +:attendees+ (see {#attendees}), or +nil+ if not found.
-      def read(event_id:)
+      def read(event_id:, now: Time.now)
         @lock.synchronize do
           ensure_fresh
           @conns.each_value do |db|
             # A recurring UID has several rows (master + occurrence exceptions);
             # prefer the master (recurrence_id NULL sorts first) for a stable read.
-            row = db.execute(<<~SQL, [event_id]).first
-              SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, ical_status
+            rows = db.execute(<<~SQL, [event_id])
+              SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, cal_id, recurrence_id
               FROM cal_events WHERE id = ?
-              ORDER BY (recurrence_id IS NOT NULL) LIMIT 1
+              ORDER BY (recurrence_id IS NOT NULL)
             SQL
-            next unless row
+            next if rows.empty?
 
-            return build_event(row).merge(properties(db, event_id), attendees: attendees(db, event_id))
+            master = build_event(rows.first)
+            if master[:recurring]
+              today = local_midnight(now)
+              cal_id = rows.first[7]
+              edited = rows.drop(1).select { |r| r[7] == cal_id }.map { |r| build_event(r) }
+              current = pick_current([current_of(master, cal_id, series_data(db, [cal_id, event_id]), today), *edited], today)
+              master = master.merge(start: current[:start], end: current[:end])
+            end
+            return master.merge(properties(db, event_id), attendees: attendees(db, event_id))
           end
         end
         nil
@@ -210,9 +239,10 @@ module Pikuri
       # such event exists".
       #
       # @param words [Array<String>] pre-folded query terms (empty ⇒ list all).
+      # @param today [Time] local midnight, for {#current_of}.
       # @return [Array<Hash>] hits carrying +:score+/+:phrase+ (for {#search})
       #   and +:occurrence+ (for {#fold_series}); all dropped from the shape.
-      def search_db(db, words:, after:, before:)
+      def search_db(db, words:, after:, before:, today:)
         filters = []
         binds = []
         # Date bounds are compared in the machine-local frame (the caller
@@ -232,14 +262,18 @@ module Pikuri
           binds << to_prtime(before)
         end
         where = filters.empty? ? '1' : filters.join(' AND ')
+        # A master is dated at its first occurrence, so the range can't
+        # select it; #occurrences decides once it is expanded.
+        where = "(#{where}) OR (recurrence_id IS NULL AND flags & #{RECURRENCE_FLAG} != 0)" if after || before
 
         events = db.execute(<<~SQL, binds)
-          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, recurrence_id
+          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, recurrence_id, cal_id
           FROM cal_events WHERE #{where}
         SQL
         text = searchable_text(db)
+        series = nil
 
-        events.filter_map do |row|
+        events.flat_map do |row|
           loc, desc = text[row[0]]
           # recurrence_id is set only on a recurring series' occurrence rows
           # (NULL on a master or a single event); it's what marks the flood
@@ -247,14 +281,116 @@ module Pikuri
           # occurrence itself lacks the master's HAS_RECURRENCE flag.
           hit = build_event(row).merge(location: loc, occurrence: !row[7].nil? && row[7].to_i != 0)
           # Empty query → list everything (score 0, date-ordered by #search).
-          next hit.merge(score: 0, phrase: false) if words.empty?
+          if words.empty?
+            hit = hit.merge(score: 0, phrase: false)
+          else
+            haystack = fold("#{row[1]} #{loc} #{desc}")
+            score = words.count { |w| haystack.include?(w) }
+            next [] if score.zero?
 
-          haystack = fold("#{row[1]} #{loc} #{desc}")
-          score = words.count { |w| haystack.include?(w) }
-          next nil if score.zero?
+            hit = hit.merge(score: score, phrase: phrase_match?(haystack, words))
+          end
+          next [hit] unless hit[:recurring] && !hit[:occurrence]
 
-          hit.merge(score: score, phrase: phrase_match?(haystack, words))
+          series ||= series_data(db)
+          after || before ? occurrences(hit, row[8], series, after:, before:) : [current_of(hit, row[8], series, today)]
         end
+      end
+
+      # A master's hit repeated once per occurrence in the range, each with
+      # its own start and end. A series {Recurrence} won't expand keeps its
+      # one stored row, as long as that falls in the range.
+      #
+      # @param hit [Hash] the master's hit (see {#search_db}).
+      # @param cal_id [String]
+      # @param series [Array(Hash, Hash)] from {#series_data}.
+      # @return [Array<Hash>]
+      def occurrences(hit, cal_id, series, after:, before:)
+        return [] unless hit[:start]
+
+        recurrence(hit, cal_id, series).starts(after:, before:).map { |start| starting_at(hit, start) }
+      rescue Recurrence::Unexpandable => e
+        LOGGER.warn("not expanding recurring event #{hit[:event_id]}: #{e.message}")
+        stored = hit[:start].between?(after || hit[:start], before || hit[:start])
+        stored ? [hit] : []
+      end
+
+      # A master's hit dated at the series' current occurrence: the first on
+      # or after +today+, else the last before it, so an ended series shows
+      # when it last met.
+      #
+      #   current_of(standup, 'c1', series, Time.local(2026, 11, 17))
+      #   # => standup's hit with start: 2026-11-18 07:00 UTC — Wednesday's
+      #
+      # It keeps its stored first date when nothing falls within
+      # {Recurrence::MAX_SPAN} either side, or the series won't expand.
+      #
+      # @param hit [Hash] the master's hit (see {#search_db}).
+      # @param cal_id [String]
+      # @param series [Array(Hash, Hash)] from {#series_data}.
+      # @param today [Time] local midnight.
+      # @return [Hash]
+      def current_of(hit, cal_id, series, today)
+        return hit unless hit[:start]
+
+        rec = recurrence(hit, cal_id, series)
+        start = rec.starts(after: today, before: nil).first || rec.starts(after: nil, before: today - 1).last
+        start ? starting_at(hit, start) : hit
+      rescue Recurrence::Unexpandable => e
+        LOGGER.warn("not expanding recurring event #{hit[:event_id]}: #{e.message}")
+        hit
+      end
+
+      # @param hits [Array<Hash>] dated hits of one series.
+      # @param today [Time] local midnight.
+      # @return [Hash] the earliest on or after +today+, else the latest.
+      def pick_current(hits, today)
+        upcoming = hits.select { |h| h[:start] && h[:start] >= today }
+        upcoming.empty? ? hits.max_by { |h| h[:start]&.to_i || 0 } : upcoming.min_by { |h| h[:start] }
+      end
+
+      # @return [Recurrence] the series of a master's hit.
+      # @raise [Recurrence::Unexpandable]
+      def recurrence(hit, cal_id, series)
+        lines, overridden = series.map { |by_key| by_key.fetch([cal_id, hit[:event_id]], nil) }
+        Recurrence.new(start: hit[:start], tz: hit[:start_tz], lines: lines || [], overridden: overridden || Set.new)
+      end
+
+      # @return [Hash] +hit+ moved to +start+, keeping its duration.
+      def starting_at(hit, start)
+        duration = hit[:end] - hit[:start] if hit[:end]
+        hit.merge(start: start, end: duration && (start + duration))
+      end
+
+      # @param now [Time]
+      # @return [Time] the start of +now+'s day, machine-local.
+      def local_midnight(now)
+        local = now.getlocal
+        Time.local(local.year, local.month, local.day)
+      end
+
+      # One flat scan each of the recurrence lines and of the edited
+      # occurrences' original starts, keyed by +[cal_id, uid]+ — a UID alone
+      # can repeat across calendars.
+      #
+      # @param only [Array(String, String), nil] one +[cal_id, uid]+ to read
+      #   instead of all.
+      # @return [Array(Hash{Array(String, String) => Array<String>},
+      #   Hash{Array(String, String) => Set<Integer>})] the +icalString+ lines,
+      #   and the +recurrence_id+s in epoch seconds.
+      def series_data(db, only = nil)
+        binds = only || []
+        lines = {}
+        db.execute("SELECT cal_id, item_id, icalString FROM cal_recurrence#{' WHERE cal_id = ? AND item_id = ?' if only}",
+                   binds) do |cal_id, uid, ical|
+          (lines[[cal_id, uid]] ||= []) << ical
+        end
+        overridden = {}
+        db.execute("SELECT cal_id, id, recurrence_id FROM cal_events WHERE recurrence_id IS NOT NULL#{' AND cal_id = ? AND id = ?' if only}",
+                   binds) do |cal_id, uid, rid|
+          (overridden[[cal_id, uid]] ||= Set.new) << (rid / 1_000_000)
+        end
+        [lines, overridden]
       end
 
       # Whether the query's words appear *adjacently* in +folded_haystack+
@@ -292,15 +428,17 @@ module Pikuri
       # hit, so a weekly meeting surfaces once instead of once per occurrence or
       # split. The series counts as recurring if any row is a master
       # (HAS_RECURRENCE) or an occurrence (recurrence_id set), a phrase hit if
-      # any row matched the phrase; the earliest in-range row represents it (its
-      # real id stays the read handle), and the group's best word-count is its
-      # score.
+      # any row matched the phrase; the current row represents it (see
+      # {#pick_current}; its real id stays the read handle), and the group's
+      # best word-count is its score.
       #
-      # @param group [Array<Hash>] rows sharing a {#base_uid} (from {#search_db}).
+      # @param group [Array<Hash>] rows sharing a {#base_uid} (from {#search_db}),
+      #   masters already at their {#current_of} dates.
+      # @param today [Time] local midnight.
       # @return [Hash] one merged hit (search shape + +:score+ + +:phrase+).
-      def fold_series(group)
+      def fold_series(group, today)
         recurring = group.any? { |h| h[:recurring] || h[:occurrence] }
-        rep = group.min_by { |h| h[:start]&.to_i || 0 }
+        rep = pick_current(group, today)
         rep.merge(recurring: recurring, score: group.map { |h| h[:score] }.max,
                   phrase: group.any? { |h| h[:phrase] }).except(:occurrence)
       end

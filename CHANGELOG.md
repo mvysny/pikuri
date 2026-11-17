@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Fix `thunderbird_calendar_search` with a date range missing every recurring event except on its first date; `Pikuri::Thunderbird::Recurrence` expands each series over the range, one hit per occurrence, listed earliest first from `after` (`D_recurrence_expansion`).
+- Fix `thunderbird_calendar_search` without a date range and `thunderbird_calendar_read` dating a recurring event at its first occurrence; it now shows the next one from today, or the last once the series has ended, marked `repeats: yes`.
 - Fix a sub-agent's context overflow ending the parent's whole turn; `Pikuri::SubAgent::SubAgentTool` now answers it as a tool error telling the parent to give the agent a narrower task.
 - **Breaking:** `vectordb_search` and `rag_search` hits no longer print `(score=…)`, only their rank, since no score behind the order is one the model can calibrate (`Pikuri::VectorDb::Tools::Search`). `Backend::Result#score` is unchanged for library callers.
 - Add `grep:` to `Pikuri::Workspace::Extension.new`; `false` leaves `grep` unwired for a host whose root a rag index also covers, since grep skips PDFs. `bin/pikuri-secretary` now wires its file tools through the extension, gaining `glob`, `file_list`, the root snapshot and the decline guidance (`D_secretary_wiring`).
