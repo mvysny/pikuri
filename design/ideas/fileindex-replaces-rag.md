@@ -270,13 +270,46 @@ Options weighed:
 
 ## Open questions
 
-- `Q_book_retrieval`: after B, do embeddings and rank fusion stay in pikuri's book at all?
-  Leaning: one paragraph and a pointer to book 2, framed by the three causes, with the GPU
-  measurement as the evidence. No embeddings walkthrough.
-- `Q_briefing`: `pikuri-briefing` searches a small hand-picked corpus. Leaning: rewire it onto
-  the file index, with roots `~/notes` graded trusted, and keep it. The trifecta chapter's
-  worked example is the book's spine and stays intact. Check that the recall chapter's demo
-  still has something to teach with no index to build.
+- `Q_book_retrieval`: **resolved** (owner, 2026-11-17). The recall chapter states the keyword
+  index's limits, then points at semantic search, vector databases, chunking and rank fusion
+  in pikuri-workshop, linking its book (its README until B moves `vectordb.md` and `rag.md`
+  there, then that chapter). No embeddings walkthrough in pikuri. The limits are named by
+  pikuri-os's three causes, so the reader sees that vectors fix only the third (a real meaning
+  gap: another language, a concept in other words), not unindexed content or a wording miss
+  the agent fixes by rephrasing. The GPU measurement says why pikuri doesn't build its own.
+- `Q_briefing`: **resolved** (owner, 2026-11-17): rewire `pikuri-briefing` onto the file
+  index, root `~/notes` graded private and trusted, and keep it. Checked against the book:
+  - Survives unchanged: the trifecta chapter's "One flag, one extra leg, and the same
+    verdict" (only the tool names in its two maps change); the hardcoded declarations and
+    the boot line stating them; local inference as the first invariant; no automatic memory.
+  - Gets better: the secretary's "same retrieval, plus mail" becomes literally the same gem
+    with wider roots, still graded per root. The boot line's "the index holds nothing but
+    what that folder put there" is false for a borrowed index that holds all of `$HOME`; the
+    root filter is the only thing keeping a Downloads file from coming back as vouched, so
+    the one-legged agent is where "the folder limit is a security boundary" has a visible
+    cost if it fails. Reword the line to say so. The two recall chapters become one, with
+    briefing as its demo (`pikuri-corpus` over the book goes to book 2 with
+    `vectordb.md`). `D_briefing_wiring`'s `--watch` fork and `rag_read`'s membership gate go:
+    the miner keeps the index fresh.
+  - **Requirement: search must be able to say "that's all".** The trifecta chapter's
+    "Absence stopped being reportable the same way" rests on "over the notes the agent can
+    list every one that mentions a thing". pikuri-os's `fileindex_search` caps at 25
+    (`MAX_LIMIT`) and doesn't say whether more matched. The gem needs an uncapped listing (as
+    `rag_search_keywords` has) or a truthful "25 of 37".
+  - **Requirement: the notes folder can't be a git checkout under localsearch**, which skips
+    any tree holding `.git`. `rag.md` argues against mtime "because it would be wrong the
+    first time you `git clone` your notes", the very setup that empties the index. The
+    readiness check catches it (zero indexed files under the roots, so the binary exits),
+    but the chapter must say it: no git for the notes, or recoll. Re-argue the mtime point
+    with a plain copy to a new machine.
+  - **Requirement: recoll freshness.** Without `recollindex -m`, this morning's note is
+    missing from the brief: the silent gap `--watch` existed to close. The chapter tells
+    recoll users to run the daemon or re-index before a brief. A boot warning when recoll's
+    index is older than the newest file under the roots would be a feature; propose it as
+    one only if transcripts show the gap.
+  - Don't root briefing at the secretary's `Documents/Notes/`: the secretary writes there
+    from turns that read mail (the stored injection `book/secretary.md` warns about), so
+    "trusted" would be false. Briefing's folder stays one only the user writes into.
 - `Q_default_roots`: leaning Desktop, Documents and Downloads only. Pictures, Music and Videos
   are mostly metadata; Public and Templates are noise. Top-level folders like `~/work` stay
   opt-in. `xdg-user-dir` is a subprocess through `Subprocess.spawn`, not an `XDG_*` read, and
