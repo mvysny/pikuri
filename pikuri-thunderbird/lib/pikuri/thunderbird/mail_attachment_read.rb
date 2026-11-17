@@ -137,7 +137,7 @@ module Pikuri
       rescue Unreadable, MessageStore::Error => e
         Pikuri::Tool::Result.error(e.message)
       rescue Pikuri::Extractor::Unsupported
-        Pikuri::Tool::Result.error("no reader for #{found.content_type} attachments on this host.")
+        Pikuri::Tool::Result.error("unsupported format #{mime || found.content_type}, can't extract text on this host.")
       rescue Pikuri::Extractor::Error => e
         Pikuri::Tool::Result.error(e.message)
       rescue DatabaseSnapshot::TornError => e
@@ -187,6 +187,11 @@ module Pikuri
       # plain-text arm claims only +text/*+ under a content type, yet calendar
       # invites (+application/ics+), JSON and XML are text too.
       #
+      # The retry passes the type sniffed from the bytes, never +nil+: under
+      # +nil+ the plain-text arm judges the first 4 KB alone, and a PDF whose
+      # head is ASCII dictionaries reaches the model raw on a host without
+      # pikuri-pdf.
+      #
       # @param bytes [String] the decoded attachment.
       # @param content_type [String] Gloda's content type.
       # @param offset [Integer]
@@ -197,7 +202,8 @@ module Pikuri
       def self.extract(bytes, content_type, offset:, limit:)
         Pikuri::Extractor.extract_paged(StringIO.new(bytes), content_type:, offset:, limit:)
       rescue Pikuri::Extractor::Unsupported
-        Pikuri::Extractor.extract_paged(StringIO.new(bytes), content_type: nil, offset:, limit:)
+        Pikuri::Extractor.extract_paged(StringIO.new(bytes), content_type: Pikuri::FileType.detect_mime(bytes),
+                                                             offset:, limit:)
       end
       private_class_method :extract
 

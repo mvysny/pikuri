@@ -10,8 +10,8 @@ require 'json'
 describe Pikuri::Thunderbird::MailAttachmentRead do
   def folder_uri = 'imap://me%40example.com@imap.example.com/INBOX'
 
-  # Gloda's attachmentInfos for <att@x>, in listing order. Parts 1.2–1.5 exist
-  # in the stored message; the rest are refused before the store is read.
+  # Gloda's attachmentInfos for <att@x>, in listing order. Parts 1.2–1.8 exist
+  # in the stored message; the online link is refused before the store is read.
   def infos
     [['notes.txt', 'text/plain', 24, '1.2', nil, false],
      ['invite.ics', 'application/ics', 40, '1.3', nil, false],
@@ -19,7 +19,8 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
      ['Deleted: old.pdf', 'text/x-moz-deleted', 90, '1.5', nil, false],
      ['photo.jpg', 'image/jpeg', -1, '1.6', nil, false],
      ['ForwardedMessage.eml', 'message/rfc822', 0, '1.7', nil, false],
-     ['cloud.pdf', 'application/pdf', 0, '1.8', 'https://files.example.com/x', true]]
+     ['cloud.pdf', 'application/pdf', 0, '1.8', 'https://files.example.com/x', true],
+     ['scan.bin', 'application/octet-stream', 6, '1.8', nil, false]]
   end
 
   def stored_message
@@ -121,6 +122,10 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
       Two shop sites.
       --F--
       --C--
+      --B
+      Content-Type: application/octet-stream; name="scan.bin"
+
+      %PDF-
       --B--
     MSG
   end
@@ -191,9 +196,18 @@ describe Pikuri::Thunderbird::MailAttachmentRead do
     with_tools { |tool, _| assert_includes read(tool, 2).content, "1\tBEGIN:VCALENDAR" }
   end
 
-  it 'names the type the host has no reader for' do
+  it 'names the format the host has no reader for, by its bytes over its declared type' do
     with_tools do |tool, _|
-      assert_equal 'Error: no reader for application/octet-stream attachments on this host.', read(tool, 3).content
+      assert_equal "Error: unsupported format application/octet-stream, can't extract text on this host.",
+                   read(tool, 3).content
+      assert_equal "Error: unsupported format application/pdf, can't extract text on this host.", read(tool, 8).content
+    end
+  end
+
+  it 'refuses a PDF on a host without a PDF reader, even when its first bytes look like text' do
+    with_tools do |tool, _|
+      assert_equal "Error: unsupported format application/pdf, can't extract text on this host.",
+                   read(tool, '6.1').content
     end
   end
 
