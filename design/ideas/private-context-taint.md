@@ -13,11 +13,10 @@ the **dynamic, runtime** enforcement ("all three are live in this context
 `:untrusted` / `:egress`); the detector *audits*, the taint *enforces*. Both
 evaluate per-node (each agent context tracks its own taint).
 
-Integrity counterpart: [`quarantined-handles.md`](quarantined-handles.md).
-This note is the **confidentiality** enforcement (private in → sever
-egress); that one is the **integrity** enforcement (untrusted in → keep
-the bytes out of the parent). Same per-context, structural spirit;
-opposite trifecta leg. Draft, shelved (narrow payoff).
+No integrity counterpart: keeping untrusted bytes out of a parent with
+opaque handles was rejected (`D_no_quarantined_handles`), so this note's
+enforcement covers the **confidentiality** leg only (private in → sever
+egress).
 
 Also related:
 [`security-open-questions.md`](security-open-questions.md) §"Trifecta —
@@ -57,10 +56,11 @@ tracks `:untrusted` alongside `:private`. What each one buys differs:
 - **`:private` in** → the levels below apply: egress constrained or severed.
 - **`:untrusted` in** → **nothing is severed, the UI just says so.** This
   agent has now read attacker-authorable content, so its output is suspect
-  and a human reading along should know. Enforcement for that leg is
-  structural and decided *earlier*, at delegation time
-  ([`quarantined-handles.md`](quarantined-handles.md)); a flag flipped after
-  the bytes arrived cannot retrofit it.
+  and a human reading along should know. That leg is handled by the
+  wiring, decided before any bytes arrive: the static map, the sub-agent
+  boundary weakening it to `:weakened`, and the confirmers that show the
+  human the bytes. A flag flipped after the bytes arrived cannot retrofit
+  any of that.
 
 Worth having because it is the one question the static detector cannot
 answer. At boot it can only say a wiring *could* read untrusted content, and

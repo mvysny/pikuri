@@ -21,6 +21,66 @@ what it already says.
 
 ---
 
+## D_no_quarantined_handles — Why doesn't a sub-agent's reply reach its parent as an opaque handle?
+
+**Context.** The Dual LLM pattern (#4 in *Design Patterns for Securing LLM Agents against Prompt
+Injections*, arXiv 2506.08837) keeps untrusted content away from the orchestrating model: a
+quarantined model reads it, and the privileged one never sees its output. CaMeL (*Defeating
+Prompt Injections by Design*, arXiv 2503.18813) sharpens that into symbolic variables: the output
+is a `$VAR` the privileged model passes around but cannot read, and a capability system decides
+what each value may flow into. In pikuri it would land in {Pikuri::SubAgent::SubAgentTool}, whose
+`execute` returns the child's final text straight into the parent's context. The runtime would
+store the reply and answer "stored in `VAR7`, you can't read it", and only handle-consuming tools
+would touch it: a transform returning a new handle, a sink whose destination the parent picks, a
+renderer to the human, or a declassification into a narrow type. It's the structural version of
+{Pikuri::Tool::TrifectaLegs#relabel_inbound}: the boundary only weakens the untrusted leg to
+`:weakened`, because a captured child can author a re-injection payload, and a handle would
+sever it, since that payload never enters the parent's tokens. Only the Dual LLM subset fits:
+pikuri's loop is iterative, not CaMeL's plan-then-execute, so the parent's control flow would stay
+injectable and only the bytes would be kept out. The idea sat drafted and shelved for months.
+
+**Decision.** Not in pikuri. The pattern works, but only for an agent whose job is *routing*
+content it never needs to understand: "append a row per scraped page to a file", "sort the inbox
+into an enum and act on the enum". The more a parent's job is understanding the untrusted
+content, the less a handle helps, and every agent pikuri ships is the understanding kind.
+
+- **Neither three-legged node needs it.** The coding agent confines the disk around itself; the
+  secretary weakens egress, since search never fetches and every other way out shows the human the
+  bytes (`D_secretary_wiring`). Both keep the trifecta promise without handles, and both exist for
+  the model to read what the user points it at: quarantining the content removes the thing the
+  user came for.
+- **The agent it suits would be a workshop feature.** A pipeline agent built around opaque
+  payloads is a feature, not a fix to a promise (`D_gem_placement`); pikuri would add at most the
+  seam it needs.
+- **It's the heaviest security machinery pikuri could grow:** a per-agent variable store, variable
+  references through the strict `Parameters` validator, capability metadata on values, a curated
+  set of consumer tools and a declassification policy, every piece read by whoever wires a
+  sub-agent (`D_read_what_you_run`).
+- **It protects the parent only.** The child stays fully injectable, and every tool it holds or
+  that accepts a handle is drivable by the blob, so the trust only moves into the design of those
+  two toolsets.
+
+**Alternatives rejected.**
+
+- **Keep it parked until a pipeline agent appears.** Neither the coding agent nor the secretary
+  ever asked for it, and an open idea kept inviting re-reads with no consumer behind them.
+- **The declassification half on its own**: the child must reply in a type too narrow to carry an
+  instruction (a number, an enum), which the parent may then read. It needs no handles and no
+  store, so it's priced separately, in `design/ideas/templated-subagent-replies.md`.
+
+**Consequences.**
+
+- At every sub-agent boundary the untrusted leg stays `:weakened`, never severed, and the map says
+  so; the human stays the one clean reader of untrusted bytes, through confirmers that show them.
+- If a pipeline-shaped agent ever wants it, the smallest slice: an in-memory variable store that
+  lives as long as the agent, a persona flag making `SubAgentTool` store the reply and answer with
+  its handle, and exactly one consumer, `present_to_user(var:)`, rendering to the human through a
+  listener. Its invariant is the dual of "no `read_variable` tool": no tool echoes a variable's
+  bytes into the parent's context; a consumer returns a new handle, a narrow typed value, or
+  nothing.
+
+---
+
 ## D_recurrence_expansion — Why expand a recurring event with ice_cube on its wall clock, rather than with the `rrule` gem or our own expander?
 
 **Context.** Thunderbird stores a series as one master row dated at its first occurrence, plus

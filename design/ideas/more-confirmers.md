@@ -6,8 +6,8 @@ The confirmer seat itself shipped ({Pikuri::Workspace::Confirmer}, the Confirmer
 and why is in {Pikuri::Web::FETCH}'s yardoc. Two questions remain.
 
 Related: [`private-context-taint.md`](private-context-taint.md) (the human as *author*, not
-*approver*), [`quarantined-handles.md`](quarantined-handles.md) (its "human as reader" shape,
-which `Q_ingest_gate` turns into a gate), the workshop's
+*approver*), `D_no_quarantined_handles` (the human as the one clean *reader*, which
+`Q_ingest_gate` turns into a gate), the workshop's
 [`bash-confirmer.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/bash-confirmer.md)
 (fatigue: risk tiers, dry-run, session grants).
 

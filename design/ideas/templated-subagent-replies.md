@@ -4,18 +4,15 @@ Status: **idea, unbrainstormed.** Filed 2026-08-20 from a chat, not yet
 designed — the shape below is a first pass and every "open question" is
 genuinely open. Nothing built.
 
-**Not a new idea in this repo.** It is
-[`quarantined-handles.md`](quarantined-handles.md) §"Shape 4 —
-Declassification = schema-narrowing" **promoted to standalone**: no
-`VariableStore`, no opaque `VAR7`, no handle→handle transforms. Just
-"the child's reply must match a machine-checked narrow type, or the
-parent never sees it." It earns a separate file because the cost profile
-is nothing alike — Shape 4 rides machinery that made that note shelve
-itself, this one is a post-processing step at one existing choke point.
-If this graduates, Shape 4 in that file should be cut down to a pointer
-here.
+**Not a new idea in this repo.** It is the declassification half of the
+rejected opaque-handle design (`D_no_quarantined_handles`) **on its
+own**: no variable store, no opaque `VAR7`, no handle→handle transforms.
+Just "the child's reply must match a machine-checked narrow type, or the
+parent never sees it." The cost profile is nothing alike — handles need
+machinery that got them rejected, this is a post-processing step at one
+existing choke point.
 
-Prior art (same two papers as the sibling note, different reading):
+Prior art (the same two papers `D_no_quarantined_handles` cites, different reading):
 
 - **Dual LLM** (arXiv 2506.08837 #4) — privileged model never sees the
   quarantined model's output. This idea is that pattern **relaxed by a
@@ -181,8 +178,6 @@ rule argues against standing up a propagating taint system for it.)
   `feedback_small_n_model_probes`, a handful of runs won't answer it.
 - Should the validator be shared with anything, or is it a private
   helper of `pikuri-subagents`? (No second consumer today.)
-- Does this make `quarantined-handles.md` un-shelvable, or does it
-  *replace* the reason anyone wanted it?
 
 ## Implementation sketch (if it ever gets a green light)
 
