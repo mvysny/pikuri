@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `Pikuri::Agent::Control::Interloper#on_change` is called with a frozen snapshot of the queued items (`Array<Interloper::Item>`, delivery order; `[]` after a drain) instead of their count, so a host can show what was typed during a turn. A callback wanting the count reads `items.size`.
 - Add `Pikuri::VectorDb::Watcher.new(on_busy:)` and `Watcher#busy?`: told `true` as the worker takes up work after idling, the boot sweep's scan included, and `false` once its queue runs dry, so a host can show that it is indexing.
 - **Breaking:** `Pikuri::VectorDb::Indexer` is now `Pikuri::VectorDb::Corpus`, one per folder shared by every agent over it, owning its backend and the `private:` / `trusted:` declaration; its `#close` closes the stores and the stemmer (`D_corpus_trust_declaration`). Both extensions take only `corpus:` and `reranker:`, and `Watcher` and `Tools::Reindex` take `corpus:`: build the `Corpus` from `backend:`, `source:`, `embedder:`, `chunker:`, `private:`, `trusted:` and `exclude:` (for rag, `backend:` a `Rag::Backend::Hybrid` whose `Fts5.new` takes `store:` and `stemmer:`) and call `corpus.close` instead of `ext.backend.close`.
 - **Breaking:** the vectordb backend and rag stemmer ducks gain `#close`, called by the `Corpus`; add one to a custom backend or stemmer.

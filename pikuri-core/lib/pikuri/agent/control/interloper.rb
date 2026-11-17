@@ -13,7 +13,8 @@ module Pikuri
       # answered: an injection made while idle lands ahead of the next turn's
       # message, one made mid-turn reaches the next round-trip.
       # {Agent#drain_interloper} says how each {Item#kind} lands. A host
-      # showing a "2 queued" badge reads {#size} or sets {#on_change}. Why a
+      # showing what's queued — a "2 queued" badge, the pending messages
+      # themselves — sets {#on_change}, which hands it the items. Why a
       # running turn takes a user message at all: +design/decisions.md+
       # +D_mid_turn_user_message+.
       #
@@ -50,13 +51,18 @@ module Pikuri
           @on_change = nil
         end
 
-        # Called with the new pending count after each injection, and with +0+
-        # after a {#drain!} that empties a non-empty queue (an empty drain, the
-        # hot path, stays silent); +nil+ disables it. Runs on the mutating
-        # thread, so a callback feeding another thread should hand off only
-        # immutable data.
+        # Called with a frozen snapshot of the queue after each injection, and
+        # with +[]+ after a {#drain!} that empties a non-empty queue (an empty
+        # drain, the hot path, stays silent); +nil+ disables it:
         #
-        # @return [Proc, nil]
+        #   interloper.on_change = ->(items) { badge.text = "#{items.size} queued" }
+        #
+        # The snapshot is the queue as this change left it, taken under the
+        # same lock; {#size} read from the callback may already see a later
+        # change. Runs on the mutating thread; the frozen snapshot of frozen
+        # {Item}s may be handed to another thread as is.
+        #
+        # @return [Proc, nil] called with an +Array<Item>+ in delivery order
         attr_accessor :on_change
 
         # Enqueue a +:user+ mid-loop turn, the same message {Agent#run_loop}
@@ -120,7 +126,7 @@ module Pikuri
             @items.clear
             taken
           end
-          @on_change&.call(0) unless items.empty?
+          @on_change&.call([].freeze) unless items.empty?
           items
         end
 
@@ -137,8 +143,8 @@ module Pikuri
             if attachments.empty? && (content.nil? || content.to_s.strip.empty?)
 
           item = Item.new(kind: kind, content: content, attachments: attachments)
-          count = @mutex.synchronize { @items << item; @items.size }
-          @on_change&.call(count)
+          snapshot = @mutex.synchronize { @items << item; @items.dup.freeze }
+          @on_change&.call(snapshot)
           nil
         end
       end

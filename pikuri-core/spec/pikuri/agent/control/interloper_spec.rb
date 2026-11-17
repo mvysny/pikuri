@@ -153,32 +153,49 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
   end
 
   describe '#on_change' do
-    it 'fires with the new pending count on each injection' do
+    let(:png) { Pikuri::Attachment.new(mime: 'image/png', filename: 'shot.png', bytes: 'png') }
+
+    it 'fires with the queued items, in delivery order, on each injection' do
       interloper = described_class.new
-      counts = []
-      interloper.on_change = ->(n) { counts << n }
+      snapshots = []
+      interloper.on_change = ->(items) { snapshots << items }
 
-      interloper.inject_user_message('one')
-      interloper.inject_user_message('two')
+      interloper.inject_user_message('one', attachments: [png])
+      interloper.inject_system_message('<skill>…</skill>')
 
-      assert_equal [1, 2], counts
+      user = described_class::Item.new(kind: :user, content: 'one', attachments: [png])
+      system = described_class::Item.new(kind: :system, content: '<skill>…</skill>')
+      assert_equal [[user], [user, system]], snapshots
     end
 
-    it 'fires with 0 when a non-empty queue is drained' do
+    it 'hands a frozen snapshot that a later injection does not change' do
+      interloper = described_class.new
+      snapshots = []
+      interloper.on_change = ->(items) { snapshots << items }
+
+      interloper.inject_user_message('one')
+      first = snapshots.first
+      interloper.inject_user_message('two')
+
+      assert first.frozen?
+      assert_equal ['one'], first.map(&:content)
+    end
+
+    it 'fires with [] when a non-empty queue is drained' do
       interloper = described_class.new
       interloper.inject_user_message('one')
 
-      counts = []
-      interloper.on_change = ->(n) { counts << n }
+      snapshots = []
+      interloper.on_change = ->(items) { snapshots << items }
       interloper.drain!
 
-      assert_equal [0], counts
+      assert_equal [[]], snapshots
     end
 
     it 'does not fire when an empty queue is drained' do
       interloper = described_class.new
       fired = false
-      interloper.on_change = ->(_n) { fired = true }
+      interloper.on_change = ->(_items) { fired = true }
 
       interloper.drain!
 
@@ -194,9 +211,9 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
     it 'fires outside the queue lock — the callback may re-enter the interloper' do
       interloper = described_class.new
       seen = []
-      interloper.on_change = lambda do |n|
+      interloper.on_change = lambda do |items|
         # Re-entering under the lock would deadlock; #size takes the mutex.
-        seen << [n, interloper.size]
+        seen << [items.size, interloper.size]
       end
 
       interloper.inject_user_message('one')

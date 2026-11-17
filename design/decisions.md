@@ -243,8 +243,10 @@ neither.
 queued when `run_loop` returns: the model gave its final answer without another round-trip.
 Running a turn for it is the host's call, so `pending?` tells it there is one —
 pikuri-conversations follows a completed turn with a bare one (`conversation.rb`'s `run_turns`).
-`size` and `on_change` drive a "2 queued" badge without a polling thread; `on_change` fires
-outside the lock, on the mutating thread.
+`on_change` drives a "2 queued" badge, or the queued messages themselves, without a polling
+thread: it hands over a frozen snapshot of the items taken under the lock that changed them, since
+a reader called afterwards could already see the next change. It fires outside the lock, on the
+mutating thread.
 
 **Alternatives rejected.**
 
