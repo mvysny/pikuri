@@ -13,7 +13,10 @@ module Pikuri
     #   (+application/octet-stream+ gets the {Unsupported} refusal).
     # * Without one (the local-file path, {FileType.detect_mime} → +nil+): claim
     #   anything passing {FileType.binary?} on the sample; opaque binaries stay
-    #   unclaimed and surface as {Unsupported}.
+    #   unclaimed and surface as {Unsupported}. A format {FileType.detect_mime}
+    #   recognises is never text, however ASCII its head: a PDF's first 4 KB of
+    #   dictionaries passes {FileType.binary?}, and would reach the model raw on
+    #   a host without a PDF extractor.
     module Passthrough
       # @return [Symbol] {Page#kind} tag.
       def self.kind
@@ -27,7 +30,7 @@ module Pikuri
       def self.matches?(sample:, content_type:)
         return content_type.start_with?('text/') unless content_type.nil?
 
-        !FileType.binary?(sample)
+        FileType.detect_mime(sample).nil? && !FileType.binary?(sample)
       end
 
       # @param io [IO, StringIO] IO over the text content.

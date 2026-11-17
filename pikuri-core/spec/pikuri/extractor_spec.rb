@@ -49,6 +49,15 @@ RSpec.describe Pikuri::Extractor do
       end
     end
 
+    it 'raises Unsupported for a PDF with no content-type, even when its head reads as text' do
+      assert_raises(Pikuri::Extractor::Unsupported) do
+        extract("%PDF-1.4\n1 0 obj << /Type /Font /Encoding /Identity-H >> endobj\n")
+      end
+      assert_raises(Pikuri::Extractor::Unsupported) do
+        described_class.extract_paged(StringIO.new("%PDF-1.4\n1 0 obj << >> endobj\n"))
+      end
+    end
+
     it 'raises Unsupported for an empty-string content-type (missing header is not nil)' do
       assert_raises(Pikuri::Extractor::Unsupported) { extract('whatever', content_type: '') }
     end
