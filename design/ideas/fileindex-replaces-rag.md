@@ -288,4 +288,59 @@ array"), `office` (board-meeting PDF), `electricity` (`budget.csv`: not content-
 localsearch), `dentist` ("dental" vs "dentist"), `finnish-rent` (asked in Finnish, the lease is
 in English), `bike-lock` (a note saved 5 s before the question, its code drawn per run).
 
-Results: running.
+### Results (200 runs, 2026-11-18)
+
+| | pass | mean time | mean calls | searches that found nothing |
+|---|---|---|---|---|
+| rag | 100/100 | 19 s | 2.1 | 9 / 118 |
+| file index | 100/100 | 20 s | 2.9 | 71 / 140 |
+
+Per task, calls (rag / file index): `electricity` 3.1 / 6.1, `finnish-rent` 2.4 / 4.3, every
+other task within one call. `runs.jsonl` holds every transcript.
+
+**The pass rate can't separate the arms on this home.** The workspace's boot snapshot puts the
+top of `~/Documents` in the prompt, and with 13 files under `Housing/`, `Finance/`, … that is a
+map: about a fifth of the runs in each arm never searched, and `sauna` was a direct `read` of
+the file every time. The failures a real home would show come back as browsing instead.
+
+**Half the file-index queries find nothing, because localsearch ANDs every word.** The model
+writes rag-style queries, and one word the file lacks sinks the whole query: "dental
+appointment" (the note says "Dentist … checkup"), "office relocation address" (the minutes say
+"move the office"), "deductible flood water kitchen", "rent monthly rent due date" (the lease
+says "due on the 5th day"). Two-word queries were empty 24 of 29 times, four or more words 22 of
+35. Rag's semantic leg always returns five hits, so the same habit costs it nothing. The model
+recovered every time by rephrasing or by browsing, but on a home where browsing doesn't work
+that recovery is the whole question. `fileindex_search`'s description never says every word
+must appear.
+
+**Cross-language: one run in ten found the lease by search.** 7 of 10 file-index runs searched;
+every query with a Finnish word in it came back empty, mixed ones too ("vuokra monthly rent
+payment due"), because of the AND. Run 6 switched to "rent monthly due" and hit; the other nine
+reached the lease by browsing `Housing/`. Rag's arm searched in 5 runs and ranked the lease
+first every time, twice from an all-Finnish query ("kuukausivuokra vuokrasopimus maksupäivä"):
+bge-m3 matching across languages, the one thing only embeddings do.
+
+**Structural misses cost turns, as predicted.** `budget.csv` (not content-indexed): every
+file-index search for it missed, and the model found it in the listing after 2 to 16 calls.
+The missing office extractor cost 19 calls on `.odt`/`.docx` in the file-index arm (3 in rag's):
+`fileindex_read` on `lease-agreement.odt` says "not in the index", `read` says binary, then the
+`.pdf`.
+
+**Freshness: no difference.** `bike-lock`, asked 5 s after the note was saved, passed 10/10 on
+both (rag 1.3 calls in 14 s, the file index 2.1 calls in 11 s).
+
+**`Q_all_matches` data:** 4 of 49 `fileindex_read` calls used `pattern`; the files are short
+enough to read whole, as expected.
+
+### What the bar needs next
+
+1. **Say the AND in the tool description** (a fix: the contract exists, the model isn't told):
+   every word must appear in the file, so give two or three words the file would contain and
+   drop words on a miss. Cheap; re-run the same 200 and see the empty rate move.
+2. **A home where browsing doesn't work**, so the pass rate measures search: the demo
+   documents a few folders deep among a few hundred distractor files (the snapshot then says
+   "too many entries"), or the owner's real `~/Documents` (rag needs its hours of embedding
+   there, or a Qdrant collection that survived).
+3. If the empty rate stays high after 1: an OR fallback in `fileindex_search` ("no file has
+   all of these words; files with some of them:"), as rag's ranked keyword leg already
+   searches with any word. A feature; earn it on 2's numbers.
