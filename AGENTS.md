@@ -31,6 +31,7 @@ The power tools (a shell, a coding agent, MCP, skills) live in
 | `design/research.md` | what opencode, PI, grok-build, hermes-agent and langchainrb actually do — `R_` entries, each claim with provenance | lazy |
 | `design/ideas/` | not yet decided — one file per idea, `ls` is the index, deleted on graduation | transient |
 | `<gem>/design/architecture.md` | that gem's own cross-symbol picture + its closeable threat model | lazy |
+| `<gem>/design/testing.md` | that gem's testbed: what to install, how its specs reach a real backend without touching yours | lazy |
 | yardoc (source headers) | what one symbol does, why it is shaped so | at the symbol |
 | `book/` | a learner reading in order: concepts, teaching narrative, the cross-cutting why | — |
 | `SECURITY.md` | threat model + shipped defenses | — |

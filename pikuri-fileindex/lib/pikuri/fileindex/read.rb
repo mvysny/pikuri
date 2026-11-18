@@ -26,7 +26,15 @@ module Pikuri
     # no line, so without it the model's only way to an answer deep in a
     # long PDF is to page through all of it; with it, the model reads just
     # around the lines that match. A regex, not the index's stemmed words:
-    # inside one file an exact match is what the model wants.
+    # inside one file an exact match is what the model wants, and the
+    # index's own match positions (+fts:offsets+) came back as +(null):17+
+    # on LocalSearch 3.11, naming no property.
+    #
+    # A line longer than the page's per-line cap is broken at a space first
+    # ({.wrap}): localsearch keeps a PDF's line breaks and gives HTML a line
+    # per paragraph, but hands an office document over as one line, which
+    # the cap would cut after 2,000 characters, with no offset reaching the
+    # rest.
     #
     # Only a path inside the +roots:+, with nothing hidden below a root, is
     # read; the path is the model's, so it is checked here even though the
@@ -131,6 +139,7 @@ module Pikuri
                                             'For a file just written, use the read tool.')
         end
 
+        text = wrap(text)
         return grep(text, regex, offset: offset, limit: limit) if regex
 
         page = Pikuri::Extractor.extract_paged(
@@ -159,7 +168,7 @@ module Pikuri
           total = number
           next if stopped_at || number < offset || !regex.match?(line)
 
-          row = format("%6d\t%s", number, truncate_line(line))
+          row = format("%6d\t%s", number, line)
           if rows.size == limit || bytes + row.bytesize > Pikuri::Extractor::PAGE_MAX_BYTES
             stopped_at = number
             next
@@ -196,14 +205,27 @@ module Pikuri
       end
       private_class_method :grep_result
 
-      # @return [String] +line+, cut to {Pikuri::Extractor::PAGE_MAX_LINE_LENGTH}
-      #   with the read's own truncation marker
-      def self.truncate_line(line)
-        return line if line.length <= Pikuri::Extractor::PAGE_MAX_LINE_LENGTH
+      # @param text [String] a file's indexed text
+      # @return [String] +text+ with each line longer than
+      #   {Pikuri::Extractor::PAGE_MAX_LINE_LENGTH} broken at its last
+      #   whitespace within the cap, or at the cap when it has none; +text+
+      #   itself when no line is that long
+      def self.wrap(text)
+        max = Pikuri::Extractor::PAGE_MAX_LINE_LENGTH
+        return text if text.each_line.none? { |line| line.chomp.length > max }
 
-        line[0, Pikuri::Extractor::PAGE_MAX_LINE_LENGTH] + Pikuri::Extractor::PAGE_LINE_TRUNCATION_MARKER
+        text.each_line(chomp: true).flat_map do |line|
+          pieces = []
+          while line.length > max
+            cut = line.rindex(/\s/, max)
+            cut = max if cut.nil? || cut.zero?
+            pieces << line[0, cut]
+            line = line[cut..].lstrip
+          end
+          pieces << line
+        end.join("\n")
       end
-      private_class_method :truncate_line
+      private_class_method :wrap
     end
   end
 end

@@ -47,7 +47,9 @@ One of:
   LTS and newer; Debian/Ubuntu's `localsearch` package pulls in
   `tinysparql`). Older Tracker 3 (`tracker3`) is not supported. On Ubuntu,
   also install `localsearch-extractor-office`: without it, `.docx`, `.odt`,
-  `.xlsx` and epub files are found by name only, never by their text.
+  `.xlsx` and epub files are found by name only, never by their text. A file
+  indexed before you install it stays that way, even after a restart, until
+  you run `localsearch reset --file` on it (the file, not its folder).
 - **recoll** with an index you built (`recollindex`). Run
   `recollindex -m` to keep it fresh as files change.
 

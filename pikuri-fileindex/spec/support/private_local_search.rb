@@ -7,10 +7,13 @@ require 'open3'
 # run the real indexer and the real {Pikuri::Fileindex::LocalSearch} queries without
 # touching the user's own index:
 #
-#   index = PrivateLocalSearch.new('beta/b.md' => 'A zebra, a mouse.')
+#   index = PrivateLocalSearch.new({ 'beta/b.md' => 'A zebra, a mouse.' })
 #   index.start                 # ~2 s: boots a bus, indexes, waits for the text
-#   Pikuri::Fileindex::LocalSearch.search(query: 'zebra', limit: 5, folder: "#{index.corpus}/beta")
+#   Pikuri::Fileindex::LocalSearch.search(query: Pikuri::Fileindex::Query.parse('zebra'), limit: 5,
+#                                         folders: ["#{index.corpus}/beta"])
 #   index.stop
+#
+# The testbed as a whole (what to install, what bites) is +design/testing.md+.
 #
 # Between +start+ and +stop+, +ENV['DBUS_SESSION_BUS_ADDRESS']+ points at a
 # private session bus, so every tinysparql the backend spawns talks to it.

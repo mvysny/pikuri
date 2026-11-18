@@ -5,7 +5,8 @@ header holds its own rationale; this file holds what spans
 {Pikuri::Fileindex::LocalSearch}, {Pikuri::Fileindex::Recoll} and the two
 tools: the threat model, why keyword recall is the whole posture, and
 which backend earns the default. Why pikuri borrows the desktop's index
-instead of building one: `design/decisions.md` `D_secretary_wiring`.
+instead of building one: `design/decisions.md` `D_secretary_wiring`. How
+the specs reach a real index without touching yours: `testing.md`.
 
 ## Threat model
 
@@ -77,7 +78,13 @@ Only the third is a genuine "nothing we can do":
    (synonyms, narrower terms), and a host that wires grep can fall back
    to it. `localsearch`'s index is already stemmed ("jumping" finds
    "jumps"), so regular inflections come free; irregular ones don't
-   ("mice" misses "mouse", measured 2026-11). The residue is true
+   ("mice" misses "mouse", measured 2026-11). It stems in one language,
+   the session's `LANG`: under `en_US` "study" finds "studies" and
+   "irtisanoa" misses "irtisanoivat", under `fi_FI` the reverse. Every
+   word also matches as a prefix, in any locale ("talo" finds "talossa",
+   "run" finds "running"), so a suffix on an unchanged stem is found
+   anyway; a stem that changes ("kaupunki", "kaupungissa") is found in
+   neither (measured 2026-11, LocalSearch 3.11). The residue is true
    synonymy, which query iteration handles better than any lexical index.
 3. **Genuine semantic / conceptual gap**: cross-lingual, or "that thing
    about being frugal" → an unlabelled budget spreadsheet. The only cause
@@ -151,10 +158,10 @@ filtered by URL prefix; ranked, the lease agreement comes first
 | Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
 | Recall on indexed prose | ~100% (**= recoll**, measured) | ~100% |
 | Source code | **filename-only** (mime-gated); `.git` trees skipped | full text |
-| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed (measured 2026-11) | full text (`.docx`, `.odt`; recoll 1.43, measured 2026-11) |
+| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed, and a file indexed before it stays so until `localsearch reset --file`. The text is one line: a `.docx`'s paragraphs joined by spaces, an `.odt`'s by nothing ("AgreementLandlord") (measured 2026-11) | full text (`.docx`, `.odt`; recoll 1.43, measured 2026-11) |
 | `.csv` | **filename-only**: the text extractor takes only `text/plain` and `text/markdown` (measured 2026-11) | full text (recoll 1.43, measured 2026-11) |
 | Folder filter | URL-prefix filter in SPARQL | `dir:` clause + per-config `topdirs` |
-| Query ops | stemmed AND, phrase, `prefix*` on stems; no OR (measured 2026-11) | + OR / exclusion / proximity / wildcard / field filters |
+| Query ops | AND, phrase; each word stemmed in the locale's language and matched as a prefix; no OR (measured 2026-11) | + OR / exclusion / proximity / wildcard / field filters |
 | A hit shows | a 40-word snippet; a file of up to 600 characters whole | recoll's abstract (its own length setting) |
 | Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |
 | Headless CLI | `tinysparql query` (SPARQL over D-Bus) | `recollq` |
@@ -176,15 +183,6 @@ nothing. That also catches the cases a bare probe passes: indexing
 turned off in GNOME's Search settings, roots GNOME doesn't cover, a notes
 folder that is a git checkout. One empty root among others is normal (an
 empty Desktop), so it only logs a warning.
-
-## Testing
-
-The `localsearch` backend's index specs run against a real indexer in a
-private sandbox: its own session bus, settings and database
-(`spec/support/private_local_search.rb`), so they never read the user's
-index. recoll's index specs build a scratch index (`RECOLL_CONFDIR` +
-`recollindex` over a temp folder). A host without the binaries, CI
-included, skips both and keeps the stubbed unit specs.
 
 Sources: local measurement (above);
 [recoll.org](https://www.recoll.org/),

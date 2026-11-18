@@ -579,7 +579,8 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   lookups run ten times on each stack by a fresh agent with this prompt: on a 212-file home built
   so that browsing can't answer, 99 of 100 passed against rag's 100, and outside the two tasks coverage decides (a
   `.csv` localsearch never content-indexes, an `.odt` it knows by name only without
-  `localsearch-extractor-office`) the file index matched rag at about two calls a lookup. What
+  `localsearch-extractor-office`) the file index matched rag at about two calls a lookup, and so
+  did the `.odt` task once the extractor was installed (1.8 calls, from 3.9). What
   the index skips, search can't find, and the model gets there by browsing, at the cost of calls.
 - ***Roots: Desktop and Documents, not Downloads.*** Downloads fills with whatever a page pushed
   when you clicked a link: the easiest place for a stranger to plant a file the search then
@@ -627,6 +628,10 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   a prerequisite. What only the vectors do is match across languages (bge-m3 ranked an English
   lease first for a Finnish question); on the file index the model translated its query itself,
   for one more call.
+- **A search that says when a folder holds files the index skips** (a `.csv`, an office file
+  without the extractor). A feature (`D_gem_placement`), and what it saves is calls, not
+  answers: on the eval's home every lookup the index couldn't answer still passed by browsing,
+  at 7 to 35 calls for the `.csv`. The README says what the index skips.
 - **A clock tool, or `date.today() + timedelta(…)` in the calculator.** A feature, and the model
   must think to call it. Worth reopening only if transcripts show botched date arithmetic.
 - **Reminders.** `pikuri-thunderbird` reads no tasks (VTODO), and a reminder that fires needs a

@@ -121,9 +121,8 @@ rank fusion are concepts, not only features. After B, pikuri teaches search as "
 the desktop's index", and the retrieval chapters move to the workshop's book. The biggest
 rewrite involved.
 
-**Unchecked:** which language localsearch stems in (likely one, taken from the locale;
-`pikuri-stemmers` ships Voikko, so the owner's files likely include Finnish). The recall
-chapter's cross-language paragraph needs it.
+The recall chapter's cross-language paragraph: localsearch stems in the locale's one language
+and matches every word as a prefix (`pikuri-fileindex/design/architecture.md`, "File search").
 
 ## Open questions
 
@@ -152,61 +151,18 @@ chapter's cross-language paragraph needs it.
     your notes", the very setup that empties the index; re-argue it with a plain copy to a
     new machine, as `D_briefing_wiring` now does.
   - **The chapter tells recoll users** to run `recollindex -m`, or re-index before a brief.
-- `Q_all_matches`: does a 40-word snippet plus `fileindex_read`'s `pattern` cover "context
-  around the matches"? See the brainstorm below.
 - `Q_transcript_bar`: **met** (owner, 2026-11-18): keyword recall was enough, the result is in
-  `D_secretary_wiring`. What's left is at the end of the eval below.
-
-## `Q_all_matches`: brainstorm (2026-11-18)
-
-What each side shows per hit, from the code:
-
-- **rag**: up to 5 hits, several may be windows of the same file. Each is a 512-token chunk
-  shown as its **first 500 characters** (`VectorDb::Tools::Search::SNIPPET_LENGTH`), so the
-  match may sit past the cut, plus the chunk's line range for `rag_read`.
-- **fileindex**: up to 25 files, one hit each, a **40-word window centred on the match** with
-  the matched words marked `>>like this<<`, plus the size of the file's indexed text; a file of
-  up to 600 characters comes whole instead.
-
-So the owner's "40 words ≈ the vector's window" holds, and per hit the snippet is the more
-targeted of the two: shorter, but around the match rather than at the chunk's start. What
-fileindex lacks is a *second* match in the same file. `pattern` is meant for that.
-
-Measured (2026-11-18, the demo home's index): localsearch keeps the PDF's line breaks (the
-invoice is 12 lines; the 176 KB book is 2,181 lines, median 100 characters, longest 219), and
-HTML comes back a line per paragraph. So a line grep is the right unit there; a
-whole-document-on-one-line format would break it. `.docx`/`.odt` are unmeasured: this box lacks
-`localsearch-extractor-office`.
-
-Options:
-
-- **A. As is**: the snippet locates; `fileindex_read(pattern:)` greps the file's indexed text
-  for the lines; `offset` reads around one. A regex, not the index's stemmed words, so the
-  model writes `notice|terminat` where the index matched "notice terminate". The description's
-  example (`"total|amount due"`) teaches the alternation.
-- **B. `context:` lines on `pattern`** (grep's `-C`): saves the `offset` round-trip per
-  match. A feature; earn it only if transcripts over long files show `pattern` → `read`
-  pairs eating turns.
-- **C. Every match with its context, from `fts:offsets`**: the index's own match positions,
-  so stemmed like the search. Its output looked wrong on LocalSearch 3.11 (`(null):17`
-  three times for the invoice, no property names). Reject unless someone digs into that, and
-  B covers the same need.
-- **D. A stemmed find-in-file in Ruby**: a second matcher that disagrees with the index's
-  tokenizer. Reject.
-
-Leaning **A**, with B as the fallback. The eval can't decide it: its files are a few hundred
-characters, so the model reads them whole (4 of 49 `fileindex_read` calls on the demo home used
-`pattern`), and on the hard home the snippet's cost was the one window, not a second match,
-which "shown whole" fixed. The owner's `~/Documents` would. When this resolves, the
-`fts:offsets` trap graduates as a why-not line on `Read`'s pattern paragraph.
+  `D_secretary_wiring`. The eval below stays as the recall chapter's material.
 
 ## `Q_transcript_bar`: the eval (2026-11-18)
 
 Each round's fix has graduated: any-word matching (`pikuri-fileindex/design/architecture.md`,
 "Matching"), a short file shown whole (`LocalSearch::WHOLE_TEXT_CHARS`), and the when-to-use
 line opening `fileindex_search`'s description (after 5 of 10 `sauna` runs answered from general
-knowledge without searching; 3 of 10 after it, too few runs to call). What stays is the harness,
-the numbers the recall chapter can use, and what's left.
+knowledge without searching; 3 of 10 after it, too few runs to call). Coverage is accepted and
+said (`D_secretary_wiring`); how "shown whole" and `pattern` fare on real file sizes, Puri will
+show on the owner's `~/Documents`. What stays is the harness and the numbers the recall chapter
+can use.
 
 **Harness.** `fileindex-replaces-rag/transcript-eval.rb` runs on the dev VM (Ornith on the
 host's llama-server). Each run is a fresh agent with the secretary's prompt, calculator and
@@ -219,7 +175,7 @@ the names a real home gives them (`Scans/scan_20261009_002.pdf`), among near-mis
 each task's words but hold another answer (the paid invoice, last year's policy, the 2024
 lease, a top-level `sauna plans.txt` saying "Ask Ilse. Not urgent.") and bulk. Every transcript
 is in `results*/runs.jsonl`: `results` and `results-anyword` on the demo home,
-`results-hardhome` and `results-hardhome-whole` on the hard one.
+`results-hardhome`, `results-hardhome-whole` and `results-hardhome-office` on the hard one.
 
 Tasks: `invoice` (amount + IBAN, PDF), `notice` (lease, "move out"), `flood` (insurance
 deductible for "water damage", asked as a flood), `sauna` (HTML), `solar` (a note, "solar
@@ -235,7 +191,10 @@ The hard home, as shipped (100 runs a row):
 | file index | 99/100 | 97 | 34 s | 65 s | 3.5 | 8 | 1 / 195 (1%) |
 
 Leave out the two tasks coverage decides (`electricity`, `notice`) and the file index matches
-rag: 2.01 calls a run against 2.08, median 28 s both, 79 of 80 passes.
+rag: 2.01 calls a run against 2.08, median 28 s both, 79 of 80 passes. With
+`localsearch-extractor-office` installed and the `.odt` re-indexed, `notice` passed 10/10 in
+1.8 calls (3.9 before, rag 2.0), every one a search, mean time unchanged at 55 s
+(`results-hardhome-office`). Only the `.csv` is left to coverage.
 
 **For the recall chapter**, the misses by cause:
 
@@ -246,7 +205,7 @@ rag: 2.01 calls a run against 2.08, median 28 s both, 79 of 80 passes.
   word, 21 of 107. Rag's semantic leg always returns five hits, so the habit costs it nothing.
 - **Coverage (cause 1) costs the most.** `budget-2026.csv`: every run reached it by browsing,
   in 7 to 35 calls (up to 193 s). The `.odt` lease without the office extractor: "not in the
-  index", then "binary", then the `.pdf`.
+  index", then "binary", then the `.pdf`; with it, found by search.
 - **Language (cause 3).** On the demo home, 1 run in 10 found the lease by search (browsing
   did the rest); on the hard home, 10 of 10, the model translating its query for one more call.
   Rag's bge-m3 ranked the lease first from an all-Finnish query.
@@ -256,13 +215,3 @@ rag: 2.01 calls a run against 2.08, median 28 s both, 79 of 80 passes.
 Artefact in these runs: the hard home's HTML pages declared no charset, so localsearch read
 them as Latin-1 ("â€”" for "—"); no task searched a non-ASCII word in HTML. Both generators
 now declare UTF-8 (2026-11-18); a rebuilt hard home picks it up.
-
-### What's left
-
-1. **Coverage** is the whole remaining gap: accept and say it (the README names the office
-   extractor; `.csv` stays unindexed under localsearch, recoll indexes it), or the tool says
-   when a folder holds files the index skips. That's a feature, the owner's call. With the
-   office extractor installed, a `notice` re-run would show whether the `.odt` half closes.
-2. **A real home's file sizes** decide how much "shown whole" saves: every gold file here is
-   under 530 characters, the best case, while a real home's invoices and contracts mostly run
-   past 600. Measuring needs a home with real documents in it, which the dev VM doesn't have.

@@ -64,6 +64,20 @@ RSpec.describe Pikuri::Fileindex::Read do
       assert_includes out, 'Output capped at 50 KB.'
       assert_match(/Use offset=\d+ to continue\./, out)
     end
+
+    # localsearch hands a .docx over as one line, its paragraphs joined by spaces.
+    it 'breaks a line longer than the per-line cap at a space, so all of it is read' do
+      out = read(text: (1..800).map { |i| "word#{i}" }.join(' ')).to_s
+      assert_includes out, 'word800'
+      assert_includes out, "     2\tword"
+      refute_includes out, 'line truncated'
+    end
+
+    it 'cuts a long line with no space at the cap' do
+      out = read(text: 'x' * 4500).to_s
+      assert_includes out, "     3\t#{'x' * 500}\n"
+      refute_includes out, 'line truncated'
+    end
   end
 
   describe '.read with a pattern' do
@@ -106,6 +120,12 @@ RSpec.describe Pikuri::Fileindex::Read do
       out = described_class.read(path: "#{docs}/x.txt", pattern: '(', backend: backend, roots: roots).to_s
       assert_includes out, 'Error: bad pattern:'
       assert_empty backend.calls
+    end
+
+    it 'finds a match past the per-line cap of one long line' do
+      out = read(text: (1..800).map { |i| "word#{i}" }.join(' '), pattern: 'word799').to_s
+      assert_includes out, 'word799'
+      refute_includes out, 'line truncated'
     end
 
     it 'treats an empty pattern as a plain read' do
