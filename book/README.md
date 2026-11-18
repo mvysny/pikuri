@@ -146,8 +146,8 @@ assistant, the coding agent, MCP, skills, language servers — is
   command line is being worked out by apps, not by this repo:
   [Puri](https://github.com/mvysny/puri), the secretary with all the
   bells and whistles, then
-  [pikuri-tui](https://codeberg.org/mvysny/pikuri-tui)'s terminal
-  shells and [pikuri-webui](https://codeberg.org/mvysny/pikuri-webui)'s
+  [pikuri-tui](https://github.com/mvysny/pikuri-tui)'s terminal
+  shells and [pikuri-webui](https://github.com/mvysny/pikuri-webui)'s
   browser chat. A piece that proves itself there moves back into a
   gem. Running many conversations at once, as those apps do, is
   book 2's last chapter.

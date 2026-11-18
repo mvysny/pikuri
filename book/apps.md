@@ -34,7 +34,7 @@ between them.
 
 ## pikuri-tui
 
-[pikuri-tui](https://codeberg.org/mvysny/pikuri-tui) is a set of
+[pikuri-tui](https://github.com/mvysny/pikuri-tui) is a set of
 terminal front-ends:
 
 - **`pikuri-tui-chat`**: a general-purpose chat with web search and the
@@ -55,7 +55,7 @@ stdin.
 
 ## pikuri-webui
 
-[pikuri-webui](https://codeberg.org/mvysny/pikuri-webui) is the
+[pikuri-webui](https://github.com/mvysny/pikuri-webui) is the
 browser version of the same chat: a Sinatra page that streams the
 conversation over SSE, with many conversations in one process plus the
 background jobs that title them.
