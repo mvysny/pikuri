@@ -52,7 +52,7 @@ def doc(rel, title, paragraphs)
   when '.md' then put(rel, "# #{title}\n\n#{paragraphs.join("\n\n")}\n")
   when '.txt' then put(rel, "#{title}\n\n#{paragraphs.join("\n\n")}\n")
   else
-    html = "<html><head><title>#{title}</title></head><body><h1>#{title}</h1>" \
+    html = "<html><head><meta charset=\"utf-8\"><title>#{title}</title></head><body><h1>#{title}</h1>" \
            "#{paragraphs.map { "<p>#{_1}</p>" }.join}</body></html>"
     ext = File.extname(rel).delete('.')
     put(rel, ext == 'html' ? html : CONVERTER.convert(html, ext))

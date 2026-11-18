@@ -253,8 +253,9 @@ rag: 2.01 calls a run against 2.08, median 28 s both, 79 of 80 passes.
 - **Neither arm was fooled by a near-miss**, and freshness made no difference: a note saved 5 s
   before the question passed 10/10 on both.
 
-Artefact: `dev/demo-home/build`'s HTML pages, and the hard home's, declare no charset, so
-localsearch reads them as Latin-1 ("â€”" for "—"). No task searched a non-ASCII word in HTML.
+Artefact in these runs: the hard home's HTML pages declared no charset, so localsearch read
+them as Latin-1 ("â€”" for "—"); no task searched a non-ASCII word in HTML. Both generators
+now declare UTF-8 (2026-11-18); a rebuilt hard home picks it up.
 
 ### What's left
 
