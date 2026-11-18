@@ -5,8 +5,10 @@ require 'pikuri-core'
 # Entry file for the pikuri-fileindex gem: search and read your files through
 # the index the desktop already keeps (GNOME's localsearch, or recoll), never
 # an index of our own. Two tools, +fileindex_search+ ({Pikuri::Fileindex::Search})
-# and +fileindex_read+ ({Pikuri::Fileindex::Read}), over whichever backend
-# {Pikuri::Fileindex.pick} finds ready.
+# and +fileindex_read+ ({Pikuri::Fileindex::Read}), bounded by the folders the
+# host names ({Pikuri::Fileindex::Roots}), over whichever backend
+# {Pikuri::Fileindex.pick} finds ready; {Pikuri::Fileindex::Extension} wires
+# both.
 #
 # The load-bearing posture: the desktop's extractor, not pikuri, parsed every
 # office file and PDF the tools return, and the model's words reach the index
@@ -29,12 +31,15 @@ module Pikuri
     # one's reason and is meant for the user.
     class Unavailable < StandardError; end
 
-    # The first backend that is ready, probing each once, in order, so a
-    # host never probes one itself:
+    # The first backend ready to answer over +roots+, probing each once, in
+    # order, so a host never probes one itself. Probing spawns a subprocess
+    # per root, so a host picks once and hands the result to every agent:
     #
-    #   backend = Pikuri::Fileindex.pick             # => Pikuri::Fileindex::LocalSearch
-    #   c.add_tool Pikuri::Fileindex::Search.new(backend: backend)
-    #   c.add_tool Pikuri::Fileindex::Read.new(backend: backend)
+    #   roots = Pikuri::Fileindex::Roots.new(dirs: %w[~/notes], private: true, trusted: true)
+    #   backend = Pikuri::Fileindex.pick(roots)      # => Pikuri::Fileindex::LocalSearch
+    #   Pikuri::Agent.new(transport:, system_prompt:) do |c|
+    #     c.add_extension Pikuri::Fileindex::Extension.new(roots:, backend:)
+    #   end
     #
     # On a host with neither index ready, the {Unavailable} it raises reads:
     #
@@ -42,17 +47,18 @@ module Pikuri
     #   - localsearch: the 'tinysparql' command is missing. Install …
     #   - recoll: no index in /home/u/.recoll yet. Build one with `recollindex`.
     #
-    # A backend is a module answering +unavailable_reason+, +search+,
-    # +read_text+, +limitations+ and +label+, with a +CommandError+:
-    # {LocalSearch} and {Recoll}.
+    # A backend is a module answering +unavailable_reason(folders:)+,
+    # +search(query:, limit:, folders:)+, +read_text+, +limitations+ and
+    # +label+, with a +CommandError+: {LocalSearch} and {Recoll}.
     #
+    # @param roots [Roots] the folders the agent will search
     # @param backends [Array<Module>] candidates in preference order
     # @return [Module] the first one whose +unavailable_reason+ is +nil+
     # @raise [Unavailable] when none is ready
-    def self.pick(backends = BACKENDS)
+    def self.pick(roots, backends: BACKENDS)
       reasons = []
       backends.each do |backend|
-        reason = backend.unavailable_reason
+        reason = backend.unavailable_reason(folders: roots.dirs)
         return backend unless reason
 
         reasons << "- #{backend.label}: #{reason}"

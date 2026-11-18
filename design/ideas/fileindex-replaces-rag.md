@@ -111,8 +111,25 @@ desktop already keeps fresh.
   `pikuri-os` and Puri then depend on this gem, and Puri drops `pikuri-os`. That's the allowed
   direction (workshop → pikuri). **Copied 2026-11-18** as `Pikuri::Fileindex::{LocalSearch,
   Recoll, Search, Read}`, with `FileIndex.pick` as `Pikuri::Fileindex.pick`, along with their
-  specs and the file-search sections of pikuri-os's architecture note. Not done yet: pikuri-os
-  still carries its own copy, and nothing below (roots, path check, "that's all") exists yet.
+  specs and the file-search sections of pikuri-os's architecture note. pikuri-os still
+  carries its own copy.
+- **Done 2026-11-18: roots, the path check, readiness over the roots, legs.** As built, where it
+  differs from the sketch below:
+  - `Roots.new(dirs:, private:, trusted:)`: one declaration for all roots, as a vectordb corpus
+    or a workspace has, not per-root grading. The tools declare legs once, so a per-root union
+    gives the same verdict; mixed roots mean one declaration that fits all of them.
+  - Required, no default yet (`Q_default_roots` is still open).
+  - Readiness is `unavailable_reason(folders:)`, the name pikuri-os already used; there is no
+    `available?`, since nothing needs it. `Fileindex.pick(roots)` keeps its pikuri-os name.
+  - The host picks once and hands `backend:` to `Extension.new(roots:, backend:)`: an extension
+    is built per agent, and picking probes the index once per root.
+  - Symlinks: the roots mean real paths. `Roots#resolve` resolves a path through its longest
+    existing part, so a symlink from `~/Documents` into `~/work` leads outside and is refused.
+  - Every search hit is re-checked against the roots, because recoll's query language is
+    spliced. Measured on recoll 1.43: positive `dir:` clauses are ANDed (so roots go in one
+    `(dir:… OR dir:…)` group), and recoll *does* index hidden files, so the hidden check bites
+    there, not only in `fileindex_read`.
+  - Not done: "that's all" (`Q_briefing`'s truthful "25 of 37"), the secretary's wiring.
 - Mostly a move: the `tinysparql` query, the bound parameters and the snippets exist already
   (see Measured). The new parts are the roots and the readiness check below.
 - **`roots:` on the extension, set by pikuri, never by the model.** Today `folder` is the

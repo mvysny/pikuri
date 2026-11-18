@@ -23,6 +23,9 @@ module Pikuri
     # guesswork. {.read_text} uses +recollq -d+, which dumps a document's
     # stored/extracted text (PDFs/office docs included) after a header line.
     module Recoll
+      # @return [Logger]
+      LOGGER = Pikuri.logger_for('Fileindex::Recoll')
+
       # @return [String] the headless recoll query CLI.
       BINARY = 'recollq'
 
@@ -105,26 +108,26 @@ module Pikuri
       end
 
       # Run +recollq -F 'url abstract dbytes' -n <limit>+ and parse the results.
-      # A +folder+ becomes a +dir:"<folder>"+ clause, which recoll matches by
-      # whole path components (+/a/sp+ does not match +/a/sp ace+).
+      # The folders become one +(dir:"<a>" OR dir:"<b>")+ group appended to
+      # the query; recoll matches a +dir:+ by whole path components (+/a/sp+
+      # does not match +/a/sp ace+).
+      #
+      # The query is recoll's query language, spliced in as the model wrote
+      # it, so the folder group narrows it but can't be relied on to bound
+      # it: the +fileindex_search+ tool drops any hit outside its roots.
       #
       # @param query [String] recoll query-language string
       # @param limit [Integer]
-      # @param folder [String, nil] absolute folder to search under; +nil+
-      #   searches the whole index
+      # @param folders [Array<String>] absolute folders to search under,
+      #   subfolders included; at least one
       # @return [Array<Hash>] +[{ path: String, snippet: String|nil,
       #   text_size: Integer|nil }, …]+, de-duplicated by path; +text_size+
       #   is the extracted text's bytes (+dbytes+), +nil+ when there is none
-      # @raise [CommandError] if recollq exits non-zero, or +folder+ contains
+      # @raise [CommandError] if recollq exits non-zero, or a folder contains
       #   a +"+ (recoll's query language cannot quote one)
-      def self.search(query:, limit:, folder: nil)
-        if folder
-          raise CommandError, "can't search a folder whose path contains a double quote: #{folder}" if folder.include?('"')
-
-          query = "#{query} dir:\"#{folder}\""
-        end
-        result = Pikuri::Subprocess.spawn(BINARY, '-F', 'url abstract dbytes', '-n', limit.to_s, query,
-                                          chdir: '/').wait
+      def self.search(query:, limit:, folders:)
+        result = Pikuri::Subprocess.spawn(BINARY, '-F', 'url abstract dbytes', '-n', limit.to_s,
+                                          "#{query} #{within(folders)}", chdir: '/').wait
         unless result.status.success?
           stderr = result.output.strip
           stderr = "exited #{result.status.exitstatus}" if stderr.empty?
@@ -200,29 +203,62 @@ module Pikuri
         capturing || !body.empty? ? body.join.chomp : nil
       end
 
-      # Why this index can't answer a search right now, for a human to act
-      # on; +nil+ when it can. A built index holding no documents is not
-      # ready either: every search would come back empty.
+      # Why this index can't answer a search under +folders+ right now, for
+      # a human to act on; +nil+ when it can. A built index holding no
+      # document under any of them is not ready either: every search would
+      # come back empty. Some empty folders are normal (an empty Desktop), so
+      # they only log a warning naming each.
       #
-      #   Recoll.unavailable_reason
+      #   Recoll.unavailable_reason(folders: ['/home/u/notes'])
       #   # => "no index in /home/u/.recoll yet. Build one with `recollindex`."
       #
+      # @param folders [Array<String>] absolute real paths
       # @return [String, nil]
-      def self.unavailable_reason
-        result = Pikuri::Subprocess.spawn(BINARY, '-F', 'url', '-n', '1', ANY_DOCUMENT, chdir: '/').wait
-        unless result.status.success?
-          return "no index in #{confdir} yet. Build one with `recollindex`." unless File.directory?(File.join(confdir, INDEX_DIR))
+      def self.unavailable_reason(folders:)
+        quoted = folders.find { |folder| folder.include?('"') }
+        return "recoll can't search #{quoted}: its query language can't quote a double quote in a path." if quoted
 
-          return "the index in #{confdir} doesn't answer: #{result.output.strip.lines.last&.strip}"
+        empty = folders.reject { |folder| holds_document?(folder) }
+        if empty.size < folders.size
+          empty.each { |folder| LOGGER.warn("nothing under #{folder} is indexed; searches there find nothing") }
+          return nil
         end
-        return nil if result.output.each_line.any? { |line| decode_base64(line.strip)&.start_with?('file://') }
 
-        "the index in #{confdir} holds no documents. Check `topdirs` in " \
+        "nothing under #{folders.join(', ')} is in the index in #{confdir}. Check `topdirs` in " \
           "#{File.join(confdir, CONFIG_FILE)}, then rerun `recollindex`."
       rescue Errno::ENOENT
         "the '#{BINARY}' command is missing. Install the 'recoll' package, then build an index " \
           'with `recollindex`.'
+      rescue CommandError => e
+        return "no index in #{confdir} yet. Build one with `recollindex`." unless File.directory?(File.join(confdir, INDEX_DIR))
+
+        "the index in #{confdir} doesn't answer: #{e.message}"
       end
+
+      # @param folder [String]
+      # @return [Boolean] whether the index holds any document under +folder+
+      # @raise [CommandError] if recollq exits non-zero (message: its last
+      #   line), or +folder+ contains a +"+
+      def self.holds_document?(folder)
+        result = Pikuri::Subprocess.spawn(BINARY, '-F', 'url', '-n', '1', "#{ANY_DOCUMENT} #{within([folder])}",
+                                          chdir: '/').wait
+        raise CommandError, result.output.strip.lines.last&.strip.to_s unless result.status.success?
+
+        result.output.each_line.any? { |line| decode_base64(line.strip)&.start_with?('file://') }
+      end
+      private_class_method :holds_document?
+
+      # @param folders [Array<String>]
+      # @return [String] +(dir:"<a>" OR dir:"<b>")+; positive +dir:+ clauses
+      #   side by side would be ANDed
+      # @raise [CommandError] if a folder contains a +"+
+      def self.within(folders)
+        quoted = folders.find { |folder| folder.include?('"') }
+        raise CommandError, "can't search a folder whose path contains a double quote: #{quoted}" if quoted
+
+        "(#{folders.map { |folder| "dir:\"#{folder}\"" }.join(' OR ')})"
+      end
+      private_class_method :within
 
       # Join backslash-continued lines, then read the +topdirs+ value from
       # the global section (everything before the first +[section]+ header).

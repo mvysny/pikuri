@@ -27,13 +27,26 @@ What the gem promises, and what it leaves to the host:
   refused because that language can't quote one.
 - **Nothing is written.** Both backends are queried read-only. pikuri
   never builds, configures or refreshes an index.
-- **Reach is the whole index, for now.** The model's `folder` narrows a
-  search, but nothing bounds it: on a stock LocalSearch 3.11 the index
-  covers all of `$HOME` (hidden paths, git checkouts and source text
-  aside). Hence both tools declare the private leg and hard-untrusted
-  content, fixed. Host-set `roots:` that the model can only narrow inside
-  are the next step (`design/ideas/fileindex-replaces-rag.md`); the legs
-  can then be graded from the roots.
+- **Reach is the host's roots, never the model's choice.** On a stock
+  LocalSearch 3.11 the index covers all of `$HOME` (hidden paths, git
+  checkouts and source text aside), so {Pikuri::Fileindex::Roots} is the
+  boundary, enforced three times over:
+  - the backend searches only under the roots (bound URL prefixes for
+    localsearch, an OR-ed `dir:` group for recoll);
+  - the model's `folder` and `fileindex_read`'s `path` must resolve inside
+    a root, judged by their real path, so neither `..` nor a symlink leads
+    out, and a path outside is refused before anything checks whether it
+    exists;
+  - every search hit is checked against the roots before the model sees
+    it. That last check is the guarantee: recoll's query language is
+    spliced, so its `dir:` group narrows but isn't trusted to bound.
+- **Nothing hidden.** A dot-named file or folder below a root is never
+  returned or read. localsearch never indexes one; recoll does, so the
+  check is load-bearing there.
+- **Legs come from the owner's declaration.** `Roots.new(private:,
+  trusted:)` grades both tools, as a vectordb corpus or a workspace
+  does; nothing inspects the files. A root with Downloads in it is never
+  `trusted:`.
 - **No egress.** Neither tool sends bytes anywhere; `tinysparql` speaks to
   the session bus, `recollq` reads a local Xapian database.
 
@@ -118,9 +131,13 @@ It indexes exactly the configured `topdirs` (source code included), which
 is why its `limitations` is a *method* reading the live `topdirs` rather
 than a constant (see {Pikuri::Fileindex::Recoll.limitations} vs
 {Pikuri::Fileindex::LocalSearch::LIMITATIONS}). And "ready" means "can
-answer", not "installed": each backend's `unavailable_reason` requires an
-index holding at least one file, lest an installed-but-empty index win
-{Pikuri::Fileindex.pick} and then answer every search with nothing.
+answer", not "installed": each backend's `unavailable_reason(folders:)`
+requires at least one file under the roots, lest an installed-but-empty
+index win {Pikuri::Fileindex.pick} and then answer every search with
+nothing. That also catches the cases a bare probe passes: indexing
+turned off in GNOME's Search settings, roots GNOME doesn't cover, a notes
+folder that is a git checkout. One empty root among others is normal (an
+empty Desktop), so it only logs a warning.
 
 ## Testing
 

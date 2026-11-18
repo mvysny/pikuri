@@ -14,6 +14,12 @@ module Pikuri
     # the error label) is read from the backend, so a new index arm ships
     # its own without touching the tool.
     #
+    # The +roots:+ bound it: the model's +folder+ must lie inside them, the
+    # backend searches only under them, and a hit outside them (or hidden
+    # below one) is dropped before the model sees it. That last filter is
+    # the guarantee; recoll's query language is spliced, so its own folder
+    # clause narrows but can't be trusted to bound.
+    #
     # It's a locator, not a window: the index reports at most one match per
     # file, so the tool previews one match each and tells the LLM to read
     # the file for full content / other matches. It sees inside PDFs and
@@ -40,35 +46,35 @@ module Pikuri
 
       # @return [String] opencode-shape description (summary + Usage),
       #   backend-neutral. The *runtime* tool description is this constant
-      #   plus the backend's +#limitations+, appended at construction (see
-      #   {#initialize}) — and it is that appended text, not this constant,
-      #   that states *which folders the index actually covers* and what it
-      #   misses (recoll lists its +topdirs+; localsearch names source code
-      #   and git checkouts). So keep coverage claims out of here; they
-      #   belong with the backend that knows them.
+      #   plus the roots and the backend's +#limitations+, appended at
+      #   construction (see {#initialize}) — and it is that appended text, not
+      #   this constant, that states *which folders are searched* and what the
+      #   index misses there (recoll lists its +topdirs+; localsearch names
+      #   source code and git checkouts). So keep coverage claims out of here.
       DESCRIPTION = <<~DESC
         Find files whose contents contain your words or phrase, using the desktop search index.
 
         Usage:
         - Searches inside PDFs, Word/ODT/spreadsheet documents and plain text — reach for this when the answer may live in a file's contents.
         - Keyword match (and word stems); type the actual words that would appear in the file.
-        - Pass `folder` to search only under one folder (subfolders included) — the way to find a common word inside one project instead of across the whole disk.
+        - Pass `folder` to search only under one folder (subfolders included) — the way to find a common word inside one project instead of across every folder you can search.
         - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
         - Each file shows the size of its indexed text. fileindex_read returns up to #{READ_PAGE_LABEL} per call, so a smaller file reads whole in one call; in a bigger one, find the lines you need with fileindex_read's `pattern` first.
         - Cheap: it queries a prebuilt index rather than walking the filesystem, so it barely touches the disk of the machine the user is on — fine to run many times to narrow down.
-        - Only indexed folders are covered; system paths like /etc or /var are not — search those with a text/regex tool instead.
         - Output is truncated to #{MAX_BYTES_LABEL}; narrow the query if it ends in a truncation marker.
       DESC
 
       # @param backend [Module] a ready file-index backend, from
       #   {Fileindex.pick}; this tool uses its +search+, +limitations+,
       #   +label+ and +CommandError+.
+      # @param roots [Roots] the folders searched; their declaration grades
+      #   the tool's legs
       # @return [Search]
-      def initialize(backend:)
+      def initialize(backend:, roots:)
         @backend = backend
         super(
           name: 'fileindex_search',
-          description: "#{DESCRIPTION}\n#{backend.limitations}",
+          description: "#{DESCRIPTION}\n#{Search.roots_note(roots)}\n#{backend.limitations}",
           parameters: Parameters.build { |p|
             p.required_string :query,
                               'Words or a phrase to find in file contents, ' \
@@ -78,28 +84,32 @@ module Pikuri
                                "(default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}), e.g. 10."
             p.optional_string :folder,
                               'Absolute path of a folder to search under, subfolders ' \
-                              'included; omit to search everything indexed, e.g. "~/Documents/taxes".'
+                              'included, inside the folders you can search; omit to search all of them, ' \
+                              'e.g. "~/Documents/taxes".'
           },
           execute: lambda { |query:, limit: DEFAULT_LIMIT, folder: nil|
-            Search.search(query: query, limit: limit, folder: folder, backend: backend)
+            Search.search(query: query, limit: limit, folder: folder, backend: backend, roots: roots)
           },
-          # Private and hard untrusted, both fixed rather than derived: this searches
-          # the *whole machine's* file index, which is the whole-disk case by
-          # construction — a reachable set nobody can vouch for, holding whatever the
-          # user keeps on disk.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress_payload_review: :no_egress)
+          trifecta_legs: roots.legs
         )
+      end
+
+      # @param roots [Roots]
+      # @return [String] the description lines naming the searched folders
+      def self.roots_note(roots)
+        "Searches only under these folders (subfolders included):\n#{roots.dirs.map { |dir| "- #{dir}" }.join("\n")}"
       end
 
       # @param query [String]
       # @param limit [Integer]
       # @param folder [String, nil] folder to search under, absolute or
-      #   +~+-relative; +nil+ or blank searches everything indexed
+      #   +~+-relative, inside +roots+; +nil+ or blank searches all of them
       # @param backend [Module] the file-index backend to query
+      # @param roots [Roots] the folders this search may reach
       # @return [Pikuri::Tool::Result] the hits + disclaimer (+"Found 8
       #   files"+), or {Pikuri::Tool::Result.error} for a bad +folder+ or a
       #   backend failure
-      def self.search(query:, backend:, limit: DEFAULT_LIMIT, folder: nil)
+      def self.search(query:, backend:, roots:, limit: DEFAULT_LIMIT, folder: nil)
         q = query.to_s.strip
         return Pikuri::Tool::Result.error('empty query.') if q.empty?
 
@@ -115,6 +125,9 @@ module Pikuri
           rescue ArgumentError => e # "~nosuchuser"
             return Pikuri::Tool::Result.error("bad folder '#{folder}': #{e.message}")
           end
+          # Resolved before any existence check, so nothing outside the roots
+          # can be probed for whether it exists.
+          folder = roots.resolve(folder) or return outside_error(folder, roots)
           # A file as folder reads as "every match in this file", which the
           # index can't answer: it keeps one snippet per file.
           if File.file?(folder)
@@ -126,7 +139,8 @@ module Pikuri
         end
 
         limit = clamp(limit, 1, MAX_LIMIT)
-        hits = backend.search(query: q, limit: limit, folder: folder)
+        hits = backend.search(query: q, limit: limit, folders: folder ? [folder] : roots.dirs)
+                      .select { |hit| roots.resolve(hit[:path]) }
         if hits.empty?
           return Pikuri::Tool::Result.new(content: no_match_message(q, folder), summary: 'Found 0 files')
         end
@@ -161,11 +175,18 @@ module Pikuri
       end
       private_class_method :disclaimer
 
+      # @return [Pikuri::Tool::Result]
+      def self.outside_error(folder, roots)
+        Pikuri::Tool::Result.error("#{folder} is not inside the folders you can search " \
+                                   "(#{roots.dirs.join(', ')}), or is hidden.")
+      end
+      private_class_method :outside_error
+
       # @return [String]
       def self.no_match_message(query, folder)
         where = folder ? " under #{folder}" : ''
-        "No files found matching '#{query}'#{where}. (Searches your indexed folders, " \
-          'not system paths; the index may also be disabled or still building.)'
+        "No files found matching '#{query}'#{where}. (The index may also be slightly stale, " \
+          'or still building.)'
       end
       private_class_method :no_match_message
 

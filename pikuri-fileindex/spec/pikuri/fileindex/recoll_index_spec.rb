@@ -21,27 +21,51 @@ RSpec.describe Pikuri::Fileindex::Recoll, 'against a real index' do
     end
   end
 
+  def docs = File.join(@confdir, 'docs')
+
   # Index +files+ (relative path => text) under a fresh topdirs folder.
   def build_index(files)
-    docs = File.join(@confdir, 'docs')
-    Dir.mkdir(docs)
-    files.each { |rel, text| File.write(File.join(docs, rel), text) }
+    files.each do |rel, text|
+      FileUtils.mkdir_p(File.dirname(File.join(docs, rel)))
+      File.write(File.join(docs, rel), text)
+    end
+    FileUtils.mkdir_p(docs)
     File.write(File.join(@confdir, 'recoll.conf'), "topdirs = #{docs}\n")
     _, status = Open3.capture2e('recollindex', '-c', @confdir)
     raise "recollindex failed in #{@confdir}" unless status.success?
   end
 
-  it 'is ready once the index holds a document' do
-    build_index('a.txt' => 'hello lease agreement')
-    assert_nil described_class.unavailable_reason
+  it 'is ready once the index holds a document under one of the folders' do
+    build_index('a/x.txt' => 'hello lease agreement')
+    FileUtils.mkdir_p(File.join(docs, 'b'))
+    assert_nil described_class.unavailable_reason(folders: ["#{docs}/a", "#{docs}/b"])
   end
 
-  it 'is not ready over an index of an empty folder' do
-    build_index({})
-    assert_includes described_class.unavailable_reason, "the index in #{@confdir} holds no documents"
+  it 'is not ready when no folder holds a document' do
+    build_index('a/x.txt' => 'hello')
+    FileUtils.mkdir_p(File.join(docs, 'b'))
+    assert_includes described_class.unavailable_reason(folders: ["#{docs}/b"]),
+                    "nothing under #{docs}/b is in the index in #{@confdir}"
   end
 
   it 'is not ready before recollindex ever ran' do
-    assert_equal "no index in #{@confdir} yet. Build one with `recollindex`.", described_class.unavailable_reason
+    assert_equal "no index in #{@confdir} yet. Build one with `recollindex`.",
+                 described_class.unavailable_reason(folders: ['/'])
+  end
+
+  it 'searches under any of several folders, and nowhere else' do
+    build_index('a/x.txt' => 'zebra one', 'b/y.txt' => 'zebra two', 'c/z.txt' => 'zebra three')
+    hits = described_class.search(query: 'zebra', limit: 10, folders: ["#{docs}/a", "#{docs}/b"])
+    assert_equal ["#{docs}/a/x.txt", "#{docs}/b/y.txt"], hits.map { |hit| hit[:path] }.sort
+  end
+
+  it 'indexes a hidden file, which fileindex_search then drops' do
+    build_index('a.txt' => 'zebra shown', '.hid/b.txt' => 'zebra hidden')
+    assert_equal 2, described_class.search(query: 'zebra', limit: 10, folders: [docs]).size
+
+    roots = Pikuri::Fileindex::Roots.new(dirs: [docs])
+    out = Pikuri::Fileindex::Search.search(query: 'zebra', backend: described_class, roots: roots).to_s
+    assert_includes out, "#{docs}/a.txt"
+    refute_includes out, '.hid'
   end
 end

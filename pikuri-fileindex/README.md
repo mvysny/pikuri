@@ -12,6 +12,9 @@ Provides:
 - `fileindex_read` (`Pikuri::Fileindex::Read`): a file's full text as the
   index extracted it, paged like `read`, with an optional `pattern` that
   returns only the matching lines.
+- `Pikuri::Fileindex::Roots`: the folders you let the agent reach. The
+  agent can't search or read anything outside them, or any hidden file
+  inside them.
 - Two backends: GNOME's **localsearch** (queried through `tinysparql`)
   and **recoll** (through `recollq`). `Pikuri::Fileindex.pick` takes the
   first one that is ready.
@@ -57,15 +60,27 @@ gem 'pikuri-fileindex'
 require 'pikuri-core'
 require 'pikuri-fileindex'
 
-backend = Pikuri::Fileindex.pick   # raises Pikuri::Fileindex::Unavailable, saying why
+roots = Pikuri::Fileindex::Roots.new(dirs: %w[~/Documents ~/Downloads], private: true)
+backend = Pikuri::Fileindex.pick(roots)   # raises Pikuri::Fileindex::Unavailable, saying why
 agent = Pikuri::Agent.new(transport:, system_prompt:) do |c|
-  c.add_tool Pikuri::Fileindex::Search.new(backend: backend)
-  c.add_tool Pikuri::Fileindex::Read.new(backend: backend)
+  c.add_extension Pikuri::Fileindex::Extension.new(roots:, backend:)
 end
 ```
 
-When neither index is ready, the `Unavailable` message names what is
-missing for each one and how to fix it; show it to the user.
+**Name your folders.** A stock GNOME install indexes your whole home
+folder: `~/work`, `~/snap`, your backups. Only the roots keep an agent
+you gave `~/Documents` out of the rest.
+
+`private:` says the folders hold data worth stealing; `trusted:` says
+every file in them is your own, so nothing a stranger wrote (not
+Downloads, not a folder an agent that reads your mail writes into).
+Both default to `false`, and they set the tools' trifecta legs.
+
+Pick once per process and hand the backend to every agent: checking
+readiness runs one query per root. When neither index holds a file
+under the roots, the `Unavailable` message names what is missing for
+each index and how to fix it; show it to the user. An empty Desktop
+among other roots is fine, and only logs a warning.
 
 Design notes and the backend survey:
 [`design/architecture.md`](design/architecture.md).

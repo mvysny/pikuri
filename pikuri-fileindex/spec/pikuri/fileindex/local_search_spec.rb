@@ -3,7 +3,8 @@
 # Parsing and argv, with Subprocess.spawn stubbed (CI has no localsearch).
 # The real index is exercised by local_search_index_spec.rb.
 RSpec.describe Pikuri::Fileindex::LocalSearch do
-  # Stubs spawn to answer +output+ and records each argv in +calls+.
+  # Stubs spawn to answer +output+ (or, when it is a Proc, what it answers
+  # for the argv) and records each argv in +calls+.
   def stub_spawn(success:, output:, calls: [])
     original = Pikuri::Subprocess.method(:spawn)
     result_struct = Struct.new(:status, :output) do
@@ -12,7 +13,7 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
     status_struct = Struct.new(:success?, :exitstatus)
     Pikuri::Subprocess.define_singleton_method(:spawn) do |*args, **_kwargs|
       calls << args
-      result_struct.new(status_struct.new(success, success ? 0 : 1), output)
+      result_struct.new(status_struct.new(success, success ? 0 : 1), output.is_a?(Proc) ? output.call(args) : output)
     end
     original
   end
@@ -62,31 +63,35 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
       with_spawn(success: true, output: out) do
         assert_equal [{ path: '/a/b c.txt', snippet: 'alpha beta', text_size: 812 },
                       { path: '/d.rb', snippet: nil, text_size: nil }],
-                     described_class.search(query: 'beta', limit: 5)
+                     described_class.search(query: 'beta', limit: 5, folders: ['/'])
       end
     end
 
-    it 'scopes to a folder by its escaped URI, with a trailing slash' do
+    it 'binds each folder as an escaped URI prefix, with a trailing slash, and the query and limit' do
       calls = []
       with_spawn(success: true, output: "Results:\n  None\n", calls: calls) do
-        described_class.search(query: 'tax', limit: 7, folder: '/home/u/My Docs')
+        described_class.search(query: 'tax', limit: 7, folders: ['/home/u/My Docs', '/home/u/Downloads/'])
       end
       args = args_of(calls.first)
-      assert_equal 's:file:///home/u/My%20Docs/', args['prefix']
+      assert_equal 's:file:///home/u/My%20Docs/', args['folder0']
+      assert_equal 's:file:///home/u/Downloads/', args['folder1']
       assert_equal 's:tax', args['query']
       assert_equal 'i:7', args['limit']
       assert_equal %w[tinysparql query -b org.freedesktop.LocalSearch3], calls.first.first(4)
+      query = calls.first[calls.first.index('-q') + 1]
+      assert_includes query, 'FILTER (STRSTARTS(?url, ~folder0) || STRSTARTS(?url, ~folder1))'
+      refute_includes query, 'home/u', 'a path is bound, never spliced'
     end
 
-    it 'searches every local file without a folder' do
+    it 'filters the root folder as every local file' do
       calls = []
-      with_spawn(success: true, output: '', calls: calls) { described_class.search(query: 'x', limit: 1) }
-      assert_equal 's:file:///', args_of(calls.first)['prefix']
+      with_spawn(success: true, output: '', calls: calls) { described_class.search(query: 'x', limit: 1, folders: ['/']) }
+      assert_equal 's:file:///', args_of(calls.first)['folder0']
     end
 
     it 'raises CommandError with the CLI message on a non-zero exit' do
       with_spawn(success: false, output: 'Could not run query') do
-        err = assert_raises(Pikuri::Fileindex::LocalSearch::CommandError) { described_class.search(query: 'x', limit: 5) }
+        err = assert_raises(Pikuri::Fileindex::LocalSearch::CommandError) { described_class.search(query: 'x', limit: 5, folders: ['/']) }
         assert_equal 'Could not run query', err.message
       end
     end
@@ -111,15 +116,44 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
   end
 
   describe '.unavailable_reason' do
-    it 'is nil when the index holds a file' do
-      with_spawn(success: true, output: "Results:\n  v:file%3A%2F%2F%2Fhome%2Fu%2Fa.txt\n") do
-        assert_nil described_class.unavailable_reason
-      end
+    def hit = "Results:\n  v:file%3A%2F%2F%2Fhome%2Fu%2Fa.txt\n"
+    def none = "Results:\n  None\n"
+
+    # Answers a file for the probe of every folder in +held+, none otherwise.
+    def holding(*held)
+      ->(argv) { held.any? { |folder| args_of(argv)['folder0'] == "s:file://#{folder}/" } ? hit : none }
     end
 
-    it 'says the index is empty when it answers with no file' do
-      with_spawn(success: true, output: "Results:\n  None\n") do
-        assert_includes described_class.unavailable_reason, 'the index holds no files yet'
+    def capture_warnings
+      io = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = io
+      yield
+      io.string
+    ensure
+      Pikuri.log_io = original
+    end
+
+    it 'is nil when every folder holds a file' do
+      with_spawn(success: true, output: hit) { assert_nil described_class.unavailable_reason(folders: ['/a']) }
+    end
+
+    it 'is nil when one folder holds a file, warning about each empty one' do
+      log = capture_warnings do
+        with_spawn(success: true, output: holding('/docs')) do
+          assert_nil described_class.unavailable_reason(folders: ['/desk', '/docs', '/down'])
+        end
+      end
+      assert_includes log, 'nothing under /desk is indexed'
+      assert_includes log, 'nothing under /down is indexed'
+      refute_includes log, '/docs'
+    end
+
+    it 'names every folder when none holds a file' do
+      with_spawn(success: true, output: none) do
+        reason = described_class.unavailable_reason(folders: ['/a', '/b'])
+        assert reason.start_with?('nothing under /a, /b is indexed.'), reason
+        assert_includes reason, 'GNOME Settings → Search'
       end
     end
 
@@ -127,7 +161,7 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
       said = 'Could not establish a connection to Tracker: The name org.freedesktop.LocalSearch3 ' \
              'was not provided by any .service files'
       with_spawn(success: false, output: said) do
-        reason = described_class.unavailable_reason
+        reason = described_class.unavailable_reason(folders: ['/a'])
         assert_includes reason, said
         assert_includes reason, "'localsearch' package"
       end
@@ -137,7 +171,7 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
       original = Pikuri::Subprocess.method(:spawn)
       Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| raise Errno::ENOENT, 'tinysparql' }
       begin
-        reason = described_class.unavailable_reason
+        reason = described_class.unavailable_reason(folders: ['/a'])
         assert_includes reason, "'tinysparql' command is missing"
         assert_includes reason, "'localsearch'"
       ensure

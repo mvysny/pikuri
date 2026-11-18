@@ -6,7 +6,7 @@ module Pikuri
     # queried in SPARQL through the +tinysparql+ CLI. The stateless backend
     # behind +fileindex_search+ / +fileindex_read+:
     #
-    #   LocalSearch.search(query: 'lease', limit: 10, folder: '/home/u/Documents')
+    #   LocalSearch.search(query: 'lease', limit: 10, folders: ['/home/u/Documents'])
     #   # => [{ path: '/home/u/Documents/Housing/lease-agreement.pdf',
     #   #       snippet: 'Residential >>Lease<< Agreement Landlord: …',
     #   #       text_size: 4211 }, …]
@@ -36,6 +36,9 @@ module Pikuri
     #
     # Index URLs use GLib's escaping ({.file_uri}); a folder filter or a read
     # built with any other escaping silently matches nothing.
+    #
+    # Each folder is its own bound parameter (+~folder0+, +~folder1+, …); only
+    # those generated names are spliced into the query text, never a path.
     module LocalSearch
       # @return [String] the SPARQL query CLI.
       BINARY = 'tinysparql'
@@ -52,11 +55,15 @@ module Pikuri
       #   snippet, so the model sees which words hit.
       MATCH_MARKERS = ['>>', '<<'].freeze
 
+      # @return [Logger]
+      LOGGER = Pikuri.logger_for('Fileindex::LocalSearch')
+
       # The ranked, folder-scoped search. A file matches by name (first
       # branch, no snippet) or by extracted text (second branch); +MAX+ over
       # the group keeps the better rank and the non-empty snippet. The
       # +OPTIONAL+ measures the file's stored text whichever branch matched;
-      # a file indexed by name only leaves it unbound.
+      # a file indexed by name only leaves it unbound. +%<under>s+ is the
+      # folder filter, {.under}'s.
       #
       # @return [String]
       SEARCH_QUERY = <<~SPARQL
@@ -81,7 +88,7 @@ module Pikuri
             BIND (STRLEN(?text) AS ?length)
           }
           FILTER (tracker:available(nie:dataSource(?f)))
-          FILTER (STRSTARTS(?url, ~prefix))
+          FILTER (%<under>s)
         }
         GROUP BY ?url
         ORDER BY DESC(MAX(?rank)) ?url
@@ -99,9 +106,9 @@ module Pikuri
         LIMIT 1
       SPARQL
 
-      # Any one searchable file: a folder alone gives a search nothing to
-      # find, and a file on an unmounted drive is filtered as {SEARCH_QUERY}
-      # filters it.
+      # Any one searchable file under +~folder0+: a folder alone gives a
+      # search nothing to find, and a file on an unmounted drive is filtered
+      # as {SEARCH_QUERY} filters it.
       #
       # @return [String]
       PROBE_QUERY = <<~SPARQL
@@ -111,6 +118,7 @@ module Pikuri
           ?elem nie:isStoredAs ?f .
           FILTER NOT EXISTS { ?elem a nfo:Folder }
           FILTER (tracker:available(nie:dataSource(?f)))
+          FILTER (STRSTARTS(?url, ~folder0))
         }
         LIMIT 1
       SPARQL
@@ -145,21 +153,21 @@ module Pikuri
         - Nothing inside a git checkout is indexed (any folder containing a .git). Search those files directly.
       LIMITS
 
-      # Ranked full-text search, optionally limited to one folder's subtree.
+      # Ranked full-text search under any of +folders+.
       #
       # @param query [String] words to match, stemmed and ANDed by the index
       # @param limit [Integer] max files returned
-      # @param folder [String, nil] absolute folder to search under; +nil+
-      #   searches the whole index
+      # @param folders [Array<String>] absolute real paths of the folders to
+      #   search under, subfolders included; at least one
       # @return [Array<Hash>] +[{ path: String, snippet: String|nil,
       #   text_size: Integer|nil }, …]+, best first, one per file;
       #   +text_size+ is the stored text's length in characters (SPARQL has
       #   no byte length; the two differ only by the non-ASCII share), +nil+
       #   for a file indexed by name only
       # @raise [CommandError] if tinysparql exits non-zero
-      def self.search(query:, limit:, folder: nil)
-        prefix = folder ? "#{file_uri(folder).chomp('/')}/" : 'file:///'
-        raw = run(SEARCH_QUERY, query: query, prefix: prefix, limit: limit)
+      def self.search(query:, limit:, folders:)
+        raw = run(format(SEARCH_QUERY, under: under(folders.size)), query: query, limit: limit,
+                  **folders.each_with_index.to_h { |folder, i| [:"folder#{i}", prefix(folder)] })
         parse_rows(raw).map do |url, snippet, length|
           snippet = snippet&.gsub(/\s+/, ' ')&.strip
           { path: path_of(url), snippet: (snippet unless snippet.to_s.empty?), text_size: length&.to_i }
@@ -181,23 +189,30 @@ module Pikuri
         nil
       end
 
-      # Why this index can't answer a search right now, for a human to act
-      # on; +nil+ when it can. An index that answers but holds no files is
-      # not ready either: every search would come back empty.
+      # Why this index can't answer a search under +folders+ right now, for
+      # a human to act on; +nil+ when it can. An index that answers but holds
+      # no file under any of them is not ready either: every search would
+      # come back empty. Some empty folders are normal (an empty Desktop), so
+      # they only log a warning naming each.
       #
-      #   LocalSearch.unavailable_reason
-      #   # => "the index holds no files yet. …"   (nil when ready)
+      #   LocalSearch.unavailable_reason(folders: ['/home/u/notes'])
+      #   # => "nothing under /home/u/notes is indexed. …"   (nil when ready)
       #
       # Starts the localsearch daemon if it is installed but not running, as
       # any query does (D-Bus activation).
       #
+      # @param folders [Array<String>] absolute real paths
       # @return [String, nil]
-      def self.unavailable_reason
-        return nil unless parse_rows(run(PROBE_QUERY)).empty?
+      def self.unavailable_reason(folders:)
+        empty = folders.reject { |folder| parse_rows(run(PROBE_QUERY, folder0: prefix(folder))).any? }
+        if empty.size < folders.size
+          empty.each { |folder| LOGGER.warn("nothing under #{folder} is indexed; searches there find nothing") }
+          return nil
+        end
 
-        'the index holds no files yet. Right after a first login GNOME may still be ' \
-          'indexing: `localsearch status` shows how far it got. Otherwise pick the ' \
-          'folders to index under GNOME Settings → Search.'
+        "nothing under #{folders.join(', ')} is indexed. Right after a first login GNOME may still be " \
+          'indexing: `localsearch status` shows how far it got. Otherwise add the folders under ' \
+          'GNOME Settings → Search. A folder inside a git checkout is never indexed.'
       rescue Errno::ENOENT
         "the '#{BINARY}' command is missing. Install the 'localsearch' and '#{BINARY}' " \
           "packages: GNOME's desktop file index and its query tool."
@@ -235,6 +250,22 @@ module Pikuri
           cells.map { |cell| cell == '(null)' ? nil : percent_decode(cell.delete_prefix('v:')) }
         end
       end
+
+      # @param count [Integer] how many folders the filter names
+      # @return [String] a SPARQL condition true for a URL under any of
+      #   +~folder0+ … +~folder<count-1>+
+      def self.under(count)
+        Array.new(count) { |i| "STRSTARTS(?url, ~folder#{i})" }.join(' || ')
+      end
+      private_class_method :under
+
+      # @param folder [String] absolute path
+      # @return [String] the URL prefix of every file below +folder+; the
+      #   trailing slash keeps +/a/b+ from matching +/a/bc+
+      def self.prefix(folder)
+        "#{file_uri(folder).chomp('/')}/"
+      end
+      private_class_method :prefix
 
       # @param query [String] SPARQL text
       # @param args [Hash{Symbol => String, Integer}] the query's +~name+

@@ -13,8 +13,8 @@ module Pikuri
     # indexed file's extracted plain text — PDFs/office docs included — so
     # this returns them in full with no extractor dependency. The cost is
     # that it's the *indexed snapshot* (can lag very recent edits, covers
-    # only files the index knows); for a live or system text file
-    # (+/etc+, +/var/log+, a just-written file), read it directly instead.
+    # only files the index knows); a file just written is read from disk,
+    # with pikuri-workspace's +read+.
     #
     # +offset+ / +limit+ page exactly as in pikuri-workspace's +read+,
     # windowed through {Pikuri::Extractor.extract_paged} (a +StringIO+ over
@@ -27,6 +27,10 @@ module Pikuri
     # long PDF is to page through all of it; with it, the model reads just
     # around the lines that match. A regex, not the index's stemmed words:
     # inside one file an exact match is what the model wants.
+    #
+    # Only a path inside the +roots:+, with nothing hidden below a root, is
+    # read; the path is the model's, so it is checked here even though the
+    # localsearch miner never indexes a hidden file (recoll does).
     #
     # Sharing: +P_stateless+ — the backend is a stateless module over a
     # read-only index, so one instance serves any number of agents.
@@ -47,15 +51,17 @@ module Pikuri
         Usage:
         - The companion to fileindex_search: after it locates a file, read the file in full here.
         - Reads the indexed text, so PDFs and office documents come back as their extracted text — no special handling needed.
-        - This is the indexed snapshot: it can lag very recent edits, and only files the index knows are available. For a live or system text file (/etc, /var/log, a just-written file), use the read tool instead.
+        - This is the indexed snapshot: it can lag very recent edits, and only the files fileindex_search can find are available. For a file just written, use the read tool instead.
         - Output is line-numbered `cat -n` style; use `offset` and `limit` to page. When the response ends in `Use offset=N to continue`, call again with that offset.
         - To find something in a long file without reading all of it, pass `pattern`: you get only the matching lines with their line numbers. Then read around a match with `offset` a few lines before it and a small `limit`.
       DESC
 
       # @param backend [Module] a ready file-index backend, from
       #   {Fileindex.pick}; this tool uses only its +read_text+.
+      # @param roots [Roots] the folders whose files may be read; their
+      #   declaration grades the tool's legs
       # @return [Read]
-      def initialize(backend:)
+      def initialize(backend:, roots:)
         @backend = backend
         super(
           name: 'fileindex_read',
@@ -75,15 +81,15 @@ module Pikuri
                               'with their line numbers, searching from `offset` on, e.g. "total|amount due".'
           },
           execute: lambda { |path:, offset: 1, limit: DEFAULT_LIMIT, pattern: nil|
-            Read.read(path: path, offset: offset, limit: limit, pattern: pattern, backend: backend)
+            Read.read(path: path, offset: offset, limit: limit, pattern: pattern, backend: backend, roots: roots)
           },
-          # As {Search}: whole-machine reach, so both inbound legs are fixed.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress_payload_review: :no_egress)
+          trifecta_legs: roots.legs
         )
       end
 
-      # @param path [String]
+      # @param path [String] absolute or +~+-relative, inside +roots+
       # @param backend [Module] the file-index backend to read from
+      # @param roots [Roots] the folders whose files may be read
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] max lines; with +pattern+, max matching lines
       # @param pattern [String, nil] case-insensitive regex; when given, only
@@ -91,7 +97,7 @@ module Pikuri
       # @return [Pikuri::Tool::Result] the cat-n windowed text (+"Read 214
       #   lines"+), the matching lines (+"Found 6 lines"+), or
       #   {Pikuri::Tool::Result.error}
-      def self.read(path:, backend:, offset: 1, limit: DEFAULT_LIMIT, pattern: nil)
+      def self.read(path:, backend:, roots:, offset: 1, limit: DEFAULT_LIMIT, pattern: nil)
         return Pikuri::Tool::Result.error("offset must be >= 1, got #{offset}") if offset < 1
         return Pikuri::Tool::Result.error("limit must be >= 1, got #{limit}") if limit < 1
 
@@ -105,11 +111,24 @@ module Pikuri
           end
         end
 
+        return Pikuri::Tool::Result.error("path must be absolute, got '#{path}'.") unless path.start_with?('/', '~')
+
+        begin
+          path = File.expand_path(path)
+        rescue ArgumentError => e # "~nosuchuser"
+          return Pikuri::Tool::Result.error("bad path '#{path}': #{e.message}")
+        end
+        real = roots.resolve(path)
+        unless real
+          return Pikuri::Tool::Result.error("#{path} is not inside the folders you can read " \
+                                            "(#{roots.dirs.join(', ')}), or is hidden.")
+        end
+        path = real
+
         text = backend.read_text(path)
         if text.nil?
-          return Pikuri::Tool::Result.error("#{path} is not in the index (only indexed folders are " \
-                                            'available; PDFs and office docs are included). For a live or ' \
-                                            'system text file, use the read tool.')
+          return Pikuri::Tool::Result.error("#{path} is not in the index (PDFs and office docs are included). " \
+                                            'For a file just written, use the read tool.')
         end
 
         return grep(text, regex, offset: offset, limit: limit) if regex

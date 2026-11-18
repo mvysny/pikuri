@@ -26,13 +26,13 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
 
   before { skip 'no localsearch-3 / dbus-daemon / tinysparql on this host' unless @index }
 
-  def search(query, folder: nil, limit: 25)
-    described_class.search(query: query, limit: limit, folder: folder)
+  def search(query, folders: [@index.corpus], limit: 25)
+    described_class.search(query: query, limit: limit, folders: folders)
   end
 
   def relative(hits) = hits.map { |hit| hit[:path].delete_prefix("#{@index.corpus}/") }.sort
 
-  it 'finds a word across the whole index, snippets intact' do
+  it 'finds a word across the whole corpus, snippets intact' do
     hits = search('zebra')
     assert_equal ['alpha/a.txt', 'beta/b.md', 'beta2/e.txt', "#{ODD}/d.txt"], relative(hits)
     b = hits.find { |hit| hit[:path].end_with?('/b.md') }
@@ -47,11 +47,16 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
   end
 
   it 'limits a search to one folder, by whole path components' do
-    assert_equal ['beta/b.md'], relative(search('zebra', folder: "#{@index.corpus}/beta"))
+    assert_equal ['beta/b.md'], relative(search('zebra', folders: ["#{@index.corpus}/beta"]))
+  end
+
+  it 'searches under any of several folders' do
+    assert_equal ['alpha/a.txt', 'beta/b.md'],
+                 relative(search('zebra', folders: ["#{@index.corpus}/alpha", "#{@index.corpus}/beta"]))
   end
 
   it 'limits a search to a folder whose name needs escaping' do
-    assert_equal ["#{ODD}/d.txt"], relative(search('zebra', folder: "#{@index.corpus}/#{ODD}"))
+    assert_equal ["#{ODD}/d.txt"], relative(search('zebra', folders: ["#{@index.corpus}/#{ODD}"]))
   end
 
   it 'ranks the better match first, before the limit applies' do
@@ -79,13 +84,19 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     assert_nil described_class.read_text("#{@index.corpus}/nope.txt")
   end
 
-  it 'is ready once the index holds a file' do
-    assert_nil described_class.unavailable_reason
+  it 'is ready once one folder holds a file' do
+    assert_nil described_class.unavailable_reason(folders: ["#{@index.corpus}/nowhere", "#{@index.corpus}/alpha"])
+  end
+
+  it 'is not ready when no folder holds a file' do
+    assert_includes described_class.unavailable_reason(folders: ["#{@index.corpus}/nowhere"]),
+                    "nothing under #{@index.corpus}/nowhere is indexed"
   end
 
   it 'serves the fileindex_search tool end to end' do
+    roots = Pikuri::Fileindex::Roots.new(dirs: [@index.corpus])
     out = Pikuri::Fileindex::Search.search(query: 'zebra', folder: "#{@index.corpus}/alpha",
-                                             backend: described_class).to_s
+                                           backend: described_class, roots: roots).to_s
     assert_includes out, "#{@index.corpus}/alpha/a.txt  (66 B of text)\n  The quick >>zebra<< jumps"
     assert_includes out, 'Found 1 file'
   end
@@ -97,6 +108,7 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against an empty private index' 
   before { skip 'no localsearch-3 / dbus-daemon / tinysparql on this host' unless @index }
 
   it 'is not ready, though the index answers' do
-    assert_includes described_class.unavailable_reason, 'the index holds no files yet'
+    assert_includes described_class.unavailable_reason(folders: [@index.corpus]),
+                    "nothing under #{@index.corpus} is indexed"
   end
 end
