@@ -6,7 +6,7 @@ module Pikuri
     # set of roots, so the two tools can never disagree about which folders
     # the agent reaches:
     #
-    #   roots = Pikuri::Fileindex::Roots.new(dirs: %w[~/Documents ~/Downloads], private: true)
+    #   roots = Pikuri::Fileindex::Roots.new(dirs: %w[~/Desktop ~/Documents], private: true)
     #   backend = Pikuri::Fileindex.pick(roots)   # once per process; raises Unavailable
     #   Pikuri::Agent.new(transport:, system_prompt:) do |c|
     #     c.add_extension Pikuri::Fileindex::Extension.new(roots:, backend:)

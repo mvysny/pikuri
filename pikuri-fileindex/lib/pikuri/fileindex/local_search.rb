@@ -38,7 +38,9 @@ module Pikuri
     # built with any other escaping silently matches nothing.
     #
     # Each folder is its own bound parameter (+~folder0+, +~folder1+, …); only
-    # those generated names are spliced into the query text, never a path.
+    # those generated names are spliced into the query text, never a path. A
+    # parameter's type is tinysparql's one-letter code (+s+, +i+): +string+
+    # and +xsd:string+ are refused.
     module LocalSearch
       # @return [String] the SPARQL query CLI.
       BINARY = 'tinysparql'

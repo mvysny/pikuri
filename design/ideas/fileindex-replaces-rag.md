@@ -1,25 +1,28 @@
 # The desktop file index replaces rag for the secretary; rag and vectordb move to the workshop
 
-Status: **brainstorm** (2026-11-17), direction agreed with the owner the same day. Two
-decisions, deliberately separable:
+Status: direction agreed with the owner (2026-11-17). Two decisions, deliberately separable:
 
-- **A.** A new standalone gem in pikuri, `pikuri-fileindex`, takes the file-index code out of
-  the workshop's `pikuri-os`. The secretary (and Puri, and any "Siri-shaped" assistant)
-  searches your files through it, using the desktop's own file index (GNOME localsearch, or
-  recoll), instead of `pikuri-rag` over a self-built vector + FTS5 index.
+- **A.** The secretary (and Puri, and any "Siri-shaped" assistant) searches your files through
+  the desktop's own file index (GNOME localsearch, or recoll), instead of `pikuri-rag` over a
+  self-built vector + FTS5 index.
 - **B.** `pikuri-vectordb` and `pikuri-rag` move to pikuri-workshop, with their chapters.
 
-A needs the gem, because the secretary can't depend on the workshop. A can ship and be judged
-on transcripts before B happens; until B, pikuri carries both search stacks. B has the big cost:
-the book.
+**Done (2026-11-18): the gem.** `pikuri-fileindex` holds the file-index code that used to live
+in the workshop's `pikuri-os`, plus host-named roots, the path check, readiness over the roots,
+legs graded from the roots' declaration, and "that's all". Its design and threat model are in
+`pikuri-fileindex/design/architecture.md`, its README and its yardoc. pikuri-os already uses it
+(workshop `2d74e29`). **Puri doesn't yet**: it pins workshop `9c8c84d` and gets the tools
+through `pikuri-os`.
+
+**Left:** wire the secretary and briefing onto the gem, judge it by transcripts
+(`Q_transcript_bar`), then B and the book. A can ship and be judged before B; until B, pikuri
+carries both search stacks. B has the big cost: the book.
 
 ## Why
 
 - **Puri already made this decision** (`puri:D_documents`, 2026-11-17): it searches through
-  pikuri-os's `fileindex_search`, for the reasons below. If the secretary stays on rag, the
-  book's closing binary and the app it hands off to differ on the thing a reader notices first.
-  Puri also pulls in `pikuri-code` (bash) only to get the file index, which is the concrete
-  case for a gem of its own.
+  `fileindex_search`, for the reasons below. If the secretary stays on rag, the book's closing
+  binary and the app it hands off to differ on the thing a reader notices first.
 - **The GPU bill.** `D_secretary_wiring` measured the owner's `~/Documents` (11,685 files):
   minutes of silence, then hours of a Radeon 890M at 100%, with chat queued behind the
   embedder on the same llama-server. That is why the secretary defaults to Qdrant and makes
@@ -28,172 +31,66 @@ the book.
 - **Book 1 loses its container runtime and its second model.** After B, nothing in pikuri needs
   podman, bge-m3 or a reranker. The prerequisites shrink to Ruby, llama.cpp, a chat model and a
   desktop index. `D_gem_placement` says Qdrant is Docker's last job here.
-- **Hostile office files are parsed in the desktop's sandbox, not ours.** `fileindex_read`
-  returns the text localsearch's extractor already pulled out, and that extractor runs under
-  seccomp. A malicious `.docx` in Downloads is never parsed by pikuri, and never by native
-  parsers on the host outside a sandbox. Puri's `D_extractors` already relies on this.
-- **Office documents come free.** localsearch extracts text from `.docx`, `.odt` and
-  spreadsheets when it indexes them. That fills the gap `D_secretary_wiring` declined to fill
-  (the pure-Ruby `.docx` reader, rejected as a feature).
+- **Hostile office files are parsed in the desktop's sandbox, not ours.** See the gem's threat
+  model. Puri's `D_extractors` already relies on this.
+- **Office documents come free, with one package.** localsearch extracts text from `.docx`,
+  `.odt` and spreadsheets, which fills the gap `D_secretary_wiring` declined to fill (the
+  pure-Ruby `.docx` reader, rejected as a feature). On Ubuntu 26.04 those extractors ship
+  separately, in `localsearch-extractor-office` (universe, only "Suggests"): without it they
+  are found by name only (measured 2026-11-18). `.csv` is never content-indexed.
 - **These assistants don't do deep research.** The secretary, Puri and Siri ask a few lookups
   per turn. Ornith and Qwen are fine at issuing a couple of keyword queries and rephrasing
   on a miss. Ranked semantic retrieval pays off for people for whom search quality *is* the
   product: those are the workshop's users.
-- **pikuri-os already argued this.** `pikuri-workshop:pikuri-os/design/architecture.md`
-  ("File search: keyword recall, not embeddings") sorts misses into three causes. Content
-  that isn't indexed is structural. A wording miss is handled by the agent rephrasing its
-  query. A real meaning gap is the only one embeddings fix. Measured there (2026-07): on
-  indexed prose, localsearch ≈ recoll ≈ ripgrep, about 100% recall. That recall is against a
-  ripgrep oracle: it shows the index finds what grep finds, not that keyword search answers the
-  secretary's questions. Only the transcripts can show that (`Q_transcript_bar`).
+- **Keyword recall is enough here**: the gem's architecture note ("File search: keyword recall,
+  not embeddings") sorts misses into three causes, and only the third needs embeddings. Its
+  ~100% recall is against a ripgrep oracle, not the secretary's questions; only transcripts can
+  show that (`Q_transcript_bar`).
 - **Completeness comes free.** `D_rag_gem` built `rag_search_keywords` because cosine search
-  can't promise "every note mentioning Acme". A keyword index with no `LIMIT` can.
+  can't promise "every note mentioning Acme". `fileindex_search` says "all shown" or "10 of 37".
+- **Fresh within a second.** A note saved into the demo `~/Documents/Notes` was searchable after
+  0.43–0.54 s, and gone 0.42–0.44 s after deletion (3 tries, 2026-11-18). Rag needs the
+  `Watcher` and an embedding round-trip for the same.
 - **Placement.** `D_gem_placement` test 1 says rag's future is more features: see
   `rag-hit-presentation-eval.md`, `vectordb-deferrals.md`, and the stemmers already in
   `pikuri-workshop:pikuri-stemmers`. The secretary's reader would also skip two of pikuri's
-  biggest gems (vectordb + rag ≈ 4,600 lines of `lib/`, against pikuri-os's ≈ 1,000 for the
-  four file-index files).
-
-## Measured on the owner's box (2026-11-17, LocalSearch 3.11.0, Ubuntu)
-
-- **The CLI is the limit, not the index.** `localsearch search -d` gives one short snippet per
-  file and can't be limited to a folder. Querying the same index through `tinysparql` gives
-  both: 40-word snippets (the Kettle & Co. invoice with its amount) and only hits under one
-  folder. pikuri-os switched to `tinysparql` the same day (`LocalSearch::SEARCH_QUERY`: bound
-  `~query` / `~prefix` / `~limit`, `fts:snippet` with `>>…<<` markers, GLib-exact
-  percent-encoding of the prefix, an optional model-chosen `folder`). The CLI's limits are
-  now stated once, in `pikuri-fileindex/design/architecture.md`.
-- **Bound parameters work**: `-a NAME:s:VALUE`, referenced as `~NAME`. The type must be `s`;
-  `string` and `xsd:string` are refused. So the model's words never get spliced into the
-  SPARQL text.
-- **`fts:offsets(?f)` runs**, but its output looks wrong: `(null):17 (null):17 (null):17`
-  for the invoice, with no property names and repeated offsets. Don't build on it without
-  digging further.
-- **The stock index covers all of `$HOME`, recursively.** The schema LocalSearch 3.11 ships
-  (`/usr/share/glib-2.0/schemas/org.freedesktop.Tracker3.Miner.Files.gschema.xml`) defaults
-  `index-recursive-directories` to `['$HOME']`. The older XDG-folders-only default is gone.
-  This box also has that same value written into the user's dconf database. Nothing found
-  shows pikuri-os or anyone else setting it: no `gsettings`/`dconf` write in the repos, their
-  git history or the Claude transcripts, and the one `localsearch index` in shell history
-  (2026-06-28) is the read-only listing form. Either way it equals the default, so it changes
-  nothing. Consequence: on any stock install the index holds `~/work`, `~/snap` (4,258 files
-  here), `~/backups`, `~/Android`, everything. **pikuri's own folder limit is required, not a
-  nicety.**
-- **Hidden paths are never indexed**, even with `$HOME` recursive: zero indexed URLs contain
-  `/.`, so `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local` and `~/.git-credentials` are all
-  absent. No settings key turns hidden files on (checked `gsettings list-keys`). Also skipped
-  by default: any tree holding `.git`, `.hg`, `.trackerignore` or `.nomedia`. Secrets in
-  non-hidden places (`~/ssh-vherd`, a `passwords.txt` in Documents) *are* indexed. Whatever
-  is inside the roots is readable, just as `rag_read` reads all of `~/Documents` today.
+  biggest gems (vectordb + rag ≈ 4,600 lines of `lib/`, against ≈ 1,000 for the file index).
 
 ## Supported platforms (owner, 2026-11-17)
 
-- **Ubuntu 26.04 LTS or newer, or any Linux with localsearch 3.8+** (the first release under
-  the `org.freedesktop.LocalSearch3` D-Bus name and the `tinysparql` CLI), **or recoll with a
-  built index**. Older Tracker 3 (`tracker3 sparql`, `org.freedesktop.Tracker3.Miner.Files`) is
-  not supported.
+- Ubuntu 26.04 LTS or newer, or any Linux with localsearch 3.8+, or recoll with a built index:
+  stated in the gem's README. **Add `localsearch-extractor-office` on Ubuntu** (see Why), or
+  the book's reader finds their `.docx` by name only.
 - **Neither ready: the secretary prints why and exits 1.** No degraded mode with no search: a
-  secretary that can't search would answer "you have no such file". Errors are loud.
-- **Recoll ships on day one** (was `Q_recoll_day_one`). It's half the supported setups, and
-  it's how the demo VM (`dev/demo-home`) records transcripts headless, with `recollindex` and
-  no desktop session.
+  secretary that can't search would answer "you have no such file". It rescues
+  `Fileindex::Unavailable` and prints its message; Puri shows it in its UI.
 - **The book says it once**, in the prerequisites chapter; the recall chapter and the error
   message point there.
 
-## Proposal
+## The secretary
 
-### The gem: `pikuri-fileindex`
-
-Named for what it refuses to become: the owner of an index. It only queries the one the
-desktop already keeps fresh.
-
-- Move `LocalSearch`, `Recoll`, `FileindexSearch` and `FileindexRead` out of `pikuri-os`;
-  `pikuri-os` and Puri then depend on this gem, and Puri drops `pikuri-os`. That's the allowed
-  direction (workshop → pikuri). **Copied 2026-11-18** as `Pikuri::Fileindex::{LocalSearch,
-  Recoll, Search, Read}`, with `FileIndex.pick` as `Pikuri::Fileindex.pick`, along with their
-  specs and the file-search sections of pikuri-os's architecture note. **pikuri-os switched**
-  (workshop `2d74e29`): its copy is gone, its note links here, and it wires
-  `Fileindex::Extension` over `Roots.new(dirs: ['/'], private: true)`, the whole disk, keeping
-  its own degrade-when-unavailable policy. **Puri hasn't yet**: it pins workshop `9c8c84d` and
-  still gets the tools through `pikuri-os`.
-- **Done 2026-11-18: roots, the path check, readiness over the roots, legs.** As built, where it
-  differs from the sketch below:
-  - `Roots.new(dirs:, private:, trusted:)`: one declaration for all roots, as a vectordb corpus
-    or a workspace has, not per-root grading. The tools declare legs once, so a per-root union
-    gives the same verdict; mixed roots mean one declaration that fits all of them.
-  - Required, no default yet (`Q_default_roots` is still open).
-  - Readiness is `unavailable_reason(folders:)`, the name pikuri-os already used; there is no
-    `available?`, since nothing needs it. `Fileindex.pick(roots)` keeps its pikuri-os name.
-  - The host picks once and hands `backend:` to `Extension.new(roots:, backend:)`: an extension
-    is built per agent, and picking probes the index once per root.
-  - Symlinks: the roots mean real paths. `Roots#resolve` resolves a path through its longest
-    existing part, so a symlink from `~/Documents` into `~/work` leads outside and is refused.
-  - Every search hit is re-checked against the roots, because recoll's query language is
-    spliced. Measured on recoll 1.43: positive `dir:` clauses are ANDed (so roots go in one
-    `(dir:… OR dir:…)` group), and recoll *does* index hidden files, so the hidden check bites
-    there, not only in `fileindex_read`.
-  - **"That's all" done 2026-11-18**: `fileindex_search` ends "Found 8 files, all shown" or
-    "Showing 10 of 37 matching files". The count is of the files the tool would show (roots and
-    hidden check applied), from an uncapped `paths(query:, folders:)` on each backend, run only
-    when the ranked query came back full. No paging: past 25 the model narrows the query or
-    `folder`. Whether "list every note mentioning Acme" needs more than that is for the
-    briefing transcripts.
-  - Not done: the secretary's wiring.
-- Mostly a move: the `tinysparql` query, the bound parameters and the snippets exist already
-  (see Measured). The new parts are the roots and the readiness check below.
-- **`roots:` on the extension, set by pikuri, never by the model.** Today `folder` is the
-  model's argument and Puri's limit is a prompt line: a hint, not a boundary. The roots become
-  a filter in the query (bound as `~root1`…, each with a trailing `/` so `Documents-old`
-  doesn't match `Documents`); the model's `folder` can only narrow inside them. Default: the
-  XDG user folders as `xdg-user-dir` reports them (but see `Q_default_roots`). That leaves out
-  `~/snap`, `~/work` and everything else at the top of `$HOME`. The secretary passes its own
-  list.
-- **`fileindex_read` checks its path**: inside a root, and no hidden component. The miner
-  already skips hidden paths; this second check costs one line, and the path is the model's.
-- **Symlinks:** the index stores the target's URL, so a link from `~/Documents` into `~/work`
-  falls outside the roots and its files vanish from search. Decide whether that's right
-  (probably yes: the roots mean real paths) and say it in the tool's limitations.
-- FTS syntax errors from the model (an unbalanced quote) come back as `Tool::Result.error`.
-- Trifecta: graded from the roots, the way `D_bundle_trust_grading` does it, or simply fixed.
-  With Downloads in the roots it is hard-untrusted. The secretary's verdict doesn't move, since
-  mail already makes it hard-untrusted and it holds all three legs. Puri should check its own.
-
-### Readiness: the backend investigates, the host only reports (owner, 2026-11-17)
-
-The host shouldn't need to know what "ready" means for an index. Each backend does:
-
-- **`Backend.unavailable_error(roots:)`** answers `nil` when the backend can deliver answers
-  over these roots, else a String a human can act on: what's missing and the command or
-  setting that fixes it. **`Backend.available?(roots:)`** is `unavailable_error(roots:).nil?`.
-  One method holds the truth, because each probe is a subprocess spawn: two independent
-  methods would probe twice and could disagree.
-- **"Available" means ready to answer, not installed.** localsearch: `tinysparql` is on the
-  `PATH`, the `LocalSearch3` service answers a probe, and the roots hold at least one
-  indexed file. recoll: `recollq` runs, the index directory exists, and the roots hold at
-  least one indexed file.
-- **The emptiness check is over all roots together.** A single empty root is normal (an empty
-  Desktop is common) and only logs a warning naming it. It also catches the silent case the
-  probe misses: indexing turned off in GNOME's Search settings, or a root GNOME doesn't
-  cover. The probe passes there, and every search would come back empty.
-- **The fallback lives in the gem too.** pikuri-os, Puri and the secretary all pick
-  "localsearch, else recoll", so three callers earn one helper (unlike the rag wiring
-  `D_secretary_wiring` copied, which had one). Something like `Fileindex.backend(roots:)`:
-  the first ready backend, else raise with every backend's `unavailable_error`, one per
-  paragraph. The secretary rescues it, prints the message and exits 1; Puri shows it in its
-  UI.
-
-### The secretary
-
-- Wire `pikuri-fileindex` in place of `Rag::Extension`. Drop Qdrant, podman, `--in-memory`,
+- Wire `Fileindex::Extension` in place of `Rag::Extension`. Drop Qdrant, podman, `--in-memory`,
   the `Watcher` and the "folders kept out of the index" prompt line. The index's coverage is
   now GNOME's Search settings (or recoll's `topdirs`) plus our roots.
-- Keep `read` (with `pikuri-pdf`) for live files: a note the agent just wrote must be read
-  from disk, not from the index's copy, and `edit`/`write` need read-before-write on `Notes/`.
-- Notes it just wrote: the miner picks changes up over inotify, usually within seconds. Check
-  in transcripts that "write a note, then find it" holds in one session. Recoll has no daemon
-  unless `recollindex -m` runs, so state what recoll users lose here.
+- **Roots: Desktop and Documents** (owner, 2026-11-18; was `Q_default_roots`). Not Downloads:
+  it fills with whatever a page pushed when the user clicked a link, so it's the easiest place
+  for a stranger to plant a file the search then serves. A file on the Desktop or in Documents
+  was put there on purpose. The verdict doesn't move: Documents still holds other people's
+  files, so the roots stay `private: true, trusted: false`. The cost, a vendor's invoice
+  never moved out of Downloads, is a miss the model can explain, since `fileindex_search`'s
+  description lists the folders it searches. The list lives in the secretary, not the gem:
+  every caller so far names its own roots (briefing `~/notes`, pikuri-os `/`), so a gem default
+  would be a knob nobody sets. Resolve the folders with `xdg-user-dir DESKTOP` / `DOCUMENTS`
+  (localized names), through `Subprocess.spawn`; AGENTS.md's "never read an `XDG_*` variable"
+  is about pikuri's own paths, so add a clause there so the next agent doesn't flag it.
+- **Two read tools: `read` and `fileindex_read`** (owner, 2026-11-18; was `Q_one_read_tool`),
+  each described by what it's for. `read` stays for live files and for read-before-write on
+  `Notes/`; a localsearch-backed `Extractor` entry would break "Attachments are bytes" (the
+  registry turns bytes into text, not paths into text). Puri already runs with both.
+- Notes it just wrote: findable within a second (see Why). Recoll has no daemon unless
+  `recollindex -m` runs; state what recoll users lose.
 
-### What moves to the workshop (B)
+## What moves to the workshop (B)
 
 `pikuri-vectordb`, `pikuri-rag`, `bin/pikuri-corpus`, their chapters, `D_rag_gem`,
 `D_rrf_tuning`, `D_chunk_line_ranges`, `D_ruby_stemming`, `D_corpus_trust_declaration`, and
@@ -250,32 +147,26 @@ alternatives cite rag twice ("a note the rag search finds covers most of a skill
 Outside `vectordb.md` and `rag.md`, retrieval carries two things: the trifecta chapter's worked
 example (`pikuri-briefing` vs `--with-mail`, one flag adds a leg without moving the verdict) and
 the secretary chapter, written as a diff against briefing with mail. Both survive if briefing
-searches the file index, as long as legs are graded from the roots: `~/notes` is trusted,
-Downloads is not. The book's spine is the trifecta; the recall section exists to give it private
-data worth protecting.
+searches the file index, as long as legs come from the roots' declaration: `~/notes` is
+trusted, Documents is not. The book's spine is the trifecta; the recall section exists to give
+it private data worth protecting.
 
-Options weighed:
+**Agreed** (owner, 2026-11-17): teach RAG on the desktop index; vectors go to book 2. RAG is
+retrieve-then-generate, and agentic RAG is the model issuing the queries: no vectors needed.
+`rag.md`'s completeness vs. ranking and exactness arguments survive, because a keyword index is
+what it argues you need anyway. New lessons: borrowing an index vs. building one (who keeps it
+fresh, who pays), the folder limit as a security boundary, bound parameters vs. splicing (SQL
+injection's cousin), and whose parser touches a hostile file. Lost to book 2: embeddings,
+chunking, cosine, the reranker, rank fusion. The recall chapter starts from the index the
+desktop already keeps, looks at what it misses, sorts the misses into the three causes, and
+shows that only the third needs book 2's vectors. The prerequisites chapter loses containers,
+which it says "first earn their keep" in the vector-DB chapter, and gains the supported
+platforms above.
 
-- **Teach RAG on the desktop index; vectors go to book 2.** RAG is retrieve-then-generate, and
-  agentic RAG is the model issuing the queries. That needs no vectors. `rag.md`'s completeness
-  vs. ranking and exactness arguments survive, because a keyword index is what it argues you
-  need anyway. New lessons it brings: borrowing an index vs. building one (who keeps it fresh,
-  who pays), the folder limit as a security boundary, bound parameters vs. splicing (SQL
-  injection's cousin), and whose parser touches a hostile file. Lost to book 2: embeddings,
-  chunking, cosine, the reranker, rank fusion. They go under a "building your own index"
-  chapter for people for whom ranking is the product.
-- **Keep vectors; the book ends on a different persona** (a researcher over a library of
-  papers, where ranking quality is the job). The recall chapters then pay off, but every
-  reader pays the GPU bill and podman for a persona they won't run day to day. Puri would
-  diverge from the book's closing binary.
-- **Keep vectors in the book, the secretary on the file index.** The recall chapters build
-  something the last binary never uses: a dead end.
-- **Agreed: the first** (owner, 2026-11-17). The recall chapter gets a better order than
-  `rag.md`'s "vectors can't do X, so add keywords": start from the index the desktop already
-  keeps, look at what it misses, sort the misses into pikuri-os's three causes, and show that
-  only the third needs book 2's vectors. The prerequisites chapter loses containers, which it
-  says "first earn their keep" in the vector-DB chapter, and gains the supported-platforms
-  section above.
+Rejected: keeping vectors and ending the book on a different persona (a researcher over a
+library of papers): every reader pays the GPU bill and podman for a persona they won't run day
+to day, and Puri diverges from the closing binary. Keeping vectors in the book with the
+secretary on the file index: the recall chapters build something the last binary never uses.
 
 ## Costs
 
@@ -287,44 +178,40 @@ Options weighed:
   boxes, but only with an index the user built. Readers on Ubuntu 24.04 LTS or older Tracker 3
   are out (see Supported platforms).
 - **Coverage is the desktop's to decide.** Our roots narrow; they can't add a folder GNOME
-  skips.
+  skips, nor a format it doesn't extract (`.csv`; office files without the extra package).
 - **Code and git checkouts are invisible** to localsearch. That's fine for a secretary, and
   it's the reason the coding agent keeps `grep`.
 - **Cross-language search is lost.** bge-m3 matched an English query to a Finnish document; a
   keyword index needs the query in the document's language (and `pikuri-stemmers` ships
   Voikko, so the owner's files likely include Finnish). Check which language localsearch stems
-  in (likely one, taken from the locale), and whether "search again in the other language"
-  works in the transcripts. That's pikuri-os's cause 3, and it may not be as rare here as
-  "the rarest on a personal machine" says.
+  in (likely one, taken from the locale). The eval's Finnish question measures whether the
+  agent searches again in the other language (`Q_transcript_bar`).
 
 ## Open questions
 
 - `Q_book_retrieval`: **resolved** (owner, 2026-11-17). The recall chapter states the keyword
   index's limits, then points at semantic search, vector databases, chunking and rank fusion
   in pikuri-workshop, linking its book (its README until B moves `vectordb.md` and `rag.md`
-  there, then that chapter). No embeddings walkthrough in pikuri. The limits are named by
-  pikuri-os's three causes, so the reader sees that vectors fix only the third (a real meaning
-  gap: another language, a concept in other words), not unindexed content or a wording miss
-  the agent fixes by rephrasing. The GPU measurement says why pikuri doesn't build its own.
+  there, then that chapter). No embeddings walkthrough in pikuri. The limits are named by the
+  three causes, so the reader sees that vectors fix only the third (a real meaning gap:
+  another language, a concept in other words), not unindexed content or a wording miss the
+  agent fixes by rephrasing. The GPU measurement says why pikuri doesn't build its own.
 - `Q_briefing`: **resolved** (owner, 2026-11-17): rewire `pikuri-briefing` onto the file
-  index, root `~/notes` graded private and trusted, and keep it. Checked against the book:
+  index, root `~/notes` declared private and trusted, and keep it. Checked against the book:
   - Survives unchanged: the trifecta chapter's "One flag, one extra leg, and the same
     verdict" (only the tool names in its two maps change); the hardcoded declarations and
     the boot line stating them; local inference as the first invariant; no automatic memory.
   - Gets better: the secretary's "same retrieval, plus mail" becomes literally the same gem
-    with wider roots, still graded per root. The boot line's "the index holds nothing but
-    what that folder put there" is false for a borrowed index that holds all of `$HOME`; the
-    root filter is the only thing keeping a Downloads file from coming back as vouched, so
-    the one-legged agent is where "the folder limit is a security boundary" has a visible
-    cost if it fails. Reword the line to say so. The two recall chapters become one, with
-    briefing as its demo (`pikuri-corpus` over the book goes to book 2 with
-    `vectordb.md`). `D_briefing_wiring`'s `--watch` fork and `rag_read`'s membership gate go:
-    the miner keeps the index fresh.
-  - **Requirement: search must be able to say "that's all".** The trifecta chapter's
-    "Absence stopped being reportable the same way" rests on "over the notes the agent can
-    list every one that mentions a thing". pikuri-os's `fileindex_search` caps at 25
-    (`MAX_LIMIT`) and doesn't say whether more matched. The gem needs an uncapped listing (as
-    `rag_search_keywords` has) or a truthful "25 of 37".
+    with wider roots. The boot line's "the index holds nothing but what that folder put
+    there" is false for a borrowed index that holds all of `$HOME`; the root filter is the
+    only thing keeping a Downloads file from coming back as vouched, so the one-legged agent
+    is where "the folder limit is a security boundary" has a visible cost if it fails.
+    Reword the line to say so. The two recall chapters become one, with briefing as its demo
+    (`pikuri-corpus` over the book goes to book 2 with `vectordb.md`). `D_briefing_wiring`'s
+    `--watch` fork and `rag_read`'s membership gate go: the miner keeps the index fresh.
+  - "Absence stopped being reportable the same way" (trifecta chapter) needs search to say
+    "that's all": **met** by `fileindex_search`'s footer. Whether "list every note mentioning
+    Acme" needs more than 25 is for the briefing transcripts.
   - **Requirement: the notes folder can't be a git checkout under localsearch**, which skips
     any tree holding `.git`. `rag.md` argues against mtime "because it would be wrong the
     first time you `git clone` your notes", the very setup that empties the index. The
@@ -339,21 +226,66 @@ Options weighed:
   - Don't root briefing at the secretary's `Documents/Notes/`: the secretary writes there
     from turns that read mail (the stored injection `book/secretary.md` warns about), so
     "trusted" would be false. Briefing's folder stays one only the user writes into.
-- `Q_default_roots`: leaning Desktop, Documents and Downloads only. Pictures, Music and Videos
-  are mostly metadata; Public and Templates are noise. Top-level folders like `~/work` stay
-  opt-in. `xdg-user-dir` is a subprocess through `Subprocess.spawn`, not an `XDG_*` read, and
-  AGENTS.md's "never read an `XDG_*` variable" is about pikuri's own paths; add a clause there
-  so the next agent doesn't flag it.
-- `Q_one_read_tool`: leaning two tools, `read` + `fileindex_read`, each described by what it's
-  for. `read` must stay for read-before-write on `Notes/`, and a localsearch-backed `Extractor`
-  entry would break "Attachments are bytes" (the registry turns bytes into text, not paths into
-  text). Puri already runs with both: its transcripts are the evidence on whether two read
-  tools confuse a small model.
-- `Q_all_matches`: does a 40-word snippet plus `read` cover "context around the matches", or
-  is a find-in-this-file over extracted text worth it? pikuri-os's `fileindex_read` already
-  takes a `pattern`; check whether that answers it. Depends on fixing `fts:offsets` otherwise.
-- `Q_transcript_bar`: what counts as "the secretary does fine on the file index" before B?
-  Owner's rule: a handful of runs is an anecdote, ~100 is the bar. Leaning: a fixed set of
-  ten or so lookup tasks on the demo home, ten runs each on Ornith, comparing the hit rate
-  between rag and the file index. Include "write a note, then find it" and one cross-language
-  query.
+- `Q_all_matches`: does a 40-word snippet plus `fileindex_read`'s `pattern` cover "context
+  around the matches"? See the brainstorm below.
+- `Q_transcript_bar`: agreed (owner, 2026-11-18): ten lookup tasks on the demo home, ten runs
+  each on Ornith, hit rate rag vs file index, including "write a note, then find it" and a
+  cross-language question. Harness and results below.
+
+## `Q_all_matches`: brainstorm (2026-11-18)
+
+What each side shows per hit, from the code:
+
+- **rag**: up to 5 hits, several may be windows of the same file. Each is a 512-token chunk
+  shown as its **first 500 characters** (`VectorDb::Tools::Search::SNIPPET_LENGTH`), so the
+  match may sit past the cut, plus the chunk's line range for `rag_read`.
+- **fileindex**: up to 25 files, one hit each, a **40-word window centred on the match** with
+  the matched words marked `>>like this<<`, plus the size of the file's indexed text.
+
+So the owner's "40 words ≈ the vector's window" holds, and per hit the snippet is the more
+targeted of the two: shorter, but around the match rather than at the chunk's start. What
+fileindex lacks is a *second* match in the same file. `pattern` is meant for that.
+
+Measured (2026-11-18, the demo home's index): localsearch keeps the PDF's line breaks (the
+invoice is 12 lines; the 176 KB book is 2,181 lines, median 100 characters, longest 219), and
+HTML comes back a line per paragraph. So a line grep is the right unit there; a
+whole-document-on-one-line format would break it. `.docx`/`.odt` are unmeasured: this box lacks
+`localsearch-extractor-office`.
+
+Options:
+
+- **A. As is**: the snippet locates; `fileindex_read(pattern:)` greps the file's indexed text
+  for the lines; `offset` reads around one. A regex, not the index's stemmed words, so the
+  model writes `notice|terminat` where the index matched "notice terminate". The description's
+  example (`"total|amount due"`) teaches the alternation.
+- **B. `context:` lines on `pattern`** (grep's `-C`): saves the `offset` round-trip per
+  match. A feature; earn it only if transcripts over long files show `pattern` → `read`
+  pairs eating turns.
+- **C. Every match with its context, from `fts:offsets`**: the index's own match positions,
+  so stemmed like the search. Its output looked wrong on LocalSearch 3.11 (`(null):17`
+  three times for the invoice, no property names). Reject unless someone digs into that, and
+  B covers the same need.
+- **D. A stemmed find-in-file in Ruby**: a second matcher that disagrees with the index's
+  tokenizer. Reject.
+
+Leaning **A**, with B as the fallback. The demo home can't decide it: its files are a few
+hundred characters, so the model reads them whole (see the eval's tool counts). The owner's
+`~/Documents` would. When this resolves, the `fts:offsets` trap graduates as a why-not line on
+`Read`'s pattern paragraph.
+
+## `Q_transcript_bar`: the eval (2026-11-18)
+
+`fileindex-replaces-rag/transcript-eval.rb` runs on the dev VM (the demo home in
+`~/Documents`, its localsearch index, Ornith on the host's llama-server). Each run is a fresh
+agent with the secretary's prompt, calculator and workspace tools (no grep), and one retrieval
+stack: rag (in-memory hybrid index, bge-m3, reranker, a `Watcher`) or the file index (roots
+`[~/Documents]`). No mail, no web: either would answer some tasks around the retrieval under
+test. A run passes when the final answer matches every gold regex.
+
+Tasks: `invoice` (amount + IBAN, PDF), `notice` (lease, "move out"), `flood` (insurance
+deductible for "water damage", asked as a flood), `sauna` (HTML), `solar` (a note, "solar
+array"), `office` (board-meeting PDF), `electricity` (`budget.csv`: not content-indexed by
+localsearch), `dentist` ("dental" vs "dentist"), `finnish-rent` (asked in Finnish, the lease is
+in English), `bike-lock` (a note saved 5 s before the question, its code drawn per run).
+
+Results: running.

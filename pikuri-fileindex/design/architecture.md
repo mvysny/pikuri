@@ -28,9 +28,12 @@ What the gem promises, and what it leaves to the host:
 - **Nothing is written.** Both backends are queried read-only. pikuri
   never builds, configures or refreshes an index.
 - **Reach is the host's roots, never the model's choice.** On a stock
-  LocalSearch 3.11 the index covers all of `$HOME` (hidden paths, git
-  checkouts and source text aside), so {Pikuri::Fileindex::Roots} is the
-  boundary, enforced three times over:
+  LocalSearch 3.11 the index covers all of `$HOME`, recursively (the
+  shipped `index-recursive-directories` default is `['$HOME']`): `~/work`,
+  `~/snap`, backups. It skips only hidden paths and any tree holding
+  `.git`, `.hg`, `.trackerignore` or `.nomedia`, and keeps source files by
+  name only. So {Pikuri::Fileindex::Roots} is the boundary, enforced three
+  times over:
   - the backend searches only under the roots (bound URL prefixes for
     localsearch, an OR-ed `dir:` group for recoll);
   - the model's `folder` and `fileindex_read`'s `path` must resolve inside
@@ -41,8 +44,11 @@ What the gem promises, and what it leaves to the host:
     it. That last check is the guarantee: recoll's query language is
     spliced, so its `dir:` group narrows but isn't trusted to bound.
 - **Nothing hidden.** A dot-named file or folder below a root is never
-  returned or read. localsearch never indexes one; recoll does, so the
-  check is load-bearing there.
+  returned or read. localsearch never indexes one (no setting turns that
+  on); recoll does, so the check is load-bearing there.
+- **Everything else in a root is reachable.** A `passwords.txt` in
+  Documents is as readable as the invoice beside it. Choosing the roots is
+  choosing what the agent may see.
 - **Legs come from the owner's declaration.** `Roots.new(private:,
   trusted:)` grades both tools, as a vectordb corpus or a workspace
   does; nothing inspects the files. A root with Downloads in it is never
@@ -116,6 +122,8 @@ filtered by URL prefix; ranked, the lease agreement comes first
 | Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
 | Recall on indexed prose | ~100% (**= recoll**, measured) | ~100% |
 | Source code | **filename-only** (mime-gated); `.git` trees skipped | full text |
+| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed (measured 2026-11) | not measured |
+| `.csv` | **filename-only**: the text extractor takes only `text/plain` and `text/markdown` (measured 2026-11) | not measured |
 | Folder filter | URL-prefix filter in SPARQL | `dir:` clause + per-config `topdirs` |
 | Query ops | stemmed AND / OR | + phrase / proximity / wildcard / field filters |
 | Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |

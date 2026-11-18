@@ -5,8 +5,8 @@ module Pikuri
     # The folders a host lets the file-index tools reach, and what the owner
     # declares about them. The model's +folder+ can only narrow inside them:
     #
-    #   roots = Roots.new(dirs: %w[~/Documents ~/Downloads], private: true)
-    #   roots.dirs                                   # => ["/home/u/Documents", "/home/u/Downloads"]
+    #   roots = Roots.new(dirs: %w[~/Desktop ~/Documents], private: true)
+    #   roots.dirs                                   # => ["/home/u/Desktop", "/home/u/Documents"]
     #   roots.resolve('~/Documents/tax/../2024.pdf') # => "/home/u/Documents/2024.pdf"
     #   roots.resolve('/home/u/work/plan.md')        # => nil: outside every root
     #   roots.resolve('~/Documents/.secret/x.txt')   # => nil: hidden below a root
@@ -20,6 +20,10 @@ module Pikuri
     # Roots are real paths, because the index stores a file under its real
     # path: each root is resolved through its symlinks at construction, and
     # {#resolve} judges a path by where it leads.
+    #
+    # One declaration covers every root, not one per folder: each tool
+    # declares its legs once, so per-root grades would only union back to the
+    # least-trusted root's. Mixed folders take the declaration that fits all.
     #
     # Immutable.
     Roots = Data.define(:dirs, :private, :trusted) do

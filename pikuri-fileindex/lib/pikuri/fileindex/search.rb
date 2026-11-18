@@ -26,6 +26,12 @@ module Pikuri
     # office docs (indexed at extract time), and being an index lookup is
     # cheap to run repeatedly.
     #
+    # It says whether the hits are every match ("Found 8 files, all shown"
+    # or "Showing 10 of 37 matching files"), counted after the roots filter,
+    # so the model can report that nothing else mentions a thing. No paging
+    # past {MAX_LIMIT}: the footer sends the model to narrow the query or
+    # +folder+ instead.
+    #
     # Sharing: +P_stateless+ — the backend is a stateless module and each call
     # shells out to its own query, so one instance serves any number of agents.
     class Search < Pikuri::Tool

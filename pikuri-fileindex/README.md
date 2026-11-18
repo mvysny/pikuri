@@ -30,7 +30,8 @@ Provides:
   extracts the text of a `.docx` or a PDF in its own sandboxed process.
   A malicious file in Downloads is never parsed by pikuri.
 - **Office documents come free**: the index already holds the text of
-  `.docx`, `.odt` and spreadsheets.
+  `.docx`, `.odt` and spreadsheets (on Ubuntu, once
+  `localsearch-extractor-office` is installed).
 - **Keyword search can say "that's every match"**, which a vector search
   can't.
 
@@ -41,13 +42,15 @@ It never builds, configures or refreshes an index; it only reads one.
 One of:
 - **localsearch 3.8 or newer** with the `tinysparql` CLI (Ubuntu 26.04
   LTS and newer; Debian/Ubuntu's `localsearch` package pulls in
-  `tinysparql`). Older Tracker 3 (`tracker3`) is not supported.
+  `tinysparql`). Older Tracker 3 (`tracker3`) is not supported. On Ubuntu,
+  also install `localsearch-extractor-office`: without it, `.docx`, `.odt`,
+  `.xlsx` and epub files are found by name only, never by their text.
 - **recoll** with an index you built (`recollindex`). Run
   `recollindex -m` to keep it fresh as files change.
 
 What the index doesn't cover, the agent can't find: localsearch skips
 hidden folders, anything inside a git checkout, and the text of source
-code; recoll covers only the folders in its `topdirs`.
+code and `.csv` files; recoll covers only the folders in its `topdirs`.
 
 ## Install
 
@@ -62,7 +65,7 @@ gem 'pikuri-fileindex'
 require 'pikuri-core'
 require 'pikuri-fileindex'
 
-roots = Pikuri::Fileindex::Roots.new(dirs: %w[~/Documents ~/Downloads], private: true)
+roots = Pikuri::Fileindex::Roots.new(dirs: %w[~/Desktop ~/Documents], private: true)
 backend = Pikuri::Fileindex.pick(roots)   # raises Pikuri::Fileindex::Unavailable, saying why
 agent = Pikuri::Agent.new(transport:, system_prompt:) do |c|
   c.add_extension Pikuri::Fileindex::Extension.new(roots:, backend:)
