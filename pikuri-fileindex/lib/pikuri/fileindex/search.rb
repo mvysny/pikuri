@@ -128,7 +128,8 @@ module Pikuri
           end
           # Resolved before any existence check, so nothing outside the roots
           # can be probed for whether it exists.
-          folder = roots.resolve(folder) or return outside_error(folder, roots)
+          real = roots.resolve(folder) or return outside_error(folder, roots)
+          folder = real
           # A file as folder reads as "every match in this file", which the
           # index can't answer: it keeps one snippet per file.
           if File.file?(folder)

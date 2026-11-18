@@ -105,8 +105,8 @@ RSpec.describe Pikuri::Fileindex::Search do
       backend = FakeBackend.build
       ["#{@tmp}/work", "#{docs}/../work", "#{docs}/link", "#{docs}/.hidden", "#{docs}-old", '/etc'].each do |folder|
         out = search(backend, folder: folder).to_s
-        assert out.start_with?('Error: '), "#{folder}: #{out}"
-        assert_includes out, "is not inside the folders you can search (#{docs})"
+        assert out.start_with?("Error: #{File.expand_path(folder)} is not inside the folders you can search (#{docs})"),
+               "#{folder}: #{out}"
       end
       assert_empty backend.calls
     end
