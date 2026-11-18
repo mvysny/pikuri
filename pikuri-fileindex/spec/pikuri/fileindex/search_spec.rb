@@ -24,9 +24,15 @@ RSpec.describe Pikuri::Fileindex::Search do
                                          { path: "#{docs}/b.rb", snippet: nil, text_size: nil }])
       result = search(backend, limit: 10)
       assert_includes result.to_s, "#{docs}/a.pdf  (172.4 kB of text)\n  alpha beta\n"
-      assert_includes result.to_s, "#{docs}/b.rb  (no indexed text)\n\nFound 2 files, all shown. One match shown per file;"
+      assert_includes result.to_s, "#{docs}/b.rb  (no indexed text)\n\nFound 2 files, all shown. One match shown per file,"
       assert_equal 'Found 2 files', result.summary
       assert_equal [:search], backend.calls.map(&:first), 'a short answer holds every match: no count needed'
+    end
+
+    it "renders a short file's whole text, on one line, in place of its snippet" do
+      backend = FakeBackend.build(hits: [{ path: "#{docs}/n.md", snippet: '>>rent<< is', text_size: 32,
+                                           text: "# Flat\nThe rent is EUR 1,150.\n" }])
+      assert_includes search(backend).to_s, "#{docs}/n.md  (32 B of text, shown whole)\n  # Flat The rent is EUR 1,150.\n"
     end
 
     it 'says how many matched in all when more match than the limit' do

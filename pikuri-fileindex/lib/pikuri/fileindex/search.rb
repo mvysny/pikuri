@@ -4,7 +4,8 @@ module Pikuri
   module Fileindex
     # The +fileindex_search+ tool — a fast, cheap keyword lookup over a
     # desktop file index, returning matching paths each with the *single*
-    # snippet the index provides and the size of its indexed text, so the
+    # snippet the index provides (or a short file's whole text, when the
+    # backend has it) and the size of its indexed text, so the
     # model can tell a file it may read whole from one it should search
     # with +fileindex_read+'s +pattern+. A {Pikuri::Tool} in the
     # shape of pikuri-workspace's +grep+, shelling out through the backend.
@@ -66,11 +67,12 @@ module Pikuri
         Find files whose contents contain your words, using the desktop search index.
 
         Usage:
-        - Searches inside PDFs, Word/ODT/spreadsheet documents and plain text — reach for this when the answer may live in a file's contents.
+        - Use it when the user asks about something their own files may hold (a bill, a contract, a note, a saved web page): search before answering from general knowledge.
+        - Searches inside PDFs, Word/ODT/spreadsheet documents and plain text.
         - A file matches when it contains any of your words (or their stems). Files with all of them come first, then those with more of them. So list the words the file may use, synonyms and other languages included: `rent lease vuokra`.
         - Put words in double quotes to require all of them in the same file, in any order: `"notice period" tenant` finds files with both notice and period, or with tenant.
         - Pass `folder` to search only under one folder (subfolders included) — the way to find a common word inside one project instead of across every folder you can search.
-        - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
+        - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. A short file may come whole instead ("shown whole"). To read a file's full, current text, read it (see fileindex_read).
         - Says how many files match in all: "Found 8 files, all shown" means no other file matches. When more match than are shown, narrow the query or `folder`.
         - Each file shows the size of its indexed text. fileindex_read returns up to #{READ_PAGE_LABEL} per call, so a smaller file reads whole in one call; in a bigger one, find the lines you need with fileindex_read's `pattern` first.
         - Cheap: it queries a prebuilt index rather than walking the filesystem, so it barely touches the disk of the machine the user is on — fine to run many times to narrow down.
@@ -188,11 +190,15 @@ module Pikuri
         Pikuri::Tool::Result.error("#{backend.label}: #{content}#{marker}")
       end
 
-      # @param hit [Hash] +{ path:, snippet:, text_size: }+ from the backend
+      # @param hit [Hash] +{ path:, snippet:, text_size:, text: }+ from the
+      #   backend; +text+, a short file's whole text, is optional
       # @return [String] +"<path>  (<size> of text)"+, then +"\n  <snippet>"+
-      #   when there is one
+      #   when there is one; for a hit with +text+, +"<path>  (<size> of
+      #   text, shown whole)"+ and the text on one line
       def self.render_hit(hit)
         size = hit[:text_size] ? "#{Pikuri::Tool.format_bytes(hit[:text_size])} of text" : 'no indexed text'
+        return "#{hit[:path]}  (#{size}, shown whole)\n  #{hit[:text].gsub(/\s+/, ' ').strip}" if hit[:text]
+
         head = "#{hit[:path]}  (#{size})"
         hit[:snippet] && !hit[:snippet].empty? ? "#{head}\n  #{hit[:snippet]}" : head
       end
@@ -222,8 +228,8 @@ module Pikuri
       #   words, shown first. …"+ or +"Showing 10 of 37 matching files, best
       #   first. To see the others, …"+
       def self.footer(shown, total, limit, all)
-        per_file = 'One match shown per file; the index may be slightly stale. ' \
-                   'Read a file to see its full text and any other matches.'
+        per_file = 'One match shown per file, or the whole text of a short one; the index may be ' \
+                   'slightly stale. Read a file to see its full text and any other matches.'
         every = case all
                 when nil then ''
                 when 0 then ' None contains all of your words; these contain some of them.'

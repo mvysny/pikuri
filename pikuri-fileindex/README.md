@@ -8,7 +8,8 @@ the PDF itself.
 
 Provides:
 - `fileindex_search` (`Pikuri::Fileindex::Search`): keyword search, one
-  snippet per file, optionally limited to one folder. A file matches when
+  snippet per file (with localsearch, a file of up to 600 characters comes
+  whole), optionally limited to one folder. A file matches when
   it holds any of the words (`rent lease vuokra`), or all the words in
   double quotes, in any order; files with every word come first. It says
   how many files match in all ("Showing 10 of 37"), so "all shown" means

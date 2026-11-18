@@ -415,18 +415,49 @@ Artefact: the generated HTML pages, and the demo home's, declare no charset, so 
 reads them as Latin-1 ("â€”" for "—"). A real saved page declares one; no task searched a
 non-ASCII word in HTML.
 
+### A short file shown whole, and a when-to-use line (100 runs, 2026-11-18)
+
+Causes 1 and 3, fixed together and re-run on the file-index arm (rag's row is the run above):
+a hit whose stored text is at most 600 characters carries that text, marked "shown whole",
+in place of its snippet (`LocalSearch::WHOLE_TEXT_CHARS`), and `fileindex_search`'s
+description opens with when to use it. A longer window was rejected; why is on
+`LocalSearch::SNIPPET_WORDS`. Results in `results-hardhome-whole/runs.jsonl`.
+
+| | pass | found the file | median time | p90 | mean calls | runs over 10 calls | searches that found nothing |
+|---|---|---|---|---|---|---|---|
+| rag | 100/100 | 100 | 25 s | 36 s | 2.1 | 0 | 16 / 181 (9%) |
+| file index, snippet | 97/100 | 95 | 34 s | 68 s | 3.9 | 5 | 11 / 194 (6%) |
+| file index, short file whole | 99/100 | 97 | 34 s | 65 s | 3.5 | 8 | 1 / 195 (1%) |
+
+**Reads outside `electricity` fell from 73 to 10** (decoy and `.odt` not counted). Calls per
+task, before → after: `invoice` 3.6 → 1.7, `flood` 3.0 → 2.0, `finnish-rent` 6.0 → 3.5 (78 →
+56 s), the rest within 0.3. Leave out the two tasks that coverage decides (`electricity`,
+`notice`) and the file index matches rag: 2.01 calls a run against 2.08, median 28 s both, mean
+31 s against 26 s, 79 of 80 passes.
+
+**The cost is 13% more text per search**: each task's first query, replayed both ways, came to
+22.4 kB instead of 19.7 kB.
+
+**Toy-sized: every gold file here is under 530 characters**, so all of them came whole, the
+best case. A real home's invoices and contracts mostly run past 600 characters and keep the
+snippet; short notes and letters are what this saves reads on.
+
+**What's left is coverage.** `electricity` didn't move (14.8 calls; all 8 runs over 10 calls are
+its own): the `.csv`. `notice` didn't either (3.9): the note that answers it now comes whole,
+so the read moved to the signed lease `.odt`, which localsearch knows by name only. `.odt` calls
+rose from 9 to 21, every one on that file.
+
+**`sauna`: 3 of 10 runs didn't search** (5 before), each reading the decoy and answering from
+general knowledge (1 wrong, 2 lucky). Ten runs can't tell that from noise; the when-to-use line
+stays because it costs one line and matches `rag_search`'s.
+
 ### What the bar needs next
 
-The hard home separates the arms, and each cause is a change to measure with one file-index
-re-run:
-
-1. **A snippet that carries the answer** (cause 1): a small file's whole text in the result,
-   or a longer window. SQLite's `snippet()` caps at 64 tokens; tinysparql's `fts:snippet`
-   limit is unmeasured.
-2. **A when-to-use line** opening `fileindex_search`'s description, like `rag_search`'s
-   (cause 3).
-3. **Coverage** (cause 2): accept and say it (the README names the office extractor; `.csv`
-   stays unindexed under localsearch), or the tool says when a folder holds files the index
-   skips. That's a feature, the owner's call.
-4. **The language gap**: the model closed it by itself here, so accept it, without a prompt
+1. **Coverage** (cause 2) is the whole remaining gap: accept and say it (the README names the
+   office extractor; `.csv` stays unindexed under localsearch, recoll indexes it), or the tool
+   says when a folder holds files the index skips. That's a feature, the owner's call. With
+   the office extractor installed, a `notice` re-run would show whether the `.odt` half closes.
+2. **The language gap**: the model closed it by itself here, so accept it, without a prompt
    nudge.
+3. **A real home's file sizes** decide how much "shown whole" saves outside this toy corpus.
+   Measuring needs a home with real documents in it, which the dev VM doesn't have.

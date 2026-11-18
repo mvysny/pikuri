@@ -9,7 +9,10 @@ module Pikuri
     #   LocalSearch.search(query: Query.parse('lease rent'), limit: 10, folders: ['/home/u/Documents'])
     #   # => [{ path: '/home/u/Documents/Housing/lease-agreement.pdf',
     #   #       snippet: 'Residential >>Lease<< Agreement Landlord: …',
-    #   #       text_size: 4211 }, …]
+    #   #       text_size: 4211, text: nil },
+    #   #     { path: '/home/u/Documents/Notes/flat.md',
+    #   #       snippet: '# Flat The >>rent<< is EUR 1,150 …',
+    #   #       text_size: 212, text: "# Flat\nThe rent is EUR 1,150, due on the 5th.\n…" }, …]
     #   LocalSearch.read_text('/home/u/Documents/Housing/lease-agreement.pdf')
     #   # => "Residential Lease Agreement\nLandlord: …"   (nil when not indexed)
     #
@@ -17,7 +20,8 @@ module Pikuri
     # groups, by its name or its extracted text. Hits come one per file,
     # those matching more groups first, then by relevance, each with one
     # snippet of about {SNIPPET_WORDS} words around a match, matched words
-    # marked +>>like this<<+. PDFs and office docs come for free: the index
+    # marked +>>like this<<+, and a short file's whole text too (up to
+    # {WHOLE_TEXT_CHARS}). PDFs and office docs come for free: the index
     # extracted their text, so {.read_text} needs no extractor here.
     #
     # Needs +localsearch+ (the indexing daemon, a GNOME default) and the
@@ -53,9 +57,20 @@ module Pikuri
       #   index under; querying it starts the daemon through D-Bus activation.
       DBUS_SERVICE = 'org.freedesktop.LocalSearch3'
 
+      # Not raised to show more: once a file's whole text fits the window,
+      # +fts:snippet+ may answer its title alone (measured: a 46-word
+      # invoice matching "invoice" gave +Kettle & Co. — >>Invoice<< #4471+
+      # at 55 words). {WHOLE_TEXT_CHARS} shows short files instead.
+      #
       # @return [Integer] words of context in a snippet: enough to tell an
       #   invoice from a book that mentions one without reading either.
       SNIPPET_WORDS = 40
+
+      # @return [Integer] longest stored text, in characters, that a hit
+      #   carries whole: a few sentences, about the 500 characters a rag hit
+      #   shows. A snippet of a file this short leaves the rest, often the
+      #   answer (an invoice's total), to a read call.
+      WHOLE_TEXT_CHARS = 600
 
       # @return [Array(String, String)] what wraps each matched word in a
       #   snippet, so the model sees which words hit.
@@ -68,14 +83,15 @@ module Pikuri
       # per group, joined by +UNION+, and +%<under>s+ the folder filter,
       # {.under}'s. +MAX+ over a file's rows keeps the better rank and the
       # non-empty snippet. The +OPTIONAL+ measures the file's stored text
-      # whichever branch matched; a file indexed by name only leaves it
-      # unbound.
+      # and keeps it if short, whichever branch matched; a file indexed by
+      # name only leaves both unbound.
       #
       # @return [String]
       SEARCH_QUERY = <<~SPARQL
         SELECT (CONCAT("v:", ENCODE_FOR_URI(?url)) AS ?u)
                (CONCAT("v:", ENCODE_FOR_URI(MAX(?snippet))) AS ?s)
                (CONCAT("v:", STR(MAX(?length))) AS ?n)
+               (CONCAT("v:", ENCODE_FOR_URI(MAX(?short))) AS ?t)
         WHERE {
           %<match>s
           ?f nie:url ?url .
@@ -83,6 +99,7 @@ module Pikuri
             ?stored nie:isStoredAs ?f ;
               nie:plainTextContent ?text .
             BIND (STRLEN(?text) AS ?length)
+            BIND (IF(?length <= #{WHOLE_TEXT_CHARS}, ?text, "") AS ?short)
           }
           FILTER (tracker:available(nie:dataSource(?f)))
           FILTER (%<under>s)
@@ -197,17 +214,19 @@ module Pikuri
       # @param folders [Array<String>] absolute real paths of the folders to
       #   search under, subfolders included; at least one
       # @return [Array<Hash>] +[{ path: String, snippet: String|nil,
-      #   text_size: Integer|nil }, …]+, best first, one per file;
-      #   +text_size+ is the stored text's length in characters (SPARQL has
-      #   no byte length; the two differ only by the non-ASCII share), +nil+
-      #   for a file indexed by name only
+      #   text_size: Integer|nil, text: String|nil }, …]+, best first, one
+      #   per file; +text_size+ is the stored text's length in characters
+      #   (SPARQL has no byte length; the two differ only by the non-ASCII
+      #   share), +nil+ for a file indexed by name only; +text+ is the
+      #   whole stored text when +text_size+ is at most {WHOLE_TEXT_CHARS}
       # @raise [CommandError] if tinysparql exits non-zero
       def self.search(query:, limit:, folders:)
         raw = run(format(SEARCH_QUERY, match: union(RANKED_MATCH, query), under: under(folders.size)),
                   limit: limit, **group_args(query), **folder_args(folders))
-        parse_rows(raw).map do |url, snippet, length|
+        parse_rows(raw).map do |url, snippet, length, text|
           snippet = snippet&.gsub(/\s+/, ' ')&.strip
-          { path: path_of(url), snippet: (snippet unless snippet.to_s.empty?), text_size: length&.to_i }
+          { path: path_of(url), snippet: (snippet unless snippet.to_s.empty?), text_size: length&.to_i,
+            text: (text unless text.to_s.strip.empty?) }
         end
       end
 

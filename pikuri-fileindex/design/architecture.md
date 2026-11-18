@@ -156,6 +156,7 @@ filtered by URL prefix; ranked, the lease agreement comes first
 | `.csv` | **filename-only**: the text extractor takes only `text/plain` and `text/markdown` (measured 2026-11) | full text (recoll 1.43, measured 2026-11) |
 | Folder filter | URL-prefix filter in SPARQL | `dir:` clause + per-config `topdirs` |
 | Query ops | stemmed AND, phrase, `prefix*` on stems; no OR (measured 2026-11) | + OR / exclusion / proximity / wildcard / field filters |
+| A hit shows | a 40-word snippet; a file of up to 600 characters whole | recoll's abstract (its own length setting) |
 | Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |
 | Headless CLI | `tinysparql query` (SPARQL over D-Bus) | `recollq` |
 

@@ -38,6 +38,7 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     b = hits.find { |hit| hit[:path].end_with?('/b.md') }
     assert_equal 'A >>zebra<<, a mouse, and "quoted, commas" here.', b[:snippet]
     assert_equal 'A zebra, a mouse, and "quoted, commas" here.'.length, b[:text_size]
+    assert_equal 'A zebra, a mouse, and "quoted, commas" here.', b[:text], 'short: shown whole'
   end
 
   it 'reports no text size for a file indexed by name only' do
@@ -85,6 +86,8 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     assert one[:snippet].start_with?('One >>otter<< among many'), one[:snippet]
     assert one[:snippet].end_with?('…'), one[:snippet]
     assert_equal described_class::SNIPPET_WORDS, one[:snippet].delete_suffix('…').split.size
+    assert one[:text_size] > described_class::WHOLE_TEXT_CHARS, one[:text_size]
+    assert_nil one[:text], 'too long to show whole'
   end
 
   it 'matches word stems' do
@@ -113,7 +116,8 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     roots = Pikuri::Fileindex::Roots.new(dirs: [@index.corpus])
     out = Pikuri::Fileindex::Search.search(query: 'zebra', folder: "#{@index.corpus}/alpha",
                                            backend: described_class, roots: roots).to_s
-    assert_includes out, "#{@index.corpus}/alpha/a.txt  (66 B of text)\n  The quick >>zebra<< jumps"
+    assert_includes out, "#{@index.corpus}/alpha/a.txt  (66 B of text, shown whole)\n  " \
+                         "The quick zebra jumps over the lazy dog near Prague. Second line.\n"
     assert_includes out, 'Found 1 file, all shown'
   end
 
