@@ -30,8 +30,15 @@ require 'pikuri-fileindex'
 require 'pikuri-workspace'
 
 REPO = File.expand_path('../../..', __dir__)
-DOCUMENTS = File.expand_path('~/Documents')
+# The demo home by default; EVAL_DOCUMENTS=~/pikuri-eval/Documents for hard-home.rb's, whose
+# gold.json beside it names each task's file there.
+DOCUMENTS = File.expand_path(ENV.fetch('EVAL_DOCUMENTS', '~/Documents'))
 NOTES = File.join(DOCUMENTS, 'Notes')
+GOLD_FILES = begin
+  JSON.parse(File.read(File.join(File.dirname(DOCUMENTS), 'gold.json')))
+rescue Errno::ENOENT
+  {}
+end
 TIME_LIMIT = 300
 NOTE_DELAY = 5 # seconds between saving the bike-lock note and asking: a human typing the next turn
 
@@ -188,8 +195,10 @@ def run_one(task, arm, run, arms)
   seconds = (Time.now - started).round(1)
   written = restore_notes(snapshot) - [File.join(NOTES, 'bike-lock.md')]
   answer = recorder.answers.last.to_s
+  file = GOLD_FILES.fetch(task[:id], task[:file])
   { 'task' => task[:id], 'arm' => arm, 'run' => run, 'pass' => error.nil? && gold.all? { answer.match?(_1) },
-    'found' => recorder.results.any? { _1['content'].include?(task[:file]) },
+    'found' => recorder.results.any? { _1['content'].include?(file) } ||
+               recorder.calls.any? { |c| c['args'].values.any? { _1.to_s.end_with?(file) } },
     'code' => extra[:code], 'calls' => recorder.calls.size,
     'tools' => recorder.calls.map { _1['name'] }.tally, 'seconds' => seconds, 'tokens' => recorder.tokens,
     'error' => error, 'written' => written, 'tool_calls' => recorder.calls, 'tool_results' => recorder.results,

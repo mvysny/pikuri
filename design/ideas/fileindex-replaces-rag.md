@@ -356,13 +356,77 @@ What's left empty is what any-word can't fix: `electricity` 11 ("electricity Oct
 queries, no word of them in the English lease), `dentist` 1 ("dental"). The model never quoted
 and never wrote `OR` (0 of 107 queries); mean 3.4 words a query.
 
+### A home where browsing doesn't work (200 runs, 2026-11-18)
+
+`fileindex-replaces-rag/hard-home.rb` builds `~/pikuri-eval/Documents` (seeded; 212 files in 23
+folders) and `gold.json` beside it; the harness takes `EVAL_DOCUMENTS`. The demo documents get
+the names a real home gives them (`Scans/scan_20261009_002.pdf`, `Archive/2026/policy_HX-99231.pdf`,
+`Finance/spreadsheets/budget-2026.csv`), among near-misses that share each task's words but
+hold another answer (the paid Kettle invoice, last year's expired policy, the 2024 Tampere
+lease, 2025's budget, older board minutes, a top-level `sauna plans.txt` saying "Ask Ilse. Not
+urgent.") and bulk (client projects, receipts, letters, recipes, saved pages, 45 loose `.txt`).
+The file index matches any word. Results in `results-hardhome/runs.jsonl`.
+
+| | pass | found the file | median time | p90 | mean calls | runs over 10 calls | searches that found nothing |
+|---|---|---|---|---|---|---|---|
+| rag | 100/100 | 100 | 25 s | 36 s | 2.1 | 0 | 16 / 181 (9%) |
+| file index | 97/100 | 95 | 34 s | 68 s | 3.9 | 5 | 11 / 194 (6%) |
+
+"Found" means the gold file's name shows up in a tool result. Two `sauna` passes never found it
+and guessed 9–10 kW from general knowledge, so the honest score is 95 to 100. Calls per task
+(rag / file index): `electricity` 2.2 / 14.0, `finnish-rent` 2.4 / 6.0, `invoice` 2.1 / 3.6,
+`notice` 2.0 / 3.6, `flood` 2.0 / 3.0, the other five within 0.3 of each other.
+
+**The near-misses fooled neither arm.** All 197 passes picked the unpaid invoice, the current
+policy, the Helsinki lease.
+
+**Search held up.** Outside `electricity`, 2 of 154 file-index searches came back empty (rag:
+15 of 166). The gold file was first or second in the first search's list in 7 of the 8 tasks
+the index can answer; `office` sat 4th–5th behind older board minutes, and the snippets still
+answered it in 1.7 calls.
+
+**The gap is three things, none of them recall:**
+
+1. **The snippet is too short to answer, so the model reads.** Outside `electricity`, the
+   file-index arm read files 73 times, rag's 3 times (not counting the decoy and `.odt`). The
+   40-word window opens at the first matched word: on an invoice that matched "Invoice" it
+   stops before "Total due", while rag's 500-character chunk holds the whole invoice. Most hit
+   files here are under 400 B of text. This is `Q_all_matches` with data, but the cost isn't a
+   second match, it's the one window.
+2. **What localsearch skips costs the most.** `budget-2026.csv` isn't content-indexed: all 10
+   `electricity` runs reached it by browsing `Finance/spreadsheets`, in 7 to 35 calls (up to
+   193 s); two opened all 25 scans first. The `.odt` copy of the lease (no office extractor)
+   took 9 dead calls, "not in the index" then "binary". Recoll indexes both.
+3. **On `sauna`, the model didn't search: 5 of 10 file-index runs** read the decoy
+   `sauna plans.txt` from the snapshot, said "your notes don't cover this" and answered from
+   general knowledge (3 wrong, 2 lucky). Rag's model read the same decoy in 9 runs and searched
+   in all 10. Same prompt; the difference is the tool description: `rag_search` opens with "Use
+   when the user asks about facts, definitions, or topics that would live in their indexed
+   documents", `fileindex_search` with what it searches inside. One task, so a hypothesis.
+
+**Cross-language: 10 of 10 found the lease by search** (round 1: 1 of 10). Each run's first
+query was all-Finnish and hit only `Notes/finnish-words.md` (a bulk note, "vuokra = rent"),
+then an English one ("rent monthly pay") listed the lease. With browsing gone, the model
+translated on its own, for one more call; the vocabulary note may have helped. Rag's model wrote
+mixed Finnish and English queries all 10 times. The 6.0 mean is that call plus three runs of
+10–15 calls chasing the `.odt` lease and "which flat is current".
+
+Artefact: the generated HTML pages, and the demo home's, declare no charset, so localsearch
+reads them as Latin-1 ("â€”" for "—"). A real saved page declares one; no task searched a
+non-ASCII word in HTML.
+
 ### What the bar needs next
 
-1. **A home where browsing doesn't work**, so the pass rate measures search: the demo
-   documents a few folders deep among a few hundred distractor files (the snapshot then says
-   "too many entries"), or the owner's real `~/Documents` (rag needs its hours of embedding
-   there, or a Qdrant collection that survived).
-2. **The language gap** is cause 3 and stays: only one Finnish run in ten mixed English words
-   in, though the description's example (`rent lease vuokra`) mixes languages. Either accept it
-   (the recall chapter's "what vectors buy" example), or nudge in the secretary's prompt that
-   the user's files may be in another language than the question. Decide on 1's numbers.
+The hard home separates the arms, and each cause is a change to measure with one file-index
+re-run:
+
+1. **A snippet that carries the answer** (cause 1): a small file's whole text in the result,
+   or a longer window. SQLite's `snippet()` caps at 64 tokens; tinysparql's `fts:snippet`
+   limit is unmeasured.
+2. **A when-to-use line** opening `fileindex_search`'s description, like `rag_search`'s
+   (cause 3).
+3. **Coverage** (cause 2): accept and say it (the README names the office extractor; `.csv`
+   stays unindexed under localsearch), or the tool says when a folder holds files the index
+   skips. That's a feature, the owner's call.
+4. **The language gap**: the model closed it by itself here, so accept it, without a prompt
+   nudge.
