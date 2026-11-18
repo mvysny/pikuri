@@ -108,15 +108,16 @@ module Pikuri
       end
 
       # Run +recollq -F 'url abstract dbytes' -n <limit>+ and parse the results.
-      # The folders become one +(dir:"<a>" OR dir:"<b>")+ group appended to
-      # the query; recoll matches a +dir:+ by whole path components (+/a/sp+
-      # does not match +/a/sp ace+).
+      # The query becomes recoll's query language ({.language}), with the
+      # folders as one +(dir:"<a>" OR dir:"<b>")+ group appended; recoll
+      # matches a +dir:+ by whole path components (+/a/sp+ does not match
+      # +/a/sp ace+).
       #
-      # The query is recoll's query language, spliced in as the model wrote
-      # it, so the folder group narrows it but can't be relied on to bound
-      # it: the +fileindex_search+ tool drops any hit outside its roots.
+      # The model's words are spliced into that language, so the folder group
+      # narrows the search but can't be relied on to bound it: the
+      # +fileindex_search+ tool drops any hit outside its roots.
       #
-      # @param query [String] recoll query-language string
+      # @param query [Query] a file matches every word of any group
       # @param limit [Integer]
       # @param folders [Array<String>] absolute folders to search under,
       #   subfolders included; at least one
@@ -126,20 +127,30 @@ module Pikuri
       # @raise [CommandError] if recollq exits non-zero, or a folder contains
       #   a +"+ (recoll's query language cannot quote one)
       def self.search(query:, limit:, folders:)
-        parse_search_output(query_fields('url abstract dbytes', limit, "#{query} #{within(folders)}"))
+        parse_search_output(query_fields('url abstract dbytes', limit, "#{language(query)} #{within(folders)}"))
       end
+
+      # @param query [Query]
+      # @return [String] each group's words in parentheses, the groups joined
+      #   by +OR+: +(notice period) OR (tenant)+. recoll's +OR+ binds tighter
+      #   than the implicit AND, so the folder group appended after it bounds
+      #   the whole.
+      def self.language(query)
+        query.groups.map { |words| "(#{words.join(' ')})" }.join(' OR ')
+      end
+      private_class_method :language
 
       # The path of every file {.search} would match, unranked and uncapped,
       # so a caller can tell how many matched beyond its +limit+. recollq's
       # own "N results" line can't stand in: it counts files the caller
       # filters out, hidden ones included.
       #
-      # @param query [String]
+      # @param query [Query]
       # @param folders [Array<String>] as {.search}'s
       # @return [Array<String>] absolute paths
       # @raise [CommandError] as {.search}
       def self.paths(query:, folders:)
-        parse_search_output(query_fields('url', 0, "#{query} #{within(folders)}")).map { |hit| hit[:path] }
+        parse_search_output(query_fields('url', 0, "#{language(query)} #{within(folders)}")).map { |hit| hit[:path] }
       end
 
       # @param fields [String] recollq's +-F+ field list

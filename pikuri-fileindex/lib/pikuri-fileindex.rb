@@ -48,9 +48,9 @@ module Pikuri
     #   - recoll: no index in /home/u/.recoll yet. Build one with `recollindex`.
     #
     # A backend is a module answering +unavailable_reason(folders:)+,
-    # +search(query:, limit:, folders:)+, +paths(query:, folders:)+,
-    # +read_text+, +limitations+ and +label+, with a +CommandError+:
-    # {LocalSearch} and {Recoll}.
+    # +search(query:, limit:, folders:)+ and +paths(query:, folders:)+ (a file
+    # matching any group of the {Query}), +read_text+, +limitations+ and
+    # +label+, with a +CommandError+: {LocalSearch} and {Recoll}.
     #
     # @param roots [Roots] the folders the agent will search
     # @param backends [Array<Module>] candidates in preference order

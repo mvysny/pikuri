@@ -14,6 +14,10 @@ module Pikuri
     # the error label) is read from the backend, so a new index arm ships
     # its own without touching the tool.
     #
+    # A file matches when it holds any of the query's words, or all the
+    # words of any quoted group (see {Query} for why); files holding every
+    # word come first, then those holding more of them.
+    #
     # The +roots:+ bound it: the model's +folder+ must lie inside them, the
     # backend searches only under them, and a hit outside them (or hidden
     # below one) is dropped before the model sees it. That last filter is
@@ -27,10 +31,11 @@ module Pikuri
     # cheap to run repeatedly.
     #
     # It says whether the hits are every match ("Found 8 files, all shown"
-    # or "Showing 10 of 37 matching files"), counted after the roots filter,
-    # so the model can report that nothing else mentions a thing. No paging
-    # past {MAX_LIMIT}: the footer sends the model to narrow the query or
-    # +folder+ instead.
+    # or "Showing 10 of 37 matching files"), and for several words how many
+    # files hold all of them, counted after the roots filter, so the model
+    # can report that nothing else mentions a thing. No paging past
+    # {MAX_LIMIT}: the footer sends the model to narrow the query or +folder+
+    # instead.
     #
     # Sharing: +P_stateless+ — the backend is a stateless module and each call
     # shells out to its own query, so one instance serves any number of agents.
@@ -58,11 +63,12 @@ module Pikuri
       #   index misses there (recoll lists its +topdirs+; localsearch names
       #   source code and git checkouts). So keep coverage claims out of here.
       DESCRIPTION = <<~DESC
-        Find files whose contents contain your words or phrase, using the desktop search index.
+        Find files whose contents contain your words, using the desktop search index.
 
         Usage:
         - Searches inside PDFs, Word/ODT/spreadsheet documents and plain text — reach for this when the answer may live in a file's contents.
-        - Keyword match (and word stems); type the actual words that would appear in the file.
+        - A file matches when it contains any of your words (or their stems). Files with all of them come first, then those with more of them. So list the words the file may use, synonyms and other languages included: `rent lease vuokra`.
+        - Put words in double quotes to require all of them in the same file, in any order: `"notice period" tenant` finds files with both notice and period, or with tenant.
         - Pass `folder` to search only under one folder (subfolders included) — the way to find a common word inside one project instead of across every folder you can search.
         - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
         - Says how many files match in all: "Found 8 files, all shown" means no other file matches. When more match than are shown, narrow the query or `folder`.
@@ -84,8 +90,8 @@ module Pikuri
           description: "#{DESCRIPTION}\n#{Search.roots_note(roots)}\n#{backend.limitations}",
           parameters: Parameters.build { |p|
             p.required_string :query,
-                              'Words or a phrase to find in file contents, ' \
-                              'e.g. "tax return 2024".'
+                              'Words to find in file contents; a file with any of them matches, ' \
+                              'e.g. "tax return taxes 2024".'
             p.optional_integer :limit,
                                "Max number of matching files to return " \
                                "(default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}), e.g. 10."
@@ -118,7 +124,8 @@ module Pikuri
       #   {Pikuri::Tool::Result.error} for a bad +folder+ or a backend failure
       def self.search(query:, backend:, roots:, limit: DEFAULT_LIMIT, folder: nil)
         q = query.to_s.strip
-        return Pikuri::Tool::Result.error('empty query.') if q.empty?
+        parsed = Query.parse(q)
+        return Pikuri::Tool::Result.error('empty query.') if parsed.empty?
 
         folder = folder.to_s.strip
         folder = nil if folder.empty?
@@ -148,16 +155,29 @@ module Pikuri
 
         limit = clamp(limit, 1, MAX_LIMIT)
         folders = folder ? [folder] : roots.dirs
-        found = backend.search(query: q, limit: limit, folders: folders)
+        found = backend.search(query: parsed, limit: limit, folders: folders)
         hits = found.select { |hit| roots.resolve(hit[:path]) }
-        total = count(backend, roots, query: q, folders: folders, hits: hits, full: found.size >= limit)
+        total = count(backend, roots, query: parsed, folders: folders, hits: hits, full: found.size >= limit)
         if total.zero?
-          return Pikuri::Tool::Result.new(content: no_match_message(q, folder), summary: 'Found 0 files')
+          return Pikuri::Tool::Result.new(content: no_match_message(q, folder, any: parsed.groups.size > 1),
+                                          summary: 'Found 0 files')
+        end
+
+        all = nil
+        if parsed.groups.size > 1
+          # Asked apart, so "all of your words, shown first" holds whatever
+          # order the backend ranks the any-word hits in.
+          all_found = backend.search(query: parsed.all_of, limit: limit, folders: folders)
+          all_hits = all_found.select { |hit| roots.resolve(hit[:path]) }
+          all = count(backend, roots, query: parsed.all_of, folders: folders, hits: all_hits,
+                                      full: all_found.size >= limit)
+          hits = (all_hits + hits).uniq { |hit| hit[:path] }.first(limit)
+          total = [total, hits.size].max
         end
 
         content, marker = head_truncate(hits.map { |hit| render_hit(hit) }.join("\n"))
         Pikuri::Tool::Result.new(
-          content: [content.chomp, footer(hits.size, total, limit) + marker].reject(&:empty?).join("\n\n"),
+          content: [content.chomp, footer(hits.size, total, limit, all) + marker].reject(&:empty?).join("\n\n"),
           summary: "Found #{hits.size == total ? '' : "#{hits.size} of "}#{Pikuri::Tool.pluralize(total, 'file')}"
         )
       rescue backend::CommandError => e
@@ -196,15 +216,23 @@ module Pikuri
       # @param shown [Integer]
       # @param total [Integer]
       # @param limit [Integer]
-      # @return [String] +"Found 8 files, all shown. …"+ or
-      #   +"Showing 10 of 37 matching files, best first. To see the others, …"+
-      def self.footer(shown, total, limit)
+      # @param all [Integer, nil] how many files hold every word; +nil+ for a
+      #   one-group query, where that is every match
+      # @return [String] +"Found 8 files, all shown. 3 contain all of your
+      #   words, shown first. …"+ or +"Showing 10 of 37 matching files, best
+      #   first. To see the others, …"+
+      def self.footer(shown, total, limit, all)
         per_file = 'One match shown per file; the index may be slightly stale. ' \
                    'Read a file to see its full text and any other matches.'
-        return "Found #{Pikuri::Tool.pluralize(total, 'file')}, all shown. #{per_file}" if shown == total
+        every = case all
+                when nil then ''
+                when 0 then ' None contains all of your words; these contain some of them.'
+                else " #{all == 1 ? '1 contains' : "#{all} contain"} all of your words, shown first."
+                end
+        return "Found #{Pikuri::Tool.pluralize(total, 'file')}, all shown.#{every} #{per_file}" if shown == total
 
         raise_limit = limit < MAX_LIMIT ? ", or raise `limit` (max #{MAX_LIMIT})" : ''
-        "Showing #{shown} of #{total} matching files, best first. " \
+        "Showing #{shown} of #{total} matching files, best first.#{every} " \
           "To see the others, narrow the query or `folder`#{raise_limit}. #{per_file}"
       end
       private_class_method :footer
@@ -216,11 +244,13 @@ module Pikuri
       end
       private_class_method :outside_error
 
+      # @param any [Boolean] the query has several words, any of which would
+      #   have matched
       # @return [String]
-      def self.no_match_message(query, folder)
+      def self.no_match_message(query, folder, any:)
         where = folder ? " under #{folder}" : ''
-        "No files found matching '#{query}'#{where}. (The index may also be slightly stale, " \
-          'or still building.)'
+        "No files found matching #{any ? 'any of ' : ''}'#{query}'#{where}. (The index may also be slightly " \
+          'stale, or still building.)'
       end
       private_class_method :no_match_message
 

@@ -6,18 +6,19 @@ module Pikuri
     # queried in SPARQL through the +tinysparql+ CLI. The stateless backend
     # behind +fileindex_search+ / +fileindex_read+:
     #
-    #   LocalSearch.search(query: 'lease', limit: 10, folders: ['/home/u/Documents'])
+    #   LocalSearch.search(query: Query.parse('lease rent'), limit: 10, folders: ['/home/u/Documents'])
     #   # => [{ path: '/home/u/Documents/Housing/lease-agreement.pdf',
     #   #       snippet: 'Residential >>Lease<< Agreement Landlord: …',
     #   #       text_size: 4211 }, …]
     #   LocalSearch.read_text('/home/u/Documents/Housing/lease-agreement.pdf')
     #   # => "Residential Lease Agreement\nLandlord: …"   (nil when not indexed)
     #
-    # Hits are ranked by relevance, one per file, each with one snippet of
-    # about {SNIPPET_WORDS} words around the match, matched words marked
-    # +>>like this<<+; a file matches by its name or its extracted text. PDFs
-    # and office docs come for free: the index extracted their text, so
-    # {.read_text} needs no extractor here.
+    # A file matches when it holds every word of any one of the query's
+    # groups, by its name or its extracted text. Hits come one per file,
+    # those matching more groups first, then by relevance, each with one
+    # snippet of about {SNIPPET_WORDS} words around a match, matched words
+    # marked +>>like this<<+. PDFs and office docs come for free: the index
+    # extracted their text, so {.read_text} needs no extractor here.
     #
     # Needs +localsearch+ (the indexing daemon, a GNOME default) and the
     # +tinysparql+ CLI, which Debian/Ubuntu's +localsearch+ package depends on.
@@ -37,10 +38,13 @@ module Pikuri
     # Index URLs use GLib's escaping ({.file_uri}); a folder filter or a read
     # built with any other escaping silently matches nothing.
     #
-    # Each folder is its own bound parameter (+~folder0+, +~folder1+, …); only
-    # those generated names are spliced into the query text, never a path. A
-    # parameter's type is tinysparql's one-letter code (+s+, +i+): +string+
-    # and +xsd:string+ are refused.
+    # Each group and each folder is its own bound parameter (+~group0+,
+    # +~folder0+, …); only those generated names are spliced into the query
+    # text, never a word or a path. A parameter's type is tinysparql's
+    # one-letter code (+s+, +i+): +string+ and +xsd:string+ are refused.
+    #
+    # Any-group matching is a +UNION+ of one +fts:match+ per group, because
+    # +fts:match+ has no OR: it reads +OR+, +NOT+ and parentheses as words.
     module LocalSearch
       # @return [String] the SPARQL query CLI.
       BINARY = 'tinysparql'
@@ -60,12 +64,12 @@ module Pikuri
       # @return [Logger]
       LOGGER = Pikuri.logger_for('Fileindex::LocalSearch')
 
-      # The ranked, folder-scoped search. A file matches by name (first
-      # branch, no snippet) or by extracted text (second branch); +MAX+ over
-      # the group keeps the better rank and the non-empty snippet. The
-      # +OPTIONAL+ measures the file's stored text whichever branch matched;
-      # a file indexed by name only leaves it unbound. +%<under>s+ is the
-      # folder filter, {.under}'s.
+      # The ranked, folder-scoped search: +%<match>s+ is {RANKED_MATCH} once
+      # per group, joined by +UNION+, and +%<under>s+ the folder filter,
+      # {.under}'s. +MAX+ over a file's rows keeps the better rank and the
+      # non-empty snippet. The +OPTIONAL+ measures the file's stored text
+      # whichever branch matched; a file indexed by name only leaves it
+      # unbound.
       #
       # @return [String]
       SEARCH_QUERY = <<~SPARQL
@@ -73,16 +77,7 @@ module Pikuri
                (CONCAT("v:", ENCODE_FOR_URI(MAX(?snippet))) AS ?s)
                (CONCAT("v:", STR(MAX(?length))) AS ?n)
         WHERE {
-          {
-            ?f fts:match ~query .
-            BIND (fts:rank(?f) AS ?rank)
-            BIND ("" AS ?snippet)
-          } UNION {
-            ?elem fts:match ~query ;
-              nie:isStoredAs ?f .
-            BIND (fts:rank(?elem) AS ?rank)
-            BIND (fts:snippet(?elem, "#{MATCH_MARKERS[0]}", "#{MATCH_MARKERS[1]}", "…", #{SNIPPET_WORDS}) AS ?snippet)
-          }
+          %<match>s
           ?f nie:url ?url .
           OPTIONAL {
             ?stored nie:isStoredAs ?f ;
@@ -93,23 +88,49 @@ module Pikuri
           FILTER (%<under>s)
         }
         GROUP BY ?url
-        ORDER BY DESC(MAX(?rank)) ?url
+        ORDER BY DESC(COUNT(DISTINCT ?group)) DESC(MAX(?rank)) ?url
         LIMIT ~limit
       SPARQL
 
+      # One group's branches in {SEARCH_QUERY}: the file matches by name
+      # (first branch, no snippet) or by extracted text (second). +%<group>s+
+      # is the group's parameter name, +%<index>d+ its number, which ranks a
+      # file by how many groups it matched.
+      #
+      # @return [String]
+      RANKED_MATCH = <<~SPARQL.chomp
+        {
+          ?f fts:match ~%<group>s .
+          BIND (fts:rank(?f) AS ?rank)
+          BIND ("" AS ?snippet)
+          BIND (%<index>d AS ?group)
+        } UNION {
+          ?elem fts:match ~%<group>s ;
+            nie:isStoredAs ?f .
+          BIND (fts:rank(?elem) AS ?rank)
+          BIND (fts:snippet(?elem, "#{MATCH_MARKERS[0]}", "#{MATCH_MARKERS[1]}", "…", #{SNIPPET_WORDS}) AS ?snippet)
+          BIND (%<index>d AS ?group)
+        }
+      SPARQL
+
       # Every file {SEARCH_QUERY} matches, unranked and uncapped: the same
-      # two branches and filters, no rank or snippet to compute.
+      # branches ({MATCH}) and filters, no rank or snippet to compute.
       #
       # @return [String]
       PATHS_QUERY = <<~SPARQL
         SELECT DISTINCT (CONCAT("v:", ENCODE_FOR_URI(?url)) AS ?u)
         WHERE {
-          { ?f fts:match ~query . } UNION { ?elem fts:match ~query ; nie:isStoredAs ?f . }
+          %<match>s
           ?f nie:url ?url .
           FILTER (tracker:available(nie:dataSource(?f)))
           FILTER (%<under>s)
         }
       SPARQL
+
+      # One group's branches in {PATHS_QUERY}.
+      #
+      # @return [String]
+      MATCH = '{ ?f fts:match ~%<group>s . } UNION { ?elem fts:match ~%<group>s ; nie:isStoredAs ?f . }'
 
       # @return [String] the stored text of the file at +~url+.
       READ_QUERY = <<~SPARQL
@@ -171,7 +192,7 @@ module Pikuri
 
       # Ranked full-text search under any of +folders+.
       #
-      # @param query [String] words to match, stemmed and ANDed by the index
+      # @param query [Query] a file matches every word, stemmed, of any group
       # @param limit [Integer] max files returned
       # @param folders [Array<String>] absolute real paths of the folders to
       #   search under, subfolders included; at least one
@@ -182,7 +203,8 @@ module Pikuri
       #   for a file indexed by name only
       # @raise [CommandError] if tinysparql exits non-zero
       def self.search(query:, limit:, folders:)
-        raw = run(format(SEARCH_QUERY, under: under(folders.size)), query: query, limit: limit, **folder_args(folders))
+        raw = run(format(SEARCH_QUERY, match: union(RANKED_MATCH, query), under: under(folders.size)),
+                  limit: limit, **group_args(query), **folder_args(folders))
         parse_rows(raw).map do |url, snippet, length|
           snippet = snippet&.gsub(/\s+/, ' ')&.strip
           { path: path_of(url), snippet: (snippet unless snippet.to_s.empty?), text_size: length&.to_i }
@@ -192,12 +214,13 @@ module Pikuri
       # The path of every file {.search} would match, unranked and uncapped,
       # so a caller can tell how many matched beyond its +limit+.
       #
-      # @param query [String]
+      # @param query [Query]
       # @param folders [Array<String>] as {.search}'s
       # @return [Array<String>] absolute paths
       # @raise [CommandError] if tinysparql exits non-zero
       def self.paths(query:, folders:)
-        raw = run(format(PATHS_QUERY, under: under(folders.size)), query: query, **folder_args(folders))
+        raw = run(format(PATHS_QUERY, match: union(MATCH, query), under: under(folders.size)),
+                  **group_args(query), **folder_args(folders))
         parse_rows(raw).map { |(url)| path_of(url) }
       end
 
@@ -277,6 +300,22 @@ module Pikuri
           cells.map { |cell| cell == '(null)' ? nil : percent_decode(cell.delete_prefix('v:')) }
         end
       end
+
+      # @param branches [String] {RANKED_MATCH} or {MATCH}
+      # @param query [Query]
+      # @return [String] +branches+ once per group, joined by +UNION+
+      def self.union(branches, query)
+        Array.new(query.groups.size) { |i| format(branches, group: "group#{i}", index: i) }.join(' UNION ')
+      end
+      private_class_method :union
+
+      # @param query [Query]
+      # @return [Hash{Symbol => String}] +group0:+, +group1:+, … bound to each
+      #   group's words, which +fts:match+ ANDs
+      def self.group_args(query)
+        query.groups.each_with_index.to_h { |words, i| [:"group#{i}", words.join(' ')] }
+      end
+      private_class_method :group_args
 
       # @param count [Integer] how many folders the filter names
       # @return [String] a SPARQL condition true for a URL under any of

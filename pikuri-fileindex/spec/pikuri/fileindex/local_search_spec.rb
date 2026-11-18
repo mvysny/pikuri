@@ -34,6 +34,8 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
     argv.each_cons(2).select { |flag, _| flag == '--arg' }.to_h { |_, arg| arg.split(':', 2) }
   end
 
+  def q(text) = Pikuri::Fileindex::Query.parse(text)
+
   describe '.file_uri' do
     it 'escapes the way GLib does: reserved sub-delims stay, the rest is %XX per byte' do
       assert_equal "file:///a/b%20c/%C3%BC%23%3B%3F%25,&=+$!'()*~@:/x.txt",
@@ -63,19 +65,19 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
       with_spawn(success: true, output: out) do
         assert_equal [{ path: '/a/b c.txt', snippet: 'alpha beta', text_size: 812 },
                       { path: '/d.rb', snippet: nil, text_size: nil }],
-                     described_class.search(query: 'beta', limit: 5, folders: ['/'])
+                     described_class.search(query: q('beta'), limit: 5, folders: ['/'])
       end
     end
 
     it 'binds each folder as an escaped URI prefix, with a trailing slash, and the query and limit' do
       calls = []
       with_spawn(success: true, output: "Results:\n  None\n", calls: calls) do
-        described_class.search(query: 'tax', limit: 7, folders: ['/home/u/My Docs', '/home/u/Downloads/'])
+        described_class.search(query: q('tax'), limit: 7, folders: ['/home/u/My Docs', '/home/u/Downloads/'])
       end
       args = args_of(calls.first)
       assert_equal 's:file:///home/u/My%20Docs/', args['folder0']
       assert_equal 's:file:///home/u/Downloads/', args['folder1']
-      assert_equal 's:tax', args['query']
+      assert_equal 's:tax', args['group0']
       assert_equal 'i:7', args['limit']
       assert_equal %w[tinysparql query -b org.freedesktop.LocalSearch3], calls.first.first(4)
       query = calls.first[calls.first.index('-q') + 1]
@@ -83,15 +85,30 @@ RSpec.describe Pikuri::Fileindex::LocalSearch do
       refute_includes query, 'home/u', 'a path is bound, never spliced'
     end
 
+    it 'binds each group, matched in a branch of its own, and ranks by groups matched' do
+      [:search, :paths].each do |method|
+        calls = []
+        with_spawn(success: true, output: "Results:\n  None\n", calls: calls) do
+          args = { query: q('notice "due date"'), folders: ['/a'] }
+          method == :search ? described_class.search(**args, limit: 5) : described_class.paths(**args)
+        end
+        assert_equal ['s:notice', 's:due date'], args_of(calls.first).values_at('group0', 'group1')
+        query = calls.first[calls.first.index('-q') + 1]
+        assert_equal 2, query.scan('fts:match ~group0').size, "#{method}: name and text branch"
+        assert_equal 2, query.scan('fts:match ~group1').size, method
+        refute_match(/notice|due date/, query, 'a word is bound, never spliced')
+      end
+    end
+
     it 'filters the root folder as every local file' do
       calls = []
-      with_spawn(success: true, output: '', calls: calls) { described_class.search(query: 'x', limit: 1, folders: ['/']) }
+      with_spawn(success: true, output: '', calls: calls) { described_class.search(query: q('x'), limit: 1, folders: ['/']) }
       assert_equal 's:file:///', args_of(calls.first)['folder0']
     end
 
     it 'raises CommandError with the CLI message on a non-zero exit' do
       with_spawn(success: false, output: 'Could not run query') do
-        err = assert_raises(Pikuri::Fileindex::LocalSearch::CommandError) { described_class.search(query: 'x', limit: 5, folders: ['/']) }
+        err = assert_raises(Pikuri::Fileindex::LocalSearch::CommandError) { described_class.search(query: q('x'), limit: 5, folders: ['/']) }
         assert_equal 'Could not run query', err.message
       end
     end

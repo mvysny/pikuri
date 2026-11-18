@@ -27,7 +27,7 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
   before { skip 'no localsearch-3 / dbus-daemon / tinysparql on this host' unless @index }
 
   def search(query, folders: [@index.corpus], limit: 25)
-    described_class.search(query: query, limit: limit, folders: folders)
+    described_class.search(query: Pikuri::Fileindex::Query.parse(query), limit: limit, folders: folders)
   end
 
   def relative(hits) = hits.map { |hit| hit[:path].delete_prefix("#{@index.corpus}/") }.sort
@@ -60,9 +60,19 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
   end
 
   it 'lists every matching path, past any limit' do
-    assert_equal ['alpha/a.txt', 'beta/b.md', 'beta2/e.txt', "#{ODD}/d.txt"],
-                 described_class.paths(query: 'zebra', folders: [@index.corpus])
+    assert_equal ['alpha/a.txt', 'beta/b.md', 'beta2/e.txt', 'rank/many.txt', 'rank/one.txt', "#{ODD}/d.txt"],
+                 described_class.paths(query: Pikuri::Fileindex::Query.parse('zebra otter'), folders: [@index.corpus])
                                 .map { |path| path.delete_prefix("#{@index.corpus}/") }.sort
+  end
+
+  it 'matches a file holding any of the words, those holding more of them first' do
+    hits = search('mouse walrus zebra')
+    assert_equal 'beta/b.md', relative(hits.first(1)).first, 'zebra and mouse'
+    assert_equal ['alpha/a.txt', 'beta/b.md', 'beta2/e.txt', 'code/walrus.rb', "#{ODD}/d.txt"], relative(hits)
+  end
+
+  it 'requires every word of a quoted group, in any order' do
+    assert_equal ['beta/b.md'], relative(search('"mouse zebra"'))
   end
 
   it 'ranks the better match first, before the limit applies' do
@@ -111,6 +121,13 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     roots = Pikuri::Fileindex::Roots.new(dirs: [@index.corpus])
     result = Pikuri::Fileindex::Search.search(query: 'zebra', limit: 1, backend: described_class, roots: roots)
     assert_equal 'Found 1 of 4 files', result.summary
+  end
+
+  it 'tells the tool how many files hold every word' do
+    roots = Pikuri::Fileindex::Roots.new(dirs: [@index.corpus])
+    out = Pikuri::Fileindex::Search.search(query: 'mouse zebra', backend: described_class, roots: roots).to_s
+    assert out.start_with?("#{@index.corpus}/beta/b.md"), out
+    assert_includes out, 'Found 4 files, all shown. 1 contains all of your words, shown first.'
   end
 end
 

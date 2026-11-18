@@ -19,11 +19,14 @@ What the gem promises, and what it leaves to the host:
   never by a native parser in our process. recoll's extractors run in
   `recollindex`, outside our process but unsandboxed: that is the user's
   choice of indexer, not ours.
-- **The model's words never become query text.** localsearch takes the
-  query, the folder prefix and the limit as bound `tinysparql` parameters
-  (`--arg name:s:value`, referenced as `~name`); the SPARQL text is a
-  constant. recoll takes the query as one argv element; recoll's own
-  query language is the model's to use, and a folder containing `"` is
+- **The model's words never become SPARQL.** localsearch takes each
+  word group, each folder prefix and the limit as bound `tinysparql`
+  parameters (`--arg name:s:value`, referenced as `~name`); the SPARQL
+  text is generated from how many groups and folders there are, nothing
+  else. recoll takes the query as one argv element, with the model's
+  words spliced into recoll's query language inside our parenthesised
+  groups, so a word can still carry recoll syntax (`dir:`, `-word`); the
+  roots check below bounds what that reaches. A folder containing `"` is
   refused because that language can't quote one.
 - **Nothing is written.** Both backends are queried read-only. pikuri
   never builds, configures or refreshes an index.
@@ -88,6 +91,33 @@ Only the third is a genuine "nothing we can do":
    this either: it fixes precision, not recall. A doc the keyword miss
    kept out of the candidate set can't be re-ranked back in.
 
+## Matching: any word, files with all of them first
+
+{Pikuri::Fileindex::Query} parses what the model typed into word groups:
+a bare word is a group, double quotes make one group of their words, in
+any order. A file matches when it holds every word of any group. Both
+indexes want every word by default, and an agent that lists alternatives
+(synonyms, a second language, everything the file might say) mostly
+found nothing that way: of 140 queries Ornith wrote over the demo home,
+71 came back empty, and 28 of those had a word in the right file
+(measured 2026-11).
+
+- **localsearch** has no OR: `fts:match` reads `OR`, `NOT` and
+  parentheses as words. So {Pikuri::Fileindex::LocalSearch} unions one
+  `fts:match` per group and ranks a file by how many groups it matched,
+  then by relevance.
+- **recoll** gets `(w1 w2) OR (w3)`; its `OR` binds tighter than the
+  implicit AND, so the folder group appended after it bounds the whole.
+- **The tool** asks a several-group query twice: any group, then every
+  word ({Pikuri::Fileindex::Query#all_of}). The files with every word go
+  first and are counted ("3 contain all of your words"), so the strict
+  match stays visible whatever order the backend ranked in.
+
+Quotes are a group, not a phrase: looser than a phrase, so a model that
+expects one still gets every file a phrase would find, and the extra
+files show their snippet. It also needs no proximity operator, which
+localsearch doesn't expose.
+
 ## Backend engine: `localsearch` vs `recoll`
 
 Both sit behind the same duck type, and {Pikuri::Fileindex.pick} takes
@@ -122,10 +152,10 @@ filtered by URL prefix; ranked, the lease agreement comes first
 | Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
 | Recall on indexed prose | ~100% (**= recoll**, measured) | ~100% |
 | Source code | **filename-only** (mime-gated); `.git` trees skipped | full text |
-| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed (measured 2026-11) | not measured |
-| `.csv` | **filename-only**: the text extractor takes only `text/plain` and `text/markdown` (measured 2026-11) | not measured |
+| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed (measured 2026-11) | full text (`.docx`, `.odt`; recoll 1.43, measured 2026-11) |
+| `.csv` | **filename-only**: the text extractor takes only `text/plain` and `text/markdown` (measured 2026-11) | full text (recoll 1.43, measured 2026-11) |
 | Folder filter | URL-prefix filter in SPARQL | `dir:` clause + per-config `topdirs` |
-| Query ops | stemmed AND / OR | + phrase / proximity / wildcard / field filters |
+| Query ops | stemmed AND, phrase, `prefix*` on stems; no OR (measured 2026-11) | + OR / exclusion / proximity / wildcard / field filters |
 | Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |
 | Headless CLI | `tinysparql query` (SPARQL over D-Bus) | `recollq` |
 

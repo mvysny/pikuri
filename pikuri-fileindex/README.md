@@ -7,10 +7,12 @@ and a 40-word snippet with the amount in it, without pikuri ever opening
 the PDF itself.
 
 Provides:
-- `fileindex_search` (`Pikuri::Fileindex::Search`): keyword search,
-  ranked, one snippet per file, optionally limited to one folder. It
-  says how many files match in all ("Showing 10 of 37"), so "all shown"
-  means there is no other.
+- `fileindex_search` (`Pikuri::Fileindex::Search`): keyword search, one
+  snippet per file, optionally limited to one folder. A file matches when
+  it holds any of the words (`rent lease vuokra`), or all the words in
+  double quotes, in any order; files with every word come first. It says
+  how many files match in all ("Showing 10 of 37"), so "all shown" means
+  there is no other.
 - `fileindex_read` (`Pikuri::Fileindex::Read`): a file's full text as the
   index extracted it, paged like `read`, with an optional `pattern` that
   returns only the matching lines.

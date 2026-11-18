@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Add any-word matching to `fileindex_search`: a file holding any of the query's words matches, files with all of them come first and are counted, and double quotes group words that must all appear; pikuri-os's every-word search found nothing for half an agent's queries.
 - Add `pikuri-fileindex`: `fileindex_search` and `fileindex_read` over the desktop's own file index (GNOME localsearch through `tinysparql`, else recoll), moved from pikuri-workshop's pikuri-os as `Pikuri::Fileindex::Search` / `Read`, bounded by host-named `Pikuri::Fileindex::Roots` whose `private:` / `trusted:` grade both tools, wired by `Pikuri::Fileindex::Extension`, `fileindex_search` saying how many files match in all, with `Pikuri::Fileindex.pick(roots)` choosing a backend that holds files under them.
 - **Breaking:** `Pikuri::Agent::Control::Interloper#on_change` is called with a frozen snapshot of the queued items (`Array<Interloper::Item>`, delivery order; `[]` after a drain) instead of their count, so a host can show what was typed during a turn. A callback wanting the count reads `items.size`.
 - Add `Pikuri::VectorDb::Watcher.new(on_busy:)` and `Watcher#busy?`: told `true` as the worker takes up work after idling, the boot sweep's scan included, and `false` once its queue runs dry, so a host can show that it is indexing.

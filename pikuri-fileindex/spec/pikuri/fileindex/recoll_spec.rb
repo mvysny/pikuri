@@ -16,6 +16,8 @@ RSpec.describe Pikuri::Fileindex::Recoll do
     original
   end
 
+  def q(text) = Pikuri::Fileindex::Query.parse(text)
+
   def restore_spawn(original)
     Pikuri::Subprocess.define_singleton_method(:spawn, original)
   end
@@ -120,7 +122,7 @@ RSpec.describe Pikuri::Fileindex::Recoll do
     it 'returns parsed hits on success' do
       original = stub_spawn(success: true, output: "0 results\n#{field_line('file:///a/b.txt', 'snip')}")
       begin
-        hits = described_class.search(query: 'foo', limit: 5, folders: ['/a'])
+        hits = described_class.search(query: q('foo'), limit: 5, folders: ['/a'])
         assert_equal '/a/b.txt', hits[0][:path]
         assert_equal 'snip', hits[0][:snippet]
       ensure
@@ -128,7 +130,8 @@ RSpec.describe Pikuri::Fileindex::Recoll do
       end
     end
 
-    it 'scopes to the folders with one OR-ed group of quoted dir: clauses' do
+    # The query string recollq was handed for +query+ over +folders+.
+    def query_string(query, folders)
       seen = nil
       original = Pikuri::Subprocess.method(:spawn)
       Pikuri::Subprocess.define_singleton_method(:spawn) do |*args, **_kwargs|
@@ -136,18 +139,25 @@ RSpec.describe Pikuri::Fileindex::Recoll do
         raise Errno::EPIPE, 'stop here'
       end
       begin
-        assert_raises(Errno::EPIPE) do
-          described_class.search(query: 'tax', limit: 5, folders: ['/home/u/My Docs', '/home/u/Downloads'])
-        end
-        assert_equal 'tax (dir:"/home/u/My Docs" OR dir:"/home/u/Downloads")', seen
+        assert_raises(Errno::EPIPE) { described_class.search(query: q(query), limit: 5, folders: folders) }
+        seen
       ensure
         restore_spawn(original)
       end
     end
 
+    it 'scopes to the folders with one OR-ed group of quoted dir: clauses' do
+      assert_equal '(tax) (dir:"/home/u/My Docs" OR dir:"/home/u/Downloads")',
+                   query_string('tax', ['/home/u/My Docs', '/home/u/Downloads'])
+    end
+
+    it 'joins the groups with OR, each in parentheses' do
+      assert_equal '(notice) OR (due date) (dir:"/a")', query_string('notice "due date"', ['/a'])
+    end
+
     it 'refuses a folder with a double quote, which recoll cannot quote' do
       err = assert_raises(Pikuri::Fileindex::Recoll::CommandError) do
-        described_class.search(query: 'tax', limit: 5, folders: ['/home/u/ok', '/home/u/say "hi"'])
+        described_class.search(query: q('tax'), limit: 5, folders: ['/home/u/ok', '/home/u/say "hi"'])
       end
       assert_includes err.message, 'double quote'
     end
@@ -155,7 +165,7 @@ RSpec.describe Pikuri::Fileindex::Recoll do
     it 'raises CommandError on non-zero exit' do
       original = stub_spawn(success: false, output: 'boom')
       begin
-        assert_raises(Pikuri::Fileindex::Recoll::CommandError) { described_class.search(query: 'foo', limit: 5, folders: ['/a']) }
+        assert_raises(Pikuri::Fileindex::Recoll::CommandError) { described_class.search(query: q('foo'), limit: 5, folders: ['/a']) }
       ensure
         restore_spawn(original)
       end

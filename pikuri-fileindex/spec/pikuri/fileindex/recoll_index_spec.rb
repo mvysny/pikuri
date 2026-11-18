@@ -53,16 +53,28 @@ RSpec.describe Pikuri::Fileindex::Recoll, 'against a real index' do
                  described_class.unavailable_reason(folders: ['/'])
   end
 
+  def q(text) = Pikuri::Fileindex::Query.parse(text)
+
   it 'searches under any of several folders, and nowhere else' do
     build_index('a/x.txt' => 'zebra one', 'b/y.txt' => 'zebra two', 'c/z.txt' => 'zebra three')
-    hits = described_class.search(query: 'zebra', limit: 10, folders: ["#{docs}/a", "#{docs}/b"])
+    hits = described_class.search(query: q('zebra'), limit: 10, folders: ["#{docs}/a", "#{docs}/b"])
     assert_equal ["#{docs}/a/x.txt", "#{docs}/b/y.txt"], hits.map { |hit| hit[:path] }.sort
+  end
+
+  it 'matches any of the words, every word of a quoted group, and still only under the folders' do
+    build_index('a/x.txt' => 'zebra one', 'a/y.txt' => 'walrus two', 'a/z.txt' => 'walrus and zebra',
+                'b/w.txt' => 'zebra elsewhere')
+    paths = ->(query) { described_class.paths(query: q(query), folders: ["#{docs}/a"]).map { File.basename(_1) }.sort }
+    assert_equal %w[x.txt y.txt z.txt], paths.call('zebra walrus')
+    assert_equal %w[z.txt], paths.call('"walrus zebra"')
+    assert_equal %w[x.txt y.txt z.txt], described_class.search(query: q('zebra walrus'), limit: 10,
+                                                               folders: ["#{docs}/a"]).map { File.basename(_1[:path]) }.sort
   end
 
   it 'indexes a hidden file, which fileindex_search then neither shows nor counts' do
     build_index('a.txt' => 'zebra shown', 'c.txt' => 'zebra too', '.hid/b.txt' => 'zebra hidden')
-    assert_equal 3, described_class.search(query: 'zebra', limit: 10, folders: [docs]).size
-    assert_equal 3, described_class.paths(query: 'zebra', folders: [docs]).size
+    assert_equal 3, described_class.search(query: q('zebra'), limit: 10, folders: [docs]).size
+    assert_equal 3, described_class.paths(query: q('zebra'), folders: [docs]).size
 
     roots = Pikuri::Fileindex::Roots.new(dirs: [docs])
     result = Pikuri::Fileindex::Search.search(query: 'zebra', backend: described_class, roots: roots)

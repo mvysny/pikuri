@@ -332,15 +332,37 @@ both (rag 1.3 calls in 14 s, the file index 2.1 calls in 11 s).
 **`Q_all_matches` data:** 4 of 49 `fileindex_read` calls used `pattern`; the files are short
 enough to read whole, as expected.
 
+### Any-word matching (owner, 2026-11-18), re-measured
+
+Of the 71 empty queries, 27 were the `.csv`, 28 had a word in the right file, and 16 had none
+("dental appointment"; all-Finnish queries). localsearch has no OR at all (`fts:match` reads
+`OR`, `NOT` and parentheses as words), and recoll has Google's. So rather than teach a syntax,
+`fileindex_search` now matches any word, with files holding every word first and counted, and
+quotes as a group of words that must all appear in any order (the gem's architecture note,
+"Matching"). Built and re-run on the file-index arm (100 runs; rag's code didn't change):
+
+| | pass | mean calls | searches that found nothing |
+|---|---|---|---|
+| rag | 100/100 | 2.05 | 9 / 118 (8%) |
+| file index, every word | 100/100 | 2.91 | 71 / 140 (51%) |
+| file index, any word | 100/100 | 2.23 | 21 / 107 (20%) |
+
+Calls per task, every word → any word: `notice` 3.0 → 2.1, `office` 2.5 → 1.6, `electricity`
+6.1 → 2.9, `dentist` 2.6 → 2.0, `invoice` 2.9 → 2.4, `flood` 2.5 → 2.1, `bike-lock` 2.1 → 1.8,
+`finnish-rent` 4.3 → 4.3. Mean run time 21 s, as before.
+
+What's left empty is what any-word can't fix: `electricity` 11 ("electricity October": the
+`.csv` isn't content-indexed and no file says "October"), `finnish-rent` 9 (all-Finnish
+queries, no word of them in the English lease), `dentist` 1 ("dental"). The model never quoted
+and never wrote `OR` (0 of 107 queries); mean 3.4 words a query.
+
 ### What the bar needs next
 
-1. **Say the AND in the tool description** (a fix: the contract exists, the model isn't told):
-   every word must appear in the file, so give two or three words the file would contain and
-   drop words on a miss. Cheap; re-run the same 200 and see the empty rate move.
-2. **A home where browsing doesn't work**, so the pass rate measures search: the demo
+1. **A home where browsing doesn't work**, so the pass rate measures search: the demo
    documents a few folders deep among a few hundred distractor files (the snapshot then says
    "too many entries"), or the owner's real `~/Documents` (rag needs its hours of embedding
    there, or a Qdrant collection that survived).
-3. If the empty rate stays high after 1: an OR fallback in `fileindex_search` ("no file has
-   all of these words; files with some of them:"), as rag's ranked keyword leg already
-   searches with any word. A feature; earn it on 2's numbers.
+2. **The language gap** is cause 3 and stays: only one Finnish run in ten mixed English words
+   in, though the description's example (`rent lease vuokra`) mixes languages. Either accept it
+   (the recall chapter's "what vectors buy" example), or nudge in the secretary's prompt that
+   the user's files may be in another language than the question. Decide on 1's numbers.

@@ -80,6 +80,45 @@ RSpec.describe Pikuri::Fileindex::Search do
       assert_includes search(FakeBackend.build, query: 'nonesuch').to_s, "No files found matching 'nonesuch'"
     end
 
+    it 'searches any of the words, then all of them, and shows the files with all of them first' do
+      backend = FakeBackend.build(hits: [{ path: "#{docs}/one.txt" }, { path: "#{docs}/both.txt" }],
+                                  all_hits: [{ path: "#{docs}/both.txt" }])
+      out = search(backend, query: 'rent lease').to_s
+      assert_equal [[['rent'], ['lease']], [%w[rent lease]]], backend.calls.map { |_, args| args[:query].groups }
+      assert out.index('both.txt') < out.index('one.txt'), out
+      assert_includes out, 'Found 2 files, all shown. 1 contains all of your words, shown first.'
+    end
+
+    it 'says when no file holds every word' do
+      backend = FakeBackend.build(hits: [{ path: "#{docs}/one.txt" }], all_hits: [])
+      assert_includes search(backend, query: 'rent lease').to_s,
+                      'Found 1 file, all shown. None contains all of your words; these contain some of them.'
+    end
+
+    it 'counts the files with every word past the limit' do
+      hits = (1..5).map { |i| { path: "#{docs}/#{i}.txt" } }
+      out = search(FakeBackend.build(hits: hits, all_hits: hits.first(3)), query: 'rent lease', limit: 2).to_s
+      assert_includes out, 'Showing 2 of 5 matching files, best first. 3 contain all of your words, shown first. ' \
+                           'To see the others'
+    end
+
+    it 'asks a query of one quoted group once' do
+      backend = FakeBackend.build(hits: [{ path: "#{docs}/a.txt" }])
+      out = search(backend, query: '"notice period"').to_s
+      assert_equal [[%w[notice period]]], backend.calls.map { |_, args| args[:query].groups }
+      refute_includes out, 'all of your words'
+    end
+
+    it 'names any of the words when none matched' do
+      assert_includes search(FakeBackend.build, query: 'rent lease').to_s, "No files found matching any of 'rent lease'"
+    end
+
+    it 'rejects a query with no word in it' do
+      backend = FakeBackend.build
+      assert_equal 'Error: empty query.', search(backend, query: 'OR ( ) ""').to_s
+      assert_empty backend.calls
+    end
+
     it 'renders a backend CommandError as an Error observation, prefixed with its label' do
       assert_equal 'Error: fake: bad query', search(FakeBackend.build(error: 'bad query')).to_s
     end
