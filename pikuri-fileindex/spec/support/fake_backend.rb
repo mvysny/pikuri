@@ -3,7 +3,7 @@
 require 'fileutils'
 require 'tmpdir'
 
-# A file-index backend for the tool specs: answers +hits+ / +text+ and
+# A file-index backend for the tool specs: answers +hits+ / +paths+ / +text+ and
 # records every call, so a spec can see which folders a search was bounded to
 # and which path a read asked for:
 #
@@ -11,12 +11,14 @@ require 'tmpdir'
 #   Pikuri::Fileindex::Search.search(query: 'x', backend: backend, roots: roots)
 #   backend.calls   # => [[:search, { query: 'x', limit: 10, folders: ['/r'] }]]
 module FakeBackend
-  # @param hits [Array<Hash>] what +search+ answers
+  # @param hits [Array<Hash>] what +search+ answers, cut to its +limit+
+  # @param paths [Array<String>] what +paths+ answers: every match; defaults
+  #   to the hits' paths
   # @param text [String, nil] what +read_text+ answers
   # @param error [String, nil] when set, +search+ raises its +CommandError+
   #   with this message
   # @return [Module]
-  def self.build(hits: [], text: nil, error: nil)
+  def self.build(hits: [], paths: hits.map { |hit| hit[:path] }, text: nil, error: nil)
     Module.new do
       const_set(:CommandError, Class.new(StandardError))
       calls = []
@@ -27,7 +29,11 @@ module FakeBackend
         calls << [:search, args]
         raise self::CommandError, error if error
 
-        hits
+        hits.first(args[:limit])
+      end
+      define_singleton_method(:paths) do |**args|
+        calls << [:paths, args]
+        paths
       end
       define_singleton_method(:read_text) do |path|
         calls << [:read_text, path]

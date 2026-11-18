@@ -126,16 +126,35 @@ module Pikuri
       # @raise [CommandError] if recollq exits non-zero, or a folder contains
       #   a +"+ (recoll's query language cannot quote one)
       def self.search(query:, limit:, folders:)
-        result = Pikuri::Subprocess.spawn(BINARY, '-F', 'url abstract dbytes', '-n', limit.to_s,
-                                          "#{query} #{within(folders)}", chdir: '/').wait
-        unless result.status.success?
-          stderr = result.output.strip
-          stderr = "exited #{result.status.exitstatus}" if stderr.empty?
-          raise CommandError, stderr
-        end
-
-        parse_search_output(result.output)
+        parse_search_output(query_fields('url abstract dbytes', limit, "#{query} #{within(folders)}"))
       end
+
+      # The path of every file {.search} would match, unranked and uncapped,
+      # so a caller can tell how many matched beyond its +limit+. recollq's
+      # own "N results" line can't stand in: it counts files the caller
+      # filters out, hidden ones included.
+      #
+      # @param query [String]
+      # @param folders [Array<String>] as {.search}'s
+      # @return [Array<String>] absolute paths
+      # @raise [CommandError] as {.search}
+      def self.paths(query:, folders:)
+        parse_search_output(query_fields('url', 0, "#{query} #{within(folders)}")).map { |hit| hit[:path] }
+      end
+
+      # @param fields [String] recollq's +-F+ field list
+      # @param limit [Integer] max results; 0 for no limit
+      # @param query [String]
+      # @return [String] recollq's stdout
+      # @raise [CommandError] on a non-zero exit
+      def self.query_fields(fields, limit, query)
+        result = Pikuri::Subprocess.spawn(BINARY, '-F', fields, '-n', limit.to_s, query, chdir: '/').wait
+        return result.output if result.status.success?
+
+        stderr = result.output.strip
+        raise CommandError, stderr.empty? ? "exited #{result.status.exitstatus}" : stderr
+      end
+      private_class_method :query_fields
 
       # Parse +recollq -F 'url abstract dbytes'+ output into hits. Each data
       # line is three base64 tokens (url, abstract, text bytes); an empty field

@@ -59,13 +59,17 @@ RSpec.describe Pikuri::Fileindex::Recoll, 'against a real index' do
     assert_equal ["#{docs}/a/x.txt", "#{docs}/b/y.txt"], hits.map { |hit| hit[:path] }.sort
   end
 
-  it 'indexes a hidden file, which fileindex_search then drops' do
-    build_index('a.txt' => 'zebra shown', '.hid/b.txt' => 'zebra hidden')
-    assert_equal 2, described_class.search(query: 'zebra', limit: 10, folders: [docs]).size
+  it 'indexes a hidden file, which fileindex_search then neither shows nor counts' do
+    build_index('a.txt' => 'zebra shown', 'c.txt' => 'zebra too', '.hid/b.txt' => 'zebra hidden')
+    assert_equal 3, described_class.search(query: 'zebra', limit: 10, folders: [docs]).size
+    assert_equal 3, described_class.paths(query: 'zebra', folders: [docs]).size
 
     roots = Pikuri::Fileindex::Roots.new(dirs: [docs])
-    out = Pikuri::Fileindex::Search.search(query: 'zebra', backend: described_class, roots: roots).to_s
-    assert_includes out, "#{docs}/a.txt"
-    refute_includes out, '.hid'
+    result = Pikuri::Fileindex::Search.search(query: 'zebra', backend: described_class, roots: roots)
+    assert_includes result.to_s, "#{docs}/a.txt"
+    refute_includes result.to_s, '.hid'
+    assert_equal 'Found 2 files', result.summary
+    assert_equal 'Found 1 of 2 files',
+                 Pikuri::Fileindex::Search.search(query: 'zebra', limit: 1, backend: described_class, roots: roots).summary
   end
 end

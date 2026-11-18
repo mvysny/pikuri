@@ -129,7 +129,13 @@ desktop already keeps fresh.
     spliced. Measured on recoll 1.43: positive `dir:` clauses are ANDed (so roots go in one
     `(dir:… OR dir:…)` group), and recoll *does* index hidden files, so the hidden check bites
     there, not only in `fileindex_read`.
-  - Not done: "that's all" (`Q_briefing`'s truthful "25 of 37"), the secretary's wiring.
+  - **"That's all" done 2026-11-18**: `fileindex_search` ends "Found 8 files, all shown" or
+    "Showing 10 of 37 matching files". The count is of the files the tool would show (roots and
+    hidden check applied), from an uncapped `paths(query:, folders:)` on each backend, run only
+    when the ranked query came back full. No paging: past 25 the model narrows the query or
+    `folder`. Whether "list every note mentioning Acme" needs more than that is for the
+    briefing transcripts.
+  - Not done: the secretary's wiring.
 - Mostly a move: the `tinysparql` query, the bound parameters and the snippets exist already
   (see Measured). The new parts are the roots and the readiness check below.
 - **`roots:` on the extension, set by pikuri, never by the model.** Today `folder` is the

@@ -59,13 +59,14 @@ module Pikuri
         - Keyword match (and word stems); type the actual words that would appear in the file.
         - Pass `folder` to search only under one folder (subfolders included) — the way to find a common word inside one project instead of across every folder you can search.
         - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
+        - Says how many files match in all: "Found 8 files, all shown" means no other file matches. When more match than are shown, narrow the query or `folder`.
         - Each file shows the size of its indexed text. fileindex_read returns up to #{READ_PAGE_LABEL} per call, so a smaller file reads whole in one call; in a bigger one, find the lines you need with fileindex_read's `pattern` first.
         - Cheap: it queries a prebuilt index rather than walking the filesystem, so it barely touches the disk of the machine the user is on — fine to run many times to narrow down.
         - Output is truncated to #{MAX_BYTES_LABEL}; narrow the query if it ends in a truncation marker.
       DESC
 
       # @param backend [Module] a ready file-index backend, from
-      #   {Fileindex.pick}; this tool uses its +search+, +limitations+,
+      #   {Fileindex.pick}; this tool uses its +search+, +paths+, +limitations+,
       #   +label+ and +CommandError+.
       # @param roots [Roots] the folders searched; their declaration grades
       #   the tool's legs
@@ -106,9 +107,9 @@ module Pikuri
       #   +~+-relative, inside +roots+; +nil+ or blank searches all of them
       # @param backend [Module] the file-index backend to query
       # @param roots [Roots] the folders this search may reach
-      # @return [Pikuri::Tool::Result] the hits + disclaimer (+"Found 8
-      #   files"+), or {Pikuri::Tool::Result.error} for a bad +folder+ or a
-      #   backend failure
+      # @return [Pikuri::Tool::Result] the hits and how many matched in all
+      #   (summary +"Found 8 files"+, or +"Found 10 of 37 files"+), or
+      #   {Pikuri::Tool::Result.error} for a bad +folder+ or a backend failure
       def self.search(query:, backend:, roots:, limit: DEFAULT_LIMIT, folder: nil)
         q = query.to_s.strip
         return Pikuri::Tool::Result.error('empty query.') if q.empty?
@@ -139,16 +140,18 @@ module Pikuri
         end
 
         limit = clamp(limit, 1, MAX_LIMIT)
-        hits = backend.search(query: q, limit: limit, folders: folder ? [folder] : roots.dirs)
-                      .select { |hit| roots.resolve(hit[:path]) }
-        if hits.empty?
+        folders = folder ? [folder] : roots.dirs
+        found = backend.search(query: q, limit: limit, folders: folders)
+        hits = found.select { |hit| roots.resolve(hit[:path]) }
+        total = count(backend, roots, query: q, folders: folders, hits: hits, full: found.size >= limit)
+        if total.zero?
           return Pikuri::Tool::Result.new(content: no_match_message(q, folder), summary: 'Found 0 files')
         end
 
         content, marker = head_truncate(hits.map { |hit| render_hit(hit) }.join("\n"))
         Pikuri::Tool::Result.new(
-          content: [content.chomp, '', disclaimer(hits.size) + marker].join("\n"),
-          summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'file')}"
+          content: [content.chomp, footer(hits.size, total, limit) + marker].reject(&:empty?).join("\n\n"),
+          summary: "Found #{hits.size == total ? '' : "#{hits.size} of "}#{Pikuri::Tool.pluralize(total, 'file')}"
         )
       rescue backend::CommandError => e
         # Cap the error too — a raw subprocess error returned verbatim is
@@ -168,12 +171,36 @@ module Pikuri
       end
       private_class_method :render_hit
 
-      # @return [String]
-      def self.disclaimer(count)
-        "Found #{count} #{count == 1 ? 'file' : 'files'} (one match shown per file; " \
-          'the index may be slightly stale). Read a file to see its full text and any other matches.'
+      # How many files match in all, counted as +hits+ were filtered, so the
+      # model can trust "all shown". A search that came back short of its
+      # limit already holds every match; only a full one costs a listing.
+      #
+      # @param full [Boolean] the backend answered as many hits as asked for
+      # @return [Integer]
+      def self.count(backend, roots, query:, folders:, hits:, full:)
+        return hits.size unless full
+
+        # max: a file indexed between the two queries can't shrink the count
+        # below what is on screen.
+        [backend.paths(query: query, folders: folders).count { |path| roots.resolve(path) }, hits.size].max
       end
-      private_class_method :disclaimer
+      private_class_method :count
+
+      # @param shown [Integer]
+      # @param total [Integer]
+      # @param limit [Integer]
+      # @return [String] +"Found 8 files, all shown. …"+ or
+      #   +"Showing 10 of 37 matching files, best first. To see the others, …"+
+      def self.footer(shown, total, limit)
+        per_file = 'One match shown per file; the index may be slightly stale. ' \
+                   'Read a file to see its full text and any other matches.'
+        return "Found #{Pikuri::Tool.pluralize(total, 'file')}, all shown. #{per_file}" if shown == total
+
+        raise_limit = limit < MAX_LIMIT ? ", or raise `limit` (max #{MAX_LIMIT})" : ''
+        "Showing #{shown} of #{total} matching files, best first. " \
+          "To see the others, narrow the query or `folder`#{raise_limit}. #{per_file}"
+      end
+      private_class_method :footer
 
       # @return [Pikuri::Tool::Result]
       def self.outside_error(folder, roots)

@@ -95,6 +95,20 @@ module Pikuri
         LIMIT ~limit
       SPARQL
 
+      # Every file {SEARCH_QUERY} matches, unranked and uncapped: the same
+      # two branches and filters, no rank or snippet to compute.
+      #
+      # @return [String]
+      PATHS_QUERY = <<~SPARQL
+        SELECT DISTINCT (CONCAT("v:", ENCODE_FOR_URI(?url)) AS ?u)
+        WHERE {
+          { ?f fts:match ~query . } UNION { ?elem fts:match ~query ; nie:isStoredAs ?f . }
+          ?f nie:url ?url .
+          FILTER (tracker:available(nie:dataSource(?f)))
+          FILTER (%<under>s)
+        }
+      SPARQL
+
       # @return [String] the stored text of the file at +~url+.
       READ_QUERY = <<~SPARQL
         SELECT (CONCAT("v:", ENCODE_FOR_URI(?text)) AS ?t)
@@ -166,12 +180,23 @@ module Pikuri
       #   for a file indexed by name only
       # @raise [CommandError] if tinysparql exits non-zero
       def self.search(query:, limit:, folders:)
-        raw = run(format(SEARCH_QUERY, under: under(folders.size)), query: query, limit: limit,
-                  **folders.each_with_index.to_h { |folder, i| [:"folder#{i}", prefix(folder)] })
+        raw = run(format(SEARCH_QUERY, under: under(folders.size)), query: query, limit: limit, **folder_args(folders))
         parse_rows(raw).map do |url, snippet, length|
           snippet = snippet&.gsub(/\s+/, ' ')&.strip
           { path: path_of(url), snippet: (snippet unless snippet.to_s.empty?), text_size: length&.to_i }
         end
+      end
+
+      # The path of every file {.search} would match, unranked and uncapped,
+      # so a caller can tell how many matched beyond its +limit+.
+      #
+      # @param query [String]
+      # @param folders [Array<String>] as {.search}'s
+      # @return [Array<String>] absolute paths
+      # @raise [CommandError] if tinysparql exits non-zero
+      def self.paths(query:, folders:)
+        raw = run(format(PATHS_QUERY, under: under(folders.size)), query: query, **folder_args(folders))
+        parse_rows(raw).map { |(url)| path_of(url) }
       end
 
       # Full stored plain text of an indexed file. Works for PDFs/office docs
@@ -258,6 +283,14 @@ module Pikuri
         Array.new(count) { |i| "STRSTARTS(?url, ~folder#{i})" }.join(' || ')
       end
       private_class_method :under
+
+      # @param folders [Array<String>]
+      # @return [Hash{Symbol => String}] +folder0:+, +folder1:+, … bound to
+      #   each folder's URL prefix
+      def self.folder_args(folders)
+        folders.each_with_index.to_h { |folder, i| [:"folder#{i}", prefix(folder)] }
+      end
+      private_class_method :folder_args
 
       # @param folder [String] absolute path
       # @return [String] the URL prefix of every file below +folder+; the

@@ -19,14 +19,50 @@ RSpec.describe Pikuri::Fileindex::Search do
       assert_empty backend.calls
     end
 
-    it 'renders path, text size and snippet per hit and a one-match-per-file disclaimer' do
+    it 'renders path, text size and snippet per hit, and says when that is every match' do
       backend = FakeBackend.build(hits: [{ path: "#{docs}/a.pdf", snippet: 'alpha beta', text_size: 176_531 },
                                          { path: "#{docs}/b.rb", snippet: nil, text_size: nil }])
-      out = search(backend, limit: 10).to_s
-      assert_includes out, "#{docs}/a.pdf  (172.4 kB of text)\n  alpha beta\n"
-      assert_includes out, "#{docs}/b.rb  (no indexed text)\n"
-      assert_includes out, 'one match shown per file'
-      assert_includes out, 'Found 2 files'
+      result = search(backend, limit: 10)
+      assert_includes result.to_s, "#{docs}/a.pdf  (172.4 kB of text)\n  alpha beta\n"
+      assert_includes result.to_s, "#{docs}/b.rb  (no indexed text)\n\nFound 2 files, all shown. One match shown per file;"
+      assert_equal 'Found 2 files', result.summary
+      assert_equal [:search], backend.calls.map(&:first), 'a short answer holds every match: no count needed'
+    end
+
+    it 'says how many matched in all when more match than the limit' do
+      hits = (1..5).map { |i| { path: "#{docs}/#{i}.txt" } }
+      result = search(FakeBackend.build(hits: hits), limit: 2)
+      assert_includes result.to_s, "#{docs}/2.txt  (no indexed text)\n\nShowing 2 of 5 matching files, best first. " \
+                                   'To see the others, narrow the query or `folder`, or raise `limit` (max 25).'
+      refute_includes result.to_s, '3.txt'
+      assert_equal 'Found 2 of 5 files', result.summary
+    end
+
+    it 'offers no higher limit at the maximum' do
+      hits = (1..30).map { |i| { path: "#{docs}/#{i}.txt" } }
+      out = search(FakeBackend.build(hits: hits), limit: 25).to_s
+      assert_includes out, 'Showing 25 of 30 matching files'
+      assert_includes out, 'narrow the query or `folder`.'
+      refute_includes out, 'raise `limit`'
+    end
+
+    it 'counts only the files it would show: none outside the roots, none hidden' do
+      hits = [{ path: "#{docs}/a.txt" }]
+      paths = ["#{docs}/a.txt", "#{docs}/b.txt", "#{docs}/.hidden/c.txt", "#{@tmp}/work/d.txt"]
+      result = search(FakeBackend.build(hits: hits, paths: paths), limit: 1)
+      assert_equal 'Found 1 of 2 files', result.summary
+    end
+
+    it 'never shows fewer files than it counts' do
+      result = search(FakeBackend.build(hits: [{ path: "#{docs}/a.txt" }], paths: []), limit: 1)
+      assert_equal 'Found 1 file', result.summary
+    end
+
+    it 'counts the matches past the limit even when every hit it got was dropped' do
+      hits = [{ path: "#{docs}/.hidden/a.txt" }]
+      result = search(FakeBackend.build(hits: hits, paths: ["#{docs}/.hidden/a.txt", "#{docs}/b.txt"]), limit: 1)
+      assert_includes result.to_s, 'Showing 0 of 1 matching files'
+      refute_includes result.to_s, 'No files found'
     end
 
     it 'drops a hit outside the roots, or hidden below one' do

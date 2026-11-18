@@ -59,6 +59,12 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     assert_equal ["#{ODD}/d.txt"], relative(search('zebra', folders: ["#{@index.corpus}/#{ODD}"]))
   end
 
+  it 'lists every matching path, past any limit' do
+    assert_equal ['alpha/a.txt', 'beta/b.md', 'beta2/e.txt', "#{ODD}/d.txt"],
+                 described_class.paths(query: 'zebra', folders: [@index.corpus])
+                                .map { |path| path.delete_prefix("#{@index.corpus}/") }.sort
+  end
+
   it 'ranks the better match first, before the limit applies' do
     hits = search('otter', limit: 1)
     assert_equal ['rank/many.txt'], relative(hits)
@@ -98,7 +104,13 @@ RSpec.describe Pikuri::Fileindex::LocalSearch, 'against a private index' do
     out = Pikuri::Fileindex::Search.search(query: 'zebra', folder: "#{@index.corpus}/alpha",
                                            backend: described_class, roots: roots).to_s
     assert_includes out, "#{@index.corpus}/alpha/a.txt  (66 B of text)\n  The quick >>zebra<< jumps"
-    assert_includes out, 'Found 1 file'
+    assert_includes out, 'Found 1 file, all shown'
+  end
+
+  it 'tells the tool how many matched beyond its limit' do
+    roots = Pikuri::Fileindex::Roots.new(dirs: [@index.corpus])
+    result = Pikuri::Fileindex::Search.search(query: 'zebra', limit: 1, backend: described_class, roots: roots)
+    assert_equal 'Found 1 of 4 files', result.summary
   end
 end
 
