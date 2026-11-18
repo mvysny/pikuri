@@ -7,13 +7,21 @@ Status (2026-11-18). Two decisions, deliberately separable:
   `D_secretary_wiring` (the "Files are searched through the desktop's own index" fork, "An
   index of our own" rejected) and `D_briefing_wiring`; the gem's design and threat model in
   `pikuri-fileindex/design/architecture.md`.
-- **B. Left.** `pikuri-vectordb` and `pikuri-rag` move to pikuri-workshop, with their chapters.
+- **B. Under way, from the workshop's side.** The cross-repo order is
+  `pikuri-workshop:design/ideas/rag-vectordb-move-here.md` (owner, 2026-11-18): the gems are
+  copied there from `43ecf1e` (its step 2, done); its book takes `vectordb.md` and `rag.md`
+  whole and rewrites them, settling their headings (step 3, in progress); then pikuri's half is
+  one commit **Y** (step 4, the list below), after which the workshop pins Y. pikuri's copy of
+  both gems is frozen until Y deletes it.
 
 Also left:
 
-- **The book**, rewritten with B (the owner's call). It still teaches the rag wiring, and its
-  commands name `./pikuri-rag/bin/pikuri-briefing`, which is gone. Until B, pikuri carries both
-  search stacks, and only `bin/pikuri-corpus` still demos one. B has the big cost: the book.
+- **The book.** `book/recall.md` is drafted (2026-11-18): one chapter replacing `vectordb.md`
+  and `rag.md`, with briefing as its demo, kept out of the ToC until Y. It links book 2 by file
+  only, never by heading. It is where book 1 now introduces the `Extractor` registry ("Whose
+  parser reads a hostile file"), which the workshop's `os-assistant.md:606` points at. The
+  rest of the book still teaches the rag wiring and names `./pikuri-rag/bin/pikuri-briefing`,
+  which is gone; Y fixes it.
 - **Puri** pins workshop `9c8c84d` and gets the file tools through `pikuri-os`, not the gem
   (pikuri-os itself moved onto the gem in workshop `2d74e29`).
 
@@ -36,18 +44,43 @@ as the gem's README states, plus `localsearch-extractor-office` on Ubuntu. **The
 once**, in the prerequisites chapter; the recall chapter and the binaries' "no index is ready"
 message point there.
 
-## What moves to the workshop (B)
+## Commit Y: pikuri's half of B
 
-`pikuri-vectordb`, `pikuri-rag`, `bin/pikuri-corpus`, their chapters, `D_rag_gem`,
-`D_rrf_tuning`, `D_chunk_line_ranges`, `D_ruby_stemming`, `D_corpus_trust_declaration`, and
-the two idea files above. `pikuri-briefing` stays (done, see A), so `D_briefing_*` stay here.
-`D_secretary_wiring` keeps its rejected "index of our own", naming `pikuri-rag`. AGENTS.md's Connection
-and Request seams name `VectorDb::Embedder` and `Reranker::LlamaServer`; those clauses go to
-the workshop. `pikuri-pdf`'s gemspec mentions the corpus. `D_gem_placement`'s rejected
-alternatives cite rag twice ("a note the rag search finds covers most of a skill", and
-`pikuri-vectordb` depending on `pikuri-subagents` as a reason `pikuri-workspace` can't move).
-`LocalSearch::WHOLE_TEXT_CHARS`'s yardoc sizes itself against "the 500 characters a rag hit
-shows". This idea's eval harness needs `pikuri-rag` for its rag arm: it dies with the idea.
+After the workshop's step 3. Gathered from both ideas so nothing falls between the repos:
+
+- **Delete** `pikuri-vectordb` (with `bin/pikuri-corpus`), `pikuri-rag` and `pikuri-rag/AGENTS.md`;
+  their root `Gemfile` lines, the `Rakefile` fan-out, AGENTS.md's module-map lines and the
+  Connection and Request seams' `VectorDb::Embedder` / `Reranker::LlamaServer` clauses;
+  `D_rag_gem`, `D_rrf_tuning`, `D_chunk_line_ranges`, `D_ruby_stemming`,
+  `D_corpus_trust_declaration`; `design/ideas/rag-hit-presentation-eval.md` (with its sidecar)
+  and `vectordb-deferrals.md`; `pikuri-pdf`'s `vector_db_line_ranges_spec.rb`; `SECURITY.md`'s
+  two corpus lines (the embedder shipping the corpus, podman or docker for the vector store).
+  All of it lives in the workshop now. `pikuri-briefing` stays (see A), so `D_briefing_*` stay.
+- **Reword** what names the gems: `pikuri-pdf`'s gemspec text; pikuri-core's comments using
+  `VectorDb` as an example (`finalizers.rb:6,29`, `extractor.rb:66`, `tool.rb:192`);
+  `D_gem_placement`'s two rag cites ("a note the rag search finds covers most of a skill", and
+  `pikuri-vectordb` depending on `pikuri-subagents` as a reason `pikuri-workspace` can't move)
+  and its "Docker still earns its keep in pikuri, running Qdrant" consequence;
+  `LocalSearch::WHOLE_TEXT_CHARS`'s "the 500 characters a rag hit shows". `D_secretary_wiring`
+  keeps its rejected "index of our own", naming `pikuri-rag`, and its "the arithmetic is in
+  the chapter" now means the recall chapter.
+- **The book**: `recall.md` into the ToC (and "How the guide is shaped"); delete `vectordb.md`
+  and `rag.md`. Then every link into them: `chat.md` (six vector-DB mentions, and the config
+  table's `embed_model` / `reranker_model` rows), `subagents.md`'s "What's next",
+  `designing-a-tool.md`'s naming story (the tools are book 2's now), `trifecta-detector.md`
+  (its prerequisites, the "who declares" corpus paragraph → `Roots`, the briefing commands and
+  both maps → `fileindex_*`, line 698), `secretary.md` (below), and `pikuri-briefing`'s
+  "Walk-through: book/rag.md". `prerequisites.md` loses its container section (now the
+  workshop's `containers.md`) and gains the supported platforms below, which `recall.md`
+  links. Check the anchors the workshop's chapters link into (`chat.md#…`,
+  `trifecta-detector.md#who-declares-each-leg`).
+- **`secretary.md`** needs its own pass: its prerequisites ("Podman, or rootless Docker", "The
+  embedding bill", whose arithmetic moved to `recall.md`), its map, "Two readers, one root"
+  and the transcripts, re-recorded on the file index.
+- **CHANGELOG**: one breaking entry, the two gems moved to pikuri-workshop.
+- This idea's eval harness needs `pikuri-rag` for its rag arm: it dies with the idea. The
+  workshop wants the eval's numbers given a durable home on its side before this idea
+  graduates.
 
 ## Siri does the same: it borrows the OS's index (2026-11-17)
 
