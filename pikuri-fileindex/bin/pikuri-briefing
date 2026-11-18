@@ -3,7 +3,7 @@
 
 # Dev / demo entry point — runs from a source checkout only. The pikuri
 # gem ships as a library; this script is not installed by `gem install
-# pikuri-rag`.
+# pikuri-fileindex`.
 #
 # The one-legged agent: it briefs you on a customer from your own
 # hand-written meeting notes and holds exactly one of the lethal
@@ -37,16 +37,25 @@
 # one-legged story is false at the transport level. The default config
 # below is a llama-server on localhost; keep it that way.
 #
-# TWO DECLARATIONS ARE HARDCODED, deliberately, where bin/pikuri-corpus
-# takes them as flags — see design/decisions.md D_briefing_wiring. This binary
-# has no honest non-private reading, so a flag would make the honest map
-# opt-in and the documented invocation the flagged one. `trusted: true`
+# TWO DECLARATIONS ARE HARDCODED, deliberately, where Fileindex::Roots
+# defaults both to false — see design/decisions.md D_briefing_wiring. This
+# binary has no honest non-private reading, so a flag would make the honest
+# map opt-in and the documented invocation the flagged one. `trusted: true`
 # is a claim about a folder *you* supply through --source, so the boot
 # text states the claim in words rather than leaving it to the map.
 #
+# THE FOLDER LIMIT IS WHAT MAKES `trusted: true` TRUE. The notes are
+# searched through the index the desktop already keeps (GNOME's
+# localsearch, or recoll), and that index holds your whole home folder,
+# Downloads included. Only the root keeps the rest out of the brief.
+# Under localsearch the notes folder can't be a git checkout (it skips
+# any tree holding `.git`, and the binary exits saying nothing there is
+# indexed); under recoll a note written this morning is in the brief
+# only while `recollindex -m` runs, or after a fresh `recollindex`.
+#
 # PASTE NOTHING; PARAPHRASE. `trusted: true` holds only while the notes
 # are your own writing. A customer e-mail pasted into a note is text
-# somebody else wrote, indexed within seconds by the watcher, and
+# somebody else wrote, indexed by the desktop within a second, and
 # retrieved from then on as content you vouched for. Nothing can detect
 # it. Write in your own words.
 #
@@ -55,23 +64,19 @@
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
-require 'digest'
 require 'optparse'
 require 'yaml'
 require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-core'
-require 'pikuri-rag'
-# Checkout-mode-only require (this gem's gemspec doesn't declare it —
-# bins run from the monorepo Gemfile): plugs PDF extraction into the
-# Extractor registry below, so a customer's PDF dropped in the notes
-# folder indexes alongside the Markdown. Read Corpus#trusted?'s first
-# clause before you do that: a rendered PDF is a proxy for the bytes the
-# model reads.
-require 'pikuri-pdf'
-# Also checkout-mode-only (not in this gem's gemspec): the read-only mail
-# surface --with-mail wires. Nothing is registered unless the flag is on.
+require 'pikuri-fileindex'
+# Checkout-mode-only require (not in this gem's gemspec): the read-only
+# mail surface --with-mail wires. Nothing is registered unless the flag is
+# on.
 require 'pikuri-thunderbird'
+
+# The prompts are this demo's, not the gem's: its lib/ never reads them.
+Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
@@ -82,19 +87,8 @@ examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examp
 
 server          = examples_config['llm_server'] || 'http://localhost:8080'
 model           = examples_config['llm_model'] || 'ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'
-embed_model     = examples_config['embed_model'] || 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
-reranker_server = examples_config['reranker_server'] # nil ⇒ defaults to +server+ below
-reranker_model  = examples_config['reranker_model'] || 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
-use_reranker    = true
+api_key         = examples_config.fetch('llm_api_key', 'not-needed')
 source          = File.expand_path('~/notes')
-# Inverted from bin/pikuri-corpus, and for the same kind of reason the
-# declarations are constants: there, the manual reindex *is* the teaching
-# device. Here a note you wrote this morning missing from the brief is a
-# silent hole, and the read tool's membership gate rejects it outright —
-# loud and actionable, but baffling for a note that plainly exists on
-# disk. Keep the index live by default.
-watch           = true
-use_qdrant      = false
 with_mail       = false
 
 custom_prompt = nil
@@ -102,17 +96,11 @@ parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-briefing [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--source PATH', "Notes folder to index (default: #{source})") { |v| source = v }
-  opts.on('--no-watch', 'Do not keep the index live; index once at boot instead') { watch = false }
-  opts.on('--no-reranker', 'Skip the reranker; use the fused top-k') { use_reranker = false }
+  opts.on('--source PATH', "Notes folder to search (default: #{source})") { |v| source = v }
   opts.on('--with-mail',
           'Also read your local Thunderbird mail and contacts (read-only). Adds the ' \
           'untrusted leg: the agent goes from 1 of 3 to 2 of 3 legs, and the private ' \
           'pool becomes your whole mailbox. Fails if mail cannot be wired') { with_mail = true }
-  opts.on('--qdrant',
-          'Persist the index in a self-managed Qdrant container (requires podman or docker) ' \
-          'plus a keyword index under the pikuri cache, so a corpus indexed once ' \
-          'stays indexed across runs') { use_qdrant = true }
   opts.on('--system-prompt FILE', "Replace the built-in system prompt with FILE's contents " \
                                   '(extensions still append their own sections).') do |v|
     custom_prompt = File.read(v).rstrip
@@ -138,13 +126,14 @@ unless File.directory?(source)
   exit 2
 end
 
-# The chat transport, the embedder and the reranker each build their own
-# connection from their server, re-appending +/v1+ themselves.
-api_key         = examples_config.fetch('llm_api_key', 'not-needed')
-reranker_server ||= server
-
-# Explicit opt-in (requiring pikuri-pdf alone changes nothing).
-Pikuri::Extractors::PDF.register
+# Constants, not flags — see the header and design/decisions.md D_briefing_wiring.
+roots = Pikuri::Fileindex::Roots.new(dirs: [source], private: true, trusted: true)
+begin
+  fileindex = Pikuri::Fileindex.pick(roots)
+rescue Pikuri::Fileindex::Unavailable => e
+  warn "Can't search your notes: #{e.message}"
+  exit 1
+end
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
@@ -158,53 +147,7 @@ system_prompt = custom_prompt || Pikuri.prompts(*[:'pikuri-briefing',
                                                   (:'pikuri-briefing-mail' if with_mail),
                                                   :'agent-loop'].compact)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
-system_prompt += "\nIndexed notes folder: #{source}"
-
-reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
-  server:   reranker_server,
-  model:    reranker_model,
-  api_key:  examples_config['llm_api_key']
-) : nil
-
-embedder = Pikuri::VectorDb::Embedder.new(server: server, model: embed_model, api_key: api_key)
-
-# One collection per notes root, not one fixed name: a persistent backend
-# keeps whatever it was given, so a shared name would serve yesterday's
-# --source under today's declaration (the collection clause of
-# Corpus#trusted?).
-corpus_key = File.realpath(source)
-collection = "pikuri-briefing-#{Digest::SHA256.hexdigest(corpus_key)[0, 12]}"
-
-# The two stores are paired, per Rag::Backend::Hybrid's "which keyword store
-# to pair with which vector store": RAM with RAM, and a file beside Qdrant so both
-# survive a restart. A mismatch would still be *correct* — Hybrid's
-# both-stores rule repairs it — just slower, at a full re-embed per boot.
-server_class = use_qdrant ? Pikuri::VectorDb::Server::Qdrant : Pikuri::VectorDb::Server::InMemory
-store = if use_qdrant
-          Pikuri::Paths.cache.tap { |dir| dir.mkpath }.join("#{collection}.sqlite3").to_s
-        else
-          Pikuri::Rag::Backend::Fts5::MEMORY_STORE
-        end
-
-begin
-  vector_server = server_class.ensure_running
-  vector_backend = vector_server.client(collection: collection)
-rescue StandardError => e
-  warn "Could not start #{server_class.name.split('::').last}: #{e.message}"
-  warn 'Is podman or docker installed and working? Drop --qdrant to use the in-memory backend.' if use_qdrant
-  exit 1
-end
-
-# One corpus: the agent's tools and the watcher below share it.
-corpus = Pikuri::VectorDb::Corpus.new(
-  backend:  Pikuri::Rag::Backend::Hybrid.new(vectors: vector_backend, keywords: Pikuri::Rag::Backend::Fts5.new(store: store)),
-  source:   source,
-  embedder: embedder,
-  # Constants, not flags — see the header and design/decisions.md D_briefing_wiring.
-  private:  true,
-  trusted:  true
-)
-rag_ext = Pikuri::Rag::Extension.new(corpus: corpus, reranker: reranker)
+system_prompt += "\nNotes folder: #{source}"
 
 # Run one agent turn, trapping SIGINT only for the duration of the turn.
 def run_turn(agent, message)
@@ -237,13 +180,13 @@ agent = Pikuri::Agent.new(
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: false)
   c.add_listener Pikuri::Agent::Listener::TokenLog.new
-  # The corpus tools, plus read-only mail under --with-mail, and nothing
+  # The notes tools, plus read-only mail under --with-mail, and nothing
   # else. No web, no bash, no memory gem: the notes folder *is* the
   # durable memory here, written by hand, already distilled —
   # auto-extracting from it would summarize a summary. Under --with-mail
   # memory would be worse than redundant: it would carry facts distilled
   # from untrusted mail into every later conversation, unattributed.
-  c.add_extension rag_ext
+  c.add_extension Pikuri::Fileindex::Extension.new(roots: roots, backend: fileindex)
   c.add_extension tb_ext if tb_ext
 end
 
@@ -258,20 +201,6 @@ if with_mail && !tb_ext.mail_wired?
   exit 2
 end
 
-watcher = watch ? Pikuri::VectorDb::Watcher.new(corpus: corpus).start : nil
-unless watch
-  # The --watch path degrades on its own (the Watcher logs a failed file and
-  # moves on), but this synchronous call would take the whole boot down before
-  # the trifecta map ever prints — and the likeliest cause is a llama-server
-  # that isn't up yet, which is worth a sentence rather than a backtrace.
-  begin
-    corpus.index_if_empty!
-  rescue StandardError => e
-    warn "Could not index #{source}: #{e.class}: #{e.message}"
-    warn "Is the embedder reachable at #{server}? Starting anyway — ask me to reindex once it is."
-  end
-end
-
 begin
   # Capability + trifecta map, printed unconditionally. These are teaching
   # binaries and the map is half the lesson; a production host puts it behind
@@ -280,13 +209,14 @@ begin
   puts
   puts 'Pikuri Briefing: prepares you for a customer meeting from your own notes' \
        "#{with_mail ? ' and your local mail' : ''} (no internet access)."
-  puts "Notes: #{source}"
+  puts "Notes: #{source}, searched through #{fileindex.label}"
   # The claim this binary just made on the user's behalf, in words. One
   # puts beside the map: cheap, and it cannot fail silent the way a
   # forgotten flag would.
-  puts "Indexing #{source} as PRIVATE and TRUSTED — that means: you reviewed every note in the"
-  puts '  form the model reads it, nobody else writes into that folder, and the index holds'
-  puts '  nothing but what that folder put there. Paste nothing from a customer; paraphrase.'
+  puts "Searching #{source} as PRIVATE and TRUSTED — that means: you reviewed every note in the"
+  puts '  form the model reads it, and nobody else writes into that folder. The desktop indexes'
+  puts '  your whole home folder; only this folder limit keeps the rest out of the brief.'
+  puts '  Paste nothing from a customer; paraphrase.'
   # The map above just moved from 1 of 3 legs to 2 of 3 and its verdict
   # stayed silent, which is correct and says nothing about what changed
   # for *you*. On a silent verdict the advisory prints presence only — no
@@ -301,16 +231,6 @@ begin
     puts '  And a message is text somebody else wrote, so a brief can now be steered by one.'
     puts '  Nothing can leave this machine either way, so the trifecta is still broken; what'
     puts '  changed is that a claim from mail is one you may have to check out of band.'
-  end
-  puts "Backend: #{use_qdrant ? 'Qdrant (persistent)' : 'InMemory (RAM-only)'}, " \
-       "keyword index: #{store == Pikuri::Rag::Backend::Fts5::MEMORY_STORE ? 'in-memory' : store}"
-  indexed = corpus.backend.count
-  if indexed.positive?
-    puts "Index populated (#{indexed} chunk(s))."
-  elsif watch
-    puts 'Index is building in the background now — give it a moment before the first question.'
-  else
-    puts 'Index is empty and nothing was found to index. Check --source.'
   end
   puts 'Naming your notes <customer>-<date>.md is what lets a brief order events by date.'
   puts 'Try: "brief me on Acme — what did we discuss last, and what did we commit to?"'
@@ -330,13 +250,7 @@ begin
 rescue Interrupt
   # Ctrl+C — fall through to clean exit
 ensure
-  # Teardown in reverse of open order: stop the indexing daemon first
-  # (halt writes), release the agent, close the index, then the vector
-  # server (a podman/docker supervisor removes its container).
-  watcher&.close
   agent.close
-  corpus.close
-  vector_server.close
 end
 
 puts

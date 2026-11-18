@@ -92,12 +92,13 @@ in:
   - [`pikuri-rag`](pikuri-rag/README.md) — hybrid retrieval on that
     primitive: a keyword index beside the vectors, so `rag_search`
     also finds an invoice number and `rag_search_keywords` lists *every*
-    matching document. Demo: `pikuri-briefing`, which briefs you on
-    a customer from your own notes.
+    matching document.
   - [`pikuri-fileindex`](pikuri-fileindex/README.md) — search your
     files through the index the desktop already keeps (GNOME's
     localsearch, or recoll): `fileindex_search` / `fileindex_read`,
     PDFs and office documents included, with no index of our own.
+    Demo: `pikuri-briefing`, which briefs you on a customer from your
+    own notes.
   - [`pikuri-thunderbird`](pikuri-thunderbird/README.md) — the
     local Thunderbird profile as read-only mail/calendar
     tools plus two human-gated hand-offs. No network, no

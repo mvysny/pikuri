@@ -90,5 +90,20 @@ under the roots, the `Unavailable` message names what is missing for
 each index and how to fix it; show it to the user. An empty Desktop
 among other roots is fine, and only logs a warning.
 
+## Try it
+
+`bin/pikuri-briefing` prepares you for a customer meeting from your own
+hand-written notes: the timeline, what was discussed last, what was
+promised. The model runs locally and the agent has no internet access.
+
+```
+./pikuri-fileindex/bin/pikuri-briefing --source ~/notes "brief me on Acme"
+```
+
+`bin/pikuri-secretary`, at the repository root, searches your Desktop
+and Documents the same way.
+
+## Read more
+
 Design notes and the backend survey:
 [`design/architecture.md`](design/architecture.md).

@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** `bin/pikuri-secretary` searches your Desktop and Documents (found through `xdg-user-dir`) with `Pikuri::Fileindex` instead of a rag index, so it needs GNOME's localsearch or a built recoll index rather than podman and an embedding model, and drops `--exclude`, `--in-memory` and `--no-reranker` (`D_secretary_wiring`). With neither index ready it exits saying what to install.
+- **Breaking:** `pikuri-briefing` moved to `pikuri-fileindex/bin/` and searches `--source` through `Pikuri::Fileindex` instead of a rag index, dropping `--no-watch`, `--no-reranker` and `--qdrant` (`D_briefing_wiring`). Run `./pikuri-fileindex/bin/pikuri-briefing`, and under localsearch keep the notes folder out of git, which localsearch never indexes.
 - **Breaking:** the repository moved from Codeberg to GitHub, <https://github.com/mvysny/pikuri>, with CI on GitHub Actions, and the Codeberg copy no longer receives commits. Repoint a clone's `origin` or a Gemfile's `git:` source at `https://github.com/mvysny/pikuri.git`.
 - Show a short file's whole text in `fileindex_search` under localsearch (up to 600 characters, in place of its 40-word snippet), and open the tool's description with when to use it: a snippet of a short file left its answer to a read call.
 - Add any-word matching to `fileindex_search`: a file holding any of the query's words matches, files with all of them come first and are counted, and double quotes group words that must all appear; pikuri-os's every-word search found nothing for half an agent's queries.

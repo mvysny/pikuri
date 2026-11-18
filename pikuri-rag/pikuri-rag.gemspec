@@ -36,9 +36,6 @@ Gem::Specification.new do |spec|
     plugs in through +stemmer:+. The threat model is pikuri-vectordb's,
     unchanged — same corpus declaration, inbound-only tools, same
     membership gate on the reader.
-
-    Demo binary: +bin/pikuri-briefing+, a no-egress agent over your own
-    hand-written notes.
   DESC
 
   spec.homepage = 'https://github.com/mvysny/pikuri'
@@ -55,7 +52,6 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir[
     'lib/**/*.rb',
-    'prompts/*.txt',
     'LICENSE',
     'README.md'
   ]

@@ -86,8 +86,6 @@ corpus.close
 vector_server.close   # if you started one
 ```
 
-`bin/pikuri-briefing` ends this way.
-
 ## What you get
 
 1. **`rag_search`**: the best five passages, found by both indexes and
@@ -122,15 +120,7 @@ Changing the stemmer of a saved index empties it at the next start,
 and the next index run re-embeds every note. Why:
 `design/decisions.md` `D_ruby_stemming`.
 
-## Try it
-
-`bin/pikuri-briefing` prepares you for a customer meeting from your
-own hand-written notes: the timeline, what was discussed last, what was
-promised. The model runs locally and the agent has no internet access.
-
-```
-./pikuri-rag/bin/pikuri-briefing --source ~/notes "brief me on Acme"
-```
+## Read more
 
 The walk-through is the guide's [RAG chapter](../book/rag.md).
 

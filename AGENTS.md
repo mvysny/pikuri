@@ -75,11 +75,11 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `pikuri-html` — in-process HTML → Markdown for the registry, registered on require; pikuri-web's pages and an offline agent's mail attachments share it.
 - `pikuri-web` — the tools that reach the internet: `web_search` and its engines, `web_scrape`, `fetch`, `web_read_cached`, the URL caches.
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams, the file tools, `bin/pikuri-files`. Rules: `pikuri-workspace/AGENTS.md`
-- `pikuri-fileindex` — `fileindex_search` / `fileindex_read` over the index the desktop already keeps (localsearch, else recoll); never builds one.
+- `pikuri-fileindex` — `fileindex_search` / `fileindex_read` over the index the desktop already keeps (localsearch, else recoll), never building one, + `bin/pikuri-briefing`.
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: read-only inbound tools, human-gated outbound hand-offs. Rules: `pikuri-thunderbird/AGENTS.md`
 - `pikuri-subagents` — the `agent` tool, the `Persona` record, the bundled personas, `bin/pikuri-minions`. Rules: `pikuri-subagents/AGENTS.md`
 - `pikuri-vectordb` — the retrieval *primitive*: vector-only search over a local corpus, wired on its own or under rag, + `bin/pikuri-corpus`.
-- `pikuri-rag` — the retrieval *system* on that primitive: hybrid vector + FTS5 search + `bin/pikuri-briefing`. Rules: `pikuri-rag/AGENTS.md`
+- `pikuri-rag` — the retrieval *system* on that primitive: hybrid vector + FTS5 search. Rules: `pikuri-rag/AGENTS.md`
 - `book/` — "the book", also "the guide"; `book/README.md` is the ToC and the single source of truth for chapter order.
 - `assets/` — **Kuri**, the pika mascot (`kuri.svg` master, `kuri.png` raster); drawing + anatomy rule in `D_kuri_mascot`.
 - [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), a separate repo — the gems that need a cage: a shell, the coding agent, the OS assistant, LSP, MCP, skills, tasks, mem0, docker extractors.
@@ -97,7 +97,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - **Per-gem Zeitwerk loaders**, eager-loading at boot; no `require_relative` inside a gem's `lib/`. One constant per file at the Zeitwerk path, everything under `Pikuri::`, acronyms need an `inflector.inflect` entry, no top-level constants. `Pikuri::PROMPT_DIRS` is likewise cooperative.
 - **Tests: rspec-core with minitest-style asserts.** `describe` / `it` but `assert_equal` / `assert` / `refute`, no RSpec matchers, no rspec-mocks (stub with `define_singleton_method` in `before`, restore in `after`). Pattern: `pikuri-core/spec/pikuri/agent_spec.rb`.
 - **Diagnostics go through `Pikuri.logger_for('Name')`**, never `puts` / `warn` / `$stderr`; listener rendering of the LLM stream on stdout via `Terminal` is not logging.
-- **Cache, temp, config and state paths go through `Paths`** (`cache` shared + persistent; `new_temp` per-process, reaped at exit; `config` user-edited; `state` what a host keeps across restarts); never read an `XDG_*` variable or hardcode `~/.cache`.
+- **Cache, temp, config and state paths go through `Paths`** (`cache` shared + persistent; `new_temp` per-process, reaped at exit; `config` user-edited; `state` what a host keeps across restarts); never read an `XDG_*` variable or hardcode `~/.cache`. The user's own folders (Desktop, Documents) are another matter: they come from `xdg-user-dir`, under their localized names.
 - **Errors are loud.** Unexpected internal state raises with the offending data; failures the LLM can react to answer `Tool::Result.error(message)`; only cosmetic paths secondary to the loop may rescue-and-degrade.
 - **Every tool declares a sharing posture.** `Agent` is thread-unsafe (the caller serializes; never key state off `Thread.current`), so a tool reachable from two agents carries a `Sharing:` yardoc line naming `P_stateless` / `P_shared_locked` / `P_shared_benign` / `P_one_agent` plus the state's owner; a waiting tool opts into `wants_context: true` and sleeps via `context.cancellable.sleep`. See `D_tool_sharing_postures`, `D_rate_limiter_scope`.
 - **Tool descriptions follow opencode-shape:** one-line summary, blank line, `Usage:` bullets; per-arg constraints go in the *parameter* description with an example value. Universal failure-recovery guidance lives in per-binary prompts.

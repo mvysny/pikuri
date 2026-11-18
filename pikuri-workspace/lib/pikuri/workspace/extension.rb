@@ -94,9 +94,9 @@ module Pikuri
       #   leaves {Edit} promptless and {Write} asking only before an overwrite.
       #   See book/touching-files.md.
       # @param grep [Boolean] +false+ leaves {Search::Grep} unwired, for a
-      #   host whose root a rag index also covers: grep sees a PDF's raw bytes
-      #   and skips it, so on a documents folder it answers "no match" where
-      #   rag's keyword search finds the invoice. Narrows only; see
+      #   host whose root a search index also covers: grep sees a PDF's raw
+      #   bytes and skips it, so on a documents folder it answers "no match"
+      #   where the index's search finds the invoice. Narrows only; see
       #   +design/decisions.md+ +D_secretary_wiring+.
       def initialize(filesystem:, confirmer:, confirm_all_writes: true, grep: true)
         @workspace = Workspace.new(filesystem: filesystem)

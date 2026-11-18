@@ -14,9 +14,14 @@ legs graded from the roots' declaration, and "that's all". Its design and threat
 (workshop `2d74e29`). **Puri doesn't yet**: it pins workshop `9c8c84d` and gets the tools
 through `pikuri-os`.
 
-**Left:** wire the secretary and briefing onto the gem, judge it by transcripts
-(`Q_transcript_bar`), then B and the book. A can ship and be judged before B; until B, pikuri
-carries both search stacks. B has the big cost: the book.
+**Done (2026-11-18): A.** The secretary searches Desktop + Documents through the gem, and
+`pikuri-briefing` moved to `pikuri-fileindex/bin/` with its prompts, rooted at `~/notes`. The
+forks are in `D_secretary_wiring` and `D_briefing_wiring`; `pikuri-rag` keeps no bin or prompts.
+The book is untouched (the owner's call: it's rewritten later, with B): it still teaches the rag
+wiring, and its commands name `./pikuri-rag/bin/pikuri-briefing`, which is gone.
+
+**Left:** B and the book. Until B, pikuri carries both search stacks, and only
+`bin/pikuri-corpus` still demos one. B has the big cost: the book.
 
 ## Why
 
@@ -25,8 +30,8 @@ carries both search stacks. B has the big cost: the book.
   binary and the app it hands off to differ on the thing a reader notices first.
 - **The GPU bill.** `D_secretary_wiring` measured the owner's `~/Documents` (11,685 files):
   minutes of silence, then hours of a Radeon 890M at 100%, with chat queued behind the
-  embedder on the same llama-server. That is why the secretary defaults to Qdrant and makes
-  podman a prerequisite of the book's last chapter. A regular user doesn't want to watch
+  embedder on the same llama-server. That is why the rag secretary defaulted to Qdrant, and why
+  the book's last chapter still makes podman a prerequisite. A regular user doesn't want to watch
   their GPU burn so that an assistant can look up an invoice.
 - **Book 1 loses its container runtime and its second model.** After B, nothing in pikuri needs
   podman, bge-m3 or a reranker. The prerequisites shrink to Ruby, llama.cpp, a chat model and a
@@ -58,44 +63,17 @@ carries both search stacks. B has the big cost: the book.
 
 ## Supported platforms (owner, 2026-11-17)
 
-- Ubuntu 26.04 LTS or newer, or any Linux with localsearch 3.8+, or recoll with a built index:
-  stated in the gem's README. **Add `localsearch-extractor-office` on Ubuntu** (see Why), or
-  the book's reader finds their `.docx` by name only.
-- **Neither ready: the secretary prints why and exits 1.** No degraded mode with no search: a
-  secretary that can't search would answer "you have no such file". It rescues
-  `Fileindex::Unavailable` and prints its message; Puri shows it in its UI.
-- **The book says it once**, in the prerequisites chapter; the recall chapter and the error
-  message point there.
-
-## The secretary
-
-- Wire `Fileindex::Extension` in place of `Rag::Extension`. Drop Qdrant, podman, `--in-memory`,
-  the `Watcher` and the "folders kept out of the index" prompt line. The index's coverage is
-  now GNOME's Search settings (or recoll's `topdirs`) plus our roots.
-- **Roots: Desktop and Documents** (owner, 2026-11-18; was `Q_default_roots`). Not Downloads:
-  it fills with whatever a page pushed when the user clicked a link, so it's the easiest place
-  for a stranger to plant a file the search then serves. A file on the Desktop or in Documents
-  was put there on purpose. The verdict doesn't move: Documents still holds other people's
-  files, so the roots stay `private: true, trusted: false`. The cost, a vendor's invoice
-  never moved out of Downloads, is a miss the model can explain, since `fileindex_search`'s
-  description lists the folders it searches. The list lives in the secretary, not the gem:
-  every caller so far names its own roots (briefing `~/notes`, pikuri-os `/`), so a gem default
-  would be a knob nobody sets. Resolve the folders with `xdg-user-dir DESKTOP` / `DOCUMENTS`
-  (localized names), through `Subprocess.spawn`; AGENTS.md's "never read an `XDG_*` variable"
-  is about pikuri's own paths, so add a clause there so the next agent doesn't flag it.
-- **Two read tools: `read` and `fileindex_read`** (owner, 2026-11-18; was `Q_one_read_tool`),
-  each described by what it's for. `read` stays for live files and for read-before-write on
-  `Notes/`; a localsearch-backed `Extractor` entry would break "Attachments are bytes" (the
-  registry turns bytes into text, not paths into text). Puri already runs with both.
-- Notes it just wrote: findable within a second (see Why). Recoll has no daemon unless
-  `recollindex -m` runs; state what recoll users lose.
+Ubuntu 26.04 LTS or newer, or any Linux with localsearch 3.8+, or recoll with a built index,
+as the gem's README states, plus `localsearch-extractor-office` on Ubuntu (see Why). **The book
+says it once**, in the prerequisites chapter; the recall chapter and the binaries' "no index is
+ready" message point there.
 
 ## What moves to the workshop (B)
 
 `pikuri-vectordb`, `pikuri-rag`, `bin/pikuri-corpus`, their chapters, `D_rag_gem`,
 `D_rrf_tuning`, `D_chunk_line_ranges`, `D_ruby_stemming`, `D_corpus_trust_declaration`, and
-the two idea files above. `pikuri-briefing` stays, rewired onto the file index (see
-`Q_briefing`), so `D_briefing_*` are rewritten here rather than moved. AGENTS.md's Connection
+the two idea files above. `pikuri-briefing` stays (done, see A), so `D_briefing_*` stay here.
+`D_secretary_wiring` keeps its rejected "index of our own", naming `pikuri-rag`. AGENTS.md's Connection
 and Request seams name `VectorDb::Embedder` and `Reranker::LlamaServer`; those clauses go to
 the workshop. `pikuri-pdf`'s gemspec mentions the corpus. `D_gem_placement`'s rejected
 alternatives cite rag twice ("a note the rag search finds covers most of a skill", and
@@ -196,36 +174,24 @@ secretary on the file index: the recall chapters build something the last binary
   three causes, so the reader sees that vectors fix only the third (a real meaning gap:
   another language, a concept in other words), not unindexed content or a wording miss the
   agent fixes by rephrasing. The GPU measurement says why pikuri doesn't build its own.
-- `Q_briefing`: **resolved** (owner, 2026-11-17): rewire `pikuri-briefing` onto the file
-  index, root `~/notes` declared private and trusted, and keep it. Checked against the book:
+- `Q_briefing`: **resolved and wired** (owner, 2026-11-17; done 2026-11-18, see
+  `D_briefing_wiring`). What's left is the book:
   - Survives unchanged: the trifecta chapter's "One flag, one extra leg, and the same
     verdict" (only the tool names in its two maps change); the hardcoded declarations and
     the boot line stating them; local inference as the first invariant; no automatic memory.
   - Gets better: the secretary's "same retrieval, plus mail" becomes literally the same gem
-    with wider roots. The boot line's "the index holds nothing but what that folder put
-    there" is false for a borrowed index that holds all of `$HOME`; the root filter is the
-    only thing keeping a Downloads file from coming back as vouched, so the one-legged agent
-    is where "the folder limit is a security boundary" has a visible cost if it fails.
-    Reword the line to say so. The two recall chapters become one, with briefing as its demo
-    (`pikuri-corpus` over the book goes to book 2 with `vectordb.md`). `D_briefing_wiring`'s
-    `--watch` fork and `rag_read`'s membership gate go: the miner keeps the index fresh.
+    with wider roots. The boot line now names the folder limit as the boundary, so the
+    one-legged agent is where "the folder limit is a security boundary" has a visible cost
+    if it fails. The two recall chapters become one, with briefing as its demo
+    (`pikuri-corpus` over the book goes to book 2 with `vectordb.md`).
   - "Absence stopped being reportable the same way" (trifecta chapter) needs search to say
     "that's all": **met** by `fileindex_search`'s footer. Whether "list every note mentioning
     Acme" needs more than 25 is for the briefing transcripts.
-  - **Requirement: the notes folder can't be a git checkout under localsearch**, which skips
-    any tree holding `.git`. `rag.md` argues against mtime "because it would be wrong the
-    first time you `git clone` your notes", the very setup that empties the index. The
-    readiness check catches it (zero indexed files under the roots, so the binary exits),
-    but the chapter must say it: no git for the notes, or recoll. Re-argue the mtime point
-    with a plain copy to a new machine.
-  - **Requirement: recoll freshness.** Without `recollindex -m`, this morning's note is
-    missing from the brief: the silent gap `--watch` existed to close. The chapter tells
-    recoll users to run the daemon or re-index before a brief. A boot warning when recoll's
-    index is older than the newest file under the roots would be a feature; propose it as
-    one only if transcripts show the gap.
-  - Don't root briefing at the secretary's `Documents/Notes/`: the secretary writes there
-    from turns that read mail (the stored injection `book/secretary.md` warns about), so
-    "trusted" would be false. Briefing's folder stays one only the user writes into.
+  - **The chapter must say: no git checkout for the notes under localsearch, or recoll.**
+    `rag.md` argues against mtime "because it would be wrong the first time you `git clone`
+    your notes", the very setup that empties the index; re-argue it with a plain copy to a
+    new machine, as `D_briefing_wiring` now does.
+  - **The chapter tells recoll users** to run `recollindex -m`, or re-index before a brief.
 - `Q_all_matches`: does a 40-word snippet plus `fileindex_read`'s `pattern` cover "context
   around the matches"? See the brainstorm below.
 - `Q_transcript_bar`: agreed (owner, 2026-11-18): ten lookup tasks on the demo home, ten runs

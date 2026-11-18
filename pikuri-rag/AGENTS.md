@@ -1,7 +1,7 @@
 # pikuri-rag — AGENTS.md
 
 The retrieval *system*: hybrid vector + FTS5 search fused at one backend over
-`pikuri-vectordb`'s primitive, plus `bin/pikuri-briefing`. Owns the keyword half and the fusion; the
+`pikuri-vectordb`'s primitive. Owns the keyword half and the fusion; the
 vector store, corpus and watcher stay `pikuri-vectordb`'s, reused byte-for-byte.
 
 ## Invariants

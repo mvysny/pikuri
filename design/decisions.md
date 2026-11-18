@@ -520,7 +520,7 @@ own. Its `ensure` takes the dialog down.
 **Context.** Book 1 needed a closing demo that pays off the trifecta chapter. The coding agent
 puts all three legs into one blob (the repo is untrusted, the code is private, the build needs the
 network), so its cut confines the disk around it: right for code, and the workshop's. The
-secretary nominally holds all three legs too, over your mail, calendar and `~/Documents`, and
+secretary nominally holds all three legs too, over your mail, calendar, Desktop and Documents, and
 weakens egress structurally instead: search never fetches, and every other way out shows the human
 the bytes. `book/secretary.md` teaches it as a diff against `pikuri-briefing --with-mail`, one
 added capability per section; this entry keeps the forks the chapter doesn't argue.
@@ -541,22 +541,23 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   engine's logs. It's **Privacy first** against the engine operator, since the model will write a
   sick friend's name into a query unprompted.
 - ***The file tools read all of `~/Documents` and write only `Notes/`***, through
-  `Filesystem.new(project_root: documents, root_writable: false, writable: [notes])`. One root
-  for `read` and `rag_read` means one path style: rooted at `Notes/`, the model carried rag's
+  `Filesystem.new(project_root: documents, root_writable: false, writable: [notes])`. Rooted at
+  Documents, not `Notes/`, so `read` reaches every document a search finds there and a note's
+  path is the same to every tool: rooted at `Notes/`, the model carried a search hit's
   `Notes/kettle-co.md` over to `write` and created `Notes/Notes/kettle-co.md`. The write side
   stays one folder because then the damage stays in one place: notes you can look over and
   delete, never an original you may hold no other copy of, and a folder small enough to keep off
   a sync client (a write into a share is egress the map grades as `[]`). Making all of
   `~/Documents` writable would leave the diff as the only check, and the diff weakens with every
-  approval you click through. Folders kept out of the index are named in the prompt, so the
-  model doesn't take "search found nothing" to mean "you have nothing".
+  approval you click through.
 - ***The file tools come through `Workspace::Extension(grep: false)`, not hand-wired.*** The
   first wiring took only `read` / `edit` / `write` by hand, and so lost the extension's
   decline-is-final prompt line and its root snapshot, and would have missed every later fix to
   either: `D_thunderbird_surfaces`' reason for narrowing an extension rather than bypassing it.
   `grep` is the one tool dropped because it misleads here: it reads raw bytes, skips a PDF, and
-  answers "no match" where `rag_search_keywords` finds the invoice. `glob` and `file_list` stay;
-  they match names, which rag can't.
+  answers "no match" where `fileindex_search` finds the invoice. `glob` and `file_list` stay:
+  they reach what the desktop leaves out of its index, and on the eval's home every lookup in a
+  `.csv` (never content-indexed by localsearch) ended in a listing.
 - ***Every note write confirmed, with its diff.*** It guards integrity, which no leg measures.
   Loosening it (say, confirming only edits to notes the agent didn't write) is to be decided from
   practice, not up front.
@@ -568,17 +569,41 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
 - ***A memory edit takes effect next session.*** Re-reading it mid-conversation would rewrite the
   system prompt, cost the KV cache, and brush against "never `role: :system` mid-conversation",
   for a fact the confirmed write's result already told the model.
-- ***The rag wiring is copied from `pikuri-briefing`, not lifted into `pikuri-rag`.*** Each bin
-  stays readable on its own, and Puri wires its own, so a library entry point would have one
-  caller. Revisit if the copy bites.
-- ***Qdrant by default, `--in-memory` to opt out***, reversing briefing's in-memory default, and
-  making podman or docker a prerequisite of the chapter.
+- ***Files are searched through the desktop's own index, not one of ours.*** `pikuri-fileindex`
+  over GNOME's localsearch, else recoll: no embedding model, no container, no GPU (see the index
+  of our own, rejected below), and a hostile PDF or `.docx` in Documents is parsed by the
+  desktop's sandboxed extractor, not by pikuri. Keyword recall was enough on the eval, ten
+  lookups run ten times on each stack by a fresh agent with this prompt: on a 212-file home built
+  so that browsing can't answer, 99 of 100 passed against rag's 100, and outside the two tasks coverage decides (a
+  `.csv` localsearch never content-indexes, an `.odt` it knows by name only without
+  `localsearch-extractor-office`) the file index matched rag at about two calls a lookup. What
+  the index skips, search can't find, and the model gets there by browsing, at the cost of calls.
+- ***Roots: Desktop and Documents, not Downloads.*** Downloads fills with whatever a page pushed
+  when you clicked a link: the easiest place for a stranger to plant a file the search then
+  serves. A file on the Desktop or in Documents was put there on purpose. The verdict doesn't
+  move: Documents still holds other people's files, so the roots stay `private: true, trusted:
+  false`. The cost, an invoice never moved out of Downloads, is a miss the model can explain,
+  since `fileindex_search`'s description lists its folders. The list lives in the binary, not
+  the gem: every caller names its own roots (briefing `~/notes`, the workshop's OS assistant
+  `/`), so a gem default would be a knob nobody sets.
+- ***The two folders come from `xdg-user-dir`***, under their localized names. It answers `$HOME`
+  for a folder that isn't set, or is set to "disabled", and the binary drops that answer: a root
+  at `$HOME` would hand the agent the whole home folder. `--documents` overrides Documents.
+- ***Neither index ready: the secretary says why and exits 1.*** No mode without search: a
+  secretary that can't search would answer "you have no such file". The `Fileindex::Unavailable`
+  message names what each index lacks and how to fix it.
+- ***Two read tools, `read` and `fileindex_read`.*** `read` reads the file as it is now and is the
+  read-before-write on `Notes/`; `fileindex_read` reads the text the index extracted, which is
+  what opens a `.docx` and reaches the Desktop. One read tool backed by the index would be an
+  `Extractor` entry turning a path into text, where the registry turns bytes into text
+  ("Attachments are bytes").
 - ***Today's date and weekday go into the binary's prompt at boot***, not core's.
   `calendar_search` takes absolute bounds and expects the model to turn "tomorrow" into a range.
   Stale after midnight in a long session; accepted.
-- ***The index stays live under the vectordb `Watcher`***, so a note the agent just wrote is
-  findable in the same session. It comes free with the copy.
-- ***About 19 tools on the book's default model, Ornith-1.5.*** Designed for the best tool set,
+- ***A note the agent just wrote is findable in the same session***, free with localsearch: its
+  miner indexed a new note in half a second and dropped a deleted one as fast. Under recoll only
+  while `recollindex -m` runs; without it, this session's notes wait for the next `recollindex`.
+- ***About 17 tools on the book's default model, Ornith-1.5.*** Designed for the best tool set,
   not the smallest, counting on local models improving: Siri's on-device 4B dense model routes
   among as many. The chapter's transcripts were the test, and routing held, at the odd wasted call.
 
@@ -590,19 +615,23 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
   is the whole payload, so it's also the book's cleanest "does the human see the bytes?" example.
 - **Automatic memory capture (mem0).** A mail could plant a "fact"; that's only safe on an agent
   with no egress. mem0 itself is the workshop's (`D_gem_placement`).
-- **An in-memory index, as briefing has.** Measured on the owner's real `~/Documents` (11,685
-  files, many books): minutes of silence, then hours of a GPU at 100%, paid again on every start,
-  with the chat queued behind the embedder on the same llama-server. Batch flags won't fix it:
-  embedding is compute-bound (a 4096-token ubatch spends <1% of its time reading weights), and
-  ~7 chunks/s of bge-m3 on a Radeon 890M is the iGPU's ceiling; the arithmetic is in the chapter.
+- **An index of our own: `pikuri-rag`'s vectors + FTS5, in Qdrant or in RAM.** Measured on the
+  owner's real `~/Documents` (11,685 files, many books): minutes of silence, then hours of a GPU at
+  100%, paid again on every start without Qdrant, with the chat queued behind the embedder on the
+  same llama-server. Batch flags won't fix it: embedding is compute-bound (a 4096-token ubatch
+  spends <1% of its time reading weights), and ~7 chunks/s of bge-m3 on a Radeon 890M is the
+  iGPU's ceiling; the arithmetic is in the chapter. Qdrant pays it once, at the price of podman as
+  a prerequisite. What only the vectors do is match across languages (bge-m3 ranked an English
+  lease first for a Finnish question); on the file index the model translated its query itself,
+  for one more call.
 - **A clock tool, or `date.today() + timedelta(…)` in the calculator.** A feature, and the model
   must think to call it. Worth reopening only if transcripts show botched date arithmetic.
 - **Reminders.** `pikuri-thunderbird` reads no tasks (VTODO), and a reminder that fires needs a
   resident process a CLI doesn't have. Puri leaves them out too: reminders are an Apple thing,
   with no Linux desktop counterpart to hand one to.
-- **A pure-Ruby `.docx`/`.odt` reader**, a `pikuri-pdf`-sized gem (both are zipped XML). The demo
-  makes its point on PDFs alone; reading a real `~/Documents` whole is a feature, and the secretary
-  with every feature is Puri (`D_gem_placement`). The gaps are stated in the chapter.
+- **A pure-Ruby `.docx`/`.odt` reader**, a `pikuri-pdf`-sized gem (both are zipped XML). A
+  feature (`D_gem_placement`), and not needed: the desktop's index already holds their text, on
+  Ubuntu once `localsearch-extractor-office` is installed.
 
 **Consequences.**
 
@@ -2069,8 +2098,8 @@ if a reader can run both readings in one sitting.
   message into one sentence — "they agreed to 10% (acme-2026-08-14.md, and
   their mail of 22 August)" hides that half of it is unvouched.
 - **Let the brief report absence over mail the way it does over notes.**
-  Rejected because the guarantees differ: `rag_search_keywords` lists every matching
-  note with no cutoff, while a mail search returns ranked matches up to a cap
+  Rejected because the guarantees differ: `fileindex_search` counts every
+  matching note ("all shown"), while a mail search returns ranked matches up to a cap
   and Gloda never indexes Junk/Trash (`pikuri-thunderbird/design/architecture.md`). The
   search tool is already honest about its own page (it fetches `limit + 1` and
   the header says whether more exist), so what was missing was the *brief's*
@@ -2175,26 +2204,22 @@ be false by the host's own choice.
 
 ---
 
-## D_briefing_wiring — Why does `bin/pikuri-briefing` hardcode its two declarations and watch by default, inverting its sibling twice?
+## D_briefing_wiring — Why does `bin/pikuri-briefing` hardcode its two declarations rather than take them as flags?
 
 **Context.** A user gathers meeting notes from every customer by hand and
 wants an agent to prepare them for the next meeting. They are strict: no
 Thunderbird, no internet, just the hand-curated notes folder. That
 strictness is what makes it worth shipping — it is the first pikuri agent
 holding exactly *one* lethal-trifecta leg, and the boot map prints
-`1 of 3 legs (private)`. The wiring is a local model, `Rag::Extension` over
-the notes folder, a briefing prompt, and nothing else.
-
-The forks are all comparisons with `bin/pikuri-corpus`, the sibling binary
-over the same corpus plumbing, because this one **inverts it twice** — and a
-reader comparing the two would otherwise read the difference as an
-inconsistency.
+`1 of 3 legs (private)`. The wiring is a local model, `Fileindex::Extension`
+rooted at the notes folder, a briefing prompt, and nothing else.
 
 **Decision, fork by fork.**
 
 - ***`private: true` / `trusted: true` are constants, not flags.***
-  `bin/pikuri-corpus` takes both as flags with pessimistic defaults because
-  its default source is the *public* book, so pessimism is honest there.
+  `Fileindex::Roots` defaults both to `false`, and `bin/pikuri-corpus` takes
+  them as flags, because pessimism is honest for a folder nobody vouched for
+  (pikuri-corpus's default source is the *public* book).
   `pikuri-briefing` has no honest non-private reading, so a flag would make
   the documented invocation the flagged one and the honest map opt-in — the
   "a forgotten flag fails *silent*" failure `bin/pikuri-code` asks a boot
@@ -2204,21 +2229,28 @@ inconsistency.
   is a claim about a folder the *user* supplies through `--source`, and one
   pasted customer e-mail falsifies it. So the binary says what it just
   asserted on their behalf — reviewed in the form the model reads it, nobody
-  else writes there, the index holds only what that folder put there, paste
-  nothing — as a `puts` beside the map. Cheap, cannot fail silent, and the
+  else writes there, only the folder limit keeps the rest of the index out,
+  paste nothing — as a `puts` beside the map. Cheap, cannot fail silent, and the
   sanctioned *human asserts, framework records, detector reports* posture
   (`D_corpus_trust_declaration`) rather than a fourth boot question.
-- ***`--watch` on by default (`--no-watch` to turn it off).*** The other
-  inversion. In `bin/pikuri-corpus` the manual reindex *is* the teaching
-  device; here a note written this morning and missing from the brief is a
-  silent hole, and `rag_read`'s membership gate rejects it outright — loud
-  and actionable, which is the right shape, and baffling for a note that
-  plainly exists on disk.
+- ***The folder limit is what keeps `trusted: true` true.*** The index is the
+  desktop's, borrowed, and holds the whole home folder, Downloads included;
+  `Roots` is the one thing keeping a stranger's file from coming back as
+  vouched. So the boot text names it as the boundary.
+- ***No watcher, no reindex.*** The desktop keeps its index fresh, so a note
+  written this morning is in the brief under localsearch. Under recoll only
+  while `recollindex -m` runs, or after a fresh `recollindex`. A boot warning
+  for a recoll index older than the newest note would be a feature, earned
+  only if a brief ever misses one.
+- ***Under localsearch, the notes folder is no git checkout.*** localsearch
+  skips any tree holding `.git`, so the readiness check finds nothing indexed
+  under the root and the binary exits saying so. Keep the notes out of git,
+  or use recoll.
 - ***A main prompt, not a `KEEPER` persona.*** There is no delegation in
   this wiring — one main agent with a corpus and a job — so the artifact is
   `prompts/pikuri-briefing.txt`, which per AGENTS.md names no wired tool.
   "The keeper" is welcome there as the identity voice.
-- ***`rag_search` + `rag_search_keywords` + `rag_read`, no `grep` / `file_list`.***
+- ***`fileindex_search` + `fileindex_read`, no `grep` / `file_list`.***
   See below.
 
 **Alternatives rejected.**
@@ -2232,29 +2264,25 @@ inconsistency.
   cites — and the job belongs in the binary's main prompt. A `Persona` earns itself only if a
   boss *with* egress ever wants to delegate briefing to a no-egress child,
   and that arrives with a gem question this does not have to answer: a
-  persona naming both `vectordb_*` and `thunderbird_*` tools has no home
+  persona naming both `fileindex_*` and `thunderbird_*` tools has no home
   that can own it without one gem depending on the other.
 - **`grep` + `file_list` from `pikuri-workspace` over the notes root.** The
-  obvious next thought, since the workspace root *would be* the corpus root,
-  and the mechanics compose more cleanly than expected: `Search::Grep` emits
-  `./`-stripped workspace-relative paths while `Chunk.source` is relative to
-  the corpus root and the membership gate is exact string equality, so the
-  strings are identical with no shim; the read tool takes a path rather than
-  an id, so a grep hit is readable with no prior search; and read-only costs
-  no confirmer, since the Confirmer seam binds `Write` and `Bash` only. It
-  adds **no new reachable bytes** either — only new ways to locate bytes
-  `rag_read` could already open, so no new leg *and* no new pool. Rejected
-  anyway, because it patches a retrieval shortcoming from *outside the gem
-  that owns retrieval*; `file_list` composes only over a flat corpus
-  (`Listing` renders an indented tree of bare names, so on a nested corpus
-  the model has to reassemble `dir/name`); and it has no stemming. `D_rag_gem`
-  is where the fix went instead, and `rag_search_keywords` is what the notes corpus
-  actually wanted.
+  obvious next thought, since the workspace root *would be* the search root.
+  It adds **no new reachable bytes** — only new ways to locate bytes
+  `fileindex_read` already opens, so no new leg *and* no new pool, and
+  read-only costs no confirmer. Rejected as a second way to make the one
+  lookup the brief needs: `fileindex_search` already says how many notes
+  match in all ("all shown"), stems its words, and sees inside a PDF, which
+  grep can't.
+- **Rooting it at the secretary's `Documents/Notes/`**, to share one notes
+  folder. The secretary writes there from turns that read mail (the stored
+  injection `book/secretary.md` warns about), so `trusted: true` would be
+  false. Briefing's folder stays one only the user writes into.
 - **A `write` tool over the notes folder.** Kept out for a reason
   independent of everything above: once the agent reads mail as well
   (`D_briefing_with_mail`), an agent that reads untrusted mail and writes into the store the corpus
   declares *trusted* is a **laundering pipe** — a hostile e-mail's content
-  lands in a note, the watcher indexes it within seconds, and it is
+  lands in a note, the desktop indexes it within a second, and it is
   retrieved as vouched content from then on, surviving into sessions with no
   mail wired at all. That converts a corrupted brief, bounded to one
   conversation, into durable corpus poisoning, and the detector says nothing:
@@ -2279,20 +2307,21 @@ inconsistency.
 
 **Consequences.**
 
-- The binary lives in `pikuri-rag/bin/` rather than `pikuri-vectordb/bin/`,
-  following the same "the bin lives with the base agent it extends" rule
-  that puts `bin/pikuri-computer` in `pikuri-os/bin/`.
-- No gem: no novel threat model, no cohesive lib code of its own — the
-  `pikuri-computer` shape (AGENTS.md §"Working on this codebase").
-- **The corpus layout convention is documented, not enforced.** Chunks carry
-  a `source` and a content hash and no dates, so a "last discussed" answer
+- The binary lives in `pikuri-fileindex/bin/`, with the gem whose tools it
+  wires, as `pikuri-files` lives in `pikuri-workspace/bin/`. Its prompts sit
+  beside it in `pikuri-fileindex/prompts/`, added to `PROMPT_DIRS` by the
+  binary rather than the gem, whose `lib/` never reads them.
+- No gem: no novel threat model and no lib code of its own (AGENTS.md, "Name
+  a gem after what it refuses to become").
+- **The notes layout convention is documented, not enforced.** A search hit
+  carries a path and no date, so a "last discussed" answer
   needs the date in the filename: `acme-2026-08-14.md` in one flat folder is
   enough, and name-before-date is the better order because it groups a
   customer's notes together for the access pattern that dominates. A
   convention requiring the user to reorganize their notes is one they will
   not adopt. (An `mtime`-derived date would be wrong the first time the notes
-  are `git clone`d; a date on the note's first line survives a read but not
-  necessarily a search hit, since only the chunk containing it carries it.)
+  are copied to a new machine; a date on the note's first line survives a
+  read but not necessarily a search hit, whose snippet sits around the match.)
 - Stage 1 — adding read-only Thunderbird, which moves the agent from one leg
   to two and changes the human's obligations completely — shipped as
   `D_briefing_with_mail`, taught in `book/trifecta-detector.md`.
@@ -2404,10 +2433,11 @@ on. The two extensions are mutually exclusive on one agent.
   corpus-shape precondition ("the agent reads them in full") becomes a
   usage line on `rag_search_keywords`.
 - **`grep` + `file_list` from `pikuri-workspace` bolted onto the corpus
-  agent.** The briefing wiring worked this through and it composes
-  (identical relative paths, no confirmer needed); rejected there because it
-  patches a retrieval shortcoming from outside the gem that owns retrieval,
-  `file_list` composes only over a flat corpus, and it has no stemming.
+  agent.** It composes (`Search::Grep`'s workspace-relative paths equal
+  `Chunk.source`, so the membership gate passes a grep hit, and read-only
+  needs no confirmer), but it patches a retrieval shortcoming from outside
+  the gem that owns retrieval, `file_list` composes only over a flat corpus,
+  and it has no stemming.
 - **`trigram` as the default tokenizer** — language-agnostic and
   inflection-tolerant as a substring match. Rejected as default: it matches
   inside longer words and needs three-character terms; it stays the named
@@ -2429,11 +2459,10 @@ on. The two extensions are mutually exclusive on one agent.
 - `design/ideas/vectordb-deferrals.md`'s recall-mode bullet is deleted when the
   gem lands; two gems each promising completeness in different ways is the
   duplication the doc rules exist to prevent.
-- The briefing agent's Stage 0 wires `Rag::Extension` (`D_briefing_wiring`);
-  its "ship search + read only and see whether the gap bites" plan is retired,
-  since the consensus predicts it bites on the first "everything about Acme".
-  Its open question "one collection or one per customer" dissolves.
-  `pikuri-briefing` moves to `pikuri-rag/bin/`.
+- The briefing agent was the first host needing completeness: shipping it
+  with search + read only would bite on the first "everything about Acme",
+  the consensus predicted. It now searches the desktop's file index instead,
+  whose `fileindex_search` counts every match (`D_briefing_wiring`).
 - Pre-registration guards both ways: `Rag::Extension` refuses any
   `vectordb_*` or `rag_*` name already registered, and `VectorDb::Extension`
   learns to refuse `rag_*`, so exclusivity holds whichever the host wires
