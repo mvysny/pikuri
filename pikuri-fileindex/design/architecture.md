@@ -5,8 +5,7 @@ header holds its own rationale; this file holds what spans
 {Pikuri::Fileindex::LocalSearch}, {Pikuri::Fileindex::Recoll} and the two
 tools: the threat model, why keyword recall is the whole posture, and
 which backend earns the default. Why pikuri borrows the desktop's index
-instead of building one: `design/ideas/fileindex-replaces-rag.md` until
-that idea graduates.
+instead of building one: `design/decisions.md` `D_secretary_wiring`.
 
 ## Threat model
 

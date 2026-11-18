@@ -1,72 +1,40 @@
 # The desktop file index replaces rag for the secretary; rag and vectordb move to the workshop
 
-Status: direction agreed with the owner (2026-11-17). Two decisions, deliberately separable:
+Status (2026-11-18). Two decisions, deliberately separable:
 
-- **A.** The secretary (and Puri, and any "Siri-shaped" assistant) searches your files through
-  the desktop's own file index (GNOME localsearch, or recoll), instead of `pikuri-rag` over a
-  self-built vector + FTS5 index.
-- **B.** `pikuri-vectordb` and `pikuri-rag` move to pikuri-workshop, with their chapters.
+- **A. Done.** The secretary and `pikuri-briefing` search your files through `pikuri-fileindex`
+  (the desktop's own index: GNOME localsearch, or recoll), not `pikuri-rag`. Why:
+  `D_secretary_wiring` (the "Files are searched through the desktop's own index" fork, "An
+  index of our own" rejected) and `D_briefing_wiring`; the gem's design and threat model in
+  `pikuri-fileindex/design/architecture.md`.
+- **B. Left.** `pikuri-vectordb` and `pikuri-rag` move to pikuri-workshop, with their chapters.
 
-**Done (2026-11-18): the gem.** `pikuri-fileindex` holds the file-index code that used to live
-in the workshop's `pikuri-os`, plus host-named roots, the path check, readiness over the roots,
-legs graded from the roots' declaration, and "that's all". Its design and threat model are in
-`pikuri-fileindex/design/architecture.md`, its README and its yardoc. pikuri-os already uses it
-(workshop `2d74e29`). **Puri doesn't yet**: it pins workshop `9c8c84d` and gets the tools
-through `pikuri-os`.
+Also left:
 
-**Done (2026-11-18): A.** The secretary searches Desktop + Documents through the gem, and
-`pikuri-briefing` moved to `pikuri-fileindex/bin/` with its prompts, rooted at `~/notes`. The
-forks are in `D_secretary_wiring` and `D_briefing_wiring`; `pikuri-rag` keeps no bin or prompts.
-The book is untouched (the owner's call: it's rewritten later, with B): it still teaches the rag
-wiring, and its commands name `./pikuri-rag/bin/pikuri-briefing`, which is gone.
+- **The book**, rewritten with B (the owner's call). It still teaches the rag wiring, and its
+  commands name `./pikuri-rag/bin/pikuri-briefing`, which is gone. Until B, pikuri carries both
+  search stacks, and only `bin/pikuri-corpus` still demos one. B has the big cost: the book.
+- **Puri** pins workshop `9c8c84d` and gets the file tools through `pikuri-os`, not the gem
+  (pikuri-os itself moved onto the gem in workshop `2d74e29`).
 
-**Left:** B and the book. Until B, pikuri carries both search stacks, and only
-`bin/pikuri-corpus` still demos one. B has the big cost: the book.
+## Why B
 
-## Why
-
-- **Puri already made this decision** (`puri:D_documents`, 2026-11-17): it searches through
-  `fileindex_search`, for the reasons below. If the secretary stays on rag, the book's closing
-  binary and the app it hands off to differ on the thing a reader notices first.
-- **The GPU bill.** `D_secretary_wiring` measured the owner's `~/Documents` (11,685 files):
-  minutes of silence, then hours of a Radeon 890M at 100%, with chat queued behind the
-  embedder on the same llama-server. That is why the rag secretary defaulted to Qdrant, and why
-  the book's last chapter still makes podman a prerequisite. A regular user doesn't want to watch
-  their GPU burn so that an assistant can look up an invoice.
 - **Book 1 loses its container runtime and its second model.** After B, nothing in pikuri needs
   podman, bge-m3 or a reranker. The prerequisites shrink to Ruby, llama.cpp, a chat model and a
   desktop index. `D_gem_placement` says Qdrant is Docker's last job here.
-- **Hostile office files are parsed in the desktop's sandbox, not ours.** See the gem's threat
-  model. Puri's `D_extractors` already relies on this.
-- **Office documents come free, with one package.** localsearch extracts text from `.docx`,
-  `.odt` and spreadsheets, which fills the gap `D_secretary_wiring` declined to fill (the
-  pure-Ruby `.docx` reader, rejected as a feature). On Ubuntu 26.04 those extractors ship
-  separately, in `localsearch-extractor-office` (universe, only "Suggests"): without it they
-  are found by name only (measured 2026-11-18). `.csv` is never content-indexed.
-- **These assistants don't do deep research.** The secretary, Puri and Siri ask a few lookups
-  per turn. Ornith and Qwen are fine at issuing a couple of keyword queries and rephrasing
-  on a miss. Ranked semantic retrieval pays off for people for whom search quality *is* the
-  product: those are the workshop's users.
-- **Keyword recall is enough here**: the gem's architecture note ("File search: keyword recall,
-  not embeddings") sorts misses into three causes, and only the third needs embeddings. Its
-  ~100% recall is against a ripgrep oracle, not the secretary's questions; only transcripts can
-  show that (`Q_transcript_bar`).
-- **Completeness comes free.** `D_rag_gem` built `rag_search_keywords` because cosine search
-  can't promise "every note mentioning Acme". `fileindex_search` says "all shown" or "10 of 37".
-- **Fresh within a second.** A note saved into the demo `~/Documents/Notes` was searchable after
-  0.43–0.54 s, and gone 0.42–0.44 s after deletion (3 tries, 2026-11-18). Rag needs the
-  `Watcher` and an embedding round-trip for the same.
 - **Placement.** `D_gem_placement` test 1 says rag's future is more features: see
   `rag-hit-presentation-eval.md`, `vectordb-deferrals.md`, and the stemmers already in
-  `pikuri-workshop:pikuri-stemmers`. The secretary's reader would also skip two of pikuri's
-  biggest gems (vectordb + rag ≈ 4,600 lines of `lib/`, against ≈ 1,000 for the file index).
+  `pikuri-workshop:pikuri-stemmers`. Ranked semantic retrieval pays off for people for whom
+  search quality *is* the product: those are the workshop's users. The secretary's reader would
+  also skip two of pikuri's biggest gems (vectordb + rag ≈ 4,600 lines of `lib/`, against
+  ≈ 1,000 for the file index).
 
 ## Supported platforms (owner, 2026-11-17)
 
 Ubuntu 26.04 LTS or newer, or any Linux with localsearch 3.8+, or recoll with a built index,
-as the gem's README states, plus `localsearch-extractor-office` on Ubuntu (see Why). **The book
-says it once**, in the prerequisites chapter; the recall chapter and the binaries' "no index is
-ready" message point there.
+as the gem's README states, plus `localsearch-extractor-office` on Ubuntu. **The book says it
+once**, in the prerequisites chapter; the recall chapter and the binaries' "no index is ready"
+message point there.
 
 ## What moves to the workshop (B)
 
@@ -78,6 +46,8 @@ and Request seams name `VectorDb::Embedder` and `Reranker::LlamaServer`; those c
 the workshop. `pikuri-pdf`'s gemspec mentions the corpus. `D_gem_placement`'s rejected
 alternatives cite rag twice ("a note the rag search finds covers most of a skill", and
 `pikuri-vectordb` depending on `pikuri-subagents` as a reason `pikuri-workspace` can't move).
+`LocalSearch::WHOLE_TEXT_CHARS`'s yardoc sizes itself against "the 500 characters a rag hit
+shows". This idea's eval harness needs `pikuri-rag` for its rag arm: it dies with the idea.
 
 ## Siri does the same: it borrows the OS's index (2026-11-17)
 
@@ -124,10 +94,10 @@ alternatives cite rag twice ("a note the rag search finds covers most of a skill
 
 Outside `vectordb.md` and `rag.md`, retrieval carries two things: the trifecta chapter's worked
 example (`pikuri-briefing` vs `--with-mail`, one flag adds a leg without moving the verdict) and
-the secretary chapter, written as a diff against briefing with mail. Both survive if briefing
-searches the file index, as long as legs come from the roots' declaration: `~/notes` is
-trusted, Documents is not. The book's spine is the trifecta; the recall section exists to give
-it private data worth protecting.
+the secretary chapter, written as a diff against briefing with mail. Both survive now that
+briefing searches the file index with legs from the roots' declaration: `~/notes` is trusted,
+Documents is not. The book's spine is the trifecta; the recall section exists to give it
+private data worth protecting.
 
 **Agreed** (owner, 2026-11-17): teach RAG on the desktop index; vectors go to book 2. RAG is
 retrieve-then-generate, and agentic RAG is the model issuing the queries: no vectors needed.
@@ -146,24 +116,14 @@ library of papers): every reader pays the GPU bill and podman for a persona they
 to day, and Puri diverges from the closing binary. Keeping vectors in the book with the
 secretary on the file index: the recall chapters build something the last binary never uses.
 
-## Costs
+**The cost.** The book now goes vectordb → rag → briefing → secretary. Embeddings, chunking and
+rank fusion are concepts, not only features. After B, pikuri teaches search as "an agent using
+the desktop's index", and the retrieval chapters move to the workshop's book. The biggest
+rewrite involved.
 
-- **The book.** It now goes vectordb → rag → briefing → secretary. Embeddings, chunking and
-  rank fusion are concepts, not only features. After B, pikuri teaches search as "an agent
-  using the desktop's index", and the retrieval chapters move to the workshop's book. The
-  biggest rewrite involved.
-- **Platform.** pikuri is Linux-first, not GNOME-first: recoll covers KDE, Xfce and headless
-  boxes, but only with an index the user built. Readers on Ubuntu 24.04 LTS or older Tracker 3
-  are out (see Supported platforms).
-- **Coverage is the desktop's to decide.** Our roots narrow; they can't add a folder GNOME
-  skips, nor a format it doesn't extract (`.csv`; office files without the extra package).
-- **Code and git checkouts are invisible** to localsearch. That's fine for a secretary, and
-  it's the reason the coding agent keeps `grep`.
-- **Cross-language search is lost.** bge-m3 matched an English query to a Finnish document; a
-  keyword index needs the query in the document's language (and `pikuri-stemmers` ships
-  Voikko, so the owner's files likely include Finnish). Check which language localsearch stems
-  in (likely one, taken from the locale). The eval's Finnish question measures whether the
-  agent searches again in the other language (`Q_transcript_bar`).
+**Unchecked:** which language localsearch stems in (likely one, taken from the locale;
+`pikuri-stemmers` ships Voikko, so the owner's files likely include Finnish). The recall
+chapter's cross-language paragraph needs it.
 
 ## Open questions
 
@@ -194,9 +154,8 @@ secretary on the file index: the recall chapters build something the last binary
   - **The chapter tells recoll users** to run `recollindex -m`, or re-index before a brief.
 - `Q_all_matches`: does a 40-word snippet plus `fileindex_read`'s `pattern` cover "context
   around the matches"? See the brainstorm below.
-- `Q_transcript_bar`: agreed (owner, 2026-11-18): ten lookup tasks on the demo home, ten runs
-  each on Ornith, hit rate rag vs file index, including "write a note, then find it" and a
-  cross-language question. Harness and results below.
+- `Q_transcript_bar`: **met** (owner, 2026-11-18): keyword recall was enough, the result is in
+  `D_secretary_wiring`. What's left is at the end of the eval below.
 
 ## `Q_all_matches`: brainstorm (2026-11-18)
 
@@ -206,7 +165,8 @@ What each side shows per hit, from the code:
   shown as its **first 500 characters** (`VectorDb::Tools::Search::SNIPPET_LENGTH`), so the
   match may sit past the cut, plus the chunk's line range for `rag_read`.
 - **fileindex**: up to 25 files, one hit each, a **40-word window centred on the match** with
-  the matched words marked `>>like this<<`, plus the size of the file's indexed text.
+  the matched words marked `>>like this<<`, plus the size of the file's indexed text; a file of
+  up to 600 characters comes whole instead.
 
 So the owner's "40 words ≈ the vector's window" holds, and per hit the snippet is the more
 targeted of the two: shorter, but around the match rather than at the chunk's start. What
@@ -234,19 +194,32 @@ Options:
 - **D. A stemmed find-in-file in Ruby**: a second matcher that disagrees with the index's
   tokenizer. Reject.
 
-Leaning **A**, with B as the fallback. The demo home can't decide it: its files are a few
-hundred characters, so the model reads them whole (see the eval's tool counts). The owner's
-`~/Documents` would. When this resolves, the `fts:offsets` trap graduates as a why-not line on
-`Read`'s pattern paragraph.
+Leaning **A**, with B as the fallback. The eval can't decide it: its files are a few hundred
+characters, so the model reads them whole (4 of 49 `fileindex_read` calls on the demo home used
+`pattern`), and on the hard home the snippet's cost was the one window, not a second match,
+which "shown whole" fixed. The owner's `~/Documents` would. When this resolves, the
+`fts:offsets` trap graduates as a why-not line on `Read`'s pattern paragraph.
 
 ## `Q_transcript_bar`: the eval (2026-11-18)
 
-`fileindex-replaces-rag/transcript-eval.rb` runs on the dev VM (the demo home in
-`~/Documents`, its localsearch index, Ornith on the host's llama-server). Each run is a fresh
-agent with the secretary's prompt, calculator and workspace tools (no grep), and one retrieval
-stack: rag (in-memory hybrid index, bge-m3, reranker, a `Watcher`) or the file index (roots
-`[~/Documents]`). No mail, no web: either would answer some tasks around the retrieval under
-test. A run passes when the final answer matches every gold regex.
+Each round's fix has graduated: any-word matching (`pikuri-fileindex/design/architecture.md`,
+"Matching"), a short file shown whole (`LocalSearch::WHOLE_TEXT_CHARS`), and the when-to-use
+line opening `fileindex_search`'s description (after 5 of 10 `sauna` runs answered from general
+knowledge without searching; 3 of 10 after it, too few runs to call). What stays is the harness,
+the numbers the recall chapter can use, and what's left.
+
+**Harness.** `fileindex-replaces-rag/transcript-eval.rb` runs on the dev VM (Ornith on the
+host's llama-server). Each run is a fresh agent with the secretary's prompt, calculator and
+workspace tools (no grep), and one retrieval stack: rag (in-memory hybrid index, bge-m3,
+reranker, a `Watcher`) or the file index. No mail, no web: either would answer some tasks
+around the retrieval under test. A run passes when the final answer matches every gold regex.
+`fileindex-replaces-rag/hard-home.rb` builds `~/pikuri-eval/Documents` (seeded; 212 files in 23
+folders) and `gold.json` beside it; the harness takes `EVAL_DOCUMENTS`. The demo documents get
+the names a real home gives them (`Scans/scan_20261009_002.pdf`), among near-misses that share
+each task's words but hold another answer (the paid invoice, last year's policy, the 2024
+lease, a top-level `sauna plans.txt` saying "Ask Ilse. Not urgent.") and bulk. Every transcript
+is in `results*/runs.jsonl`: `results` and `results-anyword` on the demo home,
+`results-hardhome` and `results-hardhome-whole` on the hard one.
 
 Tasks: `invoice` (amount + IBAN, PDF), `notice` (lease, "move out"), `flood` (insurance
 deductible for "water damage", asked as a flood), `sauna` (HTML), `solar` (a note, "solar
@@ -254,176 +227,41 @@ array"), `office` (board-meeting PDF), `electricity` (`budget.csv`: not content-
 localsearch), `dentist` ("dental" vs "dentist"), `finnish-rent` (asked in Finnish, the lease is
 in English), `bike-lock` (a note saved 5 s before the question, its code drawn per run).
 
-### Results (200 runs, 2026-11-18)
-
-| | pass | mean time | mean calls | searches that found nothing |
-|---|---|---|---|---|
-| rag | 100/100 | 19 s | 2.1 | 9 / 118 |
-| file index | 100/100 | 20 s | 2.9 | 71 / 140 |
-
-Per task, calls (rag / file index): `electricity` 3.1 / 6.1, `finnish-rent` 2.4 / 4.3, every
-other task within one call. `runs.jsonl` holds every transcript.
-
-**The pass rate can't separate the arms on this home.** The workspace's boot snapshot puts the
-top of `~/Documents` in the prompt, and with 13 files under `Housing/`, `Finance/`, … that is a
-map: about a fifth of the runs in each arm never searched, and `sauna` was a direct `read` of
-the file every time. The failures a real home would show come back as browsing instead.
-
-**Half the file-index queries find nothing, because localsearch ANDs every word.** The model
-writes rag-style queries, and one word the file lacks sinks the whole query: "dental
-appointment" (the note says "Dentist … checkup"), "office relocation address" (the minutes say
-"move the office"), "deductible flood water kitchen", "rent monthly rent due date" (the lease
-says "due on the 5th day"). Two-word queries were empty 24 of 29 times, four or more words 22 of
-35. Rag's semantic leg always returns five hits, so the same habit costs it nothing. The model
-recovered every time by rephrasing or by browsing, but on a home where browsing doesn't work
-that recovery is the whole question. `fileindex_search`'s description never says every word
-must appear.
-
-**Cross-language: one run in ten found the lease by search.** 7 of 10 file-index runs searched;
-every query with a Finnish word in it came back empty, mixed ones too ("vuokra monthly rent
-payment due"), because of the AND. Run 6 switched to "rent monthly due" and hit; the other nine
-reached the lease by browsing `Housing/`. Rag's arm searched in 5 runs and ranked the lease
-first every time, twice from an all-Finnish query ("kuukausivuokra vuokrasopimus maksupäivä"):
-bge-m3 matching across languages, the one thing only embeddings do.
-
-**Structural misses cost turns, as predicted.** `budget.csv` (not content-indexed): every
-file-index search for it missed, and the model found it in the listing after 2 to 16 calls.
-The missing office extractor cost 19 calls on `.odt`/`.docx` in the file-index arm (3 in rag's):
-`fileindex_read` on `lease-agreement.odt` says "not in the index", `read` says binary, then the
-`.pdf`.
-
-**Freshness: no difference.** `bike-lock`, asked 5 s after the note was saved, passed 10/10 on
-both (rag 1.3 calls in 14 s, the file index 2.1 calls in 11 s).
-
-**`Q_all_matches` data:** 4 of 49 `fileindex_read` calls used `pattern`; the files are short
-enough to read whole, as expected.
-
-### Any-word matching (owner, 2026-11-18), re-measured
-
-Of the 71 empty queries, 27 were the `.csv`, 28 had a word in the right file, and 16 had none
-("dental appointment"; all-Finnish queries). localsearch has no OR at all (`fts:match` reads
-`OR`, `NOT` and parentheses as words), and recoll has Google's. So rather than teach a syntax,
-`fileindex_search` now matches any word, with files holding every word first and counted, and
-quotes as a group of words that must all appear in any order (the gem's architecture note,
-"Matching"). Built and re-run on the file-index arm (100 runs; rag's code didn't change):
-
-| | pass | mean calls | searches that found nothing |
-|---|---|---|---|
-| rag | 100/100 | 2.05 | 9 / 118 (8%) |
-| file index, every word | 100/100 | 2.91 | 71 / 140 (51%) |
-| file index, any word | 100/100 | 2.23 | 21 / 107 (20%) |
-
-Calls per task, every word → any word: `notice` 3.0 → 2.1, `office` 2.5 → 1.6, `electricity`
-6.1 → 2.9, `dentist` 2.6 → 2.0, `invoice` 2.9 → 2.4, `flood` 2.5 → 2.1, `bike-lock` 2.1 → 1.8,
-`finnish-rent` 4.3 → 4.3. Mean run time 21 s, as before.
-
-What's left empty is what any-word can't fix: `electricity` 11 ("electricity October": the
-`.csv` isn't content-indexed and no file says "October"), `finnish-rent` 9 (all-Finnish
-queries, no word of them in the English lease), `dentist` 1 ("dental"). The model never quoted
-and never wrote `OR` (0 of 107 queries); mean 3.4 words a query.
-
-### A home where browsing doesn't work (200 runs, 2026-11-18)
-
-`fileindex-replaces-rag/hard-home.rb` builds `~/pikuri-eval/Documents` (seeded; 212 files in 23
-folders) and `gold.json` beside it; the harness takes `EVAL_DOCUMENTS`. The demo documents get
-the names a real home gives them (`Scans/scan_20261009_002.pdf`, `Archive/2026/policy_HX-99231.pdf`,
-`Finance/spreadsheets/budget-2026.csv`), among near-misses that share each task's words but
-hold another answer (the paid Kettle invoice, last year's expired policy, the 2024 Tampere
-lease, 2025's budget, older board minutes, a top-level `sauna plans.txt` saying "Ask Ilse. Not
-urgent.") and bulk (client projects, receipts, letters, recipes, saved pages, 45 loose `.txt`).
-The file index matches any word. Results in `results-hardhome/runs.jsonl`.
+The hard home, as shipped (100 runs a row):
 
 | | pass | found the file | median time | p90 | mean calls | runs over 10 calls | searches that found nothing |
 |---|---|---|---|---|---|---|---|
 | rag | 100/100 | 100 | 25 s | 36 s | 2.1 | 0 | 16 / 181 (9%) |
-| file index | 97/100 | 95 | 34 s | 68 s | 3.9 | 5 | 11 / 194 (6%) |
+| file index | 99/100 | 97 | 34 s | 65 s | 3.5 | 8 | 1 / 195 (1%) |
 
-"Found" means the gold file's name shows up in a tool result. Two `sauna` passes never found it
-and guessed 9–10 kW from general knowledge, so the honest score is 95 to 100. Calls per task
-(rag / file index): `electricity` 2.2 / 14.0, `finnish-rent` 2.4 / 6.0, `invoice` 2.1 / 3.6,
-`notice` 2.0 / 3.6, `flood` 2.0 / 3.0, the other five within 0.3 of each other.
+Leave out the two tasks coverage decides (`electricity`, `notice`) and the file index matches
+rag: 2.01 calls a run against 2.08, median 28 s both, 79 of 80 passes.
 
-**The near-misses fooled neither arm.** All 197 passes picked the unpaid invoice, the current
-policy, the Helsinki lease.
+**For the recall chapter**, the misses by cause:
 
-**Search held up.** Outside `electricity`, 2 of 154 file-index searches came back empty (rag:
-15 of 166). The gold file was first or second in the first search's list in 7 of the 8 tasks
-the index can answer; `office` sat 4th–5th behind older board minutes, and the snippets still
-answered it in 1.7 calls.
+- **The demo home hides them.** Its 13 files sit in the boot snapshot as a map: a fifth of the
+  runs never searched, and failures came back as browsing. Hence the hard home.
+- **Wording (cause 2).** localsearch ANDs every word, and the model writes rag-style queries:
+  71 of 140 came back empty ("dental appointment" for a note saying "Dentist … checkup"); any
+  word, 21 of 107. Rag's semantic leg always returns five hits, so the habit costs it nothing.
+- **Coverage (cause 1) costs the most.** `budget-2026.csv`: every run reached it by browsing,
+  in 7 to 35 calls (up to 193 s). The `.odt` lease without the office extractor: "not in the
+  index", then "binary", then the `.pdf`.
+- **Language (cause 3).** On the demo home, 1 run in 10 found the lease by search (browsing
+  did the rest); on the hard home, 10 of 10, the model translating its query for one more call.
+  Rag's bge-m3 ranked the lease first from an all-Finnish query.
+- **Neither arm was fooled by a near-miss**, and freshness made no difference: a note saved 5 s
+  before the question passed 10/10 on both.
 
-**The gap is three things, none of them recall:**
+Artefact: `dev/demo-home/build`'s HTML pages, and the hard home's, declare no charset, so
+localsearch reads them as Latin-1 ("â€”" for "—"). No task searched a non-ASCII word in HTML.
 
-1. **The snippet is too short to answer, so the model reads.** Outside `electricity`, the
-   file-index arm read files 73 times, rag's 3 times (not counting the decoy and `.odt`). The
-   40-word window opens at the first matched word: on an invoice that matched "Invoice" it
-   stops before "Total due", while rag's 500-character chunk holds the whole invoice. Most hit
-   files here are under 400 B of text. This is `Q_all_matches` with data, but the cost isn't a
-   second match, it's the one window.
-2. **What localsearch skips costs the most.** `budget-2026.csv` isn't content-indexed: all 10
-   `electricity` runs reached it by browsing `Finance/spreadsheets`, in 7 to 35 calls (up to
-   193 s); two opened all 25 scans first. The `.odt` copy of the lease (no office extractor)
-   took 9 dead calls, "not in the index" then "binary". Recoll indexes both.
-3. **On `sauna`, the model didn't search: 5 of 10 file-index runs** read the decoy
-   `sauna plans.txt` from the snapshot, said "your notes don't cover this" and answered from
-   general knowledge (3 wrong, 2 lucky). Rag's model read the same decoy in 9 runs and searched
-   in all 10. Same prompt; the difference is the tool description: `rag_search` opens with "Use
-   when the user asks about facts, definitions, or topics that would live in their indexed
-   documents", `fileindex_search` with what it searches inside. One task, so a hypothesis.
+### What's left
 
-**Cross-language: 10 of 10 found the lease by search** (round 1: 1 of 10). Each run's first
-query was all-Finnish and hit only `Notes/finnish-words.md` (a bulk note, "vuokra = rent"),
-then an English one ("rent monthly pay") listed the lease. With browsing gone, the model
-translated on its own, for one more call; the vocabulary note may have helped. Rag's model wrote
-mixed Finnish and English queries all 10 times. The 6.0 mean is that call plus three runs of
-10–15 calls chasing the `.odt` lease and "which flat is current".
-
-Artefact: the generated HTML pages, and the demo home's, declare no charset, so localsearch
-reads them as Latin-1 ("â€”" for "—"). A real saved page declares one; no task searched a
-non-ASCII word in HTML.
-
-### A short file shown whole, and a when-to-use line (100 runs, 2026-11-18)
-
-Causes 1 and 3, fixed together and re-run on the file-index arm (rag's row is the run above):
-a hit whose stored text is at most 600 characters carries that text, marked "shown whole",
-in place of its snippet (`LocalSearch::WHOLE_TEXT_CHARS`), and `fileindex_search`'s
-description opens with when to use it. A longer window was rejected; why is on
-`LocalSearch::SNIPPET_WORDS`. Results in `results-hardhome-whole/runs.jsonl`.
-
-| | pass | found the file | median time | p90 | mean calls | runs over 10 calls | searches that found nothing |
-|---|---|---|---|---|---|---|---|
-| rag | 100/100 | 100 | 25 s | 36 s | 2.1 | 0 | 16 / 181 (9%) |
-| file index, snippet | 97/100 | 95 | 34 s | 68 s | 3.9 | 5 | 11 / 194 (6%) |
-| file index, short file whole | 99/100 | 97 | 34 s | 65 s | 3.5 | 8 | 1 / 195 (1%) |
-
-**Reads outside `electricity` fell from 73 to 10** (decoy and `.odt` not counted). Calls per
-task, before → after: `invoice` 3.6 → 1.7, `flood` 3.0 → 2.0, `finnish-rent` 6.0 → 3.5 (78 →
-56 s), the rest within 0.3. Leave out the two tasks that coverage decides (`electricity`,
-`notice`) and the file index matches rag: 2.01 calls a run against 2.08, median 28 s both, mean
-31 s against 26 s, 79 of 80 passes.
-
-**The cost is 13% more text per search**: each task's first query, replayed both ways, came to
-22.4 kB instead of 19.7 kB.
-
-**Toy-sized: every gold file here is under 530 characters**, so all of them came whole, the
-best case. A real home's invoices and contracts mostly run past 600 characters and keep the
-snippet; short notes and letters are what this saves reads on.
-
-**What's left is coverage.** `electricity` didn't move (14.8 calls; all 8 runs over 10 calls are
-its own): the `.csv`. `notice` didn't either (3.9): the note that answers it now comes whole,
-so the read moved to the signed lease `.odt`, which localsearch knows by name only. `.odt` calls
-rose from 9 to 21, every one on that file.
-
-**`sauna`: 3 of 10 runs didn't search** (5 before), each reading the decoy and answering from
-general knowledge (1 wrong, 2 lucky). Ten runs can't tell that from noise; the when-to-use line
-stays because it costs one line and matches `rag_search`'s.
-
-### What the bar needs next
-
-1. **Coverage** (cause 2) is the whole remaining gap: accept and say it (the README names the
-   office extractor; `.csv` stays unindexed under localsearch, recoll indexes it), or the tool
-   says when a folder holds files the index skips. That's a feature, the owner's call. With
-   the office extractor installed, a `notice` re-run would show whether the `.odt` half closes.
-2. **The language gap**: the model closed it by itself here, so accept it, without a prompt
-   nudge.
-3. **A real home's file sizes** decide how much "shown whole" saves outside this toy corpus.
-   Measuring needs a home with real documents in it, which the dev VM doesn't have.
+1. **Coverage** is the whole remaining gap: accept and say it (the README names the office
+   extractor; `.csv` stays unindexed under localsearch, recoll indexes it), or the tool says
+   when a folder holds files the index skips. That's a feature, the owner's call. With the
+   office extractor installed, a `notice` re-run would show whether the `.odt` half closes.
+2. **A real home's file sizes** decide how much "shown whole" saves: every gold file here is
+   under 530 characters, the best case, while a real home's invoices and contracts mostly run
+   past 600. Measuring needs a home with real documents in it, which the dev VM doesn't have.

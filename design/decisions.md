@@ -572,7 +572,10 @@ added capability per section; this entry keeps the forks the chapter doesn't arg
 - ***Files are searched through the desktop's own index, not one of ours.*** `pikuri-fileindex`
   over GNOME's localsearch, else recoll: no embedding model, no container, no GPU (see the index
   of our own, rejected below), and a hostile PDF or `.docx` in Documents is parsed by the
-  desktop's sandboxed extractor, not by pikuri. Keyword recall was enough on the eval, ten
+  desktop's sandboxed extractor, not by pikuri. A secretary asks a few lookups a turn, not a
+  research question: the model writes a couple of keyword queries and rephrases on a miss, and
+  the index can say it found every match, which ranked vectors can't. Ranked semantic retrieval
+  pays off where search quality is the product. Keyword recall was enough on the eval, ten
   lookups run ten times on each stack by a fresh agent with this prompt: on a 212-file home built
   so that browsing can't answer, 99 of 100 passed against rag's 100, and outside the two tasks coverage decides (a
   `.csv` localsearch never content-indexes, an `.odt` it knows by name only without
