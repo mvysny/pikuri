@@ -283,7 +283,10 @@ has a different fix. The numbers below come from the secretary's
 evaluation: ten lookups (an invoice, a lease, an insurance deductible,
 a budget line…), each asked of a fresh agent ten times over a made-up
 home folder of 212 files, built so that browsing the folders couldn't
-find the answers.
+find the answers. The script, the home's generator and every run's
+transcript
+[stay in git](https://github.com/mvysny/pikuri/tree/37685483377234556e8bf0c5b6f986fbd6c31b0c/design/ideas/fileindex-replaces-rag),
+at the commit that moved the vector stack out of pikuri.
 
 **The text isn't in the index.** The budget was a `.csv`, which
 localsearch keeps by name only: every search for it missed, and every
