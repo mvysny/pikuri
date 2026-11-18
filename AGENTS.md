@@ -75,6 +75,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `pikuri-html` — in-process HTML → Markdown for the registry, registered on require; pikuri-web's pages and an offline agent's mail attachments share it.
 - `pikuri-web` — the tools that reach the internet: `web_search` and its engines, `web_scrape`, `fetch`, `web_read_cached`, the URL caches.
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams, the file tools, `bin/pikuri-files`. Rules: `pikuri-workspace/AGENTS.md`
+- `pikuri-fileindex` — `fileindex_search` / `fileindex_read` over the index the desktop already keeps (localsearch, else recoll); never builds one.
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: read-only inbound tools, human-gated outbound hand-offs. Rules: `pikuri-thunderbird/AGENTS.md`
 - `pikuri-subagents` — the `agent` tool, the `Persona` record, the bundled personas, `bin/pikuri-minions`. Rules: `pikuri-subagents/AGENTS.md`
 - `pikuri-vectordb` — the retrieval *primitive*: vector-only search over a local corpus, wired on its own or under rag, + `bin/pikuri-corpus`.

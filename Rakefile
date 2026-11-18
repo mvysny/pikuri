@@ -27,6 +27,7 @@ GEMS = %w[
   pikuri-core
   pikuri-pdf
   pikuri-html
+  pikuri-fileindex
   pikuri-web
   pikuri-workspace
   pikuri-subagents

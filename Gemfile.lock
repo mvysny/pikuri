@@ -8,6 +8,12 @@ PATH
       zeitwerk (~> 2.7)
 
 PATH
+  remote: pikuri-fileindex
+  specs:
+    pikuri-fileindex (0.1.0)
+      pikuri-core (= 0.1.0)
+
+PATH
   remote: pikuri-html
   specs:
     pikuri-html (0.1.0)
@@ -199,6 +205,7 @@ DEPENDENCIES
   irb (~> 1.14)
   minitest (~> 6.0)
   pikuri-core!
+  pikuri-fileindex!
   pikuri-html!
   pikuri-pdf!
   pikuri-rag!
@@ -248,6 +255,7 @@ CHECKSUMS
   nokogiri (1.19.7-x86_64-linux-gnu) sha256=25865ccb462f714e712fdf8906fde07849cb6704a808e3d629d75baa5af5dd3b
   pdf-reader (2.16.0) sha256=bf1b5564c085264d8279bde3cf1467778b75841494d20c0fe7da3dad475f3732
   pikuri-core (0.1.0)
+  pikuri-fileindex (0.1.0)
   pikuri-html (0.1.0)
   pikuri-pdf (0.1.0)
   pikuri-rag (0.1.0)

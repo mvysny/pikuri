@@ -109,7 +109,10 @@ desktop already keeps fresh.
 
 - Move `LocalSearch`, `Recoll`, `FileindexSearch` and `FileindexRead` out of `pikuri-os`;
   `pikuri-os` and Puri then depend on this gem, and Puri drops `pikuri-os`. That's the allowed
-  direction (workshop → pikuri).
+  direction (workshop → pikuri). **Copied 2026-11-18** as `Pikuri::Fileindex::{LocalSearch,
+  Recoll, Search, Read}`, with `FileIndex.pick` as `Pikuri::Fileindex.pick`, along with their
+  specs and the file-search sections of pikuri-os's architecture note. Not done yet: pikuri-os
+  still carries its own copy, and nothing below (roots, path check, "that's all") exists yet.
 - Mostly a move: the `tinysparql` query, the bound parameters and the snippets exist already
   (see Measured). The new parts are the roots and the readiness check below.
 - **`roots:` on the extension, set by pikuri, never by the model.** Today `folder` is the
