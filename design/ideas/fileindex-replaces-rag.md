@@ -61,8 +61,8 @@ the book.
   both: 40-word snippets (the Kettle & Co. invoice with its amount) and only hits under one
   folder. pikuri-os switched to `tinysparql` the same day (`LocalSearch::SEARCH_QUERY`: bound
   `~query` / `~prefix` / `~limit`, `fts:snippet` with `>>…<<` markers, GLib-exact
-  percent-encoding of the prefix, an optional model-chosen `folder`). Its architecture note
-  still says "the `localsearch search` CLI can't scope" in one place: check at graduation.
+  percent-encoding of the prefix, an optional model-chosen `folder`). The CLI's limits are
+  now stated once, in `pikuri-fileindex/design/architecture.md`.
 - **Bound parameters work**: `-a NAME:s:VALUE`, referenced as `~NAME`. The type must be `s`;
   `string` and `xsd:string` are refused. So the model's words never get spliced into the
   SPARQL text.
@@ -111,8 +111,11 @@ desktop already keeps fresh.
   `pikuri-os` and Puri then depend on this gem, and Puri drops `pikuri-os`. That's the allowed
   direction (workshop → pikuri). **Copied 2026-11-18** as `Pikuri::Fileindex::{LocalSearch,
   Recoll, Search, Read}`, with `FileIndex.pick` as `Pikuri::Fileindex.pick`, along with their
-  specs and the file-search sections of pikuri-os's architecture note. pikuri-os still
-  carries its own copy.
+  specs and the file-search sections of pikuri-os's architecture note. **pikuri-os switched**
+  (workshop `2d74e29`): its copy is gone, its note links here, and it wires
+  `Fileindex::Extension` over `Roots.new(dirs: ['/'], private: true)`, the whole disk, keeping
+  its own degrade-when-unavailable policy. **Puri hasn't yet**: it pins workshop `9c8c84d` and
+  still gets the tools through `pikuri-os`.
 - **Done 2026-11-18: roots, the path check, readiness over the roots, legs.** As built, where it
   differs from the sketch below:
   - `Roots.new(dirs:, private:, trusted:)`: one declaration for all roots, as a vectordb corpus
