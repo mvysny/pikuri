@@ -263,9 +263,10 @@ prefix marks a family** sharing one backing resource:
 `web_search` and `web_scrape`, `thunderbird_mail_search` and
 `thunderbird_calendar_read`.
 
-The rule that matters more came from a transcript. The
-[hybrid-retrieval chapter](rag.md)'s two search tools shipped as
-`rag_search` and `rag_find`. The owner read a session, watched the
+The rule that matters more came from a transcript. `pikuri-rag`'s
+two search tools, now in book 2's
+[hybrid-retrieval chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/rag.md),
+shipped as `rag_search` and `rag_find`. The owner read a session, watched the
 model pick between them, and couldn't tell the two apart either:
 *search* and *find* are synonyms, so the names said nothing the
 descriptions didn't. One returns a ranked sample by meaning, the

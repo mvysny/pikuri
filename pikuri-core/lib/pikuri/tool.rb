@@ -189,7 +189,7 @@ module Pikuri
     # and join with +::+; inside a half any non-alphanumeric run is a word break
     # (an MCP name may carry +-+ or +.+, which ruby_llm sanitizes to +_+).
     #
-    # Deterministic beats pretty — +vectordb_search+ becomes +VectordbSearch+
+    # Deterministic beats pretty — +fileindex_search+ becomes +FileindexSearch+
     # and a tool wanting +LSP+ overrides {#display_name}.
     #
     # @param name [String] the function name advertised to the LLM

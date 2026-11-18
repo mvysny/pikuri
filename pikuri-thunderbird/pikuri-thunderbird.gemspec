@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
     reading Thunderbird's own on-disk profile. It never speaks
     IMAP/POP3/SMTP itself and never egresses: search and read are both
     inbound-only, so the demo (+bin/pikuri-thunderbird+) breaks the
-    lethal trifecta by construction, exactly like +bin/pikuri-corpus+.
+    lethal trifecta by construction, exactly like +pikuri-briefing --with-mail+.
 
     Mail search rides Thunderbird's Gloda index
     (+global-messages-db.sqlite+) as a pre-decoded corpus: pikuri copies a

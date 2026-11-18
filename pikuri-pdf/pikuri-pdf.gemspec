@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
     Registration is explicit — +Pikuri::Extractors::PDF.register+ — so
     requiring the gem changes nothing by itself; the host script picks
     which extractors it wires in. One registration extends the +read+
-    tool, +web_scrape+, and the pikuri-vectordb corpus simultaneously.
+    tool, +web_scrape+ and mail attachments at once.
   DESC
 
   spec.homepage = 'https://github.com/mvysny/pikuri'

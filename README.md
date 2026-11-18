@@ -17,7 +17,8 @@ conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
 `pikuri-chat` from [`pikuri-core`](pikuri-core/README.md); the rest
 of the family adds filesystem tools, sub-agents, web search,
-local-corpus vector search and your Thunderbird mail à la carte.
+search over your desktop's file index and your Thunderbird mail à
+la carte.
 The power tools (a shell, a coding agent, MCP, skills) live in
 [pikuri-workshop](https://github.com/mvysny/pikuri-workshop).
 
@@ -39,12 +40,10 @@ sudo apt install ruby ruby-bundler
 bundle install
 ```
 
-From the vector-DB chapter onward, the guide also runs local
-infrastructure (the vector store) in Podman or Docker. Podman runs
-**rootless** out of the box and pikuri prefers it when installed;
-Docker must be set up rootless, not via the `docker` group, which is
-passwordless root. The
-one-time setup lives in
+From the recall chapter onward, the guide searches your files
+through the index your desktop already keeps: GNOME's localsearch,
+already running on an Ubuntu desktop, or recoll. Which systems
+qualify, and the one package Ubuntu needs for office documents:
 [book/prerequisites.md](book/prerequisites.md).
 
 Pikuri itself is now installed in dev mode. To actually have a
@@ -85,14 +84,6 @@ in:
     tools + `Workspace` / `Confirmer` seams.
   - [`pikuri-subagents`](pikuri-subagents/README.md) — the `agent`
     tool + `Persona` record + the `pikuri-minions` fan-out demo.
-  - [`pikuri-vectordb`](pikuri-vectordb/README.md) — topical
-    retrieval over a local corpus, the vector-search primitive:
-    `vectordb_search` / `vectordb_read` / `vectordb_reindex` and the
-    `pikuri-corpus` demo (a no-egress recall agent).
-  - [`pikuri-rag`](pikuri-rag/README.md) — hybrid retrieval on that
-    primitive: a keyword index beside the vectors, so `rag_search`
-    also finds an invoice number and `rag_search_keywords` lists *every*
-    matching document.
   - [`pikuri-fileindex`](pikuri-fileindex/README.md) — search your
     files through the index the desktop already keeps (GNOME's
     localsearch, or recoll): `fileindex_search` / `fileindex_read`,

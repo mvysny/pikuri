@@ -293,7 +293,7 @@ Pikuri can tell that `fetch` reaches the network and that a
 scraped page isn't yours; it *cannot* tell whether the folder you
 pointed it at holds secrets or scratch. So the private leg is yours
 to declare — `Filesystem.new(..., private: true)`, or `private:` on
-a corpus — and it defaults off. Briefing declares your notes
+the folders a file-index search may reach — and it defaults off. Briefing declares your notes
 private because that's its whole premise, and a mailbox is private
 by its nature, so the mail tools declare it themselves. Your own
 harness is where that call belongs.

@@ -28,8 +28,8 @@ subject.
 ## Prerequisites
 
 You should already have a checkout and `bundle install` finished,
-per [the prerequisites chapter](prerequisites.md) (its container section
-can wait until the vector-DB chapter — nothing here needs it). Quick
+per [the prerequisites chapter](prerequisites.md) (its file-index
+section can wait until the recall chapter — nothing here needs it). Quick
 verification:
 
 ```sh
@@ -49,8 +49,8 @@ no answer.** We'll start one next.
 Ubuntu 26.04 LTS or newer** — that's the first Ubuntu release
 packaging `llama-server` build `b8681`, which is recent enough to
 include built-in multi-model routing. We rely on that in step 3
-below (and in [the vector-DB chapter](vectordb.md), where we run a chat
-model and an embedding model from the same server). Older Ubuntu
+below (and book 2's [vector-DB chapter](https://github.com/mvysny/pikuri-workshop/blob/master/book/vectordb.md) runs a chat model and
+an embedding model from the same server). Older Ubuntu
 releases ship a `llama.cpp` from before the
 [model-management feature](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp)
 landed in late 2025; on those, you'd have to build from source or
@@ -110,19 +110,19 @@ model the router loads, not flags for a single model:
 The router keeps up to `--models-max` models resident
 simultaneously (default: 4) and only unloads the
 least-recently-used one when that limit is reached. With just
-the chat model so far that's one model in one process; the
-vector-DB chapter will add an embedder and a reranker by pulling more GGUFs
-into `~/.cache/llama.cpp/`, and this same router will pick them
-up on next request without displacing the chat model. The win
+the chat model that's one model in one process; book 2's
+vector-DB chapter adds an embedder and a reranker by pulling more GGUFs
+into `~/.cache/llama.cpp/`, and this same router picks them up on
+next request without displacing the chat model. The win
 over a separate `llama-swap` proxy is that there are no extra
 moving parts to configure.
 
 **Memory.** Q4_K_M of this 35B-A3B model needs **a bit under
 32 GB of memory** for the weights plus KV cache — deliberately,
 so it fits a 32 GB VRAM budget with a little room left for the
-OS and for the embedder + reranker the vector-DB chapter adds (another
-~1 GB between them). All three models stay resident at once and
-still fit in 32 GB — barely, but they fit.
+OS, and for the embedder + reranker book 2's vector-DB chapter adds
+(another ~1 GB between them). All three models stay resident at once
+and still fit in 32 GB — barely, but they fit.
 
 **Best path on a typical workstation: integrated GPU with 32 GB
 allocated as VRAM.** Modern AMD APUs let you carve a chunk of
@@ -265,7 +265,7 @@ Dragging a file onto most terminals pastes its path, so type `@` and
 drop the file. A path with spaces gets quotes, `@'/tmp/my shot.png'`,
 which is what the drop pastes anyway. PNG, JPEG, GIF and WebP up to
 5 MB work. A PDF doesn't: it's text rather than a picture, and
-turning a PDF into text is a tool's job, which the vector-DB chapter
+turning a PDF into text is a tool's job, which the recall chapter
 wires.
 
 The model has to be able to see: a `-hf` model on
@@ -361,8 +361,8 @@ document. That error string is the whole failure mode: tools hand
 the model observations, including failed ones, and the model reacts
 instead of crashing. pikuri-core deliberately ships no PDF parser —
 it's the kind of dependency you should opt into, not inherit — and
-the vector-DB chapter opens by plugging one in with two lines. Remember this
-moment when you get there.
+the recall chapter plugs one in with two lines. Remember this moment
+when you get there.
 
 ## Configuring the example scripts
 
@@ -408,8 +408,6 @@ everything stays on your machine. The recognized keys:
 | `llm_model` | all scripts | chat model identifier |
 | `llm_api_key` | all scripts | API key the server expects — a hosted provider's, or the secret of a local `llama-server --api-key`; omit for a keyless local server |
 | `search` | chat, minions, secretary | the search block: `brave_key`, `exa_key`, `engines` (below) |
-| `embed_model` | corpus, briefing, secretary | embedding model |
-| `reranker_model`, `reranker_server` | corpus, briefing, secretary | reranker model / its server |
 
 What stays on the command line is what changes *per run*: the prompt
 itself, and operational toggles like the secretary's

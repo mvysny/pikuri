@@ -20,8 +20,8 @@ worked example rather than this one's.)
 The `llama-server` and chat model from
 [your first conversation](chat.md), and a desktop file index: GNOME's
 localsearch, which an Ubuntu desktop already runs, or recoll with an
-index you built. [The prerequisites chapter](prerequisites.md) says
-which systems qualify and what to install. No embedding model, no
+index you built. [The prerequisites chapter](prerequisites.md#a-desktop-file-index)
+says which systems qualify and what to install. No embedding model, no
 container, nothing else to download.
 
 ## Retrieval, then generation

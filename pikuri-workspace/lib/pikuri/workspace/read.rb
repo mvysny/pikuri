@@ -66,7 +66,7 @@ module Pikuri
     # instance would let one agent's read unlock another's {Edit}.
     class Read < Pikuri::Tool
       # These alias the +PAGE_*+ constants on {Pikuri::Extractor} (one source of
-      # truth, shared with +VectorDb::Tools::Read+).
+      # truth, shared with +Fileindex::Read+).
 
       # @return [Integer] default value of the +limit+ parameter (lines per call).
       DEFAULT_LIMIT = Pikuri::Extractor::PAGE_DEFAULT_LIMIT

@@ -7,7 +7,7 @@ module Pikuri
     # PDF → text extractor over the +pdf-reader+ gem: each page emits a
     # +"--- Page N ---"+ marker line then its text, blocks joined by
     # single newlines. The markers carry page provenance downstream (a
-    # cited answer, a +vectordb+ hit's page number). A page with no
+    # cited answer, the page a +read+ window starts on). A page with no
     # extractable text contributes nothing — no marker — so a fully
     # scanned PDF extracts to the empty String, a deliberate silent
     # skip callers detect by length. No OCR here: +pdf-reader+ gives

@@ -301,9 +301,9 @@ list and no network tool either.
 ## What's next
 
 You now know the smallest extension shape (one `configure`
-hook), and you've seen two personas in action. The next two
-chapters — [vectordb](vectordb.md) and [hybrid retrieval](rag.md) —
-add the capability an assistant wants most: recall over your own
-documents.
+hook), and you've seen two personas in action. The next chapter,
+[recall](recall.md), adds the capability an assistant wants most:
+search over your own documents, through the index your desktop
+already keeps.
 
-→ Continue to [Agentic search and the vector DB](vectordb.md).
+→ Continue to [Recall: searching the index your desktop keeps](recall.md).

@@ -32,8 +32,6 @@ GEMS = %w[
   pikuri-workspace
   pikuri-subagents
   pikuri-thunderbird
-  pikuri-vectordb
-  pikuri-rag
 ].freeze
 
 # Path to the single source of truth for the shared version constant.

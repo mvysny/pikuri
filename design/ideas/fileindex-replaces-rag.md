@@ -1,86 +1,24 @@
 # The desktop file index replaces rag for the secretary; rag and vectordb move to the workshop
 
-Status (2026-11-18). Two decisions, deliberately separable:
+Status (2026-11-18): both decisions are done. **A**: the secretary and `pikuri-briefing` search
+through `pikuri-fileindex` (`D_secretary_wiring`, `D_briefing_wiring`). **B**: `pikuri-vectordb`
+and `pikuri-rag` live in pikuri-workshop (`D_gem_placement`, test 1); pikuri's half was commit Y,
+in the cross-repo order of `pikuri-workshop:design/ideas/rag-vectordb-move-here.md`. The book's
+recall chapter is `book/recall.md`, and `book/secretary.md` was re-recorded on the file index.
 
-- **A. Done.** The secretary and `pikuri-briefing` search your files through `pikuri-fileindex`
-  (the desktop's own index: GNOME localsearch, or recoll), not `pikuri-rag`. Why:
-  `D_secretary_wiring` (the "Files are searched through the desktop's own index" fork, "An
-  index of our own" rejected) and `D_briefing_wiring`; the gem's design and threat model in
-  `pikuri-fileindex/design/architecture.md`.
-- **B. Under way, from the workshop's side.** The cross-repo order is
-  `pikuri-workshop:design/ideas/rag-vectordb-move-here.md` (owner, 2026-11-18): the gems are
-  copied there from `43ecf1e` (its step 2, done); its book takes `vectordb.md` and `rag.md`
-  whole and rewrites them, settling their headings (step 3, in progress); then pikuri's half is
-  one commit **Y** (step 4, the list below), after which the workshop pins Y. pikuri's copy of
-  both gems is frozen until Y deletes it.
+What keeps this file alive, none of it pikuri's to do:
 
-Also left:
+- **The workshop** pins `PIKURI_REF` to Y (its step 5), and gives the eval's numbers below a
+  durable home on its side, as its idea asks. Then this file and its sidecar go: the harness
+  needs `pikuri-rag`, so it can't run here any more.
+- **Puri** still pins workshop `9c8c84d` and gets the file tools through `pikuri-os`, not the
+  gem (pikuri-os itself moved onto the gem in workshop `2d74e29`).
+- **Siri's half** below goes to Puri's `design/research.md`, with the primary sources checked.
+  The Spotlight fact pikuri's book uses is in `pikuri-fileindex/design/architecture.md`.
 
-- **The book.** `book/recall.md` is drafted (2026-11-18): one chapter replacing `vectordb.md`
-  and `rag.md`, with briefing as its demo, kept out of the ToC until Y. It links book 2 by file
-  only, never by heading. It is where book 1 now introduces the `Extractor` registry ("Whose
-  parser reads a hostile file"), which the workshop's `os-assistant.md:606` points at. The
-  rest of the book still teaches the rag wiring and names `./pikuri-rag/bin/pikuri-briefing`,
-  which is gone; Y fixes it.
-- **Puri** pins workshop `9c8c84d` and gets the file tools through `pikuri-os`, not the gem
-  (pikuri-os itself moved onto the gem in workshop `2d74e29`).
-
-## Why B
-
-- **Book 1 loses its container runtime and its second model.** After B, nothing in pikuri needs
-  podman, bge-m3 or a reranker. The prerequisites shrink to Ruby, llama.cpp, a chat model and a
-  desktop index. `D_gem_placement` says Qdrant is Docker's last job here.
-- **Placement.** `D_gem_placement` test 1 says rag's future is more features: see
-  `rag-hit-presentation-eval.md`, `vectordb-deferrals.md`, and the stemmers already in
-  `pikuri-workshop:pikuri-stemmers`. Ranked semantic retrieval pays off for people for whom
-  search quality *is* the product: those are the workshop's users. The secretary's reader would
-  also skip two of pikuri's biggest gems (vectordb + rag ≈ 4,600 lines of `lib/`, against
-  ≈ 1,000 for the file index).
-
-## Supported platforms (owner, 2026-11-17)
-
-Ubuntu 26.04 LTS or newer, or any Linux with localsearch 3.8+, or recoll with a built index,
-as the gem's README states, plus `localsearch-extractor-office` on Ubuntu. **The book says it
-once**, in the prerequisites chapter; the recall chapter and the binaries' "no index is ready"
-message point there.
-
-## Commit Y: pikuri's half of B
-
-After the workshop's step 3. Gathered from both ideas so nothing falls between the repos:
-
-- **Delete** `pikuri-vectordb` (with `bin/pikuri-corpus`), `pikuri-rag` and `pikuri-rag/AGENTS.md`;
-  their root `Gemfile` lines, the `Rakefile` fan-out, AGENTS.md's module-map lines and the
-  Connection and Request seams' `VectorDb::Embedder` / `Reranker::LlamaServer` clauses;
-  `D_rag_gem`, `D_rrf_tuning`, `D_chunk_line_ranges`, `D_ruby_stemming`,
-  `D_corpus_trust_declaration`; `design/ideas/rag-hit-presentation-eval.md` (with its sidecar)
-  and `vectordb-deferrals.md`; `pikuri-pdf`'s `vector_db_line_ranges_spec.rb`; `SECURITY.md`'s
-  two corpus lines (the embedder shipping the corpus, podman or docker for the vector store).
-  All of it lives in the workshop now. `pikuri-briefing` stays (see A), so `D_briefing_*` stay.
-- **Reword** what names the gems: `pikuri-pdf`'s gemspec text; pikuri-core's comments using
-  `VectorDb` as an example (`finalizers.rb:6,29`, `extractor.rb:66`, `tool.rb:192`);
-  `D_gem_placement`'s two rag cites ("a note the rag search finds covers most of a skill", and
-  `pikuri-vectordb` depending on `pikuri-subagents` as a reason `pikuri-workspace` can't move)
-  and its "Docker still earns its keep in pikuri, running Qdrant" consequence;
-  `LocalSearch::WHOLE_TEXT_CHARS`'s "the 500 characters a rag hit shows". `D_secretary_wiring`
-  keeps its rejected "index of our own", naming `pikuri-rag`, and its "the arithmetic is in
-  the chapter" now means the recall chapter.
-- **The book**: `recall.md` into the ToC (and "How the guide is shaped"); delete `vectordb.md`
-  and `rag.md`. Then every link into them: `chat.md` (six vector-DB mentions, and the config
-  table's `embed_model` / `reranker_model` rows), `subagents.md`'s "What's next",
-  `designing-a-tool.md`'s naming story (the tools are book 2's now), `trifecta-detector.md`
-  (its prerequisites, the "who declares" corpus paragraph → `Roots`, the briefing commands and
-  both maps → `fileindex_*`, line 698), `secretary.md` (below), and `pikuri-briefing`'s
-  "Walk-through: book/rag.md". `prerequisites.md` loses its container section (now the
-  workshop's `containers.md`) and gains the supported platforms below, which `recall.md`
-  links. Check the anchors the workshop's chapters link into (`chat.md#…`,
-  `trifecta-detector.md#who-declares-each-leg`).
-- **`secretary.md`** needs its own pass: its prerequisites ("Podman, or rootless Docker", "The
-  embedding bill", whose arithmetic moved to `recall.md`), its map, "Two readers, one root"
-  and the transcripts, re-recorded on the file index.
-- **CHANGELOG**: one breaking entry, the two gems moved to pikuri-workshop.
-- This idea's eval harness needs `pikuri-rag` for its rag arm: it dies with the idea. The
-  workshop wants the eval's numbers given a durable home on its side before this idea
-  graduates.
+One choice for the owner to revisit: `secretary.md`'s reminder exchange ("Where the gate earned
+its keep") is from the chapter's first recording. Seven re-runs on the file index never offered a
+reminder, so it is labelled as such rather than re-recorded.
 
 ## Siri does the same: it borrows the OS's index (2026-11-17)
 
@@ -95,97 +33,6 @@ After the workshop's step 3. Gathered from both ideas so nothing falls between t
   lexical, Apple's is semantic and built on the NPU while the device is idle. If GNOME ever
   gains a semantic index, the borrowing shape picks it up unchanged.
 - For Puri's `design/research.md` at graduation, with the primary sources checked.
-
-## Linux has no semantic desktop index yet (checked 2026-11-17)
-
-- **GNOME localsearch: proposals only.** A GSoC 2026 proposal, "gnome-semsearch" (2026-03-31):
-  MiniLM-L6 int8 (~22 MB) on the CPU via ONNX, sqlite-vec, results to the Shell over
-  `SearchProvider2`. Carlos Garnacho, the localsearch/tinysparql maintainer, replied that
-  wrapping sqlite-vec "through SPARQL extension points" is no big problem and that it belongs
-  under the LocalSearch umbrella (file watches are scarce), but "code indexing … has been a
-  established non-goal". No mentor had committed by the thread's last post (2026-04-08). A
-  sibling community proposal on Ubuntu Discourse has the same shape (a localsearch extractor
-  plugin, sqlite-vec keyed by tinysparql URNs) and no Canonical reply.
-- **If it lands, it most likely lands inside tinysparql**, so `pikuri-fileindex`'s query is
-  where it would show up: a new SPARQL function beside `fts:match`, with no change to our
-  shape.
-- **Ubuntu:** secondary sources say Canonical plans "smarter search" as an opt-in snap from
-  26.10. Nothing primary found, and nothing on whether 26.10 shipped it.
-- **KDE:** the 2026 goal "Make Plasma smart" (Baloo/KRunner scoring, background tagging) is
-  intent, not code. digiKam has its own natural-language photo search: an app, not the
-  desktop.
-- **Recoll: experimental, in master.** Python scripts outside the core, ollama
-  (`nomic-embed-text`) + chromadb, behind a `-Dsemantic=true` build flag. Its author: "orders
-  of magnitude slower than the original indexing", reranking "has proven impossible" on his
-  hardware, "rather primitive", useful "beyond litterary 'research'" remains to be seen. That
-  is the same cost wall `D_secretary_wiring` measured.
-- Everyone who tries hits the same cost. The proposals answer it with a tiny English-only
-  CPU model, Apple with the NPU and indexing while the device is idle. For the book: "why
-  Linux doesn't have this yet" is a good paragraph, with our own measurement as the evidence.
-
-## The book
-
-Outside `vectordb.md` and `rag.md`, retrieval carries two things: the trifecta chapter's worked
-example (`pikuri-briefing` vs `--with-mail`, one flag adds a leg without moving the verdict) and
-the secretary chapter, written as a diff against briefing with mail. Both survive now that
-briefing searches the file index with legs from the roots' declaration: `~/notes` is trusted,
-Documents is not. The book's spine is the trifecta; the recall section exists to give it
-private data worth protecting.
-
-**Agreed** (owner, 2026-11-17): teach RAG on the desktop index; vectors go to book 2. RAG is
-retrieve-then-generate, and agentic RAG is the model issuing the queries: no vectors needed.
-`rag.md`'s completeness vs. ranking and exactness arguments survive, because a keyword index is
-what it argues you need anyway. New lessons: borrowing an index vs. building one (who keeps it
-fresh, who pays), the folder limit as a security boundary, bound parameters vs. splicing (SQL
-injection's cousin), and whose parser touches a hostile file. Lost to book 2: embeddings,
-chunking, cosine, the reranker, rank fusion. The recall chapter starts from the index the
-desktop already keeps, looks at what it misses, sorts the misses into the three causes, and
-shows that only the third needs book 2's vectors. The prerequisites chapter loses containers,
-which it says "first earn their keep" in the vector-DB chapter, and gains the supported
-platforms above.
-
-Rejected: keeping vectors and ending the book on a different persona (a researcher over a
-library of papers): every reader pays the GPU bill and podman for a persona they won't run day
-to day, and Puri diverges from the closing binary. Keeping vectors in the book with the
-secretary on the file index: the recall chapters build something the last binary never uses.
-
-**The cost.** The book now goes vectordb → rag → briefing → secretary. Embeddings, chunking and
-rank fusion are concepts, not only features. After B, pikuri teaches search as "an agent using
-the desktop's index", and the retrieval chapters move to the workshop's book. The biggest
-rewrite involved.
-
-The recall chapter's cross-language paragraph: localsearch stems in the locale's one language
-and matches every word as a prefix (`pikuri-fileindex/design/architecture.md`, "File search").
-
-## Open questions
-
-- `Q_book_retrieval`: **resolved** (owner, 2026-11-17). The recall chapter states the keyword
-  index's limits, then points at semantic search, vector databases, chunking and rank fusion
-  in pikuri-workshop, linking its book (its README until B moves `vectordb.md` and `rag.md`
-  there, then that chapter). No embeddings walkthrough in pikuri. The limits are named by the
-  three causes, so the reader sees that vectors fix only the third (a real meaning gap:
-  another language, a concept in other words), not unindexed content or a wording miss the
-  agent fixes by rephrasing. The GPU measurement says why pikuri doesn't build its own.
-- `Q_briefing`: **resolved and wired** (owner, 2026-11-17; done 2026-11-18, see
-  `D_briefing_wiring`). What's left is the book:
-  - Survives unchanged: the trifecta chapter's "One flag, one extra leg, and the same
-    verdict" (only the tool names in its two maps change); the hardcoded declarations and
-    the boot line stating them; local inference as the first invariant; no automatic memory.
-  - Gets better: the secretary's "same retrieval, plus mail" becomes literally the same gem
-    with wider roots. The boot line now names the folder limit as the boundary, so the
-    one-legged agent is where "the folder limit is a security boundary" has a visible cost
-    if it fails. The two recall chapters become one, with briefing as its demo
-    (`pikuri-corpus` over the book goes to book 2 with `vectordb.md`).
-  - "Absence stopped being reportable the same way" (trifecta chapter) needs search to say
-    "that's all": **met** by `fileindex_search`'s footer. Whether "list every note mentioning
-    Acme" needs more than 25 is for the briefing transcripts.
-  - **The chapter must say: no git checkout for the notes under localsearch, or recoll.**
-    `rag.md` argues against mtime "because it would be wrong the first time you `git clone`
-    your notes", the very setup that empties the index; re-argue it with a plain copy to a
-    new machine, as `D_briefing_wiring` now does.
-  - **The chapter tells recoll users** to run `recollindex -m`, or re-index before a brief.
-- `Q_transcript_bar`: **met** (owner, 2026-11-18): keyword recall was enough, the result is in
-  `D_secretary_wiring`. The eval below stays as the recall chapter's material.
 
 ## `Q_transcript_bar`: the eval (2026-11-18)
 

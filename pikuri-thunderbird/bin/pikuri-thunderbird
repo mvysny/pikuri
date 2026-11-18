@@ -10,7 +10,7 @@
 # *autonomous* egress — every send is a human action in Thunderbird's UI. That
 # human gate is what keeps the trifecta from closing on its own. (The
 # always-inbound, zero-egress-leg posture is still what Extension gives by
-# default (both allow_ flags off) — and what bin/pikuri-corpus
+# default (both allow_ flags off) — and what pikuri-briefing --with-mail
 # demos; this binary opts the demo into the human-gated egress
 # on purpose.)
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)

@@ -12,7 +12,7 @@ require 'pikuri-core'
 # The load-bearing posture: search + read are inbound-only, so an
 # agent wired with only these tools has private data + untrusted content
 # but *no egress leg* — the lethal trifecta is broken by construction, the
-# same model as +bin/pikuri-corpus+. Outbound actions (compose / create
+# same model as +pikuri-briefing --with-mail+. Outbound actions (compose / create
 # event) are opt-in and always human-gated hand-offs to Thunderbird's own
 # UI. Threat model: +design/architecture.md+; per-tool rationale: each class's yardoc.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)

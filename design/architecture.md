@@ -16,7 +16,7 @@ first entry in each shows its shape.
 
 - Dependencies point **toward data, never toward the loop**. The gem graph is a DAG rooted at
   `pikuri-core`, which depends on no sibling; a few gems stack on each other besides
-  (`rag` → `vectordb`, `os` → `code`, `code` → `workspace` + `subagents` + `tasks`). A tool, a
+  (`subagents` → `workspace`, `web` → `workspace` + `html`). A tool, a
   listener or an extension names `Pikuri::Agent`; `Agent` names none of them, which is why a new
   gem is additive and core never learns about it.
 - `Pikuri::Agent.new(transport:, system_prompt:) { |c| … }` is the only construction path. The
@@ -79,7 +79,7 @@ gem's tools take, and any `bin/pikuri-*` for forty lines that wire a whole agent
 
 ## What is deliberately absent
 
-- **No provider abstraction of our own** — multi-provider config, vision/audio and embeddings are ruby_llm's (`bin/pikuri-corpus` already uses its `embed`).
+- **No provider abstraction of our own** — multi-provider config, vision/audio and embeddings are ruby_llm's (pikuri-workshop's vectordb uses its `embed`).
 - **No compaction policy** — core ships only the actuator, `Configurator#replace_compacted_history`; when and how to compact is pikuri-workshop's (`D_compaction_in_place`). The `bin/` scripts `exit 1` on overflow, a demo shortcut rather than a library position.
 - **No conversation storage** — core ships only the seam: `Agent#export_history`, `Agent.new(history:)` and the in-memory `Agent::History` they trade. Storing, listing and resuming a conversation is pikuri-workshop's pikuri-conversations (`D_history_value_type`), so no `bin/` script here resumes one.
 - **No step cap on the loop**, at any depth (`D_no_step_limit`).

@@ -39,7 +39,7 @@ inbound-only, and they are all `Extension`
 gives unless a host opts into an outbound leg. An agent wired with just these (plus, say, a calculator) has legs 1
 and 2 but no way to send anything anywhere, so a prompt injection buried in a
 message body has no exfiltration channel. That is the "trifecta broken by
-construction" posture `bin/pikuri-corpus` and `bin/pikuri-memory` demo.
+construction" posture `pikuri-briefing --with-mail` demos.
 
 A host can also take *fewer* than six: `Extension.new(surfaces: %i[mail])`
 wires the mailbox and neither the address book nor the calendar. That changes

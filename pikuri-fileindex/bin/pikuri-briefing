@@ -12,7 +12,7 @@
 # Egress, no: there is no web search, no page fetch, no mail, no shell.
 # The map it prints at boot says `1 of 3 legs (private)`, and the
 # security chapter explains why that is an inert agent rather than a
-# quiet one. Walk-through: book/rag.md.
+# quiet one. Walk-through: book/recall.md.
 #
 # `--with-mail` IS THE SECOND STAGE, AND IT IS A CONTROLLED EXPERIMENT.
 # It adds read-only local mail, so the agent goes from one leg to two

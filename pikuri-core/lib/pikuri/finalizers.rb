@@ -3,7 +3,7 @@
 module Pikuri
   # Process-global teardown registry: one +at_exit+ for the whole process,
   # with everything owning a resource that needs orderly shutdown (agents,
-  # {VectorDb::Server::Qdrant}, background workers) registering here instead of
+  # a container a gem supervises, background workers) registering here instead of
   # growing its own +at_exit+. {Agent#on_close} promoted per-agent → per-process
   # — the same LIFO + per-handler-rescue + idempotent shape.
   #
@@ -26,7 +26,7 @@ module Pikuri
   # == Order: LIFO
   #
   # Last registered, first closed. A registrant depending on an earlier one (a
-  # background indexing daemon writing into {VectorDb::Server::Qdrant}) registers later
+  # background indexing daemon writing into a database container) registers later
   # and tears down first — registration order is dependency order.
   #
   # == Errors are contained

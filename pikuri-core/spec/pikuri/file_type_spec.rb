@@ -227,7 +227,7 @@ RSpec.describe Pikuri::FileType do
 
     # Shares the write helper defined above. The paged variant
     # returns an Extractor::Page; the LLM-tool callers
-    # (Workspace::Read, VectorDb::Tools::Read) own the rendering, so these
+    # (Workspace::Read) own the rendering, so these
     # assert the struct, not formatted strings.
     describe '.read_as_text_paged' do
       describe 'plain text' do

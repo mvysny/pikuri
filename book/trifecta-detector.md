@@ -28,7 +28,7 @@ about a leg that you can ask about any harness you build.
 ## Prerequisites
 
 The [security chapter](security.md) for the trifecta itself, plus
-the [sub-agents](subagents.md) and [hybrid-retrieval](rag.md)
+the [sub-agents](subagents.md) and [recall](recall.md)
 chapters, whose wirings are the examples here. No new binary and
 nothing to install: the detector is already running in every demo
 you've started.
@@ -252,12 +252,13 @@ claim its author makes. Two axes are declared, not one.)
 The `:untrusted` row is "framework" in the sense that it defaults
 **on** and no tool author can quietly switch it off — but you can
 *answer* it. `Filesystem#trusted?` speaks for the file tools;
-`trusted:` on a corpus speaks for the retrieval tools over it.
+`trusted:` on the search roots speaks for the file-index tools over
+them.
 Briefing answers yes for a notes folder you wrote yourself; the
 secretary answers no for `~/Documents`. Both are unverifiable
 claims, so both default to the pessimistic value, and both are
 claims about *one reachable set* rather than about "my files": a
-corpus that holds `~/Downloads` is honestly untrusted at the same
+search root that holds `~/Downloads` is honestly untrusted at the same
 moment the notes folder beside it is honestly yours.
 
 The asymmetry is not an oversight. Whether a tool reaches a
@@ -272,11 +273,11 @@ Pikuri::Workspace::Filesystem.new(project_root: root, private: true)
 
 and the file tools reading through that workspace inherit it. A
 workspace is not the only object that owns a reachable set of
-documents: `VectorDb::Corpus.new(source:, private:, trusted:)` takes
-the same pair of answers for an indexed corpus, and `vectordb_search` /
-`vectordb_read` derive their legs from it the same way
-([the vector-DB chapter](vectordb.md#why-this-agent-cant-leak-your-corpus)
-has the before-and-after map).
+documents: `Fileindex::Roots.new(dirs:, private:, trusted:)` takes
+the same pair of answers for the folders a search may reach, and
+`fileindex_search` / `fileindex_read` derive their legs from it the
+same way ([the recall chapter](recall.md#the-folder-limit-is-the-boundary)
+has the wiring).
 
 Two consequences worth sitting with:
 
@@ -579,12 +580,12 @@ The clearest way to feel the model is to watch one leg arrive at an
 agent that did not have it: what the **untrusted leg means on its
 own**, and how much of that the map can say. For that you want the
 briefing agent
-from the [hybrid-retrieval chapter](rag.md) — the book's only
+from the [recall chapter](recall.md) — the book's only
 one-legged wiring — and its flag:
 
 ```
-./pikuri-rag/bin/pikuri-briefing --source ~/notes
-./pikuri-rag/bin/pikuri-briefing --source ~/notes --with-mail
+./pikuri-fileindex/bin/pikuri-briefing --source ~/notes
+./pikuri-fileindex/bin/pikuri-briefing --source ~/notes --with-mail
 ```
 
 The first is the agent you already met: your hand-written meeting
@@ -594,10 +595,8 @@ notes, nothing else.
 Trifecta: pikuri-briefing — 1 of 3 legs (private); no untrusted/egress leg found.
 
 pikuri-briefing [:private]
-  rag_search [:private]
-  rag_search_keywords [:private]
-  rag_read [:private]
-  rag_reindex []
+  fileindex_search [:private]
+  fileindex_read [:private]
 ```
 
 The second adds read-only local mail and a contact lookup — no
@@ -607,10 +606,8 @@ send, no drafts, nothing that leaves the machine:
 Trifecta: pikuri-briefing — 2 of 3 legs (private, untrusted); no egress leg found.
 
 pikuri-briefing [:private, :untrusted_hard]
-  rag_search [:private]
-  rag_search_keywords [:private]
-  rag_read [:private]
-  rag_reindex []
+  fileindex_search [:private]
+  fileindex_read [:private]
   thunderbird_mail_search [:private, :untrusted_hard]
   thunderbird_mail_read [:private, :untrusted_hard]
   thunderbird_mail_attachment_read [:private, :untrusted_hard]
@@ -695,9 +692,9 @@ already-assembled trifecta moves nothing either.
 
 One more, because it is the one people get wrong. The briefing
 agent has no write tool, for the reason the
-[hybrid-retrieval chapter](rag.md) gives: an agent that reads
+[recall chapter](recall.md) gives: an agent that reads
 untrusted mail and can write into the notes folder turns a
-corrupted brief into durable corpus poisoning, and `write` carries
+corrupted brief into durable poisoning of your notes, and `write` carries
 no leg, so the detector would say nothing.
 
 Now notice that *you* are the same pipe. Paste a customer's e-mail

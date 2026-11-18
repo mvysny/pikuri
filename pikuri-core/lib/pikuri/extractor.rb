@@ -62,9 +62,9 @@ module Pikuri
   #   included — reproducible only by running the same extractor.
   #
   # Every reader paging through {.extract_paged} numbers lines this way, so
-  # a search hit's +lines a-b+ from +rag_search+ / +rag_search_keywords+ /
-  # +vectordb_search+ is a valid +offset:+ for +rag_read+, +vectordb_read+
-  # and the workspace +read+ over the same file.
+  # a line number one of them reports (a search hit's +lines a-b+, say) is a
+  # valid +offset:+ for any other over the same file, the workspace +read+
+  # included.
   #
   # A host counting a file's lines must split on LF alone. +grep -n+, +sed+,
   # +awk+ and Ruby's +each_line+ agree; Python's +str.splitlines()+ and

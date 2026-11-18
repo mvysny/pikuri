@@ -13,8 +13,7 @@ Provides:
   registered, every pikuri surface that routes through the registry
   picks PDFs up for free: the `read` tool pages through a local
   `.pdf` with `--- Page N ---` markers, `web_scrape` extracts a
-  downloaded paper, the pikuri-vectordb indexer ingests a PDF
-  corpus.
+  downloaded paper, a PDF mail attachment reads as text.
 
 ## Why a separate gem
 

@@ -102,8 +102,11 @@ Changes, each limited to what it names:
   LocalSearch 3.11 a folder argument changed nothing (measured 2026-11), so pass files. This is
   how an office file indexed before `localsearch-extractor-office` was installed gets its text:
   it stays name-only even across a miner restart.
-- `systemctl --user restart localsearch-3` restarts the miner. Harmless, and rarely what you
-  need; see the line above.
+- `systemctl --user restart localsearch-3` restarts the miner. Harmless. It does not re-extract
+  a file already indexed (see the line above), but it does crawl for files it missed: after
+  `dev/demo-home/build` (or the testbed's build) recreated `~/Documents`, the miner knew the
+  folder and none of its files, idle, until a restart indexed them in seconds (measured
+  2026-11-18). The binaries then exit with "nothing under … is indexed".
 
 Never on someone else's machine: `localsearch reset` without `--file`, which erases the whole
 index and has the miner crawl the home folder again, and `localsearch index --add` / `--remove`,

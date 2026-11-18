@@ -53,8 +53,7 @@ What the gem promises, and what it leaves to the host:
   Documents is as readable as the invoice beside it. Choosing the roots is
   choosing what the agent may see.
 - **Legs come from the owner's declaration.** `Roots.new(private:,
-  trusted:)` grades both tools, as a vectordb corpus or a workspace
-  does; nothing inspects the files. A root with Downloads in it is never
+  trusted:)` grades both tools, as a workspace does; nothing inspects the files. A root with Downloads in it is never
   `trusted:`.
 - **No egress.** Neither tool sends bytes anywhere; `tinysparql` speaks to
   the session bus, `recollq` reads a local Xapian database.
@@ -96,6 +95,20 @@ Only the third is a genuine "nothing we can do":
    surface. Semantic *re-ranking* of `localsearch` hits doesn't rescue
    this either: it fixes precision, not recall. A doc the keyword miss
    kept out of the candidate set can't be re-ranked back in.
+
+   No Linux desktop index searches by meaning yet (checked 2026-11-17).
+   GNOME has a GSoC 2026 proposal, "gnome-semsearch" (MiniLM-L6 on the
+   CPU, sqlite-vec), which the localsearch maintainer said belongs under
+   LocalSearch, with no mentor committed by 2026-04-08. recoll has an
+   experimental mode in master behind `-Dsemantic=true` (ollama +
+   chromadb, scripts outside the core), which its author calls orders of
+   magnitude slower than plain indexing. KDE's 2026 "Make Plasma smart"
+   goal is intent, not code. Apple's Core Spotlight has kept a semantic
+   index since WWDC24 (session 10131), built in idle time; its model and
+   format are unpublished. If GNOME's lands, it most likely lands inside
+   tinysparql as a function beside `fts:match`, so
+   {Pikuri::Fileindex::LocalSearch}'s query is where it would show up,
+   with no change to the tools.
 
 ## Matching: any word, files with all of them first
 

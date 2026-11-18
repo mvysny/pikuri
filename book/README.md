@@ -41,11 +41,9 @@ assistant, the coding agent, MCP, skills, language servers — is
 ### Setup
 
 - **[Prerequisites](prerequisites.md).** One-time machine
-  setup: Ruby + the checkout, and a container runtime — what a
-  container is in sixty seconds, Podman as the short path, and why
-  Docker only **rootless**: the usual `docker` group shortcut is
-  passwordless root. Safe to skim past until the vector-DB chapter,
-  which is where containers first earn their keep.
+  setup: Ruby + the checkout, and the desktop file index the recall
+  chapter searches: which systems already have one, and the one
+  package Ubuntu needs for office documents.
 
 ### Base vocabulary
 
@@ -80,26 +78,20 @@ assistant, the coding agent, MCP, skills, language servers — is
 
 ### Recall
 
-- **[Agentic search and the vector DB](vectordb.md).** One
-  new feature on top of sub-agents: semantic recall over a local
-  corpus. The chunker / tokenizer / embedder / backend /
-  reranker pipeline, in-memory vs Qdrant backends, and why the
-  demo agent has no internet access — treat the corpus as
-  private, give the reader an agent that can't leak it. Demo via
-  `pikuri-corpus` against the pikuri guide itself.
-- **[Hybrid retrieval: the questions vectors can't answer](rag.md).**
-  The two questions pure geometry cannot answer — *completeness*
-  ("every note mentioning Acme": top-k is a sample and cosine has no
-  calibrated zero) and *exactness* ("invoice #4471": rare tokens are
-  what embedders rank worst) — and the field's settled fix, a keyword
-  index beside the vectors. BM25, reciprocal rank fusion and why not
-  a weighted sum, the backend decorator that reuses the whole
-  indexing pipeline, and why "indexed" has to mean *both* stores hold
-  it. Also the first chapter that points you at your own real private
-  data: demo via `pikuri-briefing`, the **one-legged agent** — private
-  data, no untrusted input, no egress — which briefs you on a customer
-  from your own notes, and where the interesting choices are which gems
-  *not* to wire.
+- **[Recall: searching the index your desktop keeps](recall.md).**
+  Retrieval-augmented generation without a vector in sight: the
+  model writes the queries, and the index is the one GNOME's
+  localsearch (or recoll) already keeps fresh. Who pays for an index
+  of your own, and why a keyword index can promise *every* match and
+  the *exact* word; the folder limit as the security boundary, bound
+  parameters versus splicing, and whose parser reads a hostile file
+  (where pikuri's own extractor registry comes in). What keyword
+  search misses, sorted into three causes, and the one only book 2's
+  vectors fix. The first chapter that points you at your own real
+  private data: demo via `pikuri-briefing`, the **one-legged agent**
+  (private data, no untrusted input, no egress), which briefs you on
+  a customer from your own notes, and where the interesting choices
+  are which gems *not* to wire.
 
 ### Security
 

@@ -54,8 +54,7 @@ running their intended code.
   llama.cpp: your prompts never leave the box. The moment you point
   the chat's transport at OpenAI / Anthropic / anything else, every
   byte of context (file contents, scraped pages, tool results) is
-  shipped to that third party, and pointing the embedder there ships
-  your whole indexed corpus. A malicious LLM is downstream of every other
+  shipped to that third party. A malicious LLM is downstream of every other
   defense in this document — there is no structural recovery if the
   model itself is the adversary. Pick a reputable provider.
 - **Code you didn't write — none.** pikuri runs no shell, no MCP
@@ -63,7 +62,8 @@ running their intended code.
   The children pikuri starts are fixed programs (`rg` behind `grep` /
   `glob`, `diff` and `git config` for the file tools, `cp` for
   Thunderbird's database snapshot, Thunderbird itself for a compose
-  window, `podman` or `docker` for the vector store), never one the model chose.
+  window, `tinysparql` or `recollq` for the desktop's file index), never one the
+  model chose.
   The tools that do run a stranger's code live
   in pikuri-workshop, each in a cage.
 

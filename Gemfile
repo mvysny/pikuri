@@ -15,8 +15,6 @@ gemspec path: 'pikuri-web'
 gemspec path: 'pikuri-workspace'
 gemspec path: 'pikuri-thunderbird'
 gemspec path: 'pikuri-subagents'
-gemspec path: 'pikuri-vectordb'
-gemspec path: 'pikuri-rag'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write

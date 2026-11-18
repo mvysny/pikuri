@@ -10,7 +10,8 @@ conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
 `pikuri-chat` from [`pikuri-core`](pikuri-core/README.md); the rest
 of the family adds filesystem tools, sub-agents, web search,
-local-corpus vector search and your Thunderbird mail à la carte.
+search over your desktop's file index and your Thunderbird mail à
+la carte.
 The power tools (a shell, a coding agent, MCP, skills) live in
 [pikuri-workshop](https://github.com/mvysny/pikuri-workshop).
 
@@ -44,9 +45,9 @@ docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it
 
 - **Nothing in pikuri requires a pikuri-workshop gem.** Dependencies point from the workshop to here, never back; a `lib/`, `bin/`, spec or chapter that needs one belongs there. See `pikuri-workshop:D_separate_repo`.
 - **Loop seam.** ruby_llm owns `Chat#complete`; never build a `RubyLLM::Chat` or attach its callbacks outside `pikuri-core`'s `agent.rb` and `tool.rb`. See {Pikuri::Agent}.
-- **Connection seam.** Every chat rides a per-chat `RubyLLM::Context` built from an `Agent::ChatTransport`, every embed or rerank the one its `VectorDb::Embedder` or `Reranker::LlamaServer` built; nothing calls the process-global `RubyLLM.configure`. See {Pikuri::Agent#build_chat}.
+- **Connection seam.** Every chat rides a per-chat `RubyLLM::Context` built from an `Agent::ChatTransport`; nothing calls the process-global `RubyLLM.configure`. See {Pikuri::Agent#build_chat}.
 - **An extra request parameter is opaque.** `ChatTransport#params` is deep-merged into the payload verbatim; pikuri never translates one, names one, or grows a typed flag for it. See `D_opaque_request_params`.
-- **Request seam.** `Agent.new(around_request:)` brackets one HTTP request, never a turn (`VectorDb::Embedder` and `Reranker::LlamaServer` take the same hook) — a turn-scoped throttle deadlocks a parent against its own sub-agent; pikuri ships no throttle, a host hangs one here. See `D_llm_request_throttle`.
+- **Request seam.** `Agent.new(around_request:)` brackets one HTTP request, never a turn — a turn-scoped throttle deadlocks a parent against its own sub-agent; pikuri ships no throttle, a host hangs one here. See `D_llm_request_throttle`.
 - **Attachments are bytes.** Every attachment pikuri hands around is a `Pikuri::Attachment`; a `RubyLLM::Attachment` is built only by {Pikuri::Attachment#to_ruby_llm}, so no path or URL ever reaches ruby_llm's read-at-construction. See {Pikuri::Attachment}.
 - **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry — a new format is a registry entry, not a dispatcher arm.
 - **Subprocess seam.** All subprocess spawning in `lib/` routes through `Pikuri::Subprocess.spawn`; a bare `Process.spawn` or `Open3` outlives the turn that started it.
@@ -79,11 +80,9 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - `pikuri-fileindex` — `fileindex_search` / `fileindex_read` over the index the desktop already keeps (localsearch, else recoll), never building one, + `bin/pikuri-briefing`.
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: read-only inbound tools, human-gated outbound hand-offs. Rules: `pikuri-thunderbird/AGENTS.md`
 - `pikuri-subagents` — the `agent` tool, the `Persona` record, the bundled personas, `bin/pikuri-minions`. Rules: `pikuri-subagents/AGENTS.md`
-- `pikuri-vectordb` — the retrieval *primitive*: vector-only search over a local corpus, wired on its own or under rag, + `bin/pikuri-corpus`.
-- `pikuri-rag` — the retrieval *system* on that primitive: hybrid vector + FTS5 search. Rules: `pikuri-rag/AGENTS.md`
 - `book/` — "the book", also "the guide"; `book/README.md` is the ToC and the single source of truth for chapter order.
 - `assets/` — **Kuri**, the pika mascot (`kuri.svg` master, `kuri.png` raster); drawing + anatomy rule in `D_kuri_mascot`.
-- [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), a separate repo — the gems that need a cage: a shell, the coding agent, the OS assistant, LSP, MCP, skills, tasks, mem0, docker extractors.
+- [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), a separate repo — the gems that need a cage: a shell, the coding agent, the OS assistant, LSP, MCP, skills, tasks, mem0, docker extractors; and search by meaning (vectordb, rag), which needs no cage.
 - `bin/pikuri-*` — demo entry points a user runs, not gem executables, with their prompts in `prompts/`; production binaries live downstream.
 - `dev/` — tooling for whoever develops pikuri, never run by a user or a reader; a gem's own lives in `<gem>/dev/`. `dev/demo-home/build` builds the demo `~/Documents` on a machine with no files of its own there (the dev VM); `pikuri-thunderbird/dev/testbed/` adds the demo mailbox on top. See `D_thunderbird_testbed`.
 

@@ -67,11 +67,12 @@ module Pikuri
       SNIPPET_WORDS = 40
 
       # @return [Integer] longest stored text, in characters, that a hit
-      #   carries whole: a few sentences, about the 500 characters a rag hit
-      #   shows. A snippet of a file this short leaves the rest, often the
-      #   answer (an invoice's total), to a read call: on a 212-file test home
-      #   (2026-11, 90 lookups, every answer in a short file), showing it whole
-      #   cut the reads after a search from 73 to 10, for 13% more text a search.
+      #   carries whole: a few sentences, about the 500 characters a vector
+      #   search's chunk shows. A snippet of a file this short leaves the
+      #   rest, often the answer (an invoice's total), to a read call: on a
+      #   212-file test home (2026-11, 90 lookups, every answer in a short
+      #   file), showing it whole cut the reads after a search from 73 to 10,
+      #   for 13% more text a search.
       WHOLE_TEXT_CHARS = 600
 
       # @return [Array(String, String)] what wraps each matched word in a
