@@ -1,7 +1,7 @@
 # pikuri-html
 
 HTML → Markdown extraction for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit, so
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit, so
 the model reads a web page or an HTML mail attachment as Markdown
 instead of inline CSS and layout tables. A 2.5 KB order-confirmation
 mail comes out as its 0.7 KB of line items, address and total.

@@ -1,7 +1,7 @@
 # pikuri-workspace
 
 Filesystem tools + Workspace/Confirmer seams for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit.
 
 Self-contained "operate on a directory tree" toolkit:
 - `Pikuri::Workspace::Filesystem` — scopes filesystem access to a

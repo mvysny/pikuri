@@ -1,7 +1,7 @@
 # pikuri-fileindex
 
 Search your files through the index your desktop already keeps, for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit. Ask
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit. Ask
 "find the Kettle & Co. invoice" and the agent gets back the PDF's path
 and a 40-word snippet with the amount in it, without pikuri ever opening
 the PDF itself.

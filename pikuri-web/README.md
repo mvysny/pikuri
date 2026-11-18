@@ -1,7 +1,7 @@
 # pikuri-web
 
 The tools that reach the internet, for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit:
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit:
 
 - `Pikuri::Web::Search.build` (`web_search`) — a search across
   DuckDuckGo, plus Brave and Exa when you pass their keys. Built per

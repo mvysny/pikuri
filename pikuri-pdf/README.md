@@ -1,7 +1,7 @@
 # pikuri-pdf
 
 PDF text extraction for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit:
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit:
 in-process, pure Ruby, and **lazy** — paged reads parse only the
 pages the window needs, so showing the first page of a 500-page PDF
 never pays for the other 499.

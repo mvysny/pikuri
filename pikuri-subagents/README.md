@@ -1,7 +1,7 @@
 # pikuri-subagents
 
 Sub-agent / delegation support for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit.
 
 Provides:
 - `Pikuri::SubAgent::Persona` — the

@@ -1,7 +1,7 @@
 # pikuri-rag
 
 Hybrid retrieval for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit: a
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit: a
 keyword index beside the vectors, so the agent can answer every kind of
 question people ask about a pile of their own documents.
 

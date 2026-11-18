@@ -22,14 +22,14 @@ Gem::Specification.new do |spec|
     +Pikuri::Code::Bash+ ships in pikuri-code on top of these.
   DESC
 
-  spec.homepage = 'https://codeberg.org/mvysny/pikuri'
+  spec.homepage = 'https://github.com/mvysny/pikuri'
   spec.license  = 'MIT'
 
   spec.required_ruby_version = '>= 3.3'
 
   spec.metadata = {
-    'source_code_uri'       => "#{spec.homepage}/src/branch/master",
-    'changelog_uri'         => "#{spec.homepage}/src/branch/master/CHANGELOG.md",
+    'source_code_uri'       => "#{spec.homepage}/tree/master",
+    'changelog_uri'         => "#{spec.homepage}/blob/master/CHANGELOG.md",
     'bug_tracker_uri'       => "#{spec.homepage}/issues",
     'rubygems_mfa_required' => 'true'
   }

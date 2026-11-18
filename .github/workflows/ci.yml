@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # The doc layer on its own, so a drifted doc fails in seconds rather than
+  # behind the whole spec suite; it needs only bash and git. `rake check` runs
+  # this same script again below; that is deliberate, so a contributor's inner
+  # loop cannot drift from CI.
+  design-tripwires:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: design/verify_design_tripwires.sh
+
+  # `rake check` = specs, then the seam tripwires (tasks/tripwires.rake), then
+  # the doc layer again: the same command a contributor runs locally. The
+  # runner is not root, so the pikuri-workspace specs that assert EACCES
+  # (chmod 000 files, 0o500 dirs) really exercise the deny path.
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ['3.3', '3.4', '4.0']
+    steps:
+      - uses: actions/checkout@v5
+      # ripgrep backs the Grep tool's specs; the runner image doesn't ship it.
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - run: bundle exec rake check

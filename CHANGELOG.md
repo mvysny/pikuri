@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- **Breaking:** the repository moved from Codeberg to GitHub, <https://github.com/mvysny/pikuri>, with CI on GitHub Actions, and the Codeberg copy no longer receives commits. Repoint a clone's `origin` or a Gemfile's `git:` source at `https://github.com/mvysny/pikuri.git`.
 - Show a short file's whole text in `fileindex_search` under localsearch (up to 600 characters, in place of its 40-word snippet), and open the tool's description with when to use it: a snippet of a short file left its answer to a read call.
 - Add any-word matching to `fileindex_search`: a file holding any of the query's words matches, files with all of them come first and are counted, and double quotes group words that must all appear; pikuri-os's every-word search found nothing for half an agent's queries.
 - Add `pikuri-fileindex`: `fileindex_search` and `fileindex_read` over the desktop's own file index (GNOME localsearch through `tinysparql`, else recoll), moved from pikuri-workshop's pikuri-os as `Pikuri::Fileindex::Search` / `Read`, bounded by host-named `Pikuri::Fileindex::Roots` whose `private:` / `trusted:` grade both tools, wired by `Pikuri::Fileindex::Extension`, `fileindex_search` saying how many files match in all, with `Pikuri::Fileindex.pick(roots)` choosing a backend that holds files under them.

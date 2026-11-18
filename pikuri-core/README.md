@@ -1,6 +1,6 @@
 # pikuri-core
 
-The lean, audit-friendly foundation of the [pikuri](https://codeberg.org/mvysny/pikuri)
+The lean, audit-friendly foundation of the [pikuri](https://github.com/mvysny/pikuri)
 AI-assistant toolkit:
 
 - `Pikuri::Agent` — a thin wrapper around ruby_llm's chat loop with

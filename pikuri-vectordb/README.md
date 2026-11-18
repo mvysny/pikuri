@@ -1,7 +1,7 @@
 # pikuri-vectordb
 
 Topical retrieval over a local corpus for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit:
+[pikuri](https://github.com/mvysny/pikuri) AI-assistant toolkit:
 semantic recall over a pile of files you point it at — your notes,
 your docs, your contracts — where the *agent* decides when to
 retrieve, same Thought → Tool-call → Observation loop as every other

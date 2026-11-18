@@ -31,7 +31,7 @@ straight from a git checkout — no gem install:
 
 ```sh
 sudo apt install ruby ruby-bundler git
-git clone https://codeberg.org/mvysny/pikuri.git
+git clone https://github.com/mvysny/pikuri.git
 cd pikuri
 bundle install
 ```

@@ -3647,11 +3647,11 @@ rather than surfacing as a 403 deep in the fan-out.
 - **Trusted Publishing (OIDC)** — the real end state: rubygems.org exchanges a
   short-lived CI token for a push token, so there is no long-lived API key and
   no OTP at all. **Deferred, not rejected.** rubygems.org supports GitHub
-  Actions and GitLab CI, not Woodpecker, so today it means a GitHub mirror
-  whose only job is the release workflow — a values call for a deliberately
-  Codeberg-hosted project, not a technical one. Nothing here conflicts with
-  it: an idempotent build-then-fan-out task is the same task a workflow would
-  run, minus the OTP handling.
+  Actions and GitLab CI, not Woodpecker; that was the blocker while pikuri
+  lived on Codeberg, and it went away when pikuri moved to GitHub in
+  November 2026, so what is left is writing the release workflow. Nothing
+  here conflicts with it: an idempotent build-then-fan-out task is the same
+  task a workflow would run, minus the OTP handling.
 - **Sleeping only when the current window is short** — measure, and skip the
   wait in the ~3 runs out of 4 that already have room. **Killed** as
   optimising the wrong thing: a release is rare enough that a mean 15 s costs

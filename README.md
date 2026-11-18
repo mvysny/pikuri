@@ -1,6 +1,6 @@
 # pikuri
 
-[![status](https://ci.codeberg.org/api/badges/17229/status.svg)](https://ci.codeberg.org/repos/17229)
+[![CI](https://github.com/mvysny/pikuri/actions/workflows/ci.yml/badge.svg)](https://github.com/mvysny/pikuri/actions/workflows/ci.yml)
 
 <img src="assets/kuri.svg" alt="Kuri, pikuri's mascot — a pika" align="right" width="150">
 
@@ -31,7 +31,7 @@ that comes close. It seemed about right.
 ## Install
 
 ```sh
-git clone https://codeberg.org/mvysny/pikuri.git
+git clone https://github.com/mvysny/pikuri.git
 cd pikuri
 
 # Ruby 3.x + Bundler (Ubuntu/Debian — adapt for your distro)

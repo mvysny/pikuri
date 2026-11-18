@@ -115,7 +115,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 
 ## Commands
 
-- `bundle exec rake check` (also the default task) — specs across every gem, then `tripwires`, then `design_tripwires`; verbatim what CI runs on push / PR / manual (`.woodpecker.yml`, dashboard <https://ci.codeberg.org/repos/17229>).
+- `bundle exec rake check` (also the default task) — specs across every gem, then `tripwires`, then `design_tripwires`; verbatim what CI runs on push / PR / manual (`.github/workflows/ci.yml`, dashboard <https://github.com/mvysny/pikuri/actions>).
 - `bundle exec rake tripwires` — the five seam checks (`tasks/tripwires.rake`). A failure is as often a stale expectation as a real violation — read the lines before "fixing" the code.
 - `bundle exec rake design_tripwires` — the doc layer (`design/verify_design_tripwires.sh`); same rule about stale expectations.
 - `cd pikuri-core && bundle exec rspec spec/pikuri/agent_spec.rb:42` — one test; run from the gem dir, whose `.rspec` loads its `spec_helper`.
