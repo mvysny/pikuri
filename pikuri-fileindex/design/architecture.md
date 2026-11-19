@@ -172,7 +172,7 @@ filtered by URL prefix; ranked, the lease agreement comes first
 | Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
 | Recall on indexed prose | ~100% (**= recoll**, measured) | ~100% |
 | Source code | **filename-only** (mime-gated); `.git` trees skipped | full text |
-| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed, and a file indexed before it stays so until `localsearch reset --file`. The text is one line: a `.docx`'s paragraphs joined by spaces, an `.odt`'s by nothing ("AgreementLandlord") (measured 2026-11) | full text (`.docx`, `.odt`; recoll 1.43, measured 2026-11) |
+| `.docx` / `.odt` / `.xlsx` / epub | Ubuntu: **filename-only** unless `localsearch-extractor-office` is installed, and a file indexed before it stays so until `localsearch reset` rebuilds the index ([localsearch#476](https://gitlab.gnome.org/GNOME/localsearch/-/work_items/476); users are told that; `--file` re-reads one file, see `testing.md`). The text is one line: a `.docx`'s paragraphs joined by spaces, an `.odt`'s by nothing ("AgreementLandlord") (measured 2026-11) | full text (`.docx`, `.odt`; recoll 1.43, measured 2026-11) |
 | `.csv` | **filename-only**: the text extractor takes only `text/plain` and `text/markdown` (measured 2026-11) | full text (recoll 1.43, measured 2026-11) |
 | Folder filter | URL-prefix filter in SPARQL | `dir:` clause + per-config `topdirs` |
 | Query ops | AND, phrase; each word stemmed in the locale's language and matched as a prefix; no OR (measured 2026-11) | + OR / exclusion / proximity / wildcard / field filters |

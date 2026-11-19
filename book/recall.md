@@ -85,8 +85,8 @@ yours. localsearch skips hidden folders and any folder tree holding a
 `.git`, and it keeps source code and `.csv` files by name only, never
 their text. On Ubuntu it reads `.docx` and `.odt` text only once
 `localsearch-extractor-office` is installed, and a file it indexed
-before that stays name-only until you run `localsearch reset --file`
-on it. The folders you give the agent can narrow what it sees; they
+before that stays name-only until you run `localsearch reset`, which
+rebuilds the whole index. The folders you give the agent can narrow what it sees; they
 can't add a folder or a format the desktop skips. recoll has the
 opposite blind spot: everything in the folders you configured, code
 included, and nothing outside them.

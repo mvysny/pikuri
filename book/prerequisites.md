@@ -49,10 +49,19 @@ desktop already keeps, rather than one pikuri builds. One of these:
   ```
 
   Without it, `.docx`, `.odt`, `.xlsx` and epub files are found by
-  name only. A file indexed before you install it stays that way,
-  even after a restart, until you run `localsearch reset --file` on it
-  (the file, not its folder). `localsearch status` shows what's
-  indexed.
+  name only. Files indexed before you install it stay that way, even
+  after a restart
+  ([a localsearch bug](https://gitlab.gnome.org/GNOME/localsearch/-/work_items/476)),
+  so rebuild the index once afterwards:
+
+  ```sh
+  localsearch reset
+  ```
+
+  It asks before erasing the index, then localsearch reads your home
+  folder again from scratch, office text included. That can take a
+  while; `localsearch status` says "Data is still being indexed" until
+  it's done.
 - **Any Linux with localsearch 3.8 or newer** and its `tinysparql`
   command, which Debian and Ubuntu's `localsearch` package pulls in.
   The older Tracker 3 (Ubuntu 24.04 LTS and earlier) isn't supported.
