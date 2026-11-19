@@ -326,8 +326,9 @@ file index matched the vector stack: about two calls a lookup, 79 of
 
 ### Why your desktop doesn't search by meaning yet
 
-Apple's Core Spotlight has kept a semantic index since 2024, built
-while the device sits idle. Linux has proposals: a GNOME
+Apple's Core Spotlight has kept a semantic index since 2024, and
+re-indexes what it already held while the device sleeps or sits
+idle. Linux has proposals: a GNOME
 one that would run a small English-only model on the CPU beside
 localsearch, and an experimental mode in recoll that its own author
 calls orders of magnitude slower than plain indexing. Everyone who

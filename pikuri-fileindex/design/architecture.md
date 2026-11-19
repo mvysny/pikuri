@@ -104,8 +104,9 @@ Only the third is a genuine "nothing we can do":
    chromadb, scripts outside the core), which its author calls orders of
    magnitude slower than plain indexing. KDE's 2026 "Make Plasma smart"
    goal is intent, not code. Apple's Core Spotlight has kept a semantic
-   index since WWDC24 (session 10131), built in idle time; its model and
-   format are unpublished. If GNOME's lands, it most likely lands inside
+   index since WWDC24 (session 10131), older items re-indexed into it
+   while the device sleeps or sits idle; its model and format are
+   unpublished. If GNOME's lands, it most likely lands inside
    tinysparql as a function beside `fts:match`, so
    {Pikuri::Fileindex::LocalSearch}'s query is where it would show up,
    with no change to the tools.
