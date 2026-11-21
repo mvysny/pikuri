@@ -598,8 +598,7 @@ hostile `.docx` in Downloads never meets a parser of pikuri's. What the
 index keeps by name only, a `.csv` or anything in a git checkout, the
 secretary can still list and `read`, but not search, as the sauna-tax
 answer showed. Downloads isn't searched at all: it's where a stranger's
-file lands when you click a link. The secretary with every bell and
-whistle is [Puri](apps.md#puri).
+file lands when you click a link.
 
 ## The prompt, fixed by watching transcripts
 

@@ -18,8 +18,8 @@ pikuri-chat [:untrusted_hard, :egress]
 That's the **trifecta detector**. It walks the agent you just
 wired, tags every tool with the trifecta legs it contributes,
 folds the tags up through any sub-agents, and reports whether all
-three legs ended up live in one place. Ten `bin/pikuri-*` scripts
-print it at boot with no flag.
+three legs ended up live in one place. Every `bin/pikuri-*` script
+prints it at boot, with no flag.
 
 This chapter is how to read it, what its judgements actually mean,
 and — the part that outlasts pikuri — the two questions it asks
@@ -44,9 +44,9 @@ harness, and its first step was:
 
 The detector is that step, done by machine, over the wiring that
 actually booted rather than the one you meant to write. That
-distinction is the whole value. You can hold a four-tool agent in
-your head. The secretary at the end of this book wires nineteen
-tools from five gems, and "which of them can send bytes out, and
+distinction is the whole value. You can hold `pikuri-chat` in your
+head. The secretary at the end of this book wires a screenful of
+tools from most of the gems in it, and "which of them can send bytes out, and
 does a human see those bytes first?" has an answer spread across
 their constructors. The map gathers it into one screen.
 
@@ -106,7 +106,9 @@ the shape; sub-agents nest under their parent.
 **An agent line shows its *folded* legs; a tool line shows its
 own.** The agent line is the union of everything below it, so you
 read the verdict off one line and the reasons off the rest. Here is
-`pikuri-thunderbird`, the mail demo, over a mailbox:
+`pikuri-thunderbird`, the mail gem's own demo
+(`./pikuri-thunderbird/bin/pikuri-thunderbird`, run where Thunderbird
+has a profile with global search on), over a mailbox:
 
 ```
 pikuri-thunderbird [:private, :untrusted_hard, :egress_reviewed]
@@ -121,8 +123,8 @@ pikuri-thunderbird [:private, :untrusted_hard, :egress_reviewed]
   thunderbird_calendar_create [:egress_reviewed]
 ```
 
-Notice what the egress rows say. Exactly two tools carry the
-outbound leg, the map names them, and both are reviewed. Two dozen
+Notice what the egress rows say. Only the hand-off tools carry the
+outbound leg, the map names them, and each is reviewed. Two dozen
 words of threat model about this demo reduce to: the only way
 bytes leave is a window you look at.
 
@@ -673,15 +675,15 @@ indexed. That is a prompt promise, not an enforced boundary, and
 shipping it that way is deliberate — the honest reading is what
 makes this section's point land.
 
-Meanwhile the wiring is *narrower* than it could be: the mail gem
-bundles six inbound tools, and the flag takes four. The calendar
-is off, though it would answer "which meeting is coming up".
+Meanwhile the wiring is *narrower* than it could be: the flag takes
+the mail gem's mail and contacts and leaves its calendar off, though
+the calendar would answer "which meeting is coming up".
 
 Neither shows, and the reason is arithmetic:
 `thunderbird_mail_search` alone declares `private` and
 `untrusted: :hard`, and a node's legs are the **union** of its
 tools'. Union is idempotent, so every later tool declaring the same
-legs is free — five surfaces or two, the count and the advisory are
+legs is free — the whole mail gem or one tool of it, the count and the advisory are
 identical. This is the
 ["A leg's presence is binary"](#a-legs-presence-is-binary-its-strength-is-not)
 section seen from both sides in one wiring, and the same

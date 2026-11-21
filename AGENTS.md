@@ -70,7 +70,7 @@ docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it
 ## Module map
 
 Rails-shape monorepo: each gem owns its `lib/`, `spec/`, gemspec, entry file, and where
-relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires every gem via
+relevant its `bin/`, `prompts/`, `examples/` (a demo's sample input) and `design/`. The top-level `Gemfile` wires every gem via
 `gemspec path:`; the top-level `Rakefile` fans out `rake test` and orchestrates `rake release`.
 
 - `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, the bundled `calculator`, `bin/pikuri-chat`.

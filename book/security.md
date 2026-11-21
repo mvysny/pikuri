@@ -12,8 +12,8 @@ introduces. So does any app that
 [reaches for all three trifecta legs at once](apps.md).
 
 That framing matters because pikuri is a *toolkit*, not a single
-product. `pikuri-chat`, `pikuri-minions` and `pikuri-briefing` are
-harnesses someone built on `pikuri-core`; the next one is the one
+product. Every demo so far is a harness someone built on
+`pikuri-core`; the next one is the one
 *you* build. This chapter is about how to pick a security model for
 it. By the end you should be able to look at any agent you wire up
 and answer one question: **what stops a malicious sentence — in a

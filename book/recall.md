@@ -91,12 +91,13 @@ can't add a folder or a format the desktop skips. recoll has the
 opposite blind spot: everything in the folders you configured, code
 included, and nothing outside them.
 
-## Two tools
+## Search, then read
 
-`pikuri-fileindex` gives the model two tools. `fileindex_search`
-finds files by the words in them, and `fileindex_read` reads one. Here
-is a search for `acme` over the six made-up meeting notes this
-chapter's demo uses, paths shortened:
+`pikuri-fileindex` gives the model a search and a read.
+`fileindex_search` finds files by the words in them, and
+`fileindex_read` reads one. Here is a search for `acme` over the six
+made-up meeting notes this chapter's demo uses (they're in
+`pikuri-fileindex/examples/notes/`), paths shortened:
 
 ```
 ~/notes/acme-2026-03-11.md  (470 B of text, shown whole)
@@ -211,11 +212,13 @@ the roots is choosing what the agent may see, which is why a host
 always names them, and why this demo's folder is your notes and not
 your home.
 
-`private:` and `trusted:` are the pair you met on the workspace in
-[the files chapter](touching-files.md): whether the folders hold data
-worth stealing, and whether every byte in them is yours. Nothing
-inspects the files to find out. Both tools take their trifecta legs
-from that declaration, and both default to the pessimistic answer.
+`private:` is the claim `--private` made about the workspace in
+[the files chapter](touching-files.md): the folders hold data worth
+stealing. `trusted:` is new here: every byte in them is yours, so
+nothing in them can carry an injection. A workspace takes the same
+pair. Nothing inspects the files to find out. Both tools take their
+trifecta legs from the two claims, and both default to the
+pessimistic answer.
 
 ## The model's words never become a query
 
@@ -266,7 +269,7 @@ one registry, so everything that reads documents (`read`, `web_scrape`,
 the mail tools) speaks PDF after one `register` call. Requiring the gem
 changes nothing; registering is an explicit call, the same opt-in as
 every pikuri extension. And PDF support is a gem of its own because
-its parser pulls in five more gems, audit surface a deployment that
+its parser pulls in gems of its own, audit surface a deployment that
 never sees a PDF shouldn't carry.
 
 pikuri-pdf is the training-wheels extractor: pure Ruby, in pikuri's
@@ -346,6 +349,16 @@ match, and `pikuri-fileindex` would pick it up without changing shape.
 Point it at a folder of meeting notes and ask it to brief you. The
 transcripts below come from the six made-up notes about a made-up
 customer, Acme; your own notes are the point of running it.
+
+No notes folder yet? Copy the made-up ones out of the checkout first,
+since localsearch skips any folder inside a git checkout:
+
+```
+cp -r pikuri-fileindex/examples/notes ~/notes
+```
+
+localsearch has them a second later. Under recoll, add `~/notes` to
+its folders and run `recollindex`.
 
 ```
 > brief me on Acme — what did we discuss last, and what did we commit to?
