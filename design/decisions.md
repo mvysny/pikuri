@@ -4323,7 +4323,7 @@ it. A detector whose alarms can be declared away is a detector nobody trusts.
   declared, needs no declaration to be trustworthy, and is worth showing in
   the UI. It rides the per-context flag of pikuri-workshop's
   `design/ideas/private-context-taint.md`, as the display half of that mechanism. The narrower "poisoned *right now*" alarm
-  on LLM-*authored* bytes remains `design/ideas/injection-tripwire.md`'s.
+  on LLM-*authored* bytes remains `design/ideas/warn-human-directly.md`'s.
 
 ---
 
