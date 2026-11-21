@@ -18,8 +18,10 @@ pikuri never sends mail on its own. If you turn on the opt-in
 Thunderbird compose window** — you read it, and *you* click Send. It draws the
 draft in plain text (no hidden HTML, no tracking images), refuses a body laced
 with invisible characters, drops look-alike recipient addresses for you to
-retype, and warns you when you're about to mail a domain you've never
-sent mail to. See [`design/architecture.md`](design/architecture.md).
+retype, and flags a domain you've never sent mail to. For now that flag
+reaches you through the assistant's reply, so an assistant manipulated by a
+message it read can leave it out. See
+[`design/architecture.md`](design/architecture.md).
 
 ## Requirements
 
