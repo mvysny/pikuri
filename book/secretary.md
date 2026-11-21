@@ -37,10 +37,11 @@ Two things, and neither costs time.
 
 **Thunderbird, with global search on.** The secretary reads your mail
 and calendar from Thunderbird's own local stores, never over IMAP. Its
-mail search rides Thunderbird's index, which exists only when *Settings
-→ General → Enable Global Search and Indexer* is on. Without a profile
-the secretary still boots, says `MAIL IS OFF`, and loses the mail and
-calendar tools; the rest of this chapter assumes you have them.
+mail search rides Thunderbird's index, which stays up to date only while
+*Settings → General → Enable Global Search and Indexer* is on; with it
+off, the secretary says `MAIL IS OFF` rather than search a stale copy.
+Without a profile it still boots, says `MAIL IS OFF`, and loses the mail
+and calendar tools; the rest of this chapter assumes you have them.
 
 **The desktop's file index, with office documents.** The secretary
 searches your Desktop and Documents the way briefing searched your

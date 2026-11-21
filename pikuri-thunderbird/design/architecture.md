@@ -313,7 +313,13 @@ attachments are still checked only on that one install.
 
 ### Mail: the Gloda index (`global-messages-db.sqlite`) — the mail source
 
-A complete, pre-decoded search index. Tables that matter:
+A complete, pre-decoded search index, kept current only while Thunderbird's
+*Enable Global Search and Indexer* setting is on. Switching it off writes
+`user_pref("mailnews.database.global.indexer.enabled", false);` to `prefs.js`
+and stops the indexer, and **the file stays, frozen**: Gloda deletes it only
+when it's corrupt or its schema changes (testbed, Thunderbird 160, 2026-11-21).
+So the mail tools are wired only when the file exists *and* that pref isn't
+false ({Pikuri::Thunderbird::Profile#gloda_indexing?}). Tables that matter:
 
 - **`messagesText`** — an FTS3 virtual table over `body`, `subject`,
   `attachmentNames`, `author`, `recipients` (already MIME-decoded,
@@ -653,9 +659,10 @@ an `.ics` path opened the import wizard. No second instance started.
 
 The guarantee is an **allowlist, not a blocklist**: the backends open only
 `global-messages-db.sqlite` and `calendar-data/*.sqlite` (plus their snapshot
-copies), discovery reads `profiles.ini`, and the attachment reader reads
-`prefs.js` (its `mail.server.*` lines only — passwords live in `logins.json`,
-not there) and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
+copies), discovery reads `profiles.ini` and `prefs.js` (its `mail.server.*` and
+`mailnews.database.global.indexer.enabled` lines only — passwords live in
+`logins.json`, not there), and the attachment reader reads the same
+`mail.server.*` lines and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
 the profile directory is ever opened — so no enumeration of what-to-avoid is load-bearing,
 and a wrong name below changes nothing.
 

@@ -192,12 +192,13 @@ end
 
 # The inversion the header explains: asking for mail and silently not
 # getting it would leave the boot map reading `1 of 3` under a flag whose
-# whole purpose is the second leg. Loud, with the two causes named.
+# whole purpose is the second leg. Loud, with the causes named.
 if with_mail && !tb_ext.mail_wired?
   agent.close
-  warn 'Could not wire mail: no Thunderbird profile found, or the profile has no Gloda index.'
-  warn 'Enable Thunderbird\'s global search (Preferences → General → Enable Global Search'
-  warn 'and Indexer), let it index, and try again — or drop --with-mail for the notes-only agent.'
+  warn 'Could not wire mail: no Thunderbird profile found, or the profile has no Gloda index,'
+  warn 'or its indexing is off. Enable Thunderbird\'s global search (Settings → General →'
+  warn 'Enable Global Search and Indexer), let it index, and try again — or drop --with-mail'
+  warn 'for the notes-only agent.'
   exit 2
 end
 

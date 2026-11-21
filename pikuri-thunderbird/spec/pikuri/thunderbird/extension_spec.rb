@@ -228,6 +228,24 @@ describe Pikuri::Thunderbird::Extension do
     end
   end
 
+  it 'omits mail and contact tools when Thunderbird has stopped indexing (a frozen index)' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      write_calendar(dir)
+      File.write(File.join(dir, 'prefs.js'), %(user_pref("mailnews.database.global.indexer.enabled", false);\n))
+      Dir.mktmpdir do |cache|
+        ext = Extension.new(profile_dir: dir, cache_dir: cache)
+        c = FakeConfigurator.new
+        ext.configure(c)
+        names = c.tools.map(&:name)
+        refute_includes names, 'thunderbird_mail_search'
+        refute_includes names, 'thunderbird_contact_search'
+        assert_includes names, 'thunderbird_calendar_search'
+        refute ext.mail_wired?
+      end
+    end
+  end
+
   it 'registers calendar tools even with no calendar store (self-explaining empty state)' do
     Dir.mktmpdir do |dir|
       write_gloda(dir) # profile exists, no calendar-data dir

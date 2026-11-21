@@ -34,7 +34,3 @@ answered, it graduates the same way and this note shrinks again.
   `book/trifecta-detector.md` land — so build it when a week of real use
   makes the pool intolerable, and record it in `design/architecture.md` (it narrows the
   read surface) plus a `D_` entry if a fork turns out to be real.
-- **`.msf` (Mork) and mbox fallbacks** — the `available?`-probed second arm
-  for a Gloda-disabled host. Build only when such a host is a real user.
-  Attachment bytes already come from the mbox store
-  ({Pikuri::Thunderbird::MessageStore}).

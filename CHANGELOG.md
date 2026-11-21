@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `Pikuri::Thunderbird::Extension` wiring the mail and contact tools over a frozen index when Thunderbird's global search is switched off, which leaves `global-messages-db.sqlite` in place without the newest mail; it now wires them only while indexing is on (`Profile#gloda_indexing?`), and `pikuri-secretary` / `pikuri-briefing --with-mail` name that cause too.
 - Fix `thunderbird_calendar_search` and `thunderbird_calendar_read` west of UTC putting an all-day event in the day before, both in a date range and as a recurring series' current occurrence; an all-day event is now compared by its date, not as an instant.
 - **Breaking:** `Pikuri::Workspace::Filesystem.new(trusted: true)` raises `ArgumentError` when a `readable:` or `writable:` root lies outside `project_root`, since the claim covers every byte the file tools can reach (`D_bundle_trust_grading`). Scope the workspace to one root, or drop `trusted:`.
 - **Breaking:** `pikuri-vectordb` and `pikuri-rag` moved to [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), with `bin/pikuri-corpus` and their two book chapters, since nothing in pikuri searches by meaning any more (`D_gem_placement`); the book's recall chapter is now `book/recall.md`, on the desktop's file index. Take both gems from pikuri-workshop.

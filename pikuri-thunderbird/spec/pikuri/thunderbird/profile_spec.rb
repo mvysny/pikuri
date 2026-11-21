@@ -100,6 +100,18 @@ describe Pikuri::Thunderbird::Profile do
         assert_equal [profile.calendar_cache_db], profile.calendar_dbs
       end
     end
+
+    it 'reads gloda_indexing? from prefs.js, on unless switched off' do
+      Dir.mktmpdir do |dir|
+        profile = Profile.discover(profile_dir: dir)
+        assert profile.gloda_indexing?, 'no prefs.js: the default, on'
+        File.write(profile.prefs_path, %(user_pref("mail.server.server1.type", "imap");\n))
+        assert profile.gloda_indexing?, 'prefs.js silent: on'
+        File.write(profile.prefs_path, %(user_pref("mailnews.database.global.indexer.enabled", false);\n),
+                   mode: 'a')
+        refute profile.gloda_indexing?
+      end
+    end
   end
 
   describe '#outbox_dir' do
