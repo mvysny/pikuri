@@ -31,6 +31,10 @@ module Pikuri
     # UTC {Time}s + the tz string + an +all_day+ flag; presentation (local
     # display, all-day date rendering) is the tool's job.
     #
+    # An all-day start is *floating*: its date's midnight labelled UTC, not an
+    # instant. So a date bound or "today", a machine-local instant, dates a
+    # timed event as is and an all-day one by its wall clock ({#floating}).
+    #
     # {#close} closes the snapshot connections.
     #
     # == Sharing
@@ -245,21 +249,11 @@ module Pikuri
       def search_db(db, words:, after:, before:, today:)
         filters = []
         binds = []
-        # Date bounds are compared in the machine-local frame (the caller
-        # parses a bare date to local midnight; parse_before extends it to
-        # end-of-day). Correct for timed events in any zone. Caveat: all-day
-        # events are stored as *floating* UTC-midnight, so in a far-*western*
-        # zone (local midnight is hours ahead of UTC) an all-day event on day
-        # D can fall just before a local-frame "day D" lower bound. Fine for
-        # UTC/eastern zones; a fully correct fix needs per-event-type date
-        # extraction (deferred — see design/ideas/thunderbird.md).
-        if after
-          filters << 'event_start >= ?'
-          binds << to_prtime(after)
-        end
-        if before
-          filters << 'event_start <= ?'
-          binds << to_prtime(before)
+        [[after, '>='], [before, '<=']].each do |bound, op|
+          next unless bound
+
+          filters << "event_start #{op} CASE WHEN flags & #{ALL_DAY_FLAG} != 0 THEN ? ELSE ? END"
+          binds.push(to_prtime(floating(bound)), to_prtime(bound))
         end
         where = filters.empty? ? '1' : filters.join(' AND ')
         # A master is dated at its first occurrence, so the range can't
@@ -308,6 +302,8 @@ module Pikuri
       def occurrences(hit, cal_id, series, after:, before:)
         return [] unless hit[:start]
 
+        after = frame(hit, after)
+        before = frame(hit, before)
         recurrence(hit, cal_id, series).starts(after:, before:).map { |start| starting_at(hit, start) }
       rescue Recurrence::Unexpandable => e
         LOGGER.warn("not expanding recurring event #{hit[:event_id]}: #{e.message}")
@@ -333,6 +329,7 @@ module Pikuri
       def current_of(hit, cal_id, series, today)
         return hit unless hit[:start]
 
+        today = frame(hit, today)
         rec = recurrence(hit, cal_id, series)
         start = rec.starts(after: today, before: nil).first || rec.starts(after: nil, before: today - 1).last
         start ? starting_at(hit, start) : hit
@@ -345,7 +342,7 @@ module Pikuri
       # @param today [Time] local midnight.
       # @return [Hash] the earliest on or after +today+, else the latest.
       def pick_current(hits, today)
-        upcoming = hits.select { |h| h[:start] && h[:start] >= today }
+        upcoming = hits.select { |h| h[:start] && h[:start] >= frame(h, today) }
         upcoming.empty? ? hits.max_by { |h| h[:start]&.to_i || 0 } : upcoming.min_by { |h| h[:start] }
       end
 
@@ -361,6 +358,24 @@ module Pikuri
         duration = hit[:end] - hit[:start] if hit[:end]
         hit.merge(start: start, end: duration && (start + duration))
       end
+
+      # +time+'s local wall clock labelled UTC, the frame an all-day event is
+      # stored in:
+      #
+      #   floating(Time.local(2026, 6, 1))   # => 2026-06-01 00:00:00 UTC, in any zone
+      #
+      # @param time [Time] a machine-local instant: a bound, or today's midnight.
+      # @return [Time]
+      def floating(time)
+        local = time.getlocal
+        Time.utc(local.year, local.month, local.day, local.hour, local.min, local.sec)
+      end
+
+      # @param hit [Hash] a dated hit.
+      # @param time [Time, nil]
+      # @return [Time, nil] +time+ to compare +hit+'s start with: {#floating}
+      #   for an all-day hit, else unchanged.
+      def frame(hit, time) = hit[:all_day] && time ? floating(time) : time
 
       # @param now [Time]
       # @return [Time] the start of +now+'s day, machine-local.

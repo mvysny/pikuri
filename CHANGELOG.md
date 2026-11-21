@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `thunderbird_calendar_search` and `thunderbird_calendar_read` west of UTC putting an all-day event in the day before, both in a date range and as a recurring series' current occurrence; an all-day event is now compared by its date, not as an instant.
 - **Breaking:** `Pikuri::Workspace::Filesystem.new(trusted: true)` raises `ArgumentError` when a `readable:` or `writable:` root lies outside `project_root`, since the claim covers every byte the file tools can reach (`D_bundle_trust_grading`). Scope the workspace to one root, or drop `trusted:`.
 - **Breaking:** `pikuri-vectordb` and `pikuri-rag` moved to [pikuri-workshop](https://github.com/mvysny/pikuri-workshop), with `bin/pikuri-corpus` and their two book chapters, since nothing in pikuri searches by meaning any more (`D_gem_placement`); the book's recall chapter is now `book/recall.md`, on the desktop's file index. Take both gems from pikuri-workshop.
 - **Breaking:** `bin/pikuri-secretary` searches your Desktop and Documents (found through `xdg-user-dir`) with `Pikuri::Fileindex` instead of a rag index, so it needs GNOME's localsearch or a built recoll index rather than podman and an embedding model, and drops `--exclude`, `--in-memory` and `--no-reranker` (`D_secretary_wiring`). With neither index ready it exits saying what to install.

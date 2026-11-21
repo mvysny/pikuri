@@ -34,10 +34,12 @@ module Pikuri
     # Each {#with_fresh_db} first asks whether the {DatabaseSnapshot} the
     # copy+index were built from is still current; if not, a fresh one is
     # taken and the FTS5 index rebuilt (~1 s). Between changes it's a header
-    # read and a no-op. The generation moves on any Gloda
-    # write — including read/star/tag flips during triage — so a rebuild can
-    # fire mid-conversation (desirable: the views then see new mail). See
-    # {DatabaseSnapshot}.
+    # read and a no-op. The generation moves on any Gloda write, read/star/tag
+    # flips during triage included, so a rebuild can fire mid-conversation.
+    # Don't gate it on content (+max(id)+ / +count(*)+ / +sum(deleted)+):
+    # Gloda rewrites a moved message's +folderID+ in place and re-indexes a
+    # late-downloaded body in place, moving none of those, so the folder
+    # filter and the attachment read would go stale. See {DatabaseSnapshot}.
     #
     # Holds no external state beyond its own snapshot + connection, but {#close}
     # is required for orderly teardown.

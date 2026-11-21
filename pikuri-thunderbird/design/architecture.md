@@ -421,9 +421,9 @@ unlock-after-write (a read never moves it). Measured: it bumps on *any* Gloda
 write — **including read/star/tag flips during triage** (marking one message
 unread advanced it +1), not only new-mail arrivals — because Gloda indexes
 those as attributes. Consequence for the FTS5 rebuild: it re-fires during
-ordinary triage, not just after a poll (a ~1 s papercut; a future optimization
-gates the rebuild on a content triple `(max(id), count(*), sum(deleted))`
-instead of the raw counter). The `-journal` is **transient, not persistently
+ordinary triage, not just after a poll: a ~1 s papercut, kept, since a gate on
+content would miss a move and a late body download, which Gloda writes in place
+(why not: {Pikuri::Thunderbird::Gloda}). The `-journal` is **transient, not persistently
 retained** (probed: present in 1 of 3 idle samples, exactly while the counter
 was mid-bump), so its presence is a valid "write in flight → retry" signal for
 the snapshot bracket.

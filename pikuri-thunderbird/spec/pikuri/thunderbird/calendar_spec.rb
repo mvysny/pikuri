@@ -297,6 +297,54 @@ describe Pikuri::Thunderbird::Calendar do
     end
   end
 
+  it 'dates an all-day event by its own day, even west of UTC' do
+    # All-day events are stored floating (the date's midnight labelled UTC),
+    # while a bare-date bound is local midnight: at UTC-11 that is 11:00 UTC,
+    # so comparing the two instants put every all-day event in the day before.
+    old_tz = ENV['TZ']
+    ENV['TZ'] = 'Pacific/Pago_Pago'
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_recurrence(item_id TEXT, cal_id TEXT, icalString TEXT);
+      SQL
+      us = ->(t) { t.to_i * 1_000_000 }
+      ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
+      ev.execute('c1', 'holiday', 'Company Holiday', us[Time.utc(2026, 6, 1)], us[Time.utc(2026, 6, 2)],
+                 'floating', 'floating', 8, 'CONFIRMED', nil)
+      # Every Friday since Friday 2 January, all-day (8 | 16 = 24).
+      ev.execute('c1', 'rent', 'Rent due', us[Time.utc(2026, 1, 2)], us[Time.utc(2026, 1, 3)],
+                 'floating', 'floating', 24, 'CONFIRMED', nil)
+      # 10:00 on 1 June in Pago Pago: a timed event keeps the local frame.
+      ev.execute('c1', 'call', 'Call', us[Time.utc(2026, 6, 1, 21)], us[Time.utc(2026, 6, 1, 22)],
+                 'Pacific/Pago_Pago', 'Pacific/Pago_Pago', 0, 'CONFIRMED', nil)
+      ev.close
+      db.execute("INSERT INTO cal_recurrence VALUES ('rent','c1','RRULE:FREQ=WEEKLY')")
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        day = ->(y, m, d) { { after: Time.local(y, m, d), before: Time.local(y, m, d, 23, 59, 59) } }
+        ids = ->(range) { cal.search(query: '', limit: 50, **range).map { |h| h[:event_id] }.sort }
+        assert_equal %w[call holiday], ids[day[2026, 6, 1]]
+        assert_equal [], ids[day[2026, 5, 31]]
+        assert_equal ['rent'], ids[day[2026, 6, 5]] # a Friday
+        assert_equal [], ids[day[2026, 6, 4]]
+        # Unranged, the series is dated at its current occurrence: on Friday
+        # morning that is today's, not next week's.
+        rent = cal.search(query: 'rent', limit: 5, now: Time.local(2026, 6, 5, 8)).first
+        assert_equal Time.utc(2026, 6, 5), rent[:start]
+      ensure
+        cal.close
+      end
+    end
+  ensure
+    ENV['TZ'] = old_tz
+  end
+
   it 'lists each occurrence of a recurring series in a date range, earliest first' do
     # A series is one master row dated at its first occurrence, so before
     # expansion a week's listing never saw a meeting that started in January.
