@@ -19,6 +19,7 @@ march on.
 
 ## [Unreleased]
 
+- Fix `Pikuri::Agent::Listener::Terminal` printing reasoning, answers and injected blocks byte for byte, which let a model echoing an attacker's escape sequence recolor, overwrite or erase lines already on screen; control bytes and bidi overrides there now show escaped (`\x1b`), while tabs and emoji pass untouched.
 - Fix `web_search` logging every query at `info`: `Pikuri::Web::Search::Engines` now logs only the engine, the result count and the cache, since a query often names what you'd rather keep out of a log.
 - Fix `Pikuri::Thunderbird::Extension` wiring the mail and contact tools over a frozen index when Thunderbird's global search is switched off, which leaves `global-messages-db.sqlite` in place without the newest mail; it now wires them only while indexing is on (`Profile#gloda_indexing?`), and `pikuri-secretary` / `pikuri-briefing --with-mail` name that cause too.
 - Fix `thunderbird_calendar_search` and `thunderbird_calendar_read` west of UTC putting an all-day event in the day before, both in a date range and as a recurring series' current occurrence; an all-day event is now compared by its date, not as an instant.

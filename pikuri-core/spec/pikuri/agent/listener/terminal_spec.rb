@@ -10,7 +10,7 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     assert_includes out, 'pondered'
   end
 
-  it 'prints Assistant content raw (Markdown as-is)' do
+  it 'prints Assistant content unrendered (Markdown as-is)' do
     out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: '**hi**')) }
     assert_includes out, '**hi**'
   end
@@ -111,6 +111,39 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
       out = capture_stdout { listener.on_event(noisy) }
 
       assert_includes out, 'first second'
+    end
+  end
+
+  describe 'prose' do
+    it 'escapes the bytes a terminal acts on, so a model cannot erase lines already on screen' do
+      out = capture_stdout do
+        listener.on_event(Pikuri::Agent::Event::Assistant.new(content: "done\e[1A\e[2K\rok\b"))
+      end
+      refute_includes out, "\e"
+      assert_includes out, 'done\x1b[1A\x1b[2K\x0dok\x08'
+    end
+
+    it 'escapes bidi overrides' do
+      out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: "‮evil")) }
+      assert_includes out, '\u{202e}evil'
+    end
+
+    it 'keeps tabs and zero-width joiners, which honest prose carries' do
+      content = "func main() {\n\tfmt.Println(\"👩‍💻\")\n}"
+      out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: content)) }
+      assert_equal "#{content}\n", out
+    end
+
+    it 'escapes reasoning, both streamed fragments and an injected block too' do
+      streaming_listener = described_class.new(streaming: true)
+      out = capture_stdout do
+        listener.on_event(Pikuri::Agent::Event::Thinking.new(content: "\e[2K"))
+        listener.on_event(Pikuri::Agent::Event::SystemInjected.new(content: "\e[2K"))
+        streaming_listener.on_event(Pikuri::Agent::Event::ThinkingDelta.new(content: "\e[2K"))
+        streaming_listener.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: "\e[2K"))
+      end
+      refute_includes out, "\e[2K"
+      assert_equal 4, out.scan('\x1b[2K').size
     end
   end
 
