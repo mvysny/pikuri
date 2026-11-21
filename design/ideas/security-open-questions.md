@@ -58,8 +58,6 @@ pikuri-workshop's [`private-context-taint.md`](https://github.com/mvysny/pikuri-
 
 - **`URLCache` on disk.** Cached pages with embedded auth cookies or
   sensitive scrape results — disk encryption matters, backups matter.
-- **TOCTOU.** Mostly theoretical for an interactive agent, but
-  `Workspace::Filesystem`'s check-then-open isn't atomic on POSIX.
 - **Sub-agent context leak.** A child given less context than the
   parent can still leak parent context that flows in via the parent's
   "task" prompt.

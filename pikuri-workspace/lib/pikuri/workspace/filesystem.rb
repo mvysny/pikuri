@@ -49,6 +49,11 @@ module Pikuri
     # Lexical normalization alone catches 1–3 but misses 4; the walk-up
     # +realpath+ closes that gap.
     #
+    # The check holds for the path the model named, when it named it: the tool
+    # opens the path afterwards, so a symlink swapped in between escapes.
+    # Accepted because nothing may change a root while a tool runs (the root
+    # +AGENTS.md+ invariant) — +design/decisions.md+ +D_containment_race+.
+    #
     # == Project-root denylist
     #
     # A +project_root+ of a system root or home dir makes the whole tree

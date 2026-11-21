@@ -4784,3 +4784,51 @@ through `Paths`") lives in AGENTS.md *Conventions*.
   no second `at_exit`.
 - Thunderbird's `Extension` now takes `cache_dir` with `nil` meaning "mint a
   fresh per-process dir," which is what closed the original collision.
+
+---
+
+## D_containment_race — Why does `Filesystem` accept the race between its containment check and the tool's open?
+
+**Context.** {Pikuri::Workspace::Filesystem#resolve_for_read} and
+`#resolve_for_write` realpath a path and check it against the roots; the tool
+opens it afterwards — `read` a moment later, `write` only once the human has
+answered its confirm, which can take seconds. A symlink swapped into the path
+in between sends the open outside the roots. The check is sound against the
+model, which names a path and waits; it does nothing against a process
+retargeting links while the tool runs.
+
+**Decision.** Accept the race in code, and keep it unwinnable by rule. Winning
+it takes a process that changes a root while a file tool runs and cannot read
+the target itself — otherwise it would simply read it. The AGENTS.md invariant
+*a tool's changes to a workspace root end with its call* removes that process:
+nothing a tool starts keeps changing a root after the call returns, two calls
+on one root never overlap, and what runs uncaged as you is exempt because it
+gains nothing by racing. Today it holds by construction: no tool pikuri ships
+leaves a writer behind or can make a symlink (that takes a shell), one agent's
+tools run one at a time since ruby_llm's tool concurrency stays off
+({Pikuri::Tool}), and in pikuri-workshop sandboxed `bash` runs in its own PID
+namespace, so nothing it starts outlives the call.
+
+**Alternatives rejected.**
+
+- **Re-check after opening, through `/proc/self/fd/N`.** It closes the race for
+  reads, on Linux, but turns "resolve a path" into "open the file for me",
+  reshaping every file tool for an attacker pikuri doesn't have — and it can't
+  reach `grep`, whose `rg` opens its files itself.
+- **Create relative to a verified directory fd**, `openat` semantics. Ruby has
+  no `openat`; opening `/proc/self/fd/N/<name>` emulates it on Linux only, and
+  `write`'s `mkdir_p` of missing parents would stay racy.
+- **`File::NOFOLLOW`.** It guards the last component only; the swap can sit in
+  any directory on the path.
+
+**Consequences.**
+
+- Containment is a check on the path the model named, when it named it; the
+  {Pikuri::Workspace::Filesystem} header says so.
+- The invariant binds hosts and the workshop alike. A caged process that keeps
+  a root writable past its call — a containerized MCP server with the workspace
+  mounted read-write — breaks it, and so does a host running two agents over
+  one root on two threads; each must mount read-only or serialize instead.
+- The exemption is honest only while "uncaged as you" means it: unsandboxed
+  `bash`'s background jobs, a language server and your editor can read every
+  target directly, so a race buys them nothing.
