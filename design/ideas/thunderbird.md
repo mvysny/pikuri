@@ -11,7 +11,7 @@ answered, it graduates the same way and this note shrinks again.
 
 ## Related
 
-- [`private-context-taint.md`](private-context-taint.md) — the "human as
+- pikuri-workshop's [`private-context-taint.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/private-context-taint.md) — the "human as
   *author*, not *approver*" seat compose relies on.
 
 ## Deferred work

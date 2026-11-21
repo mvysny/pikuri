@@ -133,7 +133,7 @@ content, the less a handle helps, and every agent pikuri ships is the understand
   ever asked for it, and an open idea kept inviting re-reads with no consumer behind them.
 - **The declassification half on its own**: the child must reply in a type too narrow to carry an
   instruction (a number, an enum), which the parent may then read. It needs no handles and no
-  store, so it's priced separately, in `design/ideas/templated-subagent-replies.md`.
+  store, so it's priced separately, in pikuri-workshop's `design/ideas/templated-subagent-replies.md`.
 
 **Consequences.**
 
@@ -4083,12 +4083,14 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   from the same bases. Duplicating it would have a host build two parallel
   arrays out of one pair of booleans, and handing `Command::Registry` a
   `Skill::Catalog::Base` would read as a command being a kind of skill.
-- **Left open:** folding home skill roots into a workspace's `readable:` while
-  declaring that workspace trusted is the vouched-for-island problem arriving
-  through the back door — pikuri-workshop's `Code::WholeDisk` raises on `trusted:` for
-  the same reason. `pikuri-code` cannot reach it (its workspace is untrusted
-  regardless), so it binds the first host whose readable set is the project
-  root. See `design/ideas/security-open-questions.md`.
+- **`Filesystem.new(trusted: true)` raises on any root outside its project
+  root.** Folding home skill roots into a trusted workspace's `readable:` would
+  be the vouched-for-island problem arriving through the back door: `read` would
+  vouch for sidecars nobody vouched for, and only a quiet banner would show it.
+  pikuri-workshop's `Code::WholeDisk` refuses `trusted:` outright for the same
+  reason. `pikuri-code` never met it (its workspace is untrusted regardless); a
+  host whose readable set is the project root keeps the flag and gives up `read`
+  on home skill sidecars.
 
 ---
 
@@ -4319,8 +4321,8 @@ it. A detector whose alarms can be declared away is a detector nobody trusts.
 - **The runtime question is a different one, and stays open elsewhere.**
   Whether an agent has *now* read untrusted content is observed rather than
   declared, needs no declaration to be trustworthy, and is worth showing in
-  the UI. It rides `design/ideas/private-context-taint.md`'s per-context flag as the
-  display half of that mechanism. The narrower "poisoned *right now*" alarm
+  the UI. It rides the per-context flag of pikuri-workshop's
+  `design/ideas/private-context-taint.md`, as the display half of that mechanism. The narrower "poisoned *right now*" alarm
   on LLM-*authored* bytes remains `design/ideas/injection-tripwire.md`'s.
 
 ---

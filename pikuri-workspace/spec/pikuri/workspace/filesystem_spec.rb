@@ -257,6 +257,34 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
   end
 
+  describe 'trusted:' do
+    it 'accepts a workspace whose every root lies under the project_root' do
+      notes = root + 'Notes'
+      FileUtils.mkdir_p(notes)
+      ws = described_class.new(project_root: root, root_writable: false, writable: [notes], trusted: true)
+      assert ws.trusted?
+    end
+
+    it 'refuses a readable root outside the project_root' do
+      err = assert_raises(ArgumentError) do
+        described_class.new(project_root: root, readable: [extra_read], trusted: true)
+      end
+      assert_includes err.message, extra_read.to_s
+    end
+
+    it 'refuses a writable root outside the project_root' do
+      err = assert_raises(ArgumentError) do
+        described_class.new(project_root: root, writable: [extra_write], trusted: true)
+      end
+      assert_includes err.message, extra_write.to_s
+    end
+
+    it 'leaves an untrusted workspace free to reach outside the project_root' do
+      ws = described_class.new(project_root: root, readable: [extra_read], writable: [extra_write])
+      refute ws.trusted?
+    end
+  end
+
   describe 'edge cases' do
     it 'resolves the project_root itself (no traversal)' do
       assert_equal root, workspace.resolve_for_read('.')

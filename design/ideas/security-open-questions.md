@@ -22,53 +22,23 @@ filesystem writes); the planned secretary reads your mail, calendar
 and notes, writes notes and searches the web, and adds the
 privacy-of-personal-data axis.
 
-Related long-form notes (the entries below that already grew one):
+Related long-form notes:
 
 - `book/trifecta-detector.md` + {Pikuri::Trifecta} — the static
   capability-presence check, **shipped**, with nothing outstanding; its
   forks are `D_egress_axis_shape`, `D_trifecta_map_orphans`,
   `D_write_custody_axis` and `D_no_static_poisoned_flag`.
-- [`private-context-taint.md`](private-context-taint.md) — the runtime
-  private-in → sever-egress enforcement (and why a user-curated `fetch`
-  allowlist is dead).
-- pikuri-workshop's [`typed-transports.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/typed-transports.md)
-  — classify each LLM-shaped transport (chat / embedder / reranker)
-  `:private` vs `:public` from its endpoint host and refuse to mix by
-  default. A pikuri tree rides one transport, so it can't mix.
-- [`bash-confirmer.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/bash-confirmer.md) — the permission-model
-  granularity / fatigue work (risk tiers, dry-run, session grants).
-- [`more-confirmers.md`](more-confirmers.md) — the human-in-the-loop
-  confirmer shapes and the structured-action-context seam.
-
-## Trifecta — open mitigations beyond sub-agent separation
-
-The structural defense (privilege-separated `RESEARCHER` and
-`FILE_MINER` sub-agents) shipped and is documented in
-[`../SECURITY.md`](../../SECURITY.md) §"Prompt injection". The biggest
-adjacent idea — a **structural trifecta detector** — shipped, and is
-taught in `book/trifecta-detector.md`. Shorter adjacent ideas still on
-the table:
-
-- **Private-context taint + egress levels** — the long-form
-  runtime-enforcement design (coarse context taint on first private
-  read; Sealed / Bounded / Off levels; `web_search` whitelisted by
-  nature vs `fetch` exfil by nature):
-  [`private-context-taint.md`](private-context-taint.md).
-  Designed, not built.
-- **A `readable:` root outside `project_root` under `trusted: true`.**
-  `Catalog#roots` is documented to be folded into a workspace's
-  `readable:` so `read` can load skill sidecars. Do that with
-  `~/.claude/skills` on a workspace declared trusted, and `read` vouches
-  for bytes nobody vouched for — the vouched-for-island problem
-  `Filesystem#trusted?` warns about, arriving through the back door;
-  pikuri-workshop's `AllowAll` already raises on `trusted:` for the same
-  reason. Latent: `bin/pikuri-code` cannot reach it, since
-  `ToolchainPaths` keeps its workspace honestly untrusted whatever the
-  user answers. It binds the first host whose readable set *is* the
-  project root — the planned TUI. Two exits: extend that raise to any
-  `readable:` root outside `project_root`, or stop folding home skill
-  roots in and lose sidecar `read` for home skills. See
-  `D_bundle_trust_grading`.
+- In pikuri-workshop, since 2026-11-21:
+  [`private-context-taint.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/private-context-taint.md)
+  (the runtime private-in → sever-egress enforcement, Sealed / Bounded /
+  Off, and why a user-curated `fetch` allowlist is dead),
+  [`typed-transports.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/typed-transports.md)
+  (private vs public LLM endpoints; a pikuri tree rides one transport,
+  so it can't mix),
+  [`bash-confirmer.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/bash-confirmer.md)
+  and [`more-confirmers.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/more-confirmers.md)
+  (approval fatigue, structured requests, the ingest gate), and
+  [`templated-subagent-replies.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/templated-subagent-replies.md).
 
 ## Egress is broader than `web_search`
 
@@ -82,7 +52,7 @@ most egress firewalls don't filter port 53. This is why the trifecta
 detector's `:egress` leg is tagged generously (an undeclared tool is
 presumed to hold it — {Pikuri::Tool::TrifectaLegs::ASSUMED}), and why the killed
 `fetch` whitelist can't be rescued by URL-shape heuristics (see
-[`private-context-taint.md`](private-context-taint.md)).
+pikuri-workshop's [`private-context-taint.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/private-context-taint.md)).
 
 ## Misc smaller things
 

@@ -6,7 +6,7 @@ for what it measures. This note is the poisoned-*now* half; the
 poisoned-*capable* half is the detector's untrusted leg, and a declared
 per-node flag was rejected (`D_no_static_poisoned_flag`). The *has-read*
 badge between them rides
-[`private-context-taint.md`](private-context-taint.md). `ComposeGuard` and
+pikuri-workshop's [`private-context-taint.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/private-context-taint.md). `ComposeGuard` and
 the graded egress axis are both shipped; see
 {Pikuri::Thunderbird::ComposeGuard} and {Pikuri::Tool::TrifectaLegs}.
 The shell producer, escalation on a repeat and the "start fresh"

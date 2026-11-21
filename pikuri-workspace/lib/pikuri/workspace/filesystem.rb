@@ -102,10 +102,11 @@ module Pikuri
       # Default +false+, because broad disk access means cloned dependencies,
       # fetched PR branches, saved downloads and package caches: attacker-authored
       # bytes are the norm, and a hostile README reaches the model verbatim.
-      # Claim it only when the trusted area is the tool's *entire* reachable set
-      # — a vouched-for island inside a broad root buys nothing, since the tool
-      # can still reach everything else. So a whole-host subclass should refuse
-      # the flag outright rather than merely discourage it.
+      # The claim covers the tool's *entire* reachable set — a vouched-for island
+      # inside a broad root buys nothing, since the tool can still reach
+      # everything else — so +trusted: true+ refuses any root outside
+      # +project_root+: a +~/.m2+ cache or a home skill dir is somebody else's
+      # bytes.
       #
       # Distinct from the trust-this-directory question a host may ask at boot:
       # that one asks whether a hostile +.gitattributes+ can *execute code*, this
@@ -130,6 +131,8 @@ module Pikuri
       # @raise [Errno::ENOENT] if any of +project_root+/+readable+/+writable+
       #   doesn't exist.
       # @raise [Error] if +project_root+ is denied (system root or +/home/*+).
+      # @raise [ArgumentError] if +trusted: true+ and a +readable+/+writable+
+      #   root lies outside +project_root+.
       def initialize(project_root:, readable: [], writable: [], root_writable: true, private: false,
                      trusted: false)
         @project_root = Pathname.new(project_root).realpath
@@ -140,6 +143,7 @@ module Pikuri
 
         @writable = ((root_writable ? [@project_root] : []) + writable.map { |p| Pathname.new(p).realpath }).uniq
         @readable = ([@project_root] + @writable + readable.map { |p| Pathname.new(p).realpath }).uniq
+        validate_trusted_roots! if trusted
       end
 
       # Resolve a user path against the read-set (readable ∪ writable). Returned
@@ -189,6 +193,15 @@ module Pikuri
                 'project_root must be a project subdirectory (a system or home root would expose ' \
                 'the entire tree as writable).'
         end
+      end
+
+      def validate_trusted_roots!
+        stray = @readable.reject { |r| r.ascend.include?(@project_root) }
+        return if stray.empty?
+
+        raise ArgumentError,
+              "trusted: true vouches for every byte the tools can reach, but #{stray.map(&:to_s).join(', ')} " \
+              "lies outside project_root '#{@project_root}'; scope the workspace to one root, or drop trusted:"
       end
 
       # See the class header for the algorithm rationale.

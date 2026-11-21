@@ -452,7 +452,7 @@ is what a careful re-read is good at.
 > defanged before they reach your terminal. What's **not yet
 > shipped** is the fatigue half: the secretary still asks on every
 > write and every search. The plan (motivation in
-> [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md),
+> pikuri-workshop's [`design/ideas/more-confirmers.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/more-confirmers.md),
 > "ask less, and headline the consequence") is to ask only on
 > the consequential, and when it *does* ask, headline the
 > consequence rather than echo every byte the eye slides over. Rare,
