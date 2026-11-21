@@ -22,16 +22,17 @@ module Pikuri
     # local calendar never leaves the machine; importing into a CalDAV calendar
     # syncs out — and it's the human, in Thunderbird's wizard, who chooses.
     #
-    # == Deferred: attendees
+    # == No attendees, on purpose
     #
-    # No +attendees+ parameter yet. Thunderbird's import sends no iTIP itself (it
-    # is a plain +addItem+, so a plain CalDAV PUT), but an RFC 6638
-    # auto-scheduling server mails invites on that PUT — a send the human's
-    # import click never offered. Marking each +ATTENDEE+ +SCHEDULE-AGENT=CLIENT+
-    # stops it, and the import keeps the mark (+design/architecture.md+ §
-    # "Hand-off mechanics"); the parameter is deferred work
-    # (+design/ideas/thunderbird.md+). A self-authored event with no attendees
-    # can't invite anyone.
+    # The event carries no +ATTENDEE+, so importing it invites nobody. With
+    # guests, an RFC 6638 auto-scheduling CalDAV server mails invitations on
+    # the import's plain PUT, a send the human's Import click never offered.
+    # Marking each guest +SCHEDULE-AGENT=CLIENT+ stops that only until the
+    # human's first save in Thunderbird's event dialog, which strips the mark
+    # and invites them all then; a server may ignore the mark (Google's
+    # reports conflict); and guests would let an injector into third parties'
+    # inboxes, which {MailCompose} already reaches with the draft in plainer
+    # view. Measured: +design/architecture.md+ § "Hand-off mechanics".
     #
     # Sharing: +P_one_agent+ — it holds a {Profile} and writes an +.ics+ per
     # call. As {MailCompose}, the binding constraint is the human at the import

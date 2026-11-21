@@ -740,7 +740,7 @@ connection at all (20 s under `MOZ_LOG`, 2026-11-15). Clicking an IMAP folder in
 session would try to connect and fail.
 
 **The CalDAV server: a rootless Cyrus, started by hand** for the scheduling check in § Hand-off
-mechanics; no script runs it yet. Cyrus because it auto-schedules (RFC 6638, iMIP to outside
+mechanics; no script runs it. Cyrus because it auto-schedules (RFC 6638, iMIP to outside
 attendees included) and Fastmail runs it; Radicale doesn't schedule, so it proves nothing.
 `master -C imapd.conf -M cyrus.conf -d` runs as the caller, named in `cyrus_user` and
 `cyrus_group`, with every directory in one short `/tmp` path (the same 108-byte socket limit).
