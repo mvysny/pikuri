@@ -252,7 +252,7 @@ module Pikuri
         # zone (local midnight is hours ahead of UTC) an all-day event on day
         # D can fall just before a local-frame "day D" lower bound. Fine for
         # UTC/eastern zones; a fully correct fix needs per-event-type date
-        # extraction (deferred — see design/ideas/thunderbird.md open questions).
+        # extraction (deferred — see design/ideas/thunderbird.md).
         if after
           filters << 'event_start >= ?'
           binds << to_prtime(after)

@@ -622,6 +622,22 @@ can't be shared on snap.
   (confined-readable, **not** the hidden `~/.cache` snapshot dir — see § "Platform
   confinement"), and handed off by the shared {Pikuri::Thunderbird::Launcher}
   (the same detached `setsid --fork` launch compose uses).
+- **An import into a CalDAV calendar can still mail invitations — the server's.** The
+  wizard's commit is `CalendarFileImporter.startImport`: one `addItem` per item, a plain PUT,
+  no iTIP from Thunderbird. But an RFC 6638 `calendar-auto-schedule` server schedules *on the
+  PUT* when the `ORGANIZER` is the calendar's owner: Cyrus mailed an outside `ATTENDEE` an
+  iMIP `REQUEST`, put a same-server attendee's invitation into their scheduling Inbox *and*
+  their calendar, and mailed a `CANCEL` on DELETE. Two shapes stop it: `SCHEDULE-AGENT=CLIENT`
+  on an `ATTENDEE` (RFC 6638 §7.1) stops all three for that attendee, and an event with no
+  `ORGANIZER` isn't a scheduling object at all. Thunderbird's import keeps the parameter in
+  its PUT and adds no `ORGANIZER`. **A later edit in Thunderbird's event dialog strips the
+  mark:** its Save calls `cal.itip.adaptScheduleAgent`, which on an auto-scheduling calendar
+  whose iMIP identity is the organizer (and `forceEmailScheduling` off, the default) deletes
+  `SCHEDULE-AGENT=CLIENT` from every attendee, so the server then mails each one a *first*
+  `REQUEST`. Import never calls it.
+  Testbed with Cyrus 3.12 (§ The testbed), Thunderbird 160, 2026-11-21; the import ran the
+  wizard's own two calls over Marionette, and the dialog's Save was replicated, not clicked.
+  Not seen: Sabre (Nextcloud, Baikal), iCloud, Google — Google's the likeliest to ignore it.
 
 Both are the human-gated hand-off shape the no-send seam requires: pikuri
 opens a window, the human reviews and commits.
@@ -661,16 +677,20 @@ across them.
 
 ```
 sudo snap install thunderbird
-sudo apt install xvfb ffmpeg libreoffice dovecot-imapd
-sudo systemctl disable --now dovecot.service dovecot.socket
+sudo apt install xvfb ffmpeg libreoffice dovecot-imapd cyrus-caldav
+sudo systemctl disable --now dovecot.service dovecot.socket cyrus-imapd.service postfix.service
 ```
 
 `xvfb` and `ffmpeg` serve `session --display` and its screenshot; LibreOffice renders the demo
-documents (`dev/demo-home/`); dovecot is the IMAP server below. Ubuntu's package enables and
-starts the system dovecot on install, listening on 143 and 993 on every interface; the testbed
+documents (`dev/demo-home/`); dovecot is the IMAP server and Cyrus the CalDAV server below.
+Ubuntu's package enables and starts the system dovecot on install, listening on 143 and 993 on
+every interface; the testbed
 never uses it (it runs its own), hence the `disable --now`, which stops it, keeps it off at
 boot, and stops socket activation from waking it. `ss -ltn | grep -E ':(143|993)\b'` printing
-nothing confirms it.
+nothing confirms it. The same goes for the system Cyrus (it fails to start anyway, lacking the
+IMAP daemon) and for Postfix, which `cyrus-caldav` pulls in: answer its "Postfix configuration"
+prompt with **No configuration**, so a `sendmail` call the test Cyrus misroutes fails instead of
+delivering, and "remove the mail and news spools" with **Yes** — they stay empty.
 
 **We write the inputs, Thunderbird writes its stores.** The builder writes only what
 Thunderbird reads as input — `user.js`, mbox files, an `.ics`, and the mail an IMAP server
@@ -718,6 +738,25 @@ After the build nothing listens on 10143, so the account has `check_new_mail`,
 `login_at_startup` and `autosync_offline_stores` off; a session on the cached profile opens no
 connection at all (20 s under `MOZ_LOG`, 2026-11-15). Clicking an IMAP folder in a `--display`
 session would try to connect and fail.
+
+**The CalDAV server: a rootless Cyrus, started by hand** for the scheduling check in § Hand-off
+mechanics; no script runs it yet. Cyrus because it auto-schedules (RFC 6638, iMIP to outside
+attendees included) and Fastmail runs it; Radicale doesn't schedule, so it proves nothing.
+`master -C imapd.conf -M cyrus.conf -d` runs as the caller, named in `cyrus_user` and
+`cyrus_group`, with every directory in one short `/tmp` path (the same 108-byte socket limit).
+`imapd.conf`: `httpmodules: caldav`; `sasl_pwcheck_method: alwaystrue` with `allowplaintext: 1`,
+so any password passes (libsasl2 has the method; no `sasl2-bin`); `defaultdomain: novak.example`,
+which makes user `alex` `mailto:alex@novak.example`; `imipnotifier: external` with
+`notify_external:` a script that saves what notifyd hands it on stdin (a JSON per iMIP:
+recipient, method, the iCalendar), so nothing is mailed; `caldav_historical_age: -1`.
+`cyrus.conf` runs `httpd` on loopback, `lmtpd` on a unix socket and `notifyd` (`proto="udp"`).
+httpd won't create a user (`could not autoprovision calendars … Invalid user`) and the IMAP
+daemon isn't installed, so `autocreate_quota: 0` and `autocreate_post: 1` let one message through
+`deliver` create the INBOX; the calendars follow on the first CalDAV request. Logs go to the
+journal under `syslog_prefix`. In a session the calendar is `cal.manager.createCalendar("caldav",
+…)` with `imip.identity.key` set to Alex's identity and a login stored for its origin, realm
+`servername`; the first capability probe prompted for a password even so, and a second found
+`calendar-auto-schedule`.
 
 **The demo world** is the repo root's `dev/demo-home/`: one facts file (`facts.yml`) and the
 demo `~/Documents` (`documents/`) rendered from it. The testbed reads both — the scene mail

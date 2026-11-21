@@ -14,24 +14,69 @@ answered, it graduates the same way and this note shrinks again.
 - [`private-context-taint.md`](private-context-taint.md) — the "human as
   *author*, not *approver*" seat compose relies on.
 
-## Open validation questions
+## To decide: `attendees` on calendar-create
 
-Each needs a live install or a comm-central read; none blocks what ships.
+An `attendees:` parameter: the model names guests (resolving "Bob" through the
+`contacts` surface), the `.ics` carries one `ATTENDEE` each, the human imports.
 
-- **Does an auto-scheduling CalDAV server honour `SCHEDULE-AGENT=CLIENT` on an
-  imported `ATTENDEE`?** Thunderbird itself sends nothing on import
-  (comm-central: `putItemsIntoCal` → `destCal.addItem` → a plain PUT, no
-  iTIP). But an RFC 6638 `calendar-auto-schedule` server (Nextcloud/Sabre,
-  iCloud, Fastmail) schedules *on the PUT* whenever the event has an
-  `ORGANIZER` that is the owner, so the human's "import" click would mail
-  invites the human never saw offered. RFC 6638 §7.1 says the server must not
-  schedule an attendee marked `SCHEDULE-AGENT=CLIENT` (or omit `ORGANIZER`
-  entirely, which makes it no scheduling object) — so the `attendees` param
-  (below) is buildable once one real server is seen honouring it. Google's
-  CalDAV is the likeliest to ignore it. The testbed can't answer it: its
-  dovecot is IMAP only, and a CalDAV server that doesn't auto-schedule (Radicale)
-  proves nothing. It needs Nextcloud/Sabre, Cyrus or a hosted account.
+**What's known** (2026-11-21, Thunderbird 160, Cyrus 3.12 on the testbed; the
+evidence is in `pikuri-thunderbird/design/architecture.md` § Hand-off
+mechanics):
 
+- Thunderbird's import sends nothing itself: `CalendarFileImporter.startImport`
+  is one `addItem` per item, a plain PUT.
+- An auto-scheduling CalDAV server (RFC 6638) schedules on that PUT when the
+  `ORGANIZER` is the calendar's owner. An unmarked import mailed the guest an
+  invitation, put a same-server guest's straight into their calendar, and a
+  later DELETE mailed a cancellation. Pressing **Import** sent invitations.
+- `SCHEDULE-AGENT=CLIENT` on each `ATTENDEE` stops all of it, and the import
+  keeps the mark. So does leaving `ORGANIZER` out: no scheduling object at all,
+  and Thunderbird's import adds none.
+- **A later edit in Thunderbird's event dialog strips the mark**
+  (`cal.itip.adaptScheduleAgent`, called by the dialog's Save, never by import).
+  The server then mails every guest a *first* invitation, on whatever edit comes
+  first, even a typo fix days later.
+- The wizard selects the first event itself and shows its details, the guest
+  list included, so the guests are on screen when Import is pressed.
+- Google: no documentation. Reports are mixed. Mozilla bug 997784 says Google
+  notified the guests despite the mark. Others say Google's CalDAV sends no
+  invitations at all. iCloud and Sabre (Nextcloud, Baikal) are not seen;
+  Sabre's answer is readable in sabre/vobject's `ITip\Broker`.
+- The book doesn't need it. The secretary's offsite and dentist scenes make
+  their point with events that have no guests.
+
+**What it would buy:** the guests' addresses pre-filled, resolved from a name by
+the model, so the human doesn't type them into Thunderbird's dialog.
+
+**What it costs:**
+
+- **Done safely, it invites nobody.** With the mark, the event *lists* Bob,
+  but Bob hears nothing until the human's first dialog edit, which then invites
+  him, on whatever edit that is. The useful version, invitations on Import, is
+  exactly the send the hand-off rule forbids: the human pressed Import, not
+  Send.
+- **It adds a reach the tool doesn't have.** Today an event goes only to the
+  human's own calendar server, which an injector can't read. Guests are third
+  parties' inboxes, and the injector can be a guest. "Tell Bob" is already
+  covered by `thunderbird_mail_compose`, whose compose window shows what leaves
+  more plainly than an event's details pane.
+- **Its safety rests on code we don't own:** a server honouring the mark
+  (Google unknown), and Thunderbird's importer never calling
+  `adaptScheduleAgent`. That has to be re-checked after every Thunderbird
+  upgrade, against a CalDAV server the testbed has no script for yet.
+- **`D_gem_placement`:** it's a feature that fixes no bug, closes no promise
+  hole, and neither the secretary nor the book needs it.
+
+Open only if it's built: `Q_no_organizer`, whether to emit no `ORGANIZER` as
+well, which would cover a Google that ignores the mark (unverified: whether
+the dialog's Save then adds the calendar's identity as organizer); and
+`Q_dialog_edit_reschedules`, whether that dialog offers a "notify attendees"
+choice on an auto-scheduling calendar.
+
+**Leaning: don't build.** If that's the decision, this section goes. The
+calendar-create yardoc's attendees note becomes the one-paragraph why-not,
+since the trap is invisible in the code and silent under test, and the
+architecture doc keeps the finding.
 
 ## Deferred work
 
@@ -58,8 +103,6 @@ Each needs a live install or a comm-central read; none blocks what ships.
   `book/trifecta-detector.md` land — so build it when a week of real use
   makes the pool intolerable, and record it in `design/architecture.md` (it narrows the
   read surface) plus a `D_` entry if a fork turns out to be real.
-- **`attendees` on calendar-create** — gated on the `SCHEDULE-AGENT` question
-  above; each emitted `ATTENDEE` carries `SCHEDULE-AGENT=CLIENT`.
 - **Attachments on compose** — the author-not-approver draft doesn't need them,
   and a path/URL reopens the staging problem.
 - **Calendar date-filter timezone frame.** Bounds compare in the machine-local
