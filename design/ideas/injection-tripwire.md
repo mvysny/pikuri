@@ -9,6 +9,10 @@ badge between them rides
 [`private-context-taint.md`](private-context-taint.md). `ComposeGuard` and
 the graded egress axis are both shipped; see
 {Pikuri::Thunderbird::ComposeGuard} and {Pikuri::Tool::TrifectaLegs}.
+The shell producer, escalation on a repeat and the "start fresh"
+affordance went to pikuri-workshop's
+[`injection-tripwire.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/injection-tripwire.md)
+on 2026-11-21; this note keeps the insight and the mail producer.
 
 ## The insight
 
@@ -57,9 +61,9 @@ in-context.
    never does this — it has very likely been manipulated by content it
    read (a prompt injection)."
 4. **Advise dropping the poisoned context** and **name the likely source**
-   ("the message it just read may be hostile — don't act on it"). Offer a
-   one-step "start fresh / clear conversation" affordance rather than
-   making the user figure out how.
+   ("the message it just read may be hostile — don't act on it"). The
+   one-step "start fresh" affordance that would act on the advice is a
+   host's UI (the workshop note).
 
 ### Why *advise*, not auto-close the harness
 
@@ -75,9 +79,9 @@ auto-teardown is the wrong default:
   catastrophic, but a reason not to make teardown automatic.
 - **Agency.** Tearing down loses the user's working session; that should be
   their call, made with a clear explanation, not the harness's.
-- **Escalate on repeat.** A *second* fail-close in the same session (after
-  the warning) is near-conclusive → a harder default is defensible then
-  (e.g. auto-clear context), still short of killing the process.
+
+A harder default on a *second* trip (auto-clearing the context) is the
+workshop note's.
 
 ### The subtlety the advice must carry
 
@@ -106,11 +110,6 @@ never a silent context wipe that lets the user walk straight back in.
 
 - Which event variant / listener rendering? (One `SuspectedInjection`
   event carrying the flagged kinds + the tool that produced it.)
-- Generalize beyond Thunderbird: should the Bash confirmer's Sanitized
-  display of LLM-authored argv raise the same tripwire? (It should — a
-  bidi/zero-width in a *command the LLM wrote* is the same hide-from-the-
-  reviewer move.) Where's the shared chokepoint — a helper both confirmers
-  call when the flagged text is LLM-authored?
 - Does the "authored vs relayed" split need to be explicit in the
   Sanitizer API (a caller-supplied provenance flag), or does each call
   site already know which it is? (It does — so keep provenance at the call

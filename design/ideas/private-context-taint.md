@@ -19,11 +19,14 @@ enforcement covers the **confidentiality** leg only (private in → sever
 egress).
 
 Also related:
-[`security-open-questions.md`](security-open-questions.md) §"Trifecta —
-open mitigations" (the egress-allowlist entry — this note is its
-long-form version) and §"Egress is broader than `web_search`"; and
-[`typed-transports.md`](typed-transports.md) (the provider-privacy
-cousin — see "Reroute is not a trifecta break" below).
+[`security-open-questions.md`](security-open-questions.md) §"Egress is
+broader than `web_search`"; pikuri-workshop's
+[`security-open-questions.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/security-open-questions.md)
+§"An egress allowlist below the tool layer" (what survives of the
+allowlist once this note kills the `fetch` one); and pikuri-workshop's
+[`typed-transports.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/typed-transports.md)
+(the provider-privacy cousin — see "Reroute is not a trifecta break"
+below).
 
 ## The core idea: coarse, monotonic context taint
 
