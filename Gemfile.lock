@@ -1,7 +1,7 @@
 PATH
   remote: pikuri-core
   specs:
-    pikuri-core (0.1.0)
+    pikuri-core (0.2.0)
       faraday (~> 2.9)
       rainbow (~> 3.1)
       ruby_llm (~> 2.2)
@@ -10,57 +10,57 @@ PATH
 PATH
   remote: pikuri-fileindex
   specs:
-    pikuri-fileindex (0.1.0)
-      pikuri-core (= 0.1.0)
+    pikuri-fileindex (0.2.0)
+      pikuri-core (= 0.2.0)
 
 PATH
   remote: pikuri-html
   specs:
-    pikuri-html (0.1.0)
+    pikuri-html (0.2.0)
       nokogiri (~> 1.19)
-      pikuri-core (= 0.1.0)
+      pikuri-core (= 0.2.0)
       reverse_markdown (~> 3.0)
       ruby-readability (~> 0.7)
 
 PATH
   remote: pikuri-pdf
   specs:
-    pikuri-pdf (0.1.0)
+    pikuri-pdf (0.2.0)
       pdf-reader (~> 2.15)
-      pikuri-core (= 0.1.0)
+      pikuri-core (= 0.2.0)
 
 PATH
   remote: pikuri-subagents
   specs:
-    pikuri-subagents (0.1.0)
-      pikuri-core (= 0.1.0)
-      pikuri-workspace (= 0.1.0)
+    pikuri-subagents (0.2.0)
+      pikuri-core (= 0.2.0)
+      pikuri-workspace (= 0.2.0)
 
 PATH
   remote: pikuri-thunderbird
   specs:
-    pikuri-thunderbird (0.1.0)
+    pikuri-thunderbird (0.2.0)
       ice_cube (~> 0.17)
       mail (~> 2.9)
-      pikuri-core (= 0.1.0)
+      pikuri-core (= 0.2.0)
       sqlite3 (~> 2.9)
       tzinfo (~> 2.0)
 
 PATH
   remote: pikuri-web
   specs:
-    pikuri-web (0.1.0)
+    pikuri-web (0.2.0)
       faraday (~> 2.9)
       nokogiri (~> 1.19)
-      pikuri-core (= 0.1.0)
-      pikuri-html (= 0.1.0)
-      pikuri-workspace (= 0.1.0)
+      pikuri-core (= 0.2.0)
+      pikuri-html (= 0.2.0)
+      pikuri-workspace (= 0.2.0)
 
 PATH
   remote: pikuri-workspace
   specs:
-    pikuri-workspace (0.1.0)
-      pikuri-core (= 0.1.0)
+    pikuri-workspace (0.2.0)
+      pikuri-core (= 0.2.0)
       reline (~> 0.6)
 
 GEM
@@ -228,14 +228,14 @@ CHECKSUMS
   net-smtp (0.5.2) sha256=35103cc04d6b2d94632f9928ede07483c24b70b9c0db1f231fea43909b678f3c
   nokogiri (1.19.7-x86_64-linux-gnu) sha256=25865ccb462f714e712fdf8906fde07849cb6704a808e3d629d75baa5af5dd3b
   pdf-reader (2.16.0) sha256=bf1b5564c085264d8279bde3cf1467778b75841494d20c0fe7da3dad475f3732
-  pikuri-core (0.1.0)
-  pikuri-fileindex (0.1.0)
-  pikuri-html (0.1.0)
-  pikuri-pdf (0.1.0)
-  pikuri-subagents (0.1.0)
-  pikuri-thunderbird (0.1.0)
-  pikuri-web (0.1.0)
-  pikuri-workspace (0.1.0)
+  pikuri-core (0.2.0)
+  pikuri-fileindex (0.2.0)
+  pikuri-html (0.2.0)
+  pikuri-pdf (0.2.0)
+  pikuri-subagents (0.2.0)
+  pikuri-thunderbird (0.2.0)
+  pikuri-web (0.2.0)
+  pikuri-workspace (0.2.0)
   pp (0.6.4) sha256=dfcb0fce700c41456265922884f9fe195d7fbb0674a3578e6c0f69588e82b570
   prettyprint (0.2.1) sha256=d555d57ea6d7cf001d4774b693546a6bd88bec1e778ddffb5c60b68ceec4b7d4
   prism (2.1.0-x86_64-linux-gnu) sha256=b2b647afce09551e650b8bb3e2fc91d7d73d392a09534ca307ec0d619c33bfd4
