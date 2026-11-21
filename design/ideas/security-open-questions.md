@@ -56,9 +56,6 @@ pikuri-workshop's [`private-context-taint.md`](https://github.com/mvysny/pikuri-
 
 ## Misc smaller things
 
-- **Logging hygiene.** `Pikuri.logger_for` shouldn't log Authorization
-  headers, request bodies, or full search queries (which are often
-  sensitive themselves).
 - **`URLCache` on disk.** Cached pages with embedded auth cookies or
   sensitive scrape results — disk encryption matters, backups matter.
 - **TOCTOU.** Mostly theoretical for an interactive agent, but

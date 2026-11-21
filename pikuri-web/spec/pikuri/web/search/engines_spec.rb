@@ -381,9 +381,10 @@ RSpec.describe Pikuri::Web::Search::Engines, 'logging' do
     assert_includes log_io.string, 'INFO -- Engines: engines available: Pair'
   end
 
-  it 'logs the chosen engine, query, and result count for a successful search' do
+  it 'logs the chosen engine and result count for a successful search, never the query' do
     engine_with([pair_provider]).search('ruby on rails', max_results: 10)
-    assert_includes log_io.string, 'INFO -- Engines: engine=Pair query="ruby on rails" results=2'
+    assert_includes log_io.string, 'INFO -- Engines: engine=Pair results=2 cache=disk'
+    refute_includes log_io.string, 'ruby on rails'
   end
 
   it 'does not relog the available-engines line when the provider set is unchanged' do
@@ -403,8 +404,9 @@ RSpec.describe Pikuri::Web::Search::Engines, 'logging' do
       log_io.truncate(0)
       log_io.rewind
       engine.search('ruby', max_results: 10)
-      assert_match(/INFO -- Engines: cache=hit query="ruby" bytes=\d+/, log_io.string)
+      assert_match(/INFO -- Engines: cache=hit bytes=\d+/, log_io.string)
       refute_match(/engine=Pair/, log_io.string)
+      refute_includes log_io.string, 'ruby'
     end
   end
 
