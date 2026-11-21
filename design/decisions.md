@@ -2071,14 +2071,25 @@ if a reader can run both readings in one sitting.
 - **Auto-memory under the flag.** Worse than redundant: it would carry facts
   distilled from untrusted mail into every later conversation, unattributed —
   precisely the attribution the fragment exists to enforce.
+- **A correspondent allowlist enforcing the customer scope:** mail search and
+  read limited to messages from or to the customer's addresses. The gap it
+  would close is the severity lesson the book teaches. Briefing has no egress,
+  so a wider pool costs a misleading brief at worst, and a misleading message
+  most likely sits in the customer's own thread, which the allowlist lets
+  through. `From:` is whatever the sender writes, so the allowlist would scope
+  the search, not defend it, and contact search with the `from:` / `to:`
+  filters already gives the precision. A host that needs a scope builds it
+  downstream (`D_gem_placement`). Its filter belongs inside the Gloda query,
+  never over the results: they're ranked and capped, so filtering afterwards
+  spends the cap on mail it then discards, and a scoped search quietly
+  returns less than it should.
 
 **Consequences.** "Correspondence with that customer" remains a *prompt
 promise*, not an enforced boundary: the private pool is the whole mailbox and
 address book. That is deliberate — the honest reading is what makes the
 severity lesson land, and the boot paragraph says it in words because the
 detector cannot (a silent verdict prints presence only: no attribution, no
-advice). The enforcing filter, a correspondent allowlist inside the Gloda
-query, is deferred until a week of real use makes the pool intolerable.
+advice).
 
 ---
 
@@ -2106,8 +2117,7 @@ the failure nobody notices. Three sub-decisions carry the weight:
   mail tools, but it is a pure read of the entire address book, useful
   standalone, and it has a second life as the resolver behind `MailCompose`'s
   recipient-novelty warn — so the resolver stays built whenever the index is
-  there, while the *tool* follows the surface. Keeping it separable is also
-  what a later correspondent allowlist would need (`design/ideas/thunderbird.md`).
+  there, while the *tool* follows the surface.
 - **The usage snippet follows what was *wired*, not what was asked.** One
   `SURFACE_USAGE` paragraph per wired surface, each carrying its own
   untrusted-content clause, plus the shared search discipline that stayed in
@@ -4774,7 +4784,3 @@ through `Paths`") lives in AGENTS.md *Conventions*.
   no second `at_exit`.
 - Thunderbird's `Extension` now takes `cache_dir` with `nil` meaning "mint a
   fresh per-process dir," which is what closed the original collision.
-
-**Related.** [`design/ideas/thunderbird.md`](ideas/thunderbird.md) — where the
-collision surfaced; its Q11 (concurrency) covered the *live-DB* race, not
-this *snapshot-destination* race between two pikuri processes.

@@ -2,8 +2,7 @@
 
 Audience: someone extending this gem or auditing its security posture.
 Rationale for individual classes lives in their YARD headers; this file
-covers the cross-cutting design and the threat model. Still-open questions
-and deferred work live in `design/ideas/thunderbird.md`.
+covers the cross-cutting design and the threat model.
 
 ## What it does
 

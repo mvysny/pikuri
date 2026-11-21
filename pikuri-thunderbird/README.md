@@ -72,5 +72,4 @@ will keep the tools unused).
 pikuri copies a consistent snapshot of Thunderbird's SQLite databases (so it
 never fights Thunderbird for the lock), builds its own fast full-text index
 over the already-decoded mail, and serves ranked search + full reads with no
-MIME parsing. Design and threat model: [`design/architecture.md`](design/architecture.md). In-flight
-design notes: `design/ideas/thunderbird.md` in the repo.
+MIME parsing. Design and threat model: [`design/architecture.md`](design/architecture.md).
