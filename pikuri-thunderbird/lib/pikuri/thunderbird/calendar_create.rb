@@ -24,15 +24,10 @@ module Pikuri
     #
     # == No attendees, on purpose
     #
-    # The event carries no +ATTENDEE+, so importing it invites nobody. With
-    # guests, an RFC 6638 auto-scheduling CalDAV server mails invitations on
-    # the import's plain PUT, a send the human's Import click never offered.
-    # Marking each guest +SCHEDULE-AGENT=CLIENT+ stops that only until the
-    # human's first save in Thunderbird's event dialog, which strips the mark
-    # and invites them all then; a server may ignore the mark (Google's
-    # reports conflict); and guests would let an injector into third parties'
-    # inboxes, which {MailCompose} already reaches with the draft in plainer
-    # view. Measured: +design/architecture.md+ § "Hand-off mechanics".
+    # The event carries no +ATTENDEE+, so importing it invites nobody: with
+    # guests, an auto-scheduling CalDAV server mails them on the import's PUT,
+    # or on the human's first save in Thunderbird's event dialog even when
+    # marked +SCHEDULE-AGENT=CLIENT+. Why not, measured: +D_no_calendar_attendees+.
     #
     # Sharing: +P_one_agent+ — it holds a {Profile} and writes an +.ics+ per
     # call. As {MailCompose}, the binding constraint is the human at the import

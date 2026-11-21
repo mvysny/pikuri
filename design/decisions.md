@@ -21,6 +21,73 @@ what it already says.
 
 ---
 
+## D_no_calendar_attendees — Why can't `thunderbird_calendar_create` invite anyone?
+
+**Context.** {Pikuri::Thunderbird::CalendarCreate} writes an `.ics` and opens Thunderbird's
+import wizard on it, where the human picks a calendar and presses Import. An `attendees:`
+parameter sat deferred from the first version: the model would name the guests (resolving "Bob"
+through the `contacts` surface), and the `.ics` would carry an `ATTENDEE` per guest. Its gate was
+a question no one had measured: Thunderbird's import sends nothing itself, but an RFC 6638
+auto-scheduling CalDAV server schedules on the import's plain PUT, so would a server honour
+`SCHEDULE-AGENT=CLIENT`, the mark that tells it not to? On 2026-11-21 a rootless Cyrus 3.12 on
+the dev VM answered it, with Thunderbird 160 importing through the wizard's own calls over
+Marionette, and Thunderbird's source answered the rest. The findings are in
+`pikuri-thunderbird/design/architecture.md` § Hand-off mechanics. The gate was met: Cyrus
+honoured the mark, and the import kept it.
+
+**Decision.** No guests. The event carries no `ATTENDEE`, so importing it invites nobody.
+
+- **Done safely, it invites nobody anyway.** With every guest marked, the event *lists* Bob and
+  Bob hears nothing, until the human's first Save in Thunderbird's event dialog strips the mark
+  and the server mails every guest a first invitation, on whatever edit that is, a typo fix days
+  later included. The useful version, invitations on Import, is the send the hand-off rule forbids
+  (`pikuri-thunderbird/AGENTS.md`): the human pressed Import, not Send.
+- **It adds a reach the tool doesn't have.** Today an event goes only to the human's own calendar
+  server, which an injector can't read. Guests are third parties' inboxes, and the injector can
+  be a guest. "Tell Bob" is already the compose hand-off's job, and a compose window shows the
+  bytes that leave more plainly than an event's details pane.
+- **Its safety would rest on code pikuri doesn't own:** every server honouring the mark, and
+  Thunderbird's importer never calling the function that strips it. Google documents nothing
+  and reports conflict (Mozilla bug 997784 has it notifying guests despite the mark), and the
+  importer would need re-checking after every Thunderbird upgrade, against a CalDAV server the
+  testbed would have to keep.
+- **It's a feature with no claim on pikuri** (`D_gem_placement`): it fixes no bug and closes no
+  hole in a promise, and neither the secretary nor the book needs it. Their offsite and dentist
+  scenes make their point with events that have no guests.
+
+**Alternatives rejected.**
+
+- **Guests marked `SCHEDULE-AGENT=CLIENT`.** Measured: Cyrus sent nothing on the import, and
+  nothing on a later delete. But the event dialog's Save calls `cal.itip.adaptScheduleAgent`,
+  which deletes the mark from every guest when the calendar's iMIP identity is the organizer and
+  `forceEmailScheduling` is off, both the defaults. The next PUT got Cyrus to mail each guest a
+  first invitation.
+- **Guests with no `ORGANIZER`.** That isn't a scheduling object, so no server schedules it,
+  Google included, and the import adds no organizer. Unmeasured: whether the dialog's Save then
+  makes the calendar's identity the organizer and schedules after all. Either way it keeps the
+  reach and the upgrade re-check.
+- **Unmarked guests, invited on Import.** Measured: Cyrus mailed an outside guest on the
+  import's PUT, put a same-server guest's invitation straight into their calendar, and mailed a
+  cancellation on a later delete. The guests are on screen, since the wizard selects the event
+  and shows its details, but the button says Import.
+- **Keep it deferred until more servers are seen.** The gate was one server honouring the mark,
+  and it's met; what's left against the parameter isn't a missing measurement.
+
+**Consequences.**
+
+- A meeting invitation stays the human's act, in Thunderbird's own event dialog. The secretary
+  can draft the event, and a mail to the guests through the compose hand-off.
+- The dev VM keeps no CalDAV server. Re-measuring means installing `cyrus-caldav` again (its
+  Postfix prompt: *No configuration*) and running it as yourself. The parts that aren't obvious:
+  `cyrus_user` set to you; `sasl_pwcheck_method: alwaystrue` with `allowplaintext: 1`;
+  `imipnotifier: external` with `notify_external:` pointing at a script that saves the iMIP
+  notifyd hands it, so nothing is mailed. httpd won't create a user and the IMAP daemon isn't in
+  the package, so `autocreate_post: 1` with one message through `deliver` creates the INBOX. The
+  first capability probe from Thunderbird prompted for a password even with a stored login; a
+  second found `calendar-auto-schedule`.
+
+---
+
 ## D_no_quarantined_handles — Why doesn't a sub-agent's reply reach its parent as an opaque handle?
 
 **Context.** The Dual LLM pattern (#4 in *Design Patterns for Securing LLM Agents against Prompt
