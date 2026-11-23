@@ -793,10 +793,27 @@ script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
   word.
 - `MOZ_CRASHREPORTER_DISABLE=1`, or the crash helper creates `~/Downloads/thunderbird.tmp/`.
 
-**Hand-offs on a headless machine.** A session started with `--display` runs on its own Xvfb
-and accepts remote commands, so `DISPLAY=:N` on the agent's side makes a real hand-off land in
-it (§ Hand-off mechanics). `js/compose-windows.js` reads the open compose windows back as
-Thunderbird parsed them; `session screenshot` grabs the screen (`ffmpeg -f x11grab`). There is
+**Hand-offs on a headless machine: Marionette first.** A plain headless session tests a
+hand-off without any display. `js/handoff.js` builds the command line a remoted `thunderbird
+…` would carry (`Cu.createCommandLine(args, null, STATE_REMOTE_EXPLICIT)`) and hands it to
+Thunderbird's own `MessengerContentHandler#handle`, the code a `mailto:`, a `-compose "…"`
+or an `.eml` path reaches; `js/compose-windows.js` reads each window back as Thunderbird
+parsed it (recipients, `References`, attachments, body); `js/outgoing-mime.js` has
+Thunderbird's own `MimeMessage` write what Send would emit into a temp file and deletes it,
+so threading headers are checked with nothing sent and no folder written;
+`js/close-windows.js` clears the windows, which stack, before the next one. What this skips is
+pikuri's own `setsid thunderbird …` launch remoting into the instance (testbed, 2026-11-23,
+Thunderbird 160).
+
+- A hand-off file goes in {Pikuri::Thunderbird::Profile#outbox_dir}: snap Thunderbird has a
+  private `/tmp`, so a file under the agent's `/tmp` is "not found".
+- A missing file raises a modal alert. Over a compose window it stays, and `handoff.js` lists
+  it; over the main window Marionette dismisses it itself, `handoff.js` resolves `null`, and
+  the next `session js` fails once with "unexpected alert open".
+
+**Hand-offs on a display.** A session started with `--display` runs on its own Xvfb and
+accepts remote commands, so `DISPLAY=:N` on the agent's side makes pikuri's real launch land in
+it (§ Hand-off mechanics); `session screenshot` grabs the screen (`ffmpeg -f x11grab`). There is
 no window manager, so windows stack; clicking goes through Marionette, not the screen.
 
 **A quiet first run.** `user.js` carries the network prefs from Marionette's own
