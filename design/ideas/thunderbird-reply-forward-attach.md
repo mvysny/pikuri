@@ -135,6 +135,7 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
 | `-compose "type=3,originalMsgURI='…',to=…,body=FYI"` | **Forward as attachment works.** `to` and `body` kept; Thunderbird attaches the original itself as `message/rfc822` "`<subject>.eml`" (its copy in `~/Downloads/thunderbird.tmp/pid-N/`, removed on exit). The forwarded bytes never pass through the model. |
 | `-compose "type=4,originalMsgURI='…',…"` | **Forward inline doesn't work**: an empty `Fwd:` with `References` and no original. Thunderbird starts an inline forward outside the compose window. |
 | a staged `.eml` with `X-Unsent: 1` | **Opens as an editable draft** (`type` 9, plain text): To, Subject, `References` kept, From set to the identity, body verbatim. The MIME carries `References` + `In-Reply-To`. |
+| `attachment=` a staged file, deleted before Send | **Send fails**: "Failed to fetch attachment" (`NS_ERROR_FILE_NOT_FOUND`). Thunderbird reads a file attachment at Send, not at attach, so a file pikuri stages must outlive the compose window, which may be hours or a pikuri restart away. |
 | `message=` / `.eml` under the agent's `/tmp` | **Blocks**: snap Thunderbird has a private `/tmp`, so the file is "not found" and a *modal* alert opens. Stage in {Pikuri::Thunderbird::Profile#outbox_dir}, as the `.ics` hand-off does. |
 
 ### What that means for the shapes
@@ -173,32 +174,95 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   A boot line from the bin? Concrete wording: "anything an agent ever wrote
   into these folders can leave as an attachment you won't be able to
   inspect".
-- `Q_trifecta_grade` — `OUTBOUND_LEGS` is `private: false,
-  egress_payload_review: :human_reviewed`. An attach-capable compose lets
-  an injection *select* from the private pool by path, so it gains the
-  private leg (from the Filesystem's `private?`), and the payload is
-  reviewed only by reference. Does "the human saw which file, the model
-  authored none of it" still earn `:human_reviewed`, or does it need a
-  third grade, or drop to `:unreviewed` — which would light the secretary
-  up as a full trifecta? The yardoc's "would silently drop to hard
-  `:egress`" was written for case 1 and needs rewording either way. A
-  forward makes it sharper: the human sees one `<subject>.eml` chip, not
-  the tax-return PDF inside the forwarded mail.
-- `Q_transport` — `-compose` for forward and attach only, or move compose
-  onto it too, so there's one builder and one hand-off? `mailto:` is
-  RFC 6068 and other mail clients read it; `-compose` is Thunderbird's own.
-- `Q_reply_shape` — `mailto:` + `In-Reply-To` (the model drafts, threaded,
-  no quote unless pikuri copies one in), `-compose type=1` (Thunderbird's
-  reply, the user writes), or both? And does pikuri quote at all?
-- `Q_guard_on_quotes` — mostly gone: Thunderbird's own forward and reply
-  put the original in without the model, and a quote pikuri copies from
-  Gloda is not model-authored, so ComposeGuard checks only the model's
-  part. Left: is a pikuri-copied quote "renders literally"? It is text in
-  the body, so yes, hidden characters included.
-- `Q_forward_scope` — `forward_message_id` only, or also one attachment of
-  a mail (`"2.1"`, the `thunderbird_mail_attachment_read` handle)? The
-  latter needs the bytes staged from the mbox into the outbox dir, which
-  pikuri would write.
+- `Q_trifecta_grade` — **open, paused 2026-11-23; the crux.** Is "the
+  human saw *which* item leaves and *to whom*" a review?
+  - *Where it bites.* The secretary reads **soft** today
+    (`book/trifecta-detector.md`: "every way out either shown to you
+    before it leaves or aimed where no attacker can read it"); compose is
+    `:human_reviewed` because the human sees the bytes. {Pikuri::Tool::TrifectaLegs}
+    defines `:unreviewed` as including "a human who saw only a proxy",
+    and a chip is a proxy. Graded honestly, forward-as-attachment and
+    attach-from-`~/Documents` are `:unreviewed`; beside an
+    attacker-reachable destination in one tool that makes `egress_open`,
+    and with mail reading at the same node the secretary goes **loud** —
+    the "trifecta is broken by construction" promise no longer holds for
+    any wiring that turns them on. Forward can't dodge it by placement: a
+    forwarding agent needs mail search, i.e. private + hard untrusted.
+    Attach also gains the private leg (the Filesystem's `private?`): an
+    injection *selects* from the private pool by path.
+  - *Reply is unaffected:* the quote is on screen, and the headers carry
+    only Message-IDs every recipient already has — `:human_reviewed`.
+  - *The review-by-name sits between the two grades.* Better than `curl`:
+    "Fwd: Your password reset → attacker@evil (never mailed)" or
+    "tax-return-2025.pdf → …" is exfil in plain view, and the name is
+    yours or the mail's sender's, never the model's. Worse than bytes on
+    screen: a container holds more than its name says (a forwarded mail's
+    own attachments, a zip).
+  - *Options.* (1) `:unreviewed` — no detector change; forward/attach read
+    loud, so the secretary can't wire them. (2) A middle grade, e.g.
+    `:human_named` ("the human saw which existing item leaves and to whom;
+    the model computed none of its bytes"), not open, so soft — a small
+    core change: one level in `EGRESS_REVIEW_ORDER`, a map tag, a section
+    in `book/trifecta-detector.md`, a `D_` entry. (3) Change forward so it
+    never needs review-by-name: pikuri builds an **inline forward over
+    `mailto:`** — the model's note, then a "Forwarded message" block of the
+    original's headers and Gloda text, its attachments listed by name as
+    "not included". Every byte on screen, honestly `:human_reviewed`; no
+    detector change, no staging; a mail too long for argv is refused with
+    "forward it in Thunderbird", never truncated. This would reopen
+    `Q_forward_scope`.
+  - *Leaning (3) for forward, (2) for attach.* Forward is the most direct
+    pipe from the mailbox to an attacker, so it should be the one whose
+    bytes are seen, and then needs no new grade. Attach has no inline form,
+    so it's the honest case for `:human_named`, and it's confined to
+    host-vouched folders where every filename is the user's.
+  - Either way the `OUTBOUND_LEGS` yardoc ("would silently drop to hard
+    `:egress`") was written for case 1 and needs rewording.
+- `Q_transport` — **decided 2026-11-23:** two transports, one per tool,
+  forced by the shapes above (only `mailto:` threads a reply that keeps a
+  body; only `-compose` attaches). Reply → {Pikuri::Thunderbird::MailtoUri},
+  whose allowlist gains `In-Reply-To` / `References`. Forward → a new
+  `ComposeArgs` builder: allowlist `to cc bcc subject body type
+  originalMsgURI` (+ `attachment` later), never `from preselectid format
+  message newsgroups bodyislink`; every value percent-encoded, unquoted
+  (no raw `,` or `'` can open a key; `originalMsgURI`'s `%40` round-trips
+  as `%2540`); `type` from a fixed set, never from the model.
+  `Launcher#launch` takes an argv. Compose stays on `mailto:` and moves to
+  `-compose` wholesale when attach ships — never a per-call switch.
+- `Q_reply_shape` — **decided 2026-11-23:** a separate
+  `thunderbird_mail_reply(message_id:, body:, reply_all: false)` over
+  `mailto:`. pikuri derives everything but the body from the original: the
+  recipient (`Reply-To`, else `From`; plus the other recipients under
+  `reply_all`), `Re: <subject>`, `In-Reply-To` and the original's own
+  `References` chain from the mbox, and an "On … wrote:" `> ` quote under
+  the model's text. The model never names a reply's recipient. Rejected:
+  `in_reply_to:` on `thunderbird_mail_compose` (the model still names the
+  recipient, four fields to keep consistent); `-compose type=1` as the
+  main shape (drops the model's text; maybe later as "open the reply for
+  me").
+- `Q_guard_on_quotes` — **decided 2026-11-23:** ComposeGuard checks the
+  model's text only; the quote is appended after the verdict, verbatim
+  from Gloda's body, `> `-prefixed, never filtered. Safe because of a rule
+  the reply tool states as its own: **a reply adds no recipient the
+  original didn't name** (no `cc:`), so every recipient already holds the
+  original and the quote — hidden bytes included, the author's own — tells
+  no one anything new. A future `cc:` must bring the quote under the guard.
+  The quote is capped (~4 KB of the original's text, cut at a line, ending
+  `[…]`): Linux caps one argv string at 128 KiB (`MAX_ARG_STRLEN`) and
+  percent-encoding inflates non-ASCII up to 9×; threading lets the
+  recipient's client show the rest. Still refused: the model pasting
+  hostile lines into its own text (`warn-human-directly.md`).
+- `Q_forward_scope` — **decided 2026-11-23:**
+  `thunderbird_mail_forward(message_id:, to:, body:, cc:)` forwards the
+  whole mail as an attachment through `-compose type=3`; the model writes
+  the note and names `to`, which ComposeGuard checks as for compose.
+  Thunderbird stages the original itself and reaps it on exit. Deferred:
+  one attachment of a mail (`"2.1"`) — pikuri would stage its bytes in the
+  outbox, and since Thunderbird reads a file at Send, no moment is safe to
+  reap it. Cost carried to `Q_trifecta_grade`: the human reviews one
+  opaque `<subject>.eml` chip, not what the forwarded mail carries — **and
+  that grade question may reopen this decision** in favour of a
+  pikuri-built inline forward over `mailto:` (option 3 there).
 - `Q_display_run` — re-run the table through the real `setsid thunderbird
   …` remoting in a `--display` session once `xvfb` is installed; the
   modal-alert cases matter most there, since a human sees them.
