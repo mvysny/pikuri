@@ -773,6 +773,19 @@ it (§ Hand-off mechanics). `js/compose-windows.js` reads the open compose windo
 Thunderbird parsed them; `session screenshot` grabs the screen (`ffmpeg -f x11grab`). There is
 no window manager, so windows stack; clicking goes through Marionette, not the screen.
 
+**`--display` on a VM with a desktop session needs `DISABLE_WAYLAND=1`.** The snap's launcher
+(the `gnome-46-2404` runtime's `command-chain/desktop-launch`) exports `GDK_BACKEND=wayland`
+whenever the session's Wayland socket exists, `$XDG_RUNTIME_DIR/../wayland-0` or
+`$WAYLAND_DISPLAY`'s, whatever `DISPLAY` says and over a `GDK_BACKEND` the caller set. A dev VM
+whose console runs a GNOME session has that socket even when the shell is an SSH one with no
+`WAYLAND_DISPLAY`, so Thunderbird on the session's Xvfb exits at once with "Error: cannot open
+display: :99", and `session start` reports "Thunderbird exited early". The launcher skips its
+check when `DISABLE_WAYLAND` is non-empty, so `DISABLE_WAYLAND=1 dev/testbed/session start
+--display` comes up. A hand-off's `thunderbird <arg>` goes through the same launcher: without the
+variable it fails the same way and nothing opens, so the agent's side needs
+`DISABLE_WAYLAND=1` beside `DISPLAY=:N` (Thunderbird 160, snap revision 1333, 2026-11-23). A
+headless session and the build open no display, so they're unaffected.
+
 **A quiet first run.** `user.js` carries the network prefs from Marionette's own
 `RecommendedPreferences.sys.mjs` (inside Thunderbird's `omni.ja`, under
 `chrome/remote/content/shared/`), among them `services.settings.server =
