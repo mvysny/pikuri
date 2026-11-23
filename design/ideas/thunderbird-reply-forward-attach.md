@@ -105,15 +105,60 @@ drops out by itself.
   attach it themselves — the human can always do by hand what the tool
   won't.
 
-## Reply threading
+## Testbed findings: Thunderbird 160 (2026-11-23)
 
-RFC 6068 allows `In-Reply-To` and `References` in a `mailto:` URI. Believed
-(unverified) that Thunderbird's `mailto:` parser honours both. If so, a
-`reply_to_message_id` parameter on the existing compose tool — the
-Message-ID `thunderbird_mail_read` already takes — gives real threading
-with no attachment and no new tool. Headers render nothing in the compose
-window, but they carry only the original's Message-ID, which the
-recipient's side already has. Independent of the rest: can ship first.
+**How.** A headless `dev/testbed/session` (no Xvfb on the dev VM yet).
+Each hand-off was a real command line, `Cu.createCommandLine([...], null,
+Ci.nsICommandLine.STATE_REMOTE_EXPLICIT)`, given to Thunderbird's own
+`MessengerContentHandler#handle`: the handler a remoted `thunderbird
+-compose …`, `thunderbird mailto:…` or `thunderbird file.eml` reaches. The
+compose window was read back over Marionette, and the outgoing MIME was
+generated with `MimeMessage#createMessageFile` (`modules/MimeMessage.sys.mjs`)
+into a temp file, so nothing was sent and no folder was written. **Not
+yet covered:** the real `setsid thunderbird …` remoting into a `--display`
+session, which needs `xvfb`. Code read from the snap's `omni.ja`:
+`modules/MessengerContentHandler.sys.mjs`,
+`chrome/messenger/content/messenger/messengercompose/MsgComposeCommands.js`.
+
+Message used: `imap-message://alex%40novak.example@127.0.0.1/INBOX#3`,
+"[riders] Sunday ride to Nuuksio" from Juha Salo. Such a URI is the Gloda
+folder URI with `imap:` → `imap-message:`, plus `#<messageKey>` (it matched
+`folder.getUriForMsg` on every INBOX message listed). Local Folders would
+presumably be `mailbox:` → `mailbox-message:`; not tried.
+
+| Hand-off | Result |
+|---|---|
+| `mailto:…?In-Reply-To=%3C<id>%3E&body=…` | **Threads.** Parsed into `compFields.references` (In-Reply-To goes last, after any `References=`); the MIME carries `References:` and `In-Reply-To:` (`MimeMessageUtils.getInReplyTo` takes References' last entry). Body kept, multiline. |
+| `-compose "to=…,subject=…,body=First%20line%0ASecond%20line"` | **Multiline works.** Bare and `"…"` values are percent-decoded; only `'…'` is a raw literal, which is what architecture.md's `body='A%0AB'` test had hit (doc corrected). |
+| `-compose "…,attachment=file:///home/…/Documents/scan-receipt.png"` | **Attached**, under the file's own name and size, read straight from `~/Documents`: snap Thunderbird reads non-hidden `$HOME`, so no staging. |
+| `-compose "type=1,originalMsgURI='…#3',body=…"` | **Thunderbird's own reply**: To from the original, `Re:` subject, `References`, Thunderbird's quote. **`body=` dropped**, in HTML and with `format=text`; `message=<file>` dropped too. A Thunderbird-made reply can't carry the model's draft. |
+| `-compose "type=3,originalMsgURI='…',to=…,body=FYI"` | **Forward as attachment works.** `to` and `body` kept; Thunderbird attaches the original itself as `message/rfc822` "`<subject>.eml`" (its copy in `~/Downloads/thunderbird.tmp/pid-N/`, removed on exit). The forwarded bytes never pass through the model. |
+| `-compose "type=4,originalMsgURI='…',…"` | **Forward inline doesn't work**: an empty `Fwd:` with `References` and no original. Thunderbird starts an inline forward outside the compose window. |
+| a staged `.eml` with `X-Unsent: 1` | **Opens as an editable draft** (`type` 9, plain text): To, Subject, `References` kept, From set to the identity, body verbatim. The MIME carries `References` + `In-Reply-To`. |
+| `message=` / `.eml` under the agent's `/tmp` | **Blocks**: snap Thunderbird has a private `/tmp`, so the file is "not found" and a *modal* alert opens. Stage in {Pikuri::Thunderbird::Profile#outbox_dir}, as the `.ics` hand-off does. |
+
+### What that means for the shapes
+
+- **Reply with the model's text:** `mailto:` + `In-Reply-To` is the
+  smallest change: one more allowlisted parameter in
+  {Pikuri::Thunderbird::MailtoUri}, the Message-ID `thunderbird_mail_read`
+  already takes. A quote, if wanted, is text pikuri copies from Gloda's body
+  (the model writes none of it); ComposeGuard then checks the model's part
+  only. The staged `.eml` does the same with full header control, which is
+  more to get wrong for no gain here.
+- **Reply without the model's text:** `-compose type=1` opens a
+  Thunderbird reply for the user to write. The recipient comes from
+  Thunderbird's reply logic, not from the model (though the original's
+  `Reply-To` is the sender's to choose).
+- **Forward:** `-compose type=3` (as attachment) with the model's note in
+  `body`. Inline forwarding is out via `-compose`.
+- **Attach a file:** `-compose attachment=`.
+- So `-compose` becomes a second outbound transport beside `mailto:`. Its
+  key set is wider than mailto's five (`from`, `preselectid`, `format`,
+  `newsgroups`, `attachment`, `message`, `type`, `originalMsgURI`,
+  `bodyislink`), so it needs a builder like `MailtoUri`: allowlisted keys,
+  every value percent-encoded so a body can't carry a raw `,` or `'` that
+  starts a new `attachment=` pair. Enforced by construction, as today.
 
 ## Open questions
 
@@ -136,24 +181,27 @@ recipient's side already has. Independent of the rest: can ship first.
   authored none of it" still earn `:human_reviewed`, or does it need a
   third grade, or drop to `:unreviewed` — which would light the secretary
   up as a full trifecta? The yardoc's "would silently drop to hard
-  `:egress`" was written for case 1 and needs rewording either way.
-- `Q_mailto_threading` — verify `?In-Reply-To=` / `?References=` on the
-  testbed (`dev/testbed/session start --display`).
-- `Q_attachment_handoff` — how an attachment reaches the compose window at
-  all. `mailto:?attach=` is gone from Thunderbird. `-compose
-  "…,attachment='file:///…'"` exists but can't do a multiline `body=`
-  (architecture.md § Hand-off mechanics); does `message=<file>` (body from
-  a staged file) get around it? Snap confinement decides where that file
-  may be staged ({Pikuri::Thunderbird::Profile#outbox_dir}).
-- `Q_forward_shape` — as attachment (stage the original as `.eml` from the
-  mbox, `D_thunderbird_attachment_bytes`' reader already finds it) vs.
-  inline (body text + the original's attachments by reference). Does
-  Thunderbird open a staged `.eml` with `X-Unsent: 1` as an editable
-  draft? Is one parameter (`forward_message_id`) enough?
-- `Q_guard_on_quotes` — a reply or inline forward quoting a hostile mail
-  trips ComposeGuard's fail-close. Quote outside the guarded body (the
-  original by reference), or accept the refusal plus
-  `warn-human-directly.md`'s framing?
+  `:egress`" was written for case 1 and needs rewording either way. A
+  forward makes it sharper: the human sees one `<subject>.eml` chip, not
+  the tax-return PDF inside the forwarded mail.
+- `Q_transport` — `-compose` for forward and attach only, or move compose
+  onto it too, so there's one builder and one hand-off? `mailto:` is
+  RFC 6068 and other mail clients read it; `-compose` is Thunderbird's own.
+- `Q_reply_shape` — `mailto:` + `In-Reply-To` (the model drafts, threaded,
+  no quote unless pikuri copies one in), `-compose type=1` (Thunderbird's
+  reply, the user writes), or both? And does pikuri quote at all?
+- `Q_guard_on_quotes` — mostly gone: Thunderbird's own forward and reply
+  put the original in without the model, and a quote pikuri copies from
+  Gloda is not model-authored, so ComposeGuard checks only the model's
+  part. Left: is a pikuri-copied quote "renders literally"? It is text in
+  the body, so yes, hidden characters included.
+- `Q_forward_scope` — `forward_message_id` only, or also one attachment of
+  a mail (`"2.1"`, the `thunderbird_mail_attachment_read` handle)? The
+  latter needs the bytes staged from the mbox into the outbox dir, which
+  pikuri would write.
+- `Q_display_run` — re-run the table through the real `setsid thunderbird
+  …` remoting in a `--display` session once `xvfb` is installed; the
+  modal-alert cases matter most there, since a human sees them.
 - `Q_doc_order` — rewrite the invariant now, or after the testbed has
   answered the mechanics questions?
 
@@ -170,5 +218,6 @@ rewritten around "no attachment the model wrote":
 - `book/trifecta-detector.md` (~l. 415)
 
 The why (authorship vs. selection, the provenance gap, why not `trusted:`)
-→ a `D_` entry in `design/decisions.md`; the mechanics → architecture.md
-§ Hand-off mechanics; a CHANGELOG line.
+→ a `D_` entry in `design/decisions.md`; the § Testbed findings table →
+architecture.md § Hand-off mechanics, for the shapes that ship; a
+CHANGELOG line.

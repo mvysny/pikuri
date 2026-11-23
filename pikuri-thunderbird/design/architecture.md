@@ -610,8 +610,10 @@ can't be shared on snap.
 - **Compose → `mailto:` URI (built).** `thunderbird 'mailto:to@…?cc=…&bcc=…&subject=…&body=First%0ASecond'`
   opens a pre-filled compose window, percent-decoding cleanly (`%0A`→newline,
   `%20`→space), populating subject + cc + **bcc**, reusing the running
-  instance. Chosen over `-compose`, which **cannot do multiline** (`body='A%0AB'`
-  rendered the literal `A%0AB`). Because the transport is a URI, every field
+  instance. Chosen over `-compose` after `body='A%0AB'` rendered the literal
+  `A%0AB` — but that is `-compose`'s single-quoted *raw literal*; a bare or
+  `"…"` value is percent-decoded, and `body=A%0AB` is two lines (Thunderbird
+  160, the compose window's `GetArgs`, testbed 2026-11-23). Because the transport is a URI, every field
   value must be percent-encoded so an attacker-authored body can't smuggle a
   hidden `&bcc=` — see {Pikuri::Thunderbird::MailtoUri}. pikuri launches it
   detached (`setsid --fork`) so the agent's exit-sweep can't SIGTERM the user's
