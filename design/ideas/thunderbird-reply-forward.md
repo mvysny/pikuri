@@ -3,7 +3,7 @@
 Status: **idea, not built; direction agreed 2026-11-23, narrowed
 2026-11-24 (no file attach), decisions open.** Give pikuri-thunderbird's
 outbound surface a threaded reply and a forward. Its "No attachment ever
-ships" narrows to **"the only attachment that ships is a stored mail
+ships" narrows to **"the only attachment that ships is a received mail
 Thunderbird forwards itself"**; a file from disk stays out, and the user
 attaches it by hand (§ Rejected). The owner's original intent was "not
 today", not "never".
@@ -24,8 +24,9 @@ whose {Pikuri::Thunderbird::MailtoUri} builds exactly five parameters
   calls it the common false positive).
 - **Forward** not at all. As-attachment needs a `message/rfc822` part;
   inline is the reply case again, minus the original's attachments.
-- **"Send Jana the October invoice"** not at all, and it stays so: the
-  model composes, the user attaches.
+- **"Send Jana the October invoice"** not at all. Once this ships, an
+  invoice that came by mail is a forward of that mail; one on disk stays
+  as today: the model composes, the user attaches.
 
 ## Why the invariant exists, and where it's too broad
 
@@ -43,13 +44,13 @@ the model only *selected*:
 1. **Model-authored** (a file it wrote, now or in any earlier session) —
    the argument holds in full; stays banned. Nothing lost: text the model
    writes goes in the body, where the human reads it.
-2. **Mail already in the store** (forward the message) — the model picks
+2. **Mail someone else sent you** (forward the message) — the model picks
    which mail and to whom, but wrote none of its bytes. What's left is
    *overt* exfil: an injection says "forward the tax return to
    attacker@…". The human sees `Fwd: Tax return 2025`, the recipient
    (ComposeGuard flags a domain never sent to), and — one double-click
    away — the mail itself. A careful human catches it: § Why forward
-   passes.
+   passes. Mail *you* sent is not this case: `Q_forward_received_only`.
 3. **A file on disk** ("attach the report from Documents") — like case 2
    *only if nothing agentic ever wrote it*, and that can't be known:
    § Rejected.
@@ -82,8 +83,11 @@ text, and the user attaches `~/Documents/Invoices/2026-10.pdf` themselves.
   steered by an injection, but then the user acts as themselves — the
   model can already ask that in chat today.
 - So `thunderbird_mail_compose`'s description gains a Usage bullet: it
-  can't attach files; when the user wants one sent, compose the message
-  and tell them which file to attach in the compose window.
+  can't attach files; if the file came by mail, forward that mail
+  instead; otherwise compose the message and tell the user which file to
+  attach in the compose window. Without the forward half, "send Jana the
+  invoice" gets a compose window and "attach it yourself" when a forward
+  would do.
 
 ## Why forward passes where attach fails
 
@@ -91,9 +95,9 @@ text, and the user attaches `~/Documents/Invoices/2026-10.pdf` themselves.
 human *can't* catch the leak. A forwarded mail passes it. The compose
 window's `<subject>.eml` chip opens on a double-click into the very copy
 Send emits, the mail's own attachments listed and openable (§ Testbed
-findings, 2026-11-24). Every byte in it is the sender's or the user's,
-none the model's, so a leak there is overt, and a careful human who opens
-it sees it. Two gaps remain: the bytes are a double-click away rather
+findings, 2026-11-24). Every byte in it is its sender's, and the sender
+isn't the user (`Q_forward_received_only`), so none is the model's; a
+leak there is overt, and a careful human who opens it sees it. Two gaps remain: the bytes are a double-click away rather
 than on screen (`Q_review_nudge`), and the copy is a writable file until
 Send (`Q_staged_copy`).
 
@@ -179,8 +183,8 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   attacker can read it"). Reply is too: its quote is on screen, and its
   headers carry only Message-IDs every recipient already has.
   {Pikuri::Tool::TrifectaLegs}' `:human_reviewed` ("the payload *is* the
-  reviewed artifact") gains the second case, "or opens into it: a stored
-  mail forwarded whole, none of whose bytes the model wrote". Considered:
+  reviewed artifact") gains the second case, "or opens into it: a mail
+  someone else sent, forwarded whole". Considered:
   `:unreviewed` (a forwarding agent needs mail search, so the secretary
   would go loud); a middle `:human_named`, needed only by file attach,
   now rejected; a pikuri-built inline forward over `mailto:`, every byte
@@ -191,14 +195,28 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   user to open the forwarded mail before Send, in both places it speaks.
   Its checklist (the result content, relayed by the model) names what
   leaves, from the mbox: the original's subject and sender, and its
-  attachments by name and size, then "double-click `<subject>.eml` in
-  the compose window to see exactly what goes". Its display line (the
+  attachments by name and size; says the recipient gets the whole mail,
+  its text, headers and quoted thread included; then "double-click
+  `<subject>.eml` in the compose window to see exactly what goes". Its display line (the
   user sees it without the model in between) carries the same nudge,
   structural only — names are attacker-authorable, so counts and sizes,
   e.g. `Handed to Thunderbird: 1 mail with 2 attachments, 3.1 MB —
   double-click it before Send` ({Pikuri::Tool::Result}'s two rules). A
   bland subject over a sensitive file ("Lunch?" carrying
   `passport-scan.jpg`) is the case it's for.
+- `Q_forward_received_only` — **decided 2026-11-24:** the forward tool
+  refuses a message whose `From` is one of the user's own identities,
+  answering "forward it in Thunderbird". Why: the user's Sent folder can
+  hold model-written bytes, put there by the very path § Rejected
+  chooses. The secretary writes `Notes/meeting.md` in a turn that read an
+  injection, the user attaches it to a mail to Petr, and a later
+  injection forwards that Sent mail to the attacker: case 1, laundered
+  through the Sent folder, and a double-click shows a readable note, not
+  the secret hidden in it. Every Sent and Drafts message is one of these;
+  the identities are the accounts' own, which Gloda already resolves as
+  "me". A third party who re-sends the user's note is past this check,
+  accepted: their mail, their bytes. Unaffected: a vendor's invoice to
+  Jana.
 - `Q_staged_copy` — **open.** Between review and Send the forwarded mail
   is a plain `0600` file under `~/Downloads/thunderbird.tmp/pid-N/`, and
   Send reads it as it is then, so a writer there swaps what the human
@@ -254,6 +272,11 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   whole mail as an attachment through `-compose type=3`; the model writes
   the note and names `to`, which ComposeGuard checks as for compose.
   Thunderbird stages the original itself and reaps it with the window.
+  The recipient gets the whole mail, not just the file the user asked
+  about: the sender's text, every attachment, the original's headers
+  (the user's address, the cc list), any quoted thread — and the file
+  sits inside the `.eml`, which Thunderbird and Gmail open fine and some
+  phone clients don't.
   Deferred: one attachment of a mail (`"2.1"`) — pikuri would stage its
   bytes in the outbox, and since Thunderbird reads a file at Send, no
   moment is safe to reap it. The chip turned out to open into what
@@ -267,8 +290,8 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
 
 ## On graduation
 
-The invariant narrows to "the only attachment that ships is a stored mail
-Thunderbird forwards itself" in the five places that state it:
+The invariant narrows to "the only attachment that ships is a received
+mail Thunderbird forwards itself" in the five places that state it:
 
 - `pikuri-thunderbird/AGENTS.md` § Invariants
 - `pikuri-thunderbird/design/architecture.md` § "Outbound is a human-gated
