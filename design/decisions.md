@@ -21,6 +21,73 @@ what it already says.
 
 ---
 
+## D_no_calendar_attendees — Why can't `thunderbird_calendar_create` invite anyone?
+
+**Context.** {Pikuri::Thunderbird::CalendarCreate} writes an `.ics` and opens Thunderbird's
+import wizard on it, where the human picks a calendar and presses Import. An `attendees:`
+parameter sat deferred from the first version: the model would name the guests (resolving "Bob"
+through the `contacts` surface), and the `.ics` would carry an `ATTENDEE` per guest. Its gate was
+a question no one had measured: Thunderbird's import sends nothing itself, but an RFC 6638
+auto-scheduling CalDAV server schedules on the import's plain PUT, so would a server honour
+`SCHEDULE-AGENT=CLIENT`, the mark that tells it not to? On 2026-11-21 a rootless Cyrus 3.12 on
+the dev VM answered it, with Thunderbird 160 importing through the wizard's own calls over
+Marionette, and Thunderbird's source answered the rest. The findings are in
+`pikuri-thunderbird/design/architecture.md` § Hand-off mechanics. The gate was met: Cyrus
+honoured the mark, and the import kept it.
+
+**Decision.** No guests. The event carries no `ATTENDEE`, so importing it invites nobody.
+
+- **Done safely, it invites nobody anyway.** With every guest marked, the event *lists* Bob and
+  Bob hears nothing, until the human's first Save in Thunderbird's event dialog strips the mark
+  and the server mails every guest a first invitation, on whatever edit that is, a typo fix days
+  later included. The useful version, invitations on Import, is the send the hand-off rule forbids
+  (`pikuri-thunderbird/AGENTS.md`): the human pressed Import, not Send.
+- **It adds a reach the tool doesn't have.** Today an event goes only to the human's own calendar
+  server, which an injector can't read. Guests are third parties' inboxes, and the injector can
+  be a guest. "Tell Bob" is already the compose hand-off's job, and a compose window shows the
+  bytes that leave more plainly than an event's details pane.
+- **Its safety would rest on code pikuri doesn't own:** every server honouring the mark, and
+  Thunderbird's importer never calling the function that strips it. Google documents nothing
+  and reports conflict (Mozilla bug 997784 has it notifying guests despite the mark), and the
+  importer would need re-checking after every Thunderbird upgrade, against a CalDAV server the
+  testbed would have to keep.
+- **It's a feature with no claim on pikuri** (`D_gem_placement`): it fixes no bug and closes no
+  hole in a promise, and neither the secretary nor the book needs it. Their offsite and dentist
+  scenes make their point with events that have no guests.
+
+**Alternatives rejected.**
+
+- **Guests marked `SCHEDULE-AGENT=CLIENT`.** Measured: Cyrus sent nothing on the import, and
+  nothing on a later delete. But the event dialog's Save calls `cal.itip.adaptScheduleAgent`,
+  which deletes the mark from every guest when the calendar's iMIP identity is the organizer and
+  `forceEmailScheduling` is off, both the defaults. The next PUT got Cyrus to mail each guest a
+  first invitation.
+- **Guests with no `ORGANIZER`.** That isn't a scheduling object, so no server schedules it,
+  Google included, and the import adds no organizer. Unmeasured: whether the dialog's Save then
+  makes the calendar's identity the organizer and schedules after all. Either way it keeps the
+  reach and the upgrade re-check.
+- **Unmarked guests, invited on Import.** Measured: Cyrus mailed an outside guest on the
+  import's PUT, put a same-server guest's invitation straight into their calendar, and mailed a
+  cancellation on a later delete. The guests are on screen, since the wizard selects the event
+  and shows its details, but the button says Import.
+- **Keep it deferred until more servers are seen.** The gate was one server honouring the mark,
+  and it's met; what's left against the parameter isn't a missing measurement.
+
+**Consequences.**
+
+- A meeting invitation stays the human's act, in Thunderbird's own event dialog. The secretary
+  can draft the event, and a mail to the guests through the compose hand-off.
+- The dev VM keeps no CalDAV server. Re-measuring means installing `cyrus-caldav` again (its
+  Postfix prompt: *No configuration*) and running it as yourself. The parts that aren't obvious:
+  `cyrus_user` set to you; `sasl_pwcheck_method: alwaystrue` with `allowplaintext: 1`;
+  `imipnotifier: external` with `notify_external:` pointing at a script that saves the iMIP
+  notifyd hands it, so nothing is mailed. httpd won't create a user and the IMAP daemon isn't in
+  the package, so `autocreate_post: 1` with one message through `deliver` creates the INBOX. The
+  first capability probe from Thunderbird prompted for a password even with a stored login; a
+  second found `calendar-auto-schedule`.
+
+---
+
 ## D_no_quarantined_handles — Why doesn't a sub-agent's reply reach its parent as an opaque handle?
 
 **Context.** The Dual LLM pattern (#4 in *Design Patterns for Securing LLM Agents against Prompt
@@ -66,7 +133,7 @@ content, the less a handle helps, and every agent pikuri ships is the understand
   ever asked for it, and an open idea kept inviting re-reads with no consumer behind them.
 - **The declassification half on its own**: the child must reply in a type too narrow to carry an
   instruction (a number, an enum), which the parent may then read. It needs no handles and no
-  store, so it's priced separately, in `design/ideas/templated-subagent-replies.md`.
+  store, so it's priced separately, in pikuri-workshop's `design/ideas/templated-subagent-replies.md`.
 
 **Consequences.**
 
@@ -2004,14 +2071,25 @@ if a reader can run both readings in one sitting.
 - **Auto-memory under the flag.** Worse than redundant: it would carry facts
   distilled from untrusted mail into every later conversation, unattributed —
   precisely the attribution the fragment exists to enforce.
+- **A correspondent allowlist enforcing the customer scope:** mail search and
+  read limited to messages from or to the customer's addresses. The gap it
+  would close is the severity lesson the book teaches. Briefing has no egress,
+  so a wider pool costs a misleading brief at worst, and a misleading message
+  most likely sits in the customer's own thread, which the allowlist lets
+  through. `From:` is whatever the sender writes, so the allowlist would scope
+  the search, not defend it, and contact search with the `from:` / `to:`
+  filters already gives the precision. A host that needs a scope builds it
+  downstream (`D_gem_placement`). Its filter belongs inside the Gloda query,
+  never over the results: they're ranked and capped, so filtering afterwards
+  spends the cap on mail it then discards, and a scoped search quietly
+  returns less than it should.
 
 **Consequences.** "Correspondence with that customer" remains a *prompt
 promise*, not an enforced boundary: the private pool is the whole mailbox and
 address book. That is deliberate — the honest reading is what makes the
 severity lesson land, and the boot paragraph says it in words because the
 detector cannot (a silent verdict prints presence only: no attribution, no
-advice). The enforcing filter, a correspondent allowlist inside the Gloda
-query, is deferred until a week of real use makes the pool intolerable.
+advice).
 
 ---
 
@@ -2039,8 +2117,7 @@ the failure nobody notices. Three sub-decisions carry the weight:
   mail tools, but it is a pure read of the entire address book, useful
   standalone, and it has a second life as the resolver behind `MailCompose`'s
   recipient-novelty warn — so the resolver stays built whenever the index is
-  there, while the *tool* follows the surface. Keeping it separable is also
-  what a later correspondent allowlist would need (`design/ideas/thunderbird.md`).
+  there, while the *tool* follows the surface.
 - **The usage snippet follows what was *wired*, not what was asked.** One
   `SURFACE_USAGE` paragraph per wired surface, each carrying its own
   untrusted-content clause, plus the shared search discipline that stayed in
@@ -4016,12 +4093,14 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   from the same bases. Duplicating it would have a host build two parallel
   arrays out of one pair of booleans, and handing `Command::Registry` a
   `Skill::Catalog::Base` would read as a command being a kind of skill.
-- **Left open:** folding home skill roots into a workspace's `readable:` while
-  declaring that workspace trusted is the vouched-for-island problem arriving
-  through the back door — pikuri-workshop's `Code::WholeDisk` raises on `trusted:` for
-  the same reason. `pikuri-code` cannot reach it (its workspace is untrusted
-  regardless), so it binds the first host whose readable set is the project
-  root. See `design/ideas/security-open-questions.md`.
+- **`Filesystem.new(trusted: true)` raises on any root outside its project
+  root.** Folding home skill roots into a trusted workspace's `readable:` would
+  be the vouched-for-island problem arriving through the back door: `read` would
+  vouch for sidecars nobody vouched for, and only a quiet banner would show it.
+  pikuri-workshop's `Code::WholeDisk` refuses `trusted:` outright for the same
+  reason. `pikuri-code` never met it (its workspace is untrusted regardless); a
+  host whose readable set is the project root keeps the flag and gives up `read`
+  on home skill sidecars.
 
 ---
 
@@ -4252,9 +4331,9 @@ it. A detector whose alarms can be declared away is a detector nobody trusts.
 - **The runtime question is a different one, and stays open elsewhere.**
   Whether an agent has *now* read untrusted content is observed rather than
   declared, needs no declaration to be trustworthy, and is worth showing in
-  the UI. It rides `design/ideas/private-context-taint.md`'s per-context flag as the
-  display half of that mechanism. The narrower "poisoned *right now*" alarm
-  on LLM-*authored* bytes remains `design/ideas/injection-tripwire.md`'s.
+  the UI. It rides the per-context flag of pikuri-workshop's
+  `design/ideas/private-context-taint.md`, as the display half of that mechanism. The narrower "poisoned *right now*" alarm
+  on LLM-*authored* bytes remains `design/ideas/warn-human-directly.md`'s.
 
 ---
 
@@ -4706,6 +4785,50 @@ through `Paths`") lives in AGENTS.md *Conventions*.
 - Thunderbird's `Extension` now takes `cache_dir` with `nil` meaning "mint a
   fresh per-process dir," which is what closed the original collision.
 
-**Related.** [`design/ideas/thunderbird.md`](ideas/thunderbird.md) — where the
-collision surfaced; its Q11 (concurrency) covered the *live-DB* race, not
-this *snapshot-destination* race between two pikuri processes.
+---
+
+## D_containment_race — Why does `Filesystem` accept the race between its containment check and the tool's open?
+
+**Context.** {Pikuri::Workspace::Filesystem#resolve_for_read} and
+`#resolve_for_write` realpath a path and check it against the roots; the tool
+opens it afterwards — `read` a moment later, `write` only once the human has
+answered its confirm, which can take seconds. A symlink swapped into the path
+in between sends the open outside the roots. The check is sound against the
+model, which names a path and waits; it does nothing against a process
+retargeting links while the tool runs.
+
+**Decision.** Accept the race in code, and keep it unwinnable by rule. Winning
+it takes a process that changes a root while a file tool runs and cannot read
+the target itself — otherwise it would simply read it. The AGENTS.md invariant
+*a tool's changes to a workspace root end with its call* removes that process:
+nothing a tool starts keeps changing a root after the call returns, two calls
+on one root never overlap, and what runs uncaged as you is exempt because it
+gains nothing by racing. Today it holds by construction: no tool pikuri ships
+leaves a writer behind or can make a symlink (that takes a shell), one agent's
+tools run one at a time since ruby_llm's tool concurrency stays off
+({Pikuri::Tool}), and in pikuri-workshop sandboxed `bash` runs in its own PID
+namespace, so nothing it starts outlives the call.
+
+**Alternatives rejected.**
+
+- **Re-check after opening, through `/proc/self/fd/N`.** It closes the race for
+  reads, on Linux, but turns "resolve a path" into "open the file for me",
+  reshaping every file tool for an attacker pikuri doesn't have — and it can't
+  reach `grep`, whose `rg` opens its files itself.
+- **Create relative to a verified directory fd**, `openat` semantics. Ruby has
+  no `openat`; opening `/proc/self/fd/N/<name>` emulates it on Linux only, and
+  `write`'s `mkdir_p` of missing parents would stay racy.
+- **`File::NOFOLLOW`.** It guards the last component only; the swap can sit in
+  any directory on the path.
+
+**Consequences.**
+
+- Containment is a check on the path the model named, when it named it; the
+  {Pikuri::Workspace::Filesystem} header says so.
+- The invariant binds hosts and the workshop alike. A caged process that keeps
+  a root writable past its call — a containerized MCP server with the workspace
+  mounted read-write — breaks it, and so does a host running two agents over
+  one root on two threads; each must mount read-only or serialize instead.
+- The exemption is honest only while "uncaged as you" means it: unsandboxed
+  `bash`'s background jobs, a language server and your editor can read every
+  target directly, so a race buys them nothing.

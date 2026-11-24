@@ -13,7 +13,12 @@ module Pikuri
     #   end
     #
     # * mail search + read + attachment read + contact search — registered
-    #   only when the Gloda index exists (an +available?+-probed gate).
+    #   only when the Gloda index exists and Thunderbird keeps it current
+    #   ({Profile#gloda_indexing?}); with indexing off the file stays, frozen,
+    #   and would answer without the newest mail. A host without a live index
+    #   gets no fallback over the +.msf+ summaries and mbox files: that's a
+    #   Mork parser and a second, weaker search, for a one-checkbox fix a host
+    #   can name instead.
     #   Attachment read answers a message
     #   with no offline copy per call, so it needs no store probe of its own. Contact search is a pure read that resolves a name
     #   to addresses; it rides Gloda's presence, not the +allow_compose_mail:+ flag.
@@ -256,12 +261,18 @@ module Pikuri
       # is *not* gated on the +:contacts+ surface, because compose's novelty
       # warn is a safety check rather than a tool the model can call.
       #
-      # @return [Gloda::Contacts, nil] +nil+ when the index is absent (both
-      #   Gloda-backed surfaces then omitted, however loudly asked for).
+      # @return [Gloda::Contacts, nil] +nil+ when the index is absent or
+      #   frozen (both Gloda-backed surfaces then omitted, however loudly
+      #   asked for).
       def wire_gloda(c, profile)
         gloda = Gloda.new(gloda_path: profile.gloda_path, cache_dir: File.join(@cache_base, 'mail'))
         unless gloda.available?
           LOGGER.info("Gloda index absent (#{profile.gloda_path}); mail and contact tools disabled.")
+          return nil
+        end
+        unless profile.gloda_indexing?
+          LOGGER.info("Thunderbird's Global Search is off, so #{profile.gloda_path} is frozen; " \
+                      'mail and contact tools disabled.')
           return nil
         end
 

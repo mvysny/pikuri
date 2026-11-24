@@ -2,8 +2,7 @@
 
 Audience: someone extending this gem or auditing its security posture.
 Rationale for individual classes lives in their YARD headers; this file
-covers the cross-cutting design and the threat model. Still-open questions
-and deferred work live in `design/ideas/thunderbird.md`.
+covers the cross-cutting design and the threat model.
 
 ## What it does
 
@@ -313,7 +312,13 @@ attachments are still checked only on that one install.
 
 ### Mail: the Gloda index (`global-messages-db.sqlite`) — the mail source
 
-A complete, pre-decoded search index. Tables that matter:
+A complete, pre-decoded search index, kept current only while Thunderbird's
+*Enable Global Search and Indexer* setting is on. Switching it off writes
+`user_pref("mailnews.database.global.indexer.enabled", false);` to `prefs.js`
+and stops the indexer, and **the file stays, frozen**: Gloda deletes it only
+when it's corrupt or its schema changes (testbed, Thunderbird 160, 2026-11-21).
+So the mail tools are wired only when the file exists *and* that pref isn't
+false ({Pikuri::Thunderbird::Profile#gloda_indexing?}). Tables that matter:
 
 - **`messagesText`** — an FTS3 virtual table over `body`, `subject`,
   `attachmentNames`, `author`, `recipients` (already MIME-decoded,
@@ -421,9 +426,9 @@ unlock-after-write (a read never moves it). Measured: it bumps on *any* Gloda
 write — **including read/star/tag flips during triage** (marking one message
 unread advanced it +1), not only new-mail arrivals — because Gloda indexes
 those as attributes. Consequence for the FTS5 rebuild: it re-fires during
-ordinary triage, not just after a poll (a ~1 s papercut; a future optimization
-gates the rebuild on a content triple `(max(id), count(*), sum(deleted))`
-instead of the raw counter). The `-journal` is **transient, not persistently
+ordinary triage, not just after a poll: a ~1 s papercut, kept, since a gate on
+content would miss a move and a late body download, which Gloda writes in place
+(why not: {Pikuri::Thunderbird::Gloda}). The `-journal` is **transient, not persistently
 retained** (probed: present in 1 of 3 idle samples, exactly while the counter
 was mid-bump), so its presence is a valid "write in flight → retry" signal for
 the snapshot bracket.
@@ -605,8 +610,10 @@ can't be shared on snap.
 - **Compose → `mailto:` URI (built).** `thunderbird 'mailto:to@…?cc=…&bcc=…&subject=…&body=First%0ASecond'`
   opens a pre-filled compose window, percent-decoding cleanly (`%0A`→newline,
   `%20`→space), populating subject + cc + **bcc**, reusing the running
-  instance. Chosen over `-compose`, which **cannot do multiline** (`body='A%0AB'`
-  rendered the literal `A%0AB`). Because the transport is a URI, every field
+  instance. Chosen over `-compose` after `body='A%0AB'` rendered the literal
+  `A%0AB` — but that is `-compose`'s single-quoted *raw literal*; a bare or
+  `"…"` value is percent-decoded, and `body=A%0AB` is two lines (Thunderbird
+  160, the compose window's `GetArgs`, testbed 2026-11-23). Because the transport is a URI, every field
   value must be percent-encoded so an attacker-authored body can't smuggle a
   hidden `&bcc=` — see {Pikuri::Thunderbird::MailtoUri}. pikuri launches it
   detached (`setsid --fork`) so the agent's exit-sweep can't SIGTERM the user's
@@ -622,6 +629,24 @@ can't be shared on snap.
   (confined-readable, **not** the hidden `~/.cache` snapshot dir — see § "Platform
   confinement"), and handed off by the shared {Pikuri::Thunderbird::Launcher}
   (the same detached `setsid --fork` launch compose uses).
+- **An import into a CalDAV calendar can still mail invitations — the server's.** The
+  wizard's commit is `CalendarFileImporter.startImport`: one `addItem` per item, a plain PUT,
+  no iTIP from Thunderbird. But an RFC 6638 `calendar-auto-schedule` server schedules *on the
+  PUT* when the `ORGANIZER` is the calendar's owner: Cyrus mailed an outside `ATTENDEE` an
+  iMIP `REQUEST`, put a same-server attendee's invitation into their scheduling Inbox *and*
+  their calendar, and mailed a `CANCEL` on DELETE. Two shapes stop it: `SCHEDULE-AGENT=CLIENT`
+  on an `ATTENDEE` (RFC 6638 §7.1) stops all three for that attendee, and an event with no
+  `ORGANIZER` isn't a scheduling object at all. Thunderbird's import keeps the parameter in
+  its PUT and adds no `ORGANIZER`. **A later edit in Thunderbird's event dialog strips the
+  mark:** its Save calls `cal.itip.adaptScheduleAgent`, which on an auto-scheduling calendar
+  whose iMIP identity is the organizer (and `forceEmailScheduling` off, the default) deletes
+  `SCHEDULE-AGENT=CLIENT` from every attendee, so the server then mails each one a *first*
+  `REQUEST`. Import never calls it. The wizard selects the first event and shows its details,
+  attendees included.
+  A rootless Cyrus 3.12 beside the testbed, Thunderbird 160, 2026-11-21; the import ran the
+  wizard's own two calls over Marionette, and the dialog's Save was replicated, not clicked.
+  Not seen: Sabre (Nextcloud, Baikal), iCloud, Google — Google's the likeliest to ignore it.
+  Why the tool carries no attendees: `D_no_calendar_attendees`.
 
 Both are the human-gated hand-off shape the no-send seam requires: pikuri
 opens a window, the human reviews and commits.
@@ -635,9 +660,10 @@ an `.ics` path opened the import wizard. No second instance started.
 
 The guarantee is an **allowlist, not a blocklist**: the backends open only
 `global-messages-db.sqlite` and `calendar-data/*.sqlite` (plus their snapshot
-copies), discovery reads `profiles.ini`, and the attachment reader reads
-`prefs.js` (its `mail.server.*` lines only — passwords live in `logins.json`,
-not there) and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
+copies), discovery reads `profiles.ini` and `prefs.js` (its `mail.server.*` and
+`mailnews.database.global.indexer.enabled` lines only — passwords live in
+`logins.json`, not there), and the attachment reader reads the same
+`mail.server.*` lines and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
 the profile directory is ever opened — so no enumeration of what-to-avoid is load-bearing,
 and a wrong name below changes nothing.
 
@@ -767,10 +793,27 @@ script can call Thunderbird's APIs (`MailServices`, Gloda, `cal.manager`).
   word.
 - `MOZ_CRASHREPORTER_DISABLE=1`, or the crash helper creates `~/Downloads/thunderbird.tmp/`.
 
-**Hand-offs on a headless machine.** A session started with `--display` runs on its own Xvfb
-and accepts remote commands, so `DISPLAY=:N` on the agent's side makes a real hand-off land in
-it (§ Hand-off mechanics). `js/compose-windows.js` reads the open compose windows back as
-Thunderbird parsed them; `session screenshot` grabs the screen (`ffmpeg -f x11grab`). There is
+**Hand-offs on a headless machine: Marionette first.** A plain headless session tests a
+hand-off without any display. `js/handoff.js` builds the command line a remoted `thunderbird
+…` would carry (`Cu.createCommandLine(args, null, STATE_REMOTE_EXPLICIT)`) and hands it to
+Thunderbird's own `MessengerContentHandler#handle`, the code a `mailto:`, a `-compose "…"`
+or an `.eml` path reaches; `js/compose-windows.js` reads each window back as Thunderbird
+parsed it (recipients, `References`, attachments, body); `js/outgoing-mime.js` has
+Thunderbird's own `MimeMessage` write what Send would emit into a temp file and deletes it,
+so threading headers are checked with nothing sent and no folder written;
+`js/close-windows.js` clears the windows, which stack, before the next one. What this skips is
+pikuri's own `setsid thunderbird …` launch remoting into the instance (testbed, 2026-11-23,
+Thunderbird 160).
+
+- A hand-off file goes in {Pikuri::Thunderbird::Profile#outbox_dir}: snap Thunderbird has a
+  private `/tmp`, so a file under the agent's `/tmp` is "not found".
+- A missing file raises a modal alert. Over a compose window it stays, and `handoff.js` lists
+  it; over the main window Marionette dismisses it itself, `handoff.js` resolves `null`, and
+  the next `session js` fails once with "unexpected alert open".
+
+**Hand-offs on a display.** A session started with `--display` runs on its own Xvfb and
+accepts remote commands, so `DISPLAY=:N` on the agent's side makes pikuri's real launch land in
+it (§ Hand-off mechanics); `session screenshot` grabs the screen (`ffmpeg -f x11grab`). There is
 no window manager, so windows stack; clicking goes through Marionette, not the screen.
 
 **`--display` on a VM with a desktop session needs `DISABLE_WAYLAND=1`.** The snap's launcher

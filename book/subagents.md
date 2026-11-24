@@ -1,7 +1,7 @@
 # Sub-agents
 
 This chapter introduces exactly one new concept on top of the
-first-conversation chapter: **delegation**. Letting the model
+chapters so far: **delegation**. Letting the model
 spawn a fresh agent — with
 its own narrow toolset and its own focused system prompt — to
 handle a self-contained side-quest, and absorbing only the final
@@ -11,8 +11,9 @@ makes the fan-out shape concrete.
 
 By the end of this chapter you'll know what a *persona* is, what a
 *pikuri extension* looks like (the `configure` hook
-behind the `Workspace::Extension` you wired in the touching-files
-chapter, and behind retrieval and mail later on), and what gets
+behind the `Workspace::Extension` that gave `pikuri-files` its tools
+in the touching-files chapter, and behind retrieval and mail later
+on), and what gets
 inherited vs. owned when a
 parent spawns a child.
 
@@ -33,8 +34,8 @@ since you cloned. If those are true, you're ready.
 ## 1. Run the minions demo
 
 `bin/pikuri-minions` is a "boss + minions" binary: the boss agent
-has the four network/arithmetic tools from the first-conversation chapter *plus* the
-`agent` tool, and one persona — `RESEARCHER` — is wired in as a
+has `pikuri-chat`'s web and arithmetic tools *plus* the `agent`
+tool, and one persona — `RESEARCHER` — is wired in as a
 delegate.
 
 ```sh
@@ -122,6 +123,7 @@ Persona.new(
   child, and the persona's prompt is not appended to anything.
   Hosts typically load this from a `.txt` under their gem's
   `prompts/` via `Pikuri.prompt(name)`.
+
 Notice what a persona does *not* carry: a step budget. A child's
 loop runs as long as it needs to, and stops for the same two reasons
 the parent's does — you hit Ctrl+C (the cancel token is shared by
@@ -137,12 +139,13 @@ prompt lives at `pikuri-subagents/prompts/persona-researcher.txt`
 
 ## The Extension protocol
 
-You met `Pikuri::Agent::Extension` implicitly when you read the
-source of `bin/pikuri-minions`:
+`pikuri-minions` is wired with the same block as `pikuri-chat`, from
+the first-conversation chapter, plus one `add_extension` line:
 
 ```ruby
 agent = Pikuri::Agent.new(...) do |c|
-  c.add_tool Pikuri::Web::Search.build
+  # …the same two listeners…
+  c.add_tool Pikuri::Web::Search.from_h(examples_config['search'])
   c.add_tool Pikuri::Web::SCRAPE
   c.add_tool Pikuri::Web::FETCH
   c.add_tool Pikuri::Tool::CALCULATOR
@@ -184,7 +187,7 @@ the ones it needs:
 
 Same shape as the touching-files chapter's `Workspace::Extension`,
 and the one the retrieval and Thunderbird gems use. The secretary at
-the end of the book wires three at once.
+the end of the book wires several at once.
 
 **Practical implication of running `configure` at once:** call
 `c.add_extension` *after* the `c.add_tool` calls the personas
@@ -249,7 +252,7 @@ your files over the network if it inherited those tools.
 
 The persona model rules that out at the structure level rather
 than asking the prompt to behave. `RESEARCHER`'s `tool_names`
-lists three network-read tools and only those, so even if a
+lists the web tools and only those, so even if a
 malicious page it scrapes prompt-injects it into "now also `read`
 `~/.ssh/id_ed25519` and send it on," the `read` tool isn't in its
 tool list — there is no `read` to call. The reverse case (a
@@ -283,12 +286,19 @@ pikuri-files [:private, :untrusted_hard]
     file_list [:private, :untrusted_hard]
 ```
 
-The miner's four tools are the parent's own instances, so they see
+The miner's tools are the parent's own instances, so they see
 the same folder and nothing outside it. `edit` and `write` stay with
 the parent, because the persona's `tool_names` doesn't list them.
-(`[gate: unreviewed]` means nobody reviews the task the parent hands
-over. [The trifecta-detector chapter](trifecta-detector.md) reads
-that marker.)
+
+`[gate: unreviewed]` means nobody reviews the task the parent hands
+over. A host can change that with the confirmer from the
+touching-files chapter: `SubAgent::Extension.new(personas:,
+confirmer:)` shows you each task before the child starts, with
+`[e] edit` to change it, and the marker then reads
+`[gate: human_reviewed]`. Neither demo passes one, so you'll see
+`unreviewed` on both maps. [The trifecta-detector
+chapter](trifecta-detector.md) says what the marker does to the
+parent's verdict.
 
 Ask "which file mentions the deposit?" and the parent can hand the
 lookup to the miner instead of grepping itself. Whether it does is

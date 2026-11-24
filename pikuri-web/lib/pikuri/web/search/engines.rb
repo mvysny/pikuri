@@ -338,7 +338,7 @@ module Pikuri
 
           json = @memory_cache.read(cleaned) || @disk_cache.read(cleaned)
           if json
-            LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{json.bytesize}" }
+            LOGGER.info { "cache=hit bytes=#{json.bytesize}" }
           else
             json = run_cascade(cleaned, current_providers, max_results: max_results, cancellable: cancellable)
           end
@@ -366,10 +366,7 @@ module Pikuri
           current_providers.shuffle.each do |provider|
             results = provider.search(cleaned, max_results: max_results, cancellable: cancellable)
             disk = provider.disk_cacheable?
-            LOGGER.info do
-              "engine=#{provider.label} query=#{cleaned.inspect} results=#{results.size} " \
-                "cache=#{disk ? 'disk' : 'memory'}"
-            end
+            LOGGER.info { "engine=#{provider.label} results=#{results.size} cache=#{disk ? 'disk' : 'memory'}" }
             return (disk ? @disk_cache : @memory_cache).write(cleaned, JSON.generate(rows_of(results)))
           rescue Unavailable => e
             failures << "#{provider.label} (#{e.message})"

@@ -80,11 +80,10 @@ Both halves are true of the harness that reviewer was speaking
 from, and false here:
 
 - **"Bash already exists."** Claude Code is one binary that always
-  has a shell. pikuri is a set of gems you wire, and most wirings in
-  this book have no shell at all: `pikuri-chat`, the mail demo,
-  briefing, the secretary. A mail agent totalling invoice amounts
-  has no `python3` to reach for. The tool is the only way it gets a
-  sum right.
+  has a shell. pikuri is a set of gems you wire, and no wiring in
+  this book has a shell at all; that's book 2's. A mail agent
+  totalling invoice amounts has no `python3` to reach for. The tool
+  is the only way it gets a sum right.
 - **"If it can't add, a tool won't save it."** The failure was never
   "can't add". It's digit-level unreliability on long
   multiplications and floats, and that's exactly what a

@@ -11,7 +11,9 @@ human to send. Owns the no-egress posture — nothing here speaks IMAP, SMTP or 
 
 ## Testing against a real Thunderbird
 
-- **Never against a real profile.** Real mail in a session log or a transcript is a leak. On the dev VM (its packages: `design/architecture.md` § The testbed), `dev/testbed/build` builds the demo profile (Thunderbird's only, default one, an IMAP account synced from a build-time dovecot) and, through the root's `dev/demo-home/`, `~/Documents`; it refuses while Thunderbird runs or a non-demo profile exists. See `D_thunderbird_testbed`.
-- **Live tests run in a session:** `dev/testbed/session start [--display]`, then `session js <file>` (ready scripts in `dev/testbed/js/`), `session screenshot`, `session stop`. A hand-off reaches a `--display` session when the agent's side sets its `DISPLAY`. How it all works: `design/architecture.md` § The testbed.
+- **The dev VM's packages come first.** Before working on this gem, check that every package in `design/architecture.md` § The testbed is installed (`dpkg-query -W`, `snap list thunderbird`); if one is missing, ask the developer to install it and wait — never work around it with a download or a different server. Exception: `xvfb` and `ffmpeg` serve only `session --display`, so without them say so and carry on headless.
+- **Never against a real profile.** Real mail in a session log or a transcript is a leak. On the dev VM, `dev/testbed/build` builds the demo profile (Thunderbird's only, default one, an IMAP account synced from a build-time dovecot) and, through the root's `dev/demo-home/`, `~/Documents`; it refuses while Thunderbird runs or a non-demo profile exists. See `D_thunderbird_testbed`.
+- **Live tests run in a session:** `dev/testbed/session start [--display]`, then `session js <file> [args]` (ready scripts in `dev/testbed/js/`), `session screenshot`, `session stop`.
+- **Test a hand-off over Marionette first** — headless, no Xvfb: `session js dev/testbed/js/handoff.js <command line>` runs it through Thunderbird's own handler, then `compose-windows.js` / `outgoing-mime.js` read what it opened. Only pikuri's own launch needs `--display`, with the agent's side setting its `DISPLAY`. How it all works: `design/architecture.md` § The testbed.
 
 Maintenance: the root `AGENTS.md`'s rules.

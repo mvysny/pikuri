@@ -12,8 +12,8 @@ introduces. So does any app that
 [reaches for all three trifecta legs at once](apps.md).
 
 That framing matters because pikuri is a *toolkit*, not a single
-product. `pikuri-chat`, `pikuri-minions` and `pikuri-briefing` are
-harnesses someone built on `pikuri-core`; the next one is the one
+product. Every demo so far is a harness someone built on
+`pikuri-core`; the next one is the one
 *you* build. This chapter is about how to pick a security model for
 it. By the end you should be able to look at any agent you wire up
 and answer one question: **what stops a malicious sentence — in a
@@ -452,7 +452,7 @@ is what a careful re-read is good at.
 > defanged before they reach your terminal. What's **not yet
 > shipped** is the fatigue half: the secretary still asks on every
 > write and every search. The plan (motivation in
-> [`design/ideas/more-confirmers.md`](../design/ideas/more-confirmers.md),
+> pikuri-workshop's [`design/ideas/more-confirmers.md`](https://github.com/mvysny/pikuri-workshop/blob/master/design/ideas/more-confirmers.md),
 > "ask less, and headline the consequence") is to ask only on
 > the consequential, and when it *does* ask, headline the
 > consequence rather than echo every byte the eye slides over. Rare,

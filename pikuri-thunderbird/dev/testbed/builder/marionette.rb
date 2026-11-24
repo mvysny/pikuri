@@ -55,16 +55,23 @@ module Pikuri
         command('Marionette:SetContext', { value: 'chrome' })
       end
 
-      # Runs +script+ as an async function body; the script resolves by
-      # calling +arguments[arguments.length - 1]+ with a JSON-able value.
+      # Runs +script+ as a function body that resolves by calling
+      # +arguments[arguments.length - 1]+ with a JSON-able value; +args+ come
+      # before that callback.
+      #
+      #   execute_async('const [to, resolve] = arguments; resolve(to.length);', args: ['a@b.example'])  # => 11
+      #
+      # The body is a plain function, not an async one: a top-level +await+ is a
+      # SyntaxError, so wrap +(async () => { … })()+ as +js/add-event.js+ does.
       #
       # @param script [String]
+      # @param args [Array<String, Numeric, Boolean, nil>] JSON-able arguments.
       # @param timeout [Numeric] seconds before Marionette gives up on it.
       # @return [Object] the value the script resolved with.
       # @raise [Error] on a script error or a timeout.
-      def execute_async(script, timeout: 60)
+      def execute_async(script, args: [], timeout: 60)
         result = command('WebDriver:ExecuteAsyncScript',
-                         { script: script, args: [], scriptTimeout: (timeout * 1000).to_i })
+                         { script: script, args: args, scriptTimeout: (timeout * 1000).to_i })
         result['value']
       end
 

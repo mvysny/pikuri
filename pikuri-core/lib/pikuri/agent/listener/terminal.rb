@@ -7,7 +7,7 @@ module Pikuri
   class Agent
     module Listener
       # Terminal renderer for the normalized event stream: dim grey reasoning,
-      # assistant Markdown printed raw, tool-call/result lines in Kuri's coat
+      # assistant Markdown printed unrendered, tool-call/result lines in Kuri's coat
       # ({TOOL_COLOR}), yellow fallback notice, red cancelled, magenta
       # model-switch. A tool call renders as the two strings the tool composed,
       # never an argument dump or a slice of the observation:
@@ -23,7 +23,17 @@ module Pikuri
       # text is defanged through {Pikuri::Sanitizer} — a +to_s+ may carry a
       # filename, a skill name or a server's own words.
       #
-      # Assistant Markdown prints raw, no Markdown-to-ANSI: rendering can't
+      # Prose — reasoning, assistant Markdown, an injected block — prints as
+      # written except for the bytes a terminal *acts on*, which show escaped:
+      #
+      #   "done\e[1A\e[2K"   # prints  done\x1b[1A\x1b[2K
+      #
+      # A model echoing an attacker's bytes could otherwise recolor, overwrite
+      # or erase lines already on screen, a guard's warning among them. Tabs
+      # and zero-width joiners pass, since honest prose carries them (Go code,
+      # 👩‍💻) — which is why this isn't {Pikuri::Sanitizer} wholesale.
+      #
+      # Assistant Markdown prints unrendered, no Markdown-to-ANSI: rendering can't
       # apply to the streaming path anyway (half-built fences/tables), and the
       # one gem for it (tty-markdown) was unmaintained, crashed on
       # ANSI-in-tables, and pulled seven transitive deps — proper rendering
@@ -50,6 +60,11 @@ module Pikuri
         # Floor on the room a tool-call argument gets, for the narrow terminal
         # where the budget arithmetic would otherwise leave it nothing.
         MIN_ARGUMENT_CHARS = 20
+
+        # The bytes a terminal acts on rather than prints, as prose may carry
+        # them: C0 controls bar tab and newline, DEL, C1, the bidi overrides.
+        # {Pikuri::Sanitizer::SUSPECT} minus tab and the zero-width set.
+        PROSE_SUSPECT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/
 
         # Color of the +→ call+ / += result+ lines: Kuri's Talus coat
         # (+assets/kuri.svg+) with the chroma lifted, because the coat verbatim
@@ -100,20 +115,20 @@ module Pikuri
             if @streaming
               terminate_stream
             else
-              println(indent(Rainbow(content).color(85, 85, 85)))
+              println(indent(Rainbow(defang_prose(content)).color(85, 85, 85)))
             end
           in Event::Assistant(content:)
             if @streaming
               terminate_stream
             else
-              println(indent(content))
+              println(indent(defang_prose(content)))
             end
           in Event::ThinkingDelta(content:)
-            stream_fragment(Rainbow(content).color(85, 85, 85)) if @streaming
+            stream_fragment(Rainbow(defang_prose(content)).color(85, 85, 85)) if @streaming
           in Event::AssistantDelta(content:)
-            stream_fragment(content) if @streaming
+            stream_fragment(defang_prose(content)) if @streaming
           in Event::SystemInjected(content:)
-            println(indent(Rainbow("⊕ #{content}").color(85, 85, 85)))
+            println(indent(Rainbow("⊕ #{defang_prose(content)}").color(85, 85, 85)))
           in Event::ToolCall(display_name:, argument:)
             println(indent(Rainbow("→ #{tool_call_line(display_name, argument)}").color(TOOL_COLOR)))
           in Event::ToolResult(summary:)
@@ -251,6 +266,19 @@ module Pikuri
           return flattened if flattened.length <= limit
 
           "#{flattened[0, limit - 1]}…"
+        end
+
+        # Escape the {PROSE_SUSPECT} bytes in Sanitizer's notation, +\x1b+ /
+        # +\u{202e}+; per character, so an escape split across two streamed
+        # fragments is caught in whichever half its ESC lands.
+        #
+        # @param text [String] model- or host-authored prose
+        # @return [String]
+        def defang_prose(text)
+          text.gsub(PROSE_SUSPECT) do |ch|
+            cp = ch.ord
+            cp >= 0x202a ? format('\\u{%04x}', cp) : format('\\x%02x', cp)
+          end
         end
 
         # @return [Integer] terminal columns; 80 when stdout has no window size

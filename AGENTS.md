@@ -51,6 +51,7 @@ docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it
 - **Attachments are bytes.** Every attachment pikuri hands around is a `Pikuri::Attachment`; a `RubyLLM::Attachment` is built only by {Pikuri::Attachment#to_ruby_llm}, so no path or URL ever reaches ruby_llm's read-at-construction. See {Pikuri::Attachment}.
 - **Extraction seam.** Every format→text conversion routes through the `Pikuri::Extractor` registry — a new format is a registry entry, not a dispatcher arm.
 - **Subprocess seam.** All subprocess spawning in `lib/` routes through `Pikuri::Subprocess.spawn`; a bare `Process.spawn` or `Open3` outlives the turn that started it.
+- **A tool's changes to a workspace root end with its call.** Nothing a tool starts keeps changing a root after the call returns, and two tool calls on one root never overlap; a process running uncaged as you is exempt, since it can read any target without racing. This keeps the containment check's race unwinnable. See `D_containment_race`.
 - **Finalizers / teardown seam.** One process-global teardown registry and a single `at_exit`, each resource registering at its ownership boundary. See {Pikuri::Finalizers}.
 - **Capability seam.** A live `Agent` reference is read-only; everything that *acts on* a wired agent lives on its `Agent::Configurator`, handed only to the `Agent.new` block and `Extension#configure`. See `D_one_phase_extensions`.
 - **Environment is not a secret store.** pikuri never *filters* `ENV` before spawning; config holds tokens verbatim, and a per-child `env:` is the credential channel. See `D_de_bundlerized_children`.
@@ -69,7 +70,7 @@ docs is qualified, `pikuri-workshop:D_<slug>`, and the design tripwire leaves it
 ## Module map
 
 Rails-shape monorepo: each gem owns its `lib/`, `spec/`, gemspec, entry file, and where
-relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires every gem via
+relevant its `bin/`, `prompts/`, `examples/` (a demo's sample input) and `design/`. The top-level `Gemfile` wires every gem via
 `gemspec path:`; the top-level `Rakefile` fans out `rake test` and orchestrates `rake release`.
 
 - `pikuri-core` — `Agent` runtime, `Tool` framework, Extension protocol, listener stream, `Subprocess` chokepoint, `Extractor` registry, the bundled `calculator`, `bin/pikuri-chat`.
@@ -96,7 +97,7 @@ relevant its `bin/`, `prompts/` and `design/`. The top-level `Gemfile` wires eve
 - **A gemspec's runtime dependencies are what its `lib/` requires.** A sibling gem only a `bin/` script or a spec uses comes from the root `Gemfile`; a third-party gem only they use is an `add_development_dependency`.
 - **Per-gem Zeitwerk loaders**, eager-loading at boot; no `require_relative` inside a gem's `lib/`. One constant per file at the Zeitwerk path, everything under `Pikuri::`, acronyms need an `inflector.inflect` entry, no top-level constants. `Pikuri::PROMPT_DIRS` is likewise cooperative.
 - **Tests: rspec-core with minitest-style asserts.** `describe` / `it` but `assert_equal` / `assert` / `refute`, no RSpec matchers, no rspec-mocks (stub with `define_singleton_method` in `before`, restore in `after`). Pattern: `pikuri-core/spec/pikuri/agent_spec.rb`.
-- **Diagnostics go through `Pikuri.logger_for('Name')`**, never `puts` / `warn` / `$stderr`; listener rendering of the LLM stream on stdout via `Terminal` is not logging.
+- **Diagnostics go through `Pikuri.logger_for('Name')`**, never `puts` / `warn` / `$stderr`; listener rendering of the LLM stream on stdout via `Terminal` is not logging. A log line carries nothing the user or the model wrote (a search query, a URL, a message body), since logs outlive the session in journals and bug reports.
 - **Cache, temp, config and state paths go through `Paths`** (`cache` shared + persistent; `new_temp` per-process, reaped at exit; `config` user-edited; `state` what a host keeps across restarts); never read an `XDG_*` variable or hardcode `~/.cache`. The user's own folders (Desktop, Documents) are another matter: they come from `xdg-user-dir`, under their localized names.
 - **Errors are loud.** Unexpected internal state raises with the offending data; failures the LLM can react to answer `Tool::Result.error(message)`; only cosmetic paths secondary to the loop may rescue-and-degrade.
 - **Every tool declares a sharing posture.** `Agent` is thread-unsafe (the caller serializes; never key state off `Thread.current`), so a tool reachable from two agents carries a `Sharing:` yardoc line naming `P_stateless` / `P_shared_locked` / `P_shared_benign` / `P_one_agent` plus the state's owner; a waiting tool opts into `wants_context: true` and sleeps via `context.cancellable.sleep`. See `D_tool_sharing_postures`, `D_rate_limiter_scope`.

@@ -2,7 +2,7 @@
 
 A short, sequential book on pikuri. Each chapter builds on the
 vocabulary the previous one established, so reading order matters
-— don't jump into the security chapter without the first two.
+— don't jump into the security chapter without the base vocabulary.
 
 **This page is the running order.** Chapters are named, not
 numbered: the files are `security.md`, `chat.md`, and so on, and
@@ -24,9 +24,8 @@ A setup chapter, then the base vocabulary in four chapters (a
 conversation, a tool, files, delegation), then recall over your own
 documents, then the security arc that says why none of it can leak
 them, then the secretary, which holds all three legs of the trifecta
-on purpose and shows what keeps that in bounds. Hosting steps outside
-the single-agent shape, and the coda points at the apps built on
-pikuri.
+on purpose and shows what keeps that in bounds. The coda points at
+the apps built on pikuri, which run many conversations at once.
 
 Each chapter has its own small demo binary rather than one example
 grown chapter by chapter: a demo shows one idea and one trifecta

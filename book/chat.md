@@ -334,8 +334,8 @@ shows how to look.
 
 ## The bundled tools
 
-The ones `pikuri-chat` wires. `calculator` is pikuri-core's one
-bundled tool; the three that reach the internet come from the
+The ones `pikuri-chat` wires. `calculator` ships in pikuri-core; the
+ones that reach the internet come from the
 [`pikuri-web`](../pikuri-web/README.md) gem, which an agent that
 should stay offline simply doesn't load:
 
@@ -363,6 +363,52 @@ instead of crashing. pikuri-core deliberately ships no PDF parser —
 it's the kind of dependency you should opt into, not inherit — and
 the recall chapter plugs one in with two lines. Remember this moment
 when you get there.
+
+## How `pikuri-chat` is wired
+
+Everything you've run so far is one block of
+`pikuri-core/bin/pikuri-chat`, shown here without its streaming and
+Ctrl+C handling:
+
+```ruby
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(
+    server: server, model: model, api_key: api_key
+  ),
+  system_prompt: system_prompt
+) do |c|
+  c.add_listener Pikuri::Agent::Listener::Terminal.new
+  c.add_listener Pikuri::Agent::Listener::TokenLog.new
+  c.add_tool Pikuri::Web::Search.from_h(examples_config['search'])
+  c.add_tool Pikuri::Tool::CALCULATOR
+  c.add_tool Pikuri::Web::SCRAPE
+  c.add_tool Pikuri::Web::FETCH
+end
+
+agent.run_loop(user_message: 'What is 1837 * 4291?')
+```
+
+That block is the vocabulary every later chapter builds on:
+
+- **`Pikuri::Agent`** is one conversation: a model to talk to, a
+  system prompt, tools, and the messages so far. `run_loop` runs one
+  turn of the loop above, until the model answers instead of calling
+  a tool. The `>` prompt around it calls `run_loop` once per line you
+  type.
+- **The transport** names the server and the model. It belongs to
+  this agent, not to the process, so two agents can talk to two
+  servers.
+- **A `Pikuri::Tool`** is what `add_tool` takes. The next chapter
+  writes one.
+- **A listener** watches the loop. Every step, a thought, a tool
+  call, its result, the answer, reaches each listener as an event.
+  `Terminal` prints them, which is the transcript you've been
+  reading, and `TokenLog` logs the `ctx=` line, how full the context
+  window is. A graphical app hands in a listener of its own instead.
+- **`c`**, the configurator, is the one handle that changes an agent,
+  and only this block gets it. The `agent` that comes back can be run
+  and read, not rewired. Later chapters add whole packages of tools
+  through `c` with one `c.add_extension` call each.
 
 ## Configuring the example scripts
 

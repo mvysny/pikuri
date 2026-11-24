@@ -19,9 +19,10 @@ module Pikuri
   # 1. *Neutralize* — make dangerous bytes visible without changing structure:
   #    control bytes → +\xNN+, bidi/zero-width → +\u{NNNN}+, tab → +\t+;
   #    newlines preserved. *Faithful, not beautifying* — it never collapses
-  #    whitespace or rewrites a tab, because the user must see exactly what they
-  #    approve (a Makefile's leading tab stays a tab). A web chrome adds
-  #    +html_escape+ on top; the HTML layer is the caller's.
+  #    whitespace, and a tab shows as +\t+, never as spaces, because the user
+  #    must see exactly what they approve (a Makefile recipe whose leading tab
+  #    is spaces breaks). A web chrome adds +html_escape+ on top; the HTML
+  #    layer is the caller's.
   # 2. *Warn* — one {Warning} per category detected (kind + offending tokens +
   #    plain-English explanation). Presentation is the chrome's.
   #

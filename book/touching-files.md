@@ -46,7 +46,7 @@ pikuri-files [:untrusted_hard]
   write []
 ```
 
-Six tools, and two kinds of row. The four that read carry
+Two kinds of row. The tools that read carry
 `:untrusted_hard`: pikuri can't know who wrote the files in your
 folder, so it assumes a stranger might have. `edit` and `write`
 carry no leg at all: changing a file on your own disk sends nothing
@@ -60,9 +60,9 @@ That `write []` is worth remembering. The detector grades what can
 agent can do, changing your files, is invisible to the map. What
 guards it is this chapter's other half.
 
-## Six tools, one workspace
+## The file tools, one workspace
 
-The six are `file_list` (what's in a folder), `glob` (files by name
+They are `file_list` (what's in a folder), `glob` (files by name
 pattern), `grep` (files by content), `read`, `edit` (replace an
 exact piece of text) and `write` (a whole file). They're wired as a
 single `Workspace::Extension`, so they share one record of which

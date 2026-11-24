@@ -115,13 +115,14 @@ module Pikuri
 
       # Runs a chrome-context script, in a Marionette session of its own.
       #
-      # @param script [String] an async body; it resolves with
-      #   +arguments[arguments.length - 1](value)+.
+      # @param script [String] a function body; it resolves with
+      #   +arguments[arguments.length - 1](value)+ (see {Marionette#execute_async}).
+      # @param args [Array<String>] the script's +arguments+, before the callback.
       # @param timeout [Numeric] seconds.
       # @return [Object] the resolved value.
-      def execute(script, timeout: 60)
+      def execute(script, args: [], timeout: 60)
         marionette = Marionette.connect(port: @port, wait: 10)
-        marionette.execute_async(script, timeout: timeout)
+        marionette.execute_async(script, args: args, timeout: timeout)
       ensure
         marionette&.close
       end

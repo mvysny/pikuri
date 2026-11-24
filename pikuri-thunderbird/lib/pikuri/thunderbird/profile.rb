@@ -113,6 +113,18 @@ module Pikuri
       #   +available?+ gate).
       def gloda? = File.file?(gloda_path)
 
+      # @return [Boolean] whether Thunderbird keeps the Gloda index current:
+      #   +false+ once its *Enable Global Search and Indexer* setting is off,
+      #   which stops the indexer and leaves the file in place, frozen; +true+
+      #   when +prefs.js+ is missing or doesn't say (the default is on).
+      def gloda_indexing?
+        return true unless File.file?(prefs_path)
+
+        File.foreach(prefs_path, encoding: 'UTF-8').none? do |line|
+          line.match?(/\Auser_pref\("mailnews\.database\.global\.indexer\.enabled",\s*false\);/)
+        end
+      end
+
       # @return [String] Thunderbird's preferences, which map each mail
       #   account to its store directory (see {MessageStore}).
       def prefs_path = File.join(@dir, 'prefs.js')
