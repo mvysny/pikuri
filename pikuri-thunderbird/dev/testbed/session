@@ -16,6 +16,7 @@
 #
 #   session js pikuri-thunderbird/dev/testbed/js/handoff.js -compose 'to=a@b.example,body=Hi%0Athere'
 #   session js pikuri-thunderbird/dev/testbed/js/compose-windows.js   # what the window shows
+#   session js pikuri-thunderbird/dev/testbed/js/open-attachment.js   # double-click a chip, as the reviewer would
 #   session js pikuri-thunderbird/dev/testbed/js/outgoing-mime.js     # what Send would emit; sends nothing
 #   session js pikuri-thunderbird/dev/testbed/js/close-windows.js     # before the next one
 #
