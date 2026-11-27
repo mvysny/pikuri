@@ -48,14 +48,23 @@ module Pikuri
         if File.file?(profile.prefs_path)
           File.foreach(profile.prefs_path, encoding: 'UTF-8') do |line|
             if (m = line.match(PREF))
-              prefs[m[1]][m[2]][m[3]] = JSON.parse(m[4])
+              prefs[m[1]][m[2]][m[3]] = pref_value(m[4])
             elsif (d = line[/\Auser_pref\("mail\.accountmanager\.defaultaccount",\s*(".*")\);/, 1])
-              default = JSON.parse(d)
+              default = pref_value(d)
             end
           end
         end
         new(servers: prefs['server'], accounts: prefs['account'], identities: prefs['identity'], default:)
       end
+
+      # @param literal [String] a pref value as +prefs.js+ spells it, e.g. +"\"id1,id2\""+.
+      # @return [String, Integer, Boolean]
+      def self.pref_value(literal)
+        # Mozilla escapes only \n, \r, \\ and " when it writes prefs.js, so a
+        # signature pasted with a tab lands raw, and JSON refuses a raw control.
+        JSON.parse(literal.gsub(/[\x00-\x1f]/) { format('\u%04x', _1.ord) })
+      end
+      private_class_method :pref_value
 
       # @param servers [Hash{String => Hash{String => Object}}] +serverN+ → its prefs.
       # @param accounts [Hash{String => Hash{String => Object}}] +accountN+ → its prefs.
@@ -79,7 +88,7 @@ module Pikuri
         key && @servers[key]
       end
 
-      # @return [Array<Identity>] every account's identities, in account order.
+      # @return [Array<Identity>] every account's identities.
       def identities
         @accounts.each_value.flat_map { identities_of(_1) }.uniq
       end

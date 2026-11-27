@@ -72,6 +72,12 @@ describe Pikuri::Thunderbird::Accounts do
     end
   end
 
+  it 'reads a value carrying a raw tab, which Mozilla writes unescaped' do
+    accounts("#{prefs}user_pref(\"mail.identity.id2.fullName\", \"Alex\tNovak\");\n") do |a|
+      assert_equal "Alex\tNovak", a.identities[1].name
+    end
+  end
+
   it 'reads a profile without prefs.js as no accounts' do
     Dir.mktmpdir do |dir|
       a = described_class.read(Pikuri::Thunderbird::Profile.new(dir: dir, variant: :override))

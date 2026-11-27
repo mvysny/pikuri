@@ -33,7 +33,7 @@ describe Pikuri::Thunderbird::MailReply do
   # Stored copies, headers only (the reply reads nothing else from the mbox).
   def mbox(*headers) = headers.map { "From - x\nX-Mozilla-Status: 0001\n#{_1}\n\nbody\n" }.join.gsub("\n", "\r\n")
 
-  def work_mbox = mbox(<<~H.chomp, <<~H.chomp, <<~H.chomp)
+  def work_mbox = mbox(<<~H.chomp, <<~H.chomp, <<~H.chomp, <<~H.chomp)
     Message-ID: <plan-3@lumo.example>
     From: Mira Koskinen <mira@lumo.example>
     To: Me Myself <me@example.com>
@@ -54,6 +54,11 @@ describe Pikuri::Thunderbird::MailReply do
     To: me@example.com
     Subject: Verify
   H
+    Message-ID: <both@x>
+    From: Ilse <ilse@example.com>
+    To: me@home.example, me@example.com
+    Subject: Both
+  H
 
   def personal_mbox = mbox(<<~H.chomp)
     Message-ID: <ride@riders.example>
@@ -71,6 +76,7 @@ describe Pikuri::Thunderbird::MailReply do
     'plan-3@lumo.example' => rec('plan-3@lumo.example', work),
     'mine@example.com' => rec('mine@example.com', work),
     'phish@x' => rec('phish@x', work, subject: 'Verify'),
+    'both@x' => rec('both@x', work, subject: 'Both'),
     'ride@riders.example' => rec('ride@riders.example', personal, subject: '[riders] Sunday ride'),
     'gone@x' => rec('gone@x', work),
     'hdr@x' => rec('hdr@x', work, downloaded: false),
@@ -136,6 +142,13 @@ describe Pikuri::Thunderbird::MailReply do
       assert_equal ['riders@list.example'], draft.to
       assert_nil draft.cc, 'the list is already the To'
       assert_equal 'Re: [riders] Sunday ride', draft.subject
+    end
+  end
+
+  it 'answers from the first of the user\'s addresses the mail names, whatever folder holds it' do
+    with_tool do |tool, _|
+      tool.run('message_id' => 'both@x', 'body' => 'Got it.')
+      assert_equal ['me@home.example'], draft.from
     end
   end
 

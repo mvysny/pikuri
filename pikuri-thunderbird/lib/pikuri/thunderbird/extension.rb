@@ -243,8 +243,8 @@ module Pikuri
 
       # The Thunderbird usage guidance, in one +<thunderbird_usage>+ block: a
       # {SURFACE_USAGE} paragraph per surface actually wired, then
-      # {INBOUND_USAGE} if any of them were, then {OUTBOUND_USAGE} when either
-      # outbound tool is wired. Empty on a Thunderbird-less host, and — since
+      # {INBOUND_USAGE} if any of them were, then {OUTBOUND_USAGE} when an
+      # +allow_+ flag is set. Empty on a Thunderbird-less host, and — since
       # it reads the *wired* set — never describes a surface whose tools were
       # narrowed away or whose store was missing.
       #

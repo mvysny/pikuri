@@ -13,15 +13,15 @@ disk; it never downloads one. An agent wired
 with only these has your private mailbox and untrusted message content but no
 way to send anything out — the lethal trifecta is broken by construction.
 
-pikuri never sends mail on its own. If you turn on the opt-in compose tools —
-`thunderbird_mail_compose`, and `thunderbird_mail_reply`, which answers a
-message threaded under it, quoting it, from the address it reached — the most
+pikuri never sends mail on its own. If you turn on the opt-in compose tools,
+`thunderbird_mail_compose` and `thunderbird_mail_reply` (which answers a
+message in its thread, quoting it, from the address it reached), the most
 they can do is **open a pre-filled Thunderbird compose window** — you read it,
-and *you* click Send. They draw the draft in plain text (no hidden HTML, no tracking images), refuses a body laced
-with invisible characters, drops look-alike recipient addresses for you to
-retype, and flags a domain you've never sent mail to. For now that flag
-reaches you through the assistant's reply, so an assistant manipulated by a
-message it read can leave it out. See
+and *you* click Send. They draw the draft in plain text (no hidden HTML, no
+tracking images), refuse a body laced with invisible characters, drop
+look-alike recipient addresses for you to retype, and flag a domain you've
+never sent mail to. For now that flag reaches you through the assistant's
+reply, so an assistant manipulated by a message it read can leave it out. See
 [`design/architecture.md`](design/architecture.md).
 
 ## Requirements

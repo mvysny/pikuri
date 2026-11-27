@@ -182,13 +182,16 @@ module Pikuri
       end
 
       # The identity the original reached, as Thunderbird's own reply picks it:
-      # one named in its To or Cc, else the default of the account whose folder
-      # holds it.
+      # the first of the user's addresses its To, then Cc, names, else the
+      # default of the account whose folder holds it.
       #
       # @return [Accounts::Identity, nil] +nil+ leaves it to Thunderbird.
       def identity(header, folder_uri, accounts)
-        reached = (addresses(header, 'To') + addresses(header, 'Cc')).map(&:downcase)
-        accounts.identities.find { reached.include?(_1.email.downcase) } || accounts.identities_for(folder_uri).first
+        mine = accounts.identities
+        (addresses(header, 'To') + addresses(header, 'Cc')).each do |addr|
+          found = mine.find { _1.email.casecmp?(addr) } and return found
+        end
+        accounts.identities_for(folder_uri).first
       end
     end
   end
