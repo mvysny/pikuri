@@ -4,7 +4,7 @@ require 'sqlite3'
 
 module Pikuri
   module Thunderbird
-    # The mechanical outbound guard for {MailCompose} — deterministic, never an
+    # The mechanical outbound guard for a mail draft — deterministic, never an
     # AI verdict. The compose window is a strong human barrier on the *visible*
     # (the recipient, gross body content) but soft on the *invisible* (control
     # bytes, look-alike domains, subtle body-exfil), so the machine covers what
@@ -104,8 +104,12 @@ module Pikuri
       # @param bcc [String, nil] Bcc address(es), comma-separated.
       # @param subject [String, nil] subject line.
       # @param body [String] plain-text body.
+      # @param echo [Boolean] whether a note may repeat an address or domain.
+      #   +false+ for addresses taken from a received mail ({MailReply}):
+      #   repeated to the model, they would be sender-authored text in a tool
+      #   result whose legs say it carries none.
       # @return [Verdict]
-      def check(to:, body:, cc: nil, bcc: nil, subject: nil)
+      def check(to:, body:, cc: nil, bcc: nil, subject: nil, echo: true)
         body_res = Pikuri::Sanitizer.sanitize(body.to_s)
         unless body_res.warnings.empty?
           return Verdict.new(ok: false, error: body_fail_message(body_res),
@@ -113,10 +117,10 @@ module Pikuri
         end
 
         notes = []
-        kept_to  = check_addresses('To', to, notes)
-        kept_cc  = check_addresses('Cc', cc, notes)
-        kept_bcc = check_addresses('Bcc', bcc, notes)
-        novelty_note(kept_to + kept_cc + kept_bcc, notes)
+        kept_to  = check_addresses('To', to, notes, echo)
+        kept_cc  = check_addresses('Cc', cc, notes, echo)
+        kept_bcc = check_addresses('Bcc', bcc, notes, echo)
+        novelty_note(kept_to + kept_cc + kept_bcc, notes, echo)
         body_blob_note(body.to_s, notes)
 
         Verdict.new(ok: true, error: nil, to: kept_to, cc: kept_cc, bcc: kept_bcc,
@@ -150,15 +154,15 @@ module Pikuri
       # address passes the hard checks; otherwise drop the whole field.
       #
       # @return [Array<String>] the vetted addresses, or +[]+ if dropped/absent.
-      def check_addresses(label, field, notes)
+      def check_addresses(label, field, notes, echo)
         return [] if field.nil? || field.to_s.strip.empty?
 
         addrs = field.to_s.split(',').map(&:strip).reject(&:empty?)
         bad = addrs.reject { |a| address_ok?(a) }
         return addrs if bad.empty?
 
-        notes << "#{label} omitted (couldn't safely include #{bad.map(&:inspect).join(', ')}) — " \
-                 'type the recipient(s) in the compose window.'
+        what = echo ? bad.map(&:inspect).join(', ') : 'an address with characters a draft must not carry'
+        notes << "#{label} omitted (couldn't safely include #{what}) — type the recipient(s) in the compose window."
         []
       end
 
@@ -177,7 +181,7 @@ module Pikuri
       # the probed shape (it is unverified across TB versions).
       #
       # @return [void]
-      def novelty_note(addrs, notes)
+      def novelty_note(addrs, notes, echo)
         domains = addrs.map { |a| a.split('@', 2).last.to_s.downcase }.reject(&:empty?).uniq
         return if domains.empty?
 
@@ -196,7 +200,8 @@ module Pikuri
         novel = domains - sent_to
         return if novel.empty?
 
-        notes << "You have never sent mail to #{novel.join(', ')}. If you expected a " \
+        whom = echo ? novel.join(', ') : "a recipient's domain (see the compose window)"
+        notes << "You have never sent mail to #{whom}. If you expected a " \
                  'familiar contact, watch for a look-alike domain and verify out of ' \
                  'band (not by replying to a suspect message).'
       rescue SQLite3::SQLException, DatabaseSnapshot::TornError => e

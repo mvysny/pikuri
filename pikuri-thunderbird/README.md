@@ -13,10 +13,11 @@ disk; it never downloads one. An agent wired
 with only these has your private mailbox and untrusted message content but no
 way to send anything out — the lethal trifecta is broken by construction.
 
-pikuri never sends mail on its own. If you turn on the opt-in
-`thunderbird_mail_compose` tool, the most it can do is **open a pre-filled
-Thunderbird compose window** — you read it, and *you* click Send. It draws the
-draft in plain text (no hidden HTML, no tracking images), refuses a body laced
+pikuri never sends mail on its own. If you turn on the opt-in compose tools —
+`thunderbird_mail_compose`, and `thunderbird_mail_reply`, which answers a
+message threaded under it, quoting it, from the address it reached — the most
+they can do is **open a pre-filled Thunderbird compose window** — you read it,
+and *you* click Send. They draw the draft in plain text (no hidden HTML, no tracking images), refuses a body laced
 with invisible characters, drops look-alike recipient addresses for you to
 retype, and flags a domain you've never sent mail to. For now that flag
 reaches you through the assistant's reply, so an assistant manipulated by a
@@ -63,7 +64,7 @@ end
 Mail tools register only when the Gloda index is present; calendar tools
 register whenever a profile is found (and guide you to enable Offline Support
 if nothing is cached yet). To add an outbound hand-off, pass
-`Extension.new(allow_compose_mail: true)` (draft a message) or
+`Extension.new(allow_compose_mail: true)` (draft a message or a reply) or
 `allow_create_calendar_event: true` (draft a calendar event) — each stays off
 unless you ask for it, and your `system_prompt` should then tell the model it
 may draft for you to send/import (an inbound-only prompt that forbids sending

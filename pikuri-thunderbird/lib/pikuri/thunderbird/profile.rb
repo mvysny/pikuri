@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'fileutils'
+require 'securerandom'
+
 module Pikuri
   module Thunderbird
     # Locates the active Thunderbird profile on disk and derives the paths
@@ -155,20 +158,40 @@ module Pikuri
         [calendar_cache_db, calendar_local_db].select { |p| File.file?(p) }
       end
 
-      # A directory a *snap-confined* Thunderbird can read a hand-off file from,
-      # for the +.ics+ import hand-off ({CalendarCreate}). Snap's +home+
-      # interface blocks hidden +$HOME+ dirs (so the +~/.cache+ snapshot dir is
-      # unreadable by the confined app — see +design/architecture.md+ § "Platform
-      # confinement"); we stage instead in the variant's own readable root: the
-      # snap-owned data area for +:snap+ (readable regardless of the dotfile
-      # rule), the unconfined profile dir for +:apt+/+:override+. The caller
-      # creates the dir and reaps the file.
+      # A directory a *snap-confined* Thunderbird can read a hand-off file
+      # from. Snap's +home+ interface blocks hidden +$HOME+ dirs (so the
+      # +~/.cache+ snapshot dir is unreadable by the confined app — see
+      # +design/architecture.md+ § "Platform confinement"); we stage instead in
+      # the variant's own readable root: the snap-owned data area for +:snap+
+      # (readable regardless of the dotfile rule), the unconfined profile dir
+      # for +:apt+/+:override+. {#stage} writes there.
       #
       # @return [String] +…/snap/thunderbird/common/pikuri-outbox+ or
       #   +<profile>/pikuri-outbox+.
       def outbox_dir
         base = @variant == :snap ? File.dirname(SNAP_ROOT) : @dir
         File.join(base, 'pikuri-outbox')
+      end
+
+      # Writes a hand-off file into {#outbox_dir}, reaped at process exit:
+      #
+      #   @launcher.launch(profile.stage(ics, 'ics'))  # …/pikuri-outbox/handoff-3f9c….ics
+      #
+      # Reap-at-exit, not immediately: Thunderbird reads the file when its
+      # wizard or compose window opens, seconds after the hand-off, and the
+      # human then takes their time while the session lives. A one-shot that
+      # exits at once can out-race a *cold* Thunderbird start — best-effort,
+      # as with the detached launch.
+      #
+      # @param content [String] the file's bytes.
+      # @param ext [String] its extension, which tells Thunderbird what it is.
+      # @return [String] the staged file's absolute path.
+      def stage(content, ext)
+        FileUtils.mkdir_p(outbox_dir, mode: 0o700)
+        path = File.join(outbox_dir, "handoff-#{SecureRandom.hex(8)}.#{ext}")
+        File.binwrite(path, content)
+        Pikuri::Finalizers.register { FileUtils.rm_f(path) }
+        path
       end
 
       # @param profile_dir [String]

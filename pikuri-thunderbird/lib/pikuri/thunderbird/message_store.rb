@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
 require 'uri'
 
 module Pikuri
@@ -22,10 +21,9 @@ module Pikuri
     #
     # == Implementation details
     #
-    # A folder URI maps to its mbox through +prefs.js+, the only file naming
-    # which account owns which store directory (a second account on one host
-    # gets +imap.gmail-1.com+). Gloda's folder URIs are not valid RFC 3986 —
-    # raw +[Gmail]+ brackets and spaces — so they are split by regex. A folder
+    # A folder URI maps to its mbox through its server's prefs ({Accounts}):
+    # +prefs.js+ is the only file naming which account owns which store
+    # directory (a second account on one host gets +imap.gmail-1.com+). A folder
     # name is mapped verbatim: one with characters the filesystem can't hold,
     # which Thunderbird hashes into its file name (+NS_MsgHashIfNecessary+),
     # isn't found, and its messages answer "not stored". Unhandled until a
@@ -78,9 +76,9 @@ module Pikuri
       # @raise [Error] when a folder's account isn't in +prefs.js+, its store
       #   is not mbox, or the message exceeds {MAX_MESSAGE_BYTES}.
       def raw_message(message_id:, folder_uris:)
-        servers = read_servers
+        accounts = Accounts.read(@profile)
         folder_uris.each do |uri|
-          path = mbox_path(servers, uri)
+          path = mbox_path(accounts, uri)
           next unless File.file?(path)
 
           raw = scan(path, message_id)
@@ -91,31 +89,15 @@ module Pikuri
 
       private
 
-      # @return [Hash{Array(String, String, String) => Hash{String => Object}}]
-      #   +[scheme, userName, hostname]+ → that server's +mail.server.serverN.*+
-      #   prefs; the scheme is +imap+ for IMAP and +mailbox+ for local stores.
-      def read_servers
-        prefs = Hash.new { |h, k| h[k] = {} }
-        File.foreach(@profile.prefs_path, encoding: 'UTF-8') do |line|
-          m = line.match(/\Auser_pref\("mail\.server\.(server\d+)\.([^"]+)",\s*(.*)\);\s*\z/) or next
-          prefs[m[1]][m[2]] = JSON.parse(m[3])
-        end
-        prefs.each_value.to_h do |s|
-          [[s['type'] == 'imap' ? 'imap' : 'mailbox', s['userName'], s['hostname']], s]
-        end
-      end
-
-      # @param servers [Hash] from {#read_servers}.
+      # @param accounts [Accounts]
       # @param uri [String] a Gloda +folderURI+, e.g.
       #   +"imap://me%40gmail.com@imap.gmail.com/[Gmail]/All Mail"+.
       # @return [String] the folder's mbox path: +a/b/c+ → +<dir>/a.sbd/b.sbd/c+.
       # @raise [Error] when no account owns the URI or its store isn't mbox.
-      def mbox_path(servers, uri)
-        m = uri.match(%r{\A(\w+)://([^@/]+)@([^/]+)/(.+)\z}) or
-          raise Error, "unrecognised Thunderbird folder #{uri.inspect}."
-        scheme, user, host, path = m.captures.map { URI.decode_uri_component(_1) }
-        server = servers[[scheme, user, host]] or
+      def mbox_path(accounts, uri)
+        server = accounts.server_for(uri) or
           raise Error, "no account in Thunderbird's prefs.js owns the folder #{uri.inspect}."
+        path = URI.decode_uri_component(uri[%r{\A\w+://[^/]+/(.+)\z}, 1].to_s)
         store = server['storeContractID']
         if store && !store.end_with?('/berkeleystore;1')
           raise Error, "the account behind #{uri.inspect} stores mail as #{store}, which pikuri can't read (only mbox)."

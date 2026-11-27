@@ -12,8 +12,8 @@ require 'pikuri-core'
 # The load-bearing posture: search + read are inbound-only, so an
 # agent wired with only these tools has private data + untrusted content
 # but *no egress leg* — the lethal trifecta is broken by construction, the
-# same model as +pikuri-briefing --with-mail+. Outbound actions (compose / create
-# event) are opt-in and always human-gated hand-offs to Thunderbird's own
+# same model as +pikuri-briefing --with-mail+. Outbound actions (compose, reply,
+# create event) are opt-in and always human-gated hand-offs to Thunderbird's own
 # UI. Threat model: +design/architecture.md+; per-tool rationale: each class's yardoc.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
@@ -34,7 +34,7 @@ module Pikuri
       private: true, untrusted: :hard, egress_payload_review: :no_egress
     ).freeze
 
-    # Legs of the two opt-in outbound hand-offs.
+    # Legs of the opt-in outbound hand-offs.
     #
     # +:human_reviewed+ rather than +:unreviewed+ because all four clauses of
     # the approver seat hold, and the load-bearing one is payload visibility:
@@ -51,7 +51,9 @@ module Pikuri
     # It stays true only while the outbound surface carries nothing but fields
     # that render literally — no attachments, no HTML body. A tool that gained
     # one would silently drop to hard +:egress+, since the human would be
-    # approving a reference to bytes nobody saw.
+    # approving a reference to bytes nobody saw. A reply's threading headers
+    # don't render and keep the grade: pikuri copies their Message-IDs from
+    # the mail answered, with no model input, and its recipients hold them all.
     #
     # No +private+, unlike {INBOUND_LEGS}: these *send*, they do not read the
     # mailbox. The one trickle back is {ComposeGuard}'s recipient-novelty note,

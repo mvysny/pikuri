@@ -73,8 +73,8 @@ attachment ever ships" invariant below.
 
 The bundled `bin/pikuri-thunderbird` deliberately goes one step further — it
 wires both outbound `allow_` flags to demo the *whole* surface — so it does
-carry leg 3. But that leg is human-gated: compose can only open a Thunderbird
-compose window the user Sends themselves (below), so there is an egress leg yet
+carry leg 3. But that leg is human-gated: compose and reply can only open a
+Thunderbird compose window the user Sends themselves (below), so there is an egress leg yet
 no *autonomous* egress. A poisoned message can influence a draft, but cannot make it leave the
 machine without the user clicking Send on a window they can see. So the demo's
 trifecta is *intact-but-gated*, not severed — an honest smoke-alarm, not a
@@ -149,8 +149,8 @@ a CalDAV sync). The design invariant, locked in before any of it ships:
 
 > **pikuri-thunderbird performs no network egress and no autonomous send.**
 > Every outbound action is a hand-off to Thunderbird's own UI — a pre-filled
-> compose window (via a `mailto:` URI) or an `.ics` import wizard — where the
-> *human* reviews and commits. pikuri writes nothing to Thunderbird's stores
+> compose window (via a `mailto:` URI, or a staged draft `.eml` for a reply)
+> or an `.ics` import wizard — where the *human* reviews and commits. pikuri writes nothing to Thunderbird's stores
 > and sends nothing itself. No send tool ever ships.
 >
 > **And no attachment ever ships.** The outbound surface carries only fields
@@ -203,10 +203,14 @@ to the same class as an autonomous send, no matter how careful the human is.
 So "plain text only" and "no attachments" are not two policies but one:
 **the outbound surface may contain only fields whose rendering is their
 content.** HTML fails it (`<span style="display:none">`), attachments fail it,
-and so would any richer field added later. Today this is enforced by
+and so would any richer field added later. A reply's `In-Reply-To` and
+`References` don't render and pass anyway: pikuri copies them from the mail
+being answered, with no model input, and every recipient already holds each
+Message-ID in them. Today this is enforced by
 construction rather than by filtering — {Pikuri::Thunderbird::MailtoUri}
 *builds* an allowlist of five parameters (`to`/`cc`/`bcc`/`subject`/`body`),
-so there is no `attach=` to strip, and {Pikuri::Thunderbird::IcsEvent} emits
+so there is no `attach=` to strip, {Pikuri::Thunderbird::ReplyDraft} writes a
+fixed header set over one text part, and {Pikuri::Thunderbird::IcsEvent} emits
 no `ATTACH` property. Enforced-by-absence is fragile against a future
 "improvement" — `mailto:?attach=` was a real Thunderbird feature — which is
 why the invariant is written down rather than left implied by the code.
@@ -254,6 +258,19 @@ barrier: `book/os-assistant.md` §"Why 'too big to hide' is not a defense"
 prices what fits. The human-gated, irreversible-send compose window — not the
 guard — is the backstop all of this leans on.
 
+**Reply is shipped, opt-in, with compose.** `thunderbird_mail_reply`
+({Pikuri::Thunderbird::MailReply}) rides `allow_compose_mail` and is wired only
+beside the mail tools, whose search hands the model a message id. The model
+names the message and writes the text; pikuri derives the rest from it —
+recipient (`Reply-To`, else `From`; `reply_all` adds the other To and Cc, the
+user left out), `Re:` subject, threading headers, the sending identity, a `> `
+quote — from Gloda's text and the stored copy's headers, so the model never
+names a recipient. The guard checks the model's text and the derived
+addresses, with notes that repeat no address, since the sender wrote them. The
+quote joins after the guard's verdict, unchecked: every recipient already holds
+the original. That rule is also why a reply to mail the user sent is refused
+(the class yardoc has both).
+
 **Create-event is shipped, opt-in.** `thunderbird_calendar_create`
 ({Pikuri::Thunderbird::CalendarCreate}) is wired only when a host passes
 `Extension.new(allow_create_calendar_event: true)`. Same human-gated shape:
@@ -262,8 +279,8 @@ every field so a description can't inject a second `VEVENT`), stages it where a
 snap-confined Thunderbird can read it ({Pikuri::Thunderbird::Profile#outbox_dir}),
 and hands it to TB's import wizard, where the human picks the destination
 calendar (local-vs-CalDAV = their no-egress-vs-egress choice) and confirms.
-Both outbound tools launch via the shared {Pikuri::Thunderbird::Launcher}; each
-one's rationale is in its class yardoc.
+All three outbound tools launch via the shared {Pikuri::Thunderbird::Launcher};
+each one's rationale is in its class yardoc.
 
 ## Discovery
 
@@ -648,13 +665,37 @@ can't be shared on snap.
   Not seen: Sabre (Nextcloud, Baikal), iCloud, Google — Google's the likeliest to ignore it.
   Why the tool carries no attendees: `D_no_calendar_attendees`.
 
-Both are the human-gated hand-off shape the no-send seam requires: pikuri
+- **Reply → a staged draft `.eml` (built).** {Pikuri::Thunderbird::ReplyDraft}
+  writes one text/plain part marked `X-Unsent: 1`, staged as the `.ics` is
+  ({Pikuri::Thunderbird::Profile#stage}); `thunderbird <path.eml>` opens it as
+  a draft (compose type 9). Measured against the alternatives (Thunderbird
+  161, testbed, 2026-11-27, a real Send Later as ground truth):
+  - A `mailto:` threads (`References=` + `In-Reply-To=`; Thunderbird appends
+    the latter without deduplicating), but opens from the **default identity**
+    whatever account the mail reached, ignoring `from=` and the selected
+    folder, so a reply would reveal the other address. And it composes HTML
+    when the identity does (the default), so Send's plain-text downgrade
+    space-stuffs each `> ` line into literal text and re-wraps a long one
+    without its `> `.
+  - `-compose` takes `preselectid=` / `from=` but has no threading key, and
+    `-compose "type=1,originalMsgURI=…"`, Thunderbird's own reply, drops
+    `body=` and `message=`: it can't carry the model's text (160).
+  - The draft opens from the identity its `From` names, keeps `References`
+    (Send derives `In-Reply-To` from its last entry), and opens in the
+    **plain-text editor** whatever the identity's default, which turns the
+    `> ` lines into a quote block: they go out as real quote lines.
+  - Thunderbird reads the file once, at open, and never writes or deletes it;
+    Send still works after it is gone, so reap-at-exit holds.
+
+All are the human-gated hand-off shape the no-send seam requires: pikuri
 opens a window, the human reviews and commits.
 
 Re-confirmed on Thunderbird 159 under Xvfb (testbed, 2026-11-13):
 {Pikuri::Thunderbird::Launcher}'s `setsid --fork thunderbird mailto:…` remoted into the running instance and
 opened a compose window with From, To, Subject and the multi-line body intact;
-an `.ics` path opened the import wizard. No second instance started.
+an `.ics` path opened the import wizard. No second instance started. On 161
+(2026-11-27) a reply's staged `.eml` did the same, opening as a draft from the
+identity its `From` names, its quote shown as one.
 
 ### Files never touched
 
@@ -662,8 +703,10 @@ The guarantee is an **allowlist, not a blocklist**: the backends open only
 `global-messages-db.sqlite` and `calendar-data/*.sqlite` (plus their snapshot
 copies), discovery reads `profiles.ini` and `prefs.js` (its `mail.server.*` and
 `mailnews.database.global.indexer.enabled` lines only — passwords live in
-`logins.json`, not there), and the attachment reader reads the same
-`mail.server.*` lines and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
+`logins.json`, not there), and the attachment reader and the reply read its
+account graph — the `mail.server.*`, `mail.account.*`, `mail.identity.*` and
+`mail.accountmanager.defaultaccount` lines ({Pikuri::Thunderbird::Accounts}) —
+and the mbox files under `ImapMail/` and `Mail/`. Nothing else in
 the profile directory is ever opened — so no enumeration of what-to-avoid is load-bearing,
 and a wrong name below changes nothing.
 
@@ -801,7 +844,12 @@ or an `.eml` path reaches; `js/compose-windows.js` reads each window back as Thu
 parsed it (recipients, `References`, attachments, body); `js/outgoing-mime.js` has
 Thunderbird's own `MimeMessage` write what Send would emit into a temp file and deletes it,
 so threading headers are checked with nothing sent and no folder written;
-`js/close-windows.js` clears the windows, which stack, before the next one. What this skips is
+`js/close-windows.js` clears the windows, which stack, before the next one.
+`outgoing-mime.js` follows Send's own path for both editor kinds and matched a
+real **Send Later** byte for byte: the compose window's `SendMessageLater()`
+writes the real message into Local Folders' Outbox mbox, nothing goes over the
+network, and `build` restores the profile afterwards — the ground truth when the
+two might differ. What this skips is
 pikuri's own `setsid thunderbird …` launch remoting into the instance (testbed, 2026-11-23,
 Thunderbird 160).
 

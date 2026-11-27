@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-require 'fileutils'
-require 'securerandom'
-
 module Pikuri
   module Thunderbird
     # The +thunderbird_calendar_create+ tool — the outbound calendar leg, and
     # (like {MailCompose}) an egress leg that never commits anything itself. It
     # builds an +.ics+ ({IcsEvent}), stages it where a possibly-snap-confined
-    # Thunderbird can read it ({Profile#outbox_dir}), and launches Thunderbird on
+    # Thunderbird can read it ({Profile#stage}), and launches Thunderbird on
     # it ({Launcher}) so it opens its *Import Calendar file* wizard. The
     # human then picks the destination calendar and clicks Confirm — that human
     # commit is what keeps the trifecta broken even with an egress leg present,
@@ -53,8 +50,8 @@ module Pikuri
         - The user chooses the destination calendar in the wizard — importing into a network calendar is what shares the event, so relay that choice to them.
       DESC
 
-      # @param profile [Profile] the discovered profile — supplies the confined
-      #   staging dir ({Profile#outbox_dir}).
+      # @param profile [Profile] the discovered profile, which stages the
+      #   +.ics+ ({Profile#stage}).
       # @param launcher [Launcher, nil] test seam; +nil+ builds a real {Launcher}.
       # @return [CalendarCreate]
       def initialize(profile:, launcher: nil)
@@ -95,32 +92,12 @@ module Pikuri
 
         ics = IcsEvent.build(title:, start: start_t, finish: finish_t, all_day:,
                              location:, description:)
-        @launcher.launch(stage(ics))
+        @launcher.launch(@profile.stage(ics, 'ics'))
         Pikuri::Tool::Result.new(content: CHECKLIST, summary: 'Handed to Thunderbird')
       rescue ArgumentError => e
         Pikuri::Tool::Result.error("bad date (#{e.message}).")
       rescue Launcher::Error => e
         Pikuri::Tool::Result.error("#{e.message}")
-      end
-
-      private
-
-      # Write the +.ics+ into the confined-readable outbox and register it for
-      # reap at process exit. Reap-at-exit (not immediately) is what lets the
-      # human take their time in the wizard while the interactive session lives;
-      # the wizard reads the file when it opens, seconds after the hand-off. A
-      # fire-and-forget one-shot that exits immediately can therefore out-race a
-      # *cold* Thunderbird start — best-effort, as with the detached launch.
-      #
-      # @param ics [String] the +.ics+ document.
-      # @return [String] the staged file's absolute path.
-      def stage(ics)
-        dir = @profile.outbox_dir
-        FileUtils.mkdir_p(dir, mode: 0o700)
-        path = File.join(dir, "event-#{SecureRandom.hex(8)}.ics")
-        File.write(path, ics)
-        Pikuri::Finalizers.register { FileUtils.rm_f(path) }
-        path
       end
     end
   end

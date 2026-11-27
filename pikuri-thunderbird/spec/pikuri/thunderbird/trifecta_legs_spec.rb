@@ -59,6 +59,11 @@ RSpec.describe 'Thunderbird trifecta legs' do
       tool = Pikuri::Thunderbird::MailCompose.new
       assert_equal Pikuri::Thunderbird::OUTBOUND_LEGS, tool.trifecta_legs
     end
+
+    it 'tags mail_reply as an approver-gated hand-off, as compose' do
+      tool = Pikuri::Thunderbird::MailReply.new(mail: Object.new, store: Object.new, profile: Object.new)
+      assert_equal Pikuri::Thunderbird::OUTBOUND_LEGS, tool.trifecta_legs
+    end
   end
 
   describe 'walked' do

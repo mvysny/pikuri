@@ -133,7 +133,11 @@ module Pikuri
             msg = plain(from, id, day: -100 + (t * 9) + r, subject: r.zero? ? "[riders] #{topic}" : "Re: [riders] #{topic}",
                                   body: body, to: "Helsinki Cycling <#{LIST}>", thread: thread)
             msg['List-Id'] = "Helsinki Cycling <#{LIST.sub('@', '.')}>"
-            (from == @facts.person(:owner) ? sent : inbox) << msg
+            # The list's copies only, as a list server adds it on the way out:
+            # a reply to one goes to the list, not to its poster.
+            mine = from == @facts.person(:owner)
+            msg['Reply-To'] = "Helsinki Cycling <#{LIST}>" unless mine
+            (mine ? sent : inbox) << msg
             thread << msg.message_id
           end
         end

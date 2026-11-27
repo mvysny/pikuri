@@ -59,6 +59,15 @@ describe Pikuri::Thunderbird::ComposeGuard do
     assert(v.notes.any? { |n| n.match?(/never sent mail to paypa1\.com/) })
   end
 
+  it 'repeats no address or domain under echo: false, flags and all' do
+    v = guard(seen: ['paypal.com']).check(to: 'a@paypa1.com', cc: "b@m\u{ed}crosoft.com", body: 'ok', echo: false)
+    assert_equal ['a@paypa1.com'], v.to
+    assert_empty v.cc
+    assert(v.notes.any? { |n| n.match?(/never sent mail to a recipient's domain/) })
+    assert(v.notes.any? { |n| n.match?(/Cc omitted/) })
+    refute(v.notes.any? { |n| n.match?(/paypa1|crosoft/) }, v.notes.inspect)
+  end
+
   it 'says it could not check, rather than warn on everyone, when no sent mail is indexed' do
     backend = Object.new
     backend.define_singleton_method(:domains_sent_to) { |_domains| nil }

@@ -55,13 +55,14 @@ module Pikuri
     # install (mail accounts under two roots) raises from {Profile.discover} —
     # loud, with the fix — rather than guessing.
     #
-    # By default this is the search-only, no-egress surface. The two
-    # outbound tools are each *opt-in* because each adds an egress leg, so
-    # leaving them off by default is what keeps a bundled inbound-only wiring's
-    # trifecta broken by construction:
+    # By default this is the search-only, no-egress surface. The outbound
+    # tools are *opt-in* because each adds an egress leg, so leaving them off
+    # by default is what keeps a bundled inbound-only wiring's trifecta broken
+    # by construction:
     #
     # * +allow_compose_mail: true+ wires +thunderbird_mail_compose+ (a hand-off
-    #   to a compose window the human Sends from — see {MailCompose}).
+    #   to a compose window the human Sends from — see {MailCompose}), and
+    #   +thunderbird_mail_reply+ beside the mail tools ({MailReply}).
     # * +allow_create_calendar_event: true+ wires +thunderbird_calendar_create+
     #   (a hand-off to Thunderbird's import wizard the human confirms — see
     #   {CalendarCreate}).
@@ -69,7 +70,7 @@ module Pikuri
     # The +allow_+ prefix reads as what these are — capability grants for an
     # egress leg, not mere feature toggles.
     #
-    # Both are human-gated hand-offs — pikuri writes nothing to Thunderbird's
+    # All are human-gated hand-offs — pikuri writes nothing to Thunderbird's
     # stores and sends/imports nothing itself (+design/architecture.md+).
     #
     # == One instance per agent
@@ -147,7 +148,7 @@ module Pikuri
       # @return [String] appended when an +allow_+ flag is wired: the
       #   agent-level draft-hand-off stance (the per-tool mechanics — plain
       #   text, recipient lookup, never-on-own-initiative — stay in
-      #   {MailCompose} / {CalendarCreate}). Names no tool; the relay-the-flag
+      #   each outbound tool). Names no tool; the relay-the-flag
       #   nudge is the one bit no single tool's description can own.
       OUTBOUND_USAGE = <<~USAGE.chomp
         When the user asks you to draft a reply or add an event, you prepare it and hand it off to Thunderbird, where the user reviews it and Sends or confirms it themselves — the user commits, never you. The hand-off may report that it changed or flagged something (a recipient dropped for the user to retype, or a warning that the user has never sent mail to a recipient's domain); relay any such flag to the user in plain language so they can double-check it out of band.
@@ -165,8 +166,9 @@ module Pikuri
       #   behaviour every host had before this keyword existed. See
       #   "Wiring fewer surfaces".
       # @param allow_compose_mail [Boolean] wire the outbound
-      #   +thunderbird_mail_compose+ tool (default +false+). Opt-in because it
-      #   adds an egress leg; the draft is still human-committed in Thunderbird's
+      #   +thunderbird_mail_compose+ tool, and +thunderbird_mail_reply+ when
+      #   the mail tools are wired (default +false+). Opt-in because they add
+      #   an egress leg; the draft is still human-committed in Thunderbird's
       #   compose window.
       # @param allow_create_calendar_event [Boolean] wire the outbound
       #   +thunderbird_calendar_create+ tool (default +false+). Opt-in for the
@@ -210,12 +212,14 @@ module Pikuri
         # compose's novelty warn — so it is built when any of the three wants
         # it, and not at all otherwise (no request, no snapshot of the mail
         # index).
-        contacts = wire_gloda(c, profile) if @surfaces.intersect?(%i[mail contacts]) || @allow_compose_mail
+        contacts, mail, store = wire_gloda(c, profile) if @surfaces.intersect?(%i[mail contacts]) || @allow_compose_mail
         wire_calendar(c, profile) if @surfaces.include?(:calendar)
-        # Neither outbound tool needs Gloda (only a Thunderbird binary); the
-        # contacts resolver, when present, powers compose's recipient-novelty
-        # warn and is nil otherwise.
+        # Compose and create need no Gloda (only a Thunderbird binary); the
+        # contacts resolver, when present, powers the recipient-novelty warn
+        # and is nil otherwise. Reply rides compose's flag but needs the mail
+        # tools: only a search hands the model a message id to answer.
         c.add_tool MailCompose.new(backend: contacts) if @allow_compose_mail
+        c.add_tool MailReply.new(mail:, store:, profile:, contacts:) if @allow_compose_mail && mail
         c.add_tool CalendarCreate.new(profile: profile) if @allow_create_calendar_event
         nil
       end
@@ -261,9 +265,10 @@ module Pikuri
       # is *not* gated on the +:contacts+ surface, because compose's novelty
       # warn is a safety check rather than a tool the model can call.
       #
-      # @return [Gloda::Contacts, nil] +nil+ when the index is absent or
-      #   frozen (both Gloda-backed surfaces then omitted, however loudly
-      #   asked for).
+      # @return [Array(Gloda::Contacts, Gloda::Mail, MessageStore), nil] the
+      #   resolver, then the mail backend and store when +:mail+ was wired
+      #   (else +nil+ each); +nil+ when the index is absent or frozen (both
+      #   Gloda-backed surfaces then omitted, however loudly asked for).
       def wire_gloda(c, profile)
         gloda = Gloda.new(gloda_path: profile.gloda_path, cache_dir: File.join(@cache_base, 'mail'))
         unless gloda.available?
@@ -279,9 +284,10 @@ module Pikuri
         contacts = Gloda::Contacts.new(gloda: gloda)
         if @surfaces.include?(:mail)
           mail = Gloda::Mail.new(gloda: gloda)
+          store = MessageStore.new(profile:)
           c.add_tool MailSearch.new(backend: mail)
           c.add_tool MailRead.new(backend: mail)
-          c.add_tool MailAttachmentRead.new(backend: mail, store: MessageStore.new(profile:))
+          c.add_tool MailAttachmentRead.new(backend: mail, store:)
           @wired << :mail
         end
         # A pure read, and useful on its own ("what's Jon's address?"), so it
@@ -291,7 +297,7 @@ module Pikuri
           @wired << :contacts
         end
         c.on_close { gloda.close }
-        contacts
+        [contacts, mail, store]
       end
 
       # @return [void]

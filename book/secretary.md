@@ -67,11 +67,11 @@ width; the map below it is complete:
 ```
 [TRIFECTA: soft] pikuri-secretary — private(fileindex_search, …, file_list)
 + untrusted(fileindex_search, …, file_list, web_search, web_read_cached)
-+ egress(thunderbird_mail_compose, thunderbird_calendar_create, web_search). An
-injection in what this agent reads can drive an exfiltration. Break a leg:
-privilege-separate the step that reads untrusted content, or declare the
-workspace trusted if you vouch for every byte it can reach. See
-book/trifecta-detector.md in this repo.
++ egress(thunderbird_mail_compose, thunderbird_mail_reply,
+thunderbird_calendar_create, web_search). An injection in what this agent
+reads can drive an exfiltration. Break a leg: privilege-separate the step
+that reads untrusted content, or declare the workspace trusted if you vouch
+for every byte it can reach. See book/trifecta-detector.md in this repo.
 
 pikuri-secretary [:private, :untrusted_hard, :egress_reviewed]
   calculator []
@@ -84,6 +84,7 @@ pikuri-secretary [:private, :untrusted_hard, :egress_reviewed]
   thunderbird_calendar_search [:private, :untrusted_hard]
   thunderbird_calendar_read [:private, :untrusted_hard]
   thunderbird_mail_compose [:egress_reviewed]
+  thunderbird_mail_reply [:egress_reviewed]
   thunderbird_calendar_create [:egress_reviewed]
   read [:private, :untrusted_hard]
   glob [:private, :untrusted_hard]
@@ -108,13 +109,13 @@ are declared `trusted: false`. Every mail tool is hard too, since mail is text
 strangers wrote. Nothing here weakens the untrusted leg, and nothing
 could: the secretary's job is to read your mail.
 
-**Egress is the leg that's weakened**, and it's the only one. Three
+**Egress is the leg that's weakened**, and it's the only one. Four
 tools can send bytes out, and every one of them shows you the bytes
 first:
 
-- `thunderbird_mail_compose` and `thunderbird_calendar_create` hand a
-  draft to Thunderbird, where you press Send or Import yourself:
-  `:egress_reviewed`.
+- `thunderbird_mail_compose`, `thunderbird_mail_reply` and
+  `thunderbird_calendar_create` hand a draft to Thunderbird, where you
+  press Send or Import yourself: `:egress_reviewed`.
 - `web_search` asks before each query, showing it to you, editable:
   `:egress_reviewed`. And its destination is an engine this code
   picked, which can't be read back by an attacker: `_vouched`.
@@ -555,6 +556,7 @@ back, and one unreviewed attacker-reachable tool re-hardens this node. …
 pikuri-secretary [:private, :untrusted_hard, :egress_reviewed, :egress_vouched]
   …
   thunderbird_mail_compose [:egress_reviewed]
+  thunderbird_mail_reply [:egress_reviewed]
   thunderbird_calendar_create [:egress_reviewed]
   …
   web_search [:untrusted_hard, :egress_vouched]

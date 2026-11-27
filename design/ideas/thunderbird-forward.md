@@ -1,8 +1,9 @@
-# Thunderbird: reply and forward
+# Thunderbird: forward
 
 Status: **idea, not built; direction agreed 2026-11-23, narrowed
-2026-11-24 (no file attach), decisions open.** Give pikuri-thunderbird's
-outbound surface a threaded reply and a forward. Its "No attachment ever
+2026-11-24 (no file attach), decisions open.** Its sibling, a threaded
+reply, shipped 2026-11-27 ({Pikuri::Thunderbird::MailReply}). Give
+pikuri-thunderbird's outbound surface a forward. Its "No attachment ever
 ships" narrows to **"the only attachment that ships is a received mail
 Thunderbird forwards itself"**; a file from disk stays out, and the user
 attaches it by hand (§ Rejected). The owner's original intent was "not
@@ -10,20 +11,16 @@ today", not "never".
 
 ## Today
 
-`thunderbird_mail_compose` ({Pikuri::Thunderbird::MailCompose}) is the
-only outbound mail tool: a fresh compose window through a `mailto:` URI
-whose {Pikuri::Thunderbird::MailtoUri} builds exactly five parameters
-(`to`/`cc`/`bcc`/`subject`/`body`).
+`thunderbird_mail_compose` ({Pikuri::Thunderbird::MailCompose}) opens a
+fresh compose window through a `mailto:` URI whose
+{Pikuri::Thunderbird::MailtoUri} builds exactly five parameters
+(`to`/`cc`/`bcc`/`subject`/`body`); `thunderbird_mail_reply` opens a
+threaded, quoted reply as a staged draft `.eml`, one text part
+({Pikuri::Thunderbird::ReplyDraft}). Neither carries an attachment.
 
-- **Reply** only in the loose sense: the agent reads the mail, then
-  composes a new one to the sender with a `Re: …` subject. No
-  `In-Reply-To` / `References`, so the recipient's client doesn't thread
-  it. The original isn't quoted unless the model pastes it, and quoting a
-  hostile mail is exactly where {Pikuri::Thunderbird::ComposeGuard} fails
-  closed (bidi / zero-width bytes; `warn-human-directly.md` §"Authored"
-  calls it the common false positive).
 - **Forward** not at all. As-attachment needs a `message/rfc822` part;
-  inline is the reply case again, minus the original's attachments.
+  inline is the reply's quote under the model's text, minus the
+  original's attachments.
 - **"Send Jana the October invoice"** not at all. Once this ships, an
   invoice that came by mail is a forward of that mail; one on disk stays
   as today: the model composes, the user attaches.
@@ -97,22 +94,23 @@ window's `<subject>.eml` chip opens on a double-click into the very copy
 Send emits, the mail's own attachments listed and openable (§ Testbed
 findings, 2026-11-24). Every byte in it is its sender's, and the sender
 isn't the user (`Q_forward_received_only`), so none is the model's; a
-leak there is overt, and a careful human who opens it sees it. Two gaps remain: the bytes are a double-click away rather
-than on screen (`Q_review_nudge`), and the copy is a writable file until
-Send (`Q_staged_copy`).
+leak there is overt, and a careful human who opens it sees it. Two gaps
+remain: the bytes are a double-click away rather than on screen
+(`Q_review_nudge`), and the copy is a writable file until Send
+(`Q_staged_copy`).
 
 ## Testbed findings: Thunderbird 160 (2026-11-23)
 
-**How.** A headless `dev/testbed/session` (no Xvfb on the dev VM yet).
-Each hand-off was a real command line, `Cu.createCommandLine([...], null,
+**How.** A headless `dev/testbed/session`. Each hand-off was a real
+command line, `Cu.createCommandLine([...], null,
 Ci.nsICommandLine.STATE_REMOTE_EXPLICIT)`, given to Thunderbird's own
 `MessengerContentHandler#handle`: the handler a remoted `thunderbird
 -compose …`, `thunderbird mailto:…` or `thunderbird file.eml` reaches. The
 compose window was read back over Marionette, and the outgoing MIME was
 generated with `MimeMessage#createMessageFile` (`modules/MimeMessage.sys.mjs`)
 into a temp file, so nothing was sent and no folder was written. **Not
-yet covered:** the real `setsid thunderbird …` remoting into a `--display`
-session, which needs `xvfb`. Code read from the snap's `omni.ja`:
+yet covered for forward:** the real `setsid thunderbird …` remoting into a
+`--display` session (`Q_display_run`). Code read from the snap's `omni.ja`:
 `modules/MessengerContentHandler.sys.mjs`,
 `chrome/messenger/content/messenger/messengercompose/MsgComposeCommands.js`.
 
@@ -124,13 +122,10 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
 
 | Hand-off | Result |
 |---|---|
-| `mailto:…?In-Reply-To=%3C<id>%3E&body=…` | **Threads.** Parsed into `compFields.references` (In-Reply-To goes last, after any `References=`); the MIME carries `References:` and `In-Reply-To:` (`MimeMessageUtils.getInReplyTo` takes References' last entry). Body kept, multiline. |
 | `-compose "to=…,subject=…,body=First%20line%0ASecond%20line"` | **Multiline works.** Bare and `"…"` values are percent-decoded; only `'…'` is a raw literal, which is what architecture.md's `body='A%0AB'` test had hit (doc corrected). |
 | `-compose "…,attachment=file:///home/…/Documents/scan-receipt.png"` | **Attached**, under the file's own name and size, read straight from `~/Documents`: snap Thunderbird reads non-hidden `$HOME`, so no staging. (The shape § Rejected turns down.) |
-| `-compose "type=1,originalMsgURI='…#3',body=…"` | **Thunderbird's own reply**: To from the original, `Re:` subject, `References`, Thunderbird's quote. **`body=` dropped**, in HTML and with `format=text`; `message=<file>` dropped too. A Thunderbird-made reply can't carry the model's draft. |
 | `-compose "type=3,originalMsgURI='…',to=…,body=FYI"` | **Forward as attachment works.** `to` and `body` kept; Thunderbird attaches the original itself as `message/rfc822` "`<subject>.eml`", from a copy it stages (2026-11-24 below). The forwarded bytes never pass through the model. |
 | `-compose "type=4,originalMsgURI='…',…"` | **Forward inline doesn't work**: an empty `Fwd:` with `References` and no original. Thunderbird starts an inline forward outside the compose window. |
-| a staged `.eml` with `X-Unsent: 1` | **Opens as an editable draft** (`type` 9, plain text): To, Subject, `References` kept, From set to the identity, body verbatim. The MIME carries `References` + `In-Reply-To`. |
 | `attachment=` a staged file, deleted before Send | **Send fails**: "Failed to fetch attachment" (`NS_ERROR_FILE_NOT_FOUND`). Thunderbird reads a file attachment at Send, not at attach, so a file pikuri stages must outlive the compose window, which may be hours or a pikuri restart away. |
 | `message=` / `.eml` under the agent's `/tmp` | **Blocks**: snap Thunderbird has a private `/tmp`, so the file is "not found" and a *modal* alert opens. Stage in {Pikuri::Thunderbird::Profile#outbox_dir}, as the `.ics` hand-off does. |
 
@@ -153,26 +148,15 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
 
 ### What that means for the shapes
 
-- **Reply with the model's text:** `mailto:` + `In-Reply-To` is the
-  smallest change: one more allowlisted parameter in
-  {Pikuri::Thunderbird::MailtoUri}, the Message-ID `thunderbird_mail_read`
-  already takes. A quote, if wanted, is text pikuri copies from Gloda's body
-  (the model writes none of it); ComposeGuard then checks the model's part
-  only. The staged `.eml` does the same with full header control, which is
-  more to get wrong for no gain here.
-- **Reply without the model's text:** `-compose type=1` opens a
-  Thunderbird reply for the user to write. The recipient comes from
-  Thunderbird's reply logic, not from the model (though the original's
-  `Reply-To` is the sender's to choose).
 - **Forward:** `-compose type=3` (as attachment) with the model's note in
   `body`. Inline forwarding is out via `-compose`.
-- So `-compose` becomes a second outbound transport beside `mailto:`, for
-  forward only. Its key set is wider than mailto's five (`from`,
-  `preselectid`, `format`, `newsgroups`, `attachment`, `message`, `type`,
-  `originalMsgURI`, `bodyislink`), so it needs a builder like `MailtoUri`:
-  allowlisted keys, every value percent-encoded so a body can't carry a
-  raw `,` or `'` that starts a new `attachment=` pair. Enforced by
-  construction, as today.
+- So `-compose` becomes a third outbound transport, beside compose's
+  `mailto:` and reply's staged draft, for forward only. Its key set is
+  wider than mailto's five (`from`, `preselectid`, `format`, `newsgroups`,
+  `attachment`, `message`, `type`, `originalMsgURI`, `bodyislink`), so it
+  needs a builder like `MailtoUri`: allowlisted keys, every value
+  percent-encoded so a body can't carry a raw `,` or `'` that starts a new
+  `attachment=` pair. Enforced by construction, as today.
 
 ## Open questions
 
@@ -180,30 +164,30 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   `:human_reviewed`**, by § Why forward passes; no new grade, no core
   change, and the secretary stays soft (`book/trifecta-detector.md`:
   "every way out either shown to you before it leaves or aimed where no
-  attacker can read it"). Reply is too: its quote is on screen, and its
-  headers carry only Message-IDs every recipient already has.
-  {Pikuri::Tool::TrifectaLegs}' `:human_reviewed` ("the payload *is* the
-  reviewed artifact") gains the second case, "or opens into it: a mail
-  someone else sent, forwarded whole". Considered:
+  attacker can read it"). {Pikuri::Tool::TrifectaLegs}' `:human_reviewed`
+  ("the payload *is* the reviewed artifact") gains the second case, "or
+  opens into it: a mail someone else sent, forwarded whole". Considered:
   `:unreviewed` (a forwarding agent needs mail search, so the secretary
   would go loud); a middle `:human_named`, needed only by file attach,
-  now rejected; a pikuri-built inline forward over `mailto:`, every byte
-  on screen, but without the original's attachments, which are what most
-  forwards are for. The `OUTBOUND_LEGS` yardoc ("would silently drop to
-  hard `:egress`") needs rewording for the forward.
+  now rejected; a pikuri-built inline forward, every byte on screen, but
+  without the original's attachments, which are what most forwards are
+  for. The `OUTBOUND_LEGS` yardoc ("would silently drop to hard
+  `:egress`") needs rewording for the forward.
 - `Q_review_nudge` — **decided 2026-11-24:** the forward tool urges the
   user to open the forwarded mail before Send, in both places it speaks.
   Its checklist (the result content, relayed by the model) names what
   leaves, from the mbox: the original's subject and sender, and its
   attachments by name and size; says the recipient gets the whole mail,
   its text, headers and quoted thread included; then "double-click
-  `<subject>.eml` in the compose window to see exactly what goes". Its display line (the
-  user sees it without the model in between) carries the same nudge,
-  structural only — names are attacker-authorable, so counts and sizes,
-  e.g. `Handed to Thunderbird: 1 mail with 2 attachments, 3.1 MB —
-  double-click it before Send` ({Pikuri::Tool::Result}'s two rules). A
-  bland subject over a sensitive file ("Lunch?" carrying
-  `passport-scan.jpg`) is the case it's for.
+  `<subject>.eml` in the compose window to see exactly what goes". Its
+  display line (the user sees it without the model in between) carries
+  the same nudge, structural only — names are attacker-authorable, so
+  counts and sizes, e.g. `Handed to Thunderbird: 1 mail with 2
+  attachments, 3.1 MB — double-click it before Send`
+  ({Pikuri::Tool::Result}'s two rules). A bland subject over a sensitive
+  file ("Lunch?" carrying `passport-scan.jpg`) is the case it's for.
+  Unlike reply, this checklist does carry sender-authored names, so the
+  forward's legs need a look (`untrusted: :none` in `OUTBOUND_LEGS`).
 - `Q_forward_received_only` — **decided 2026-11-24:** the forward tool
   refuses a message whose `From` is one of the user's own identities,
   answering "forward it in Thunderbird". Why: the user's Sent folder can
@@ -212,11 +196,19 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   injection, the user attaches it to a mail to Petr, and a later
   injection forwards that Sent mail to the attacker: case 1, laundered
   through the Sent folder, and a double-click shows a readable note, not
-  the secret hidden in it. Every Sent and Drafts message is one of these;
-  the identities are the accounts' own, which Gloda already resolves as
-  "me". A third party who re-sends the user's note is past this check,
-  accepted: their mail, their bytes. Unaffected: a vendor's invoice to
-  Jana.
+  the secret hidden in it. Every Sent and Drafts message is one of these.
+  The identities are {Pikuri::Thunderbird::Accounts#identities}, the
+  check reply's own-mail refusal already makes. A third party who
+  re-sends the user's note is past this check, accepted: their mail,
+  their bytes. Unaffected: a vendor's invoice to Jana.
+- `Q_forward_identity` — **open (2026-11-27).** Which identity does
+  `-compose "type=3,originalMsgURI=…"` open from? A `mailto:` always takes
+  the default identity, which for a reply would have revealed the other
+  address (architecture.md § Hand-off mechanics); `-compose` takes
+  `preselectid=`. Test on the testbed's second account. If the forward
+  doesn't follow the original's account, allowlist `preselectid`, its
+  value the identity the original reached as {Pikuri::Thunderbird::MailReply}
+  picks it, never the model's.
 - `Q_staged_copy` — **open.** Between review and Send the forwarded mail
   is a plain `0600` file under `~/Downloads/thunderbird.tmp/pid-N/`, and
   Send reads it as it is then, so a writer there swaps what the human
@@ -233,40 +225,15 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   `<Downloads>/thunderbird.tmp` — Thunderbird knowledge in a gem that
   doesn't otherwise have it; (c) the nudge says "just before Send",
   which shrinks the window but doesn't close it. Leaning (a) + (c).
-- `Q_transport` — **decided 2026-11-23:** two transports, one per tool,
-  forced by the shapes above (only `mailto:` threads a reply that keeps a
-  body; only `-compose` forwards as attachment). Reply →
-  {Pikuri::Thunderbird::MailtoUri}, whose allowlist gains `In-Reply-To` /
-  `References`. Forward → a new `ComposeArgs` builder: allowlist `to cc
-  bcc subject body type originalMsgURI`, never `from preselectid format
-  message newsgroups bodyislink`, and never `attachment`, which resolves
-  any URI, a web page included; every value percent-encoded, unquoted (no
-  raw `,` or `'` can open a key; `originalMsgURI`'s `%40` round-trips as
-  `%2540`); `type` from a fixed set, never from the model.
-  `Launcher#launch` takes an argv. Compose stays on `mailto:`.
-- `Q_reply_shape` — **decided 2026-11-23:** a separate
-  `thunderbird_mail_reply(message_id:, body:, reply_all: false)` over
-  `mailto:`. pikuri derives everything but the body from the original: the
-  recipient (`Reply-To`, else `From`; plus the other recipients under
-  `reply_all`), `Re: <subject>`, `In-Reply-To` and the original's own
-  `References` chain from the mbox, and an "On … wrote:" `> ` quote under
-  the model's text. The model never names a reply's recipient. Rejected:
-  `in_reply_to:` on `thunderbird_mail_compose` (the model still names the
-  recipient, four fields to keep consistent); `-compose type=1` as the
-  main shape (drops the model's text; maybe later as "open the reply for
-  me").
-- `Q_guard_on_quotes` — **decided 2026-11-23:** ComposeGuard checks the
-  model's text only; the quote is appended after the verdict, verbatim
-  from Gloda's body, `> `-prefixed, never filtered. Safe because of a rule
-  the reply tool states as its own: **a reply adds no recipient the
-  original didn't name** (no `cc:`), so every recipient already holds the
-  original and the quote — hidden bytes included, the author's own — tells
-  no one anything new. A future `cc:` must bring the quote under the guard.
-  The quote is capped (~4 KB of the original's text, cut at a line, ending
-  `[…]`): Linux caps one argv string at 128 KiB (`MAX_ARG_STRLEN`) and
-  percent-encoding inflates non-ASCII up to 9×; threading lets the
-  recipient's client show the rest. Still refused: the model pasting
-  hostile lines into its own text (`warn-human-directly.md`).
+- `Q_transport` — **decided 2026-11-23:** forward rides `-compose`, forced
+  by the shapes above (only `-compose` forwards as attachment), through a
+  new `ComposeArgs` builder: allowlist `to cc bcc subject body type
+  originalMsgURI`, never `from preselectid format message newsgroups
+  bodyislink` (but see `Q_forward_identity`), and never `attachment`,
+  which resolves any URI, a web page included; every value
+  percent-encoded, unquoted (no raw `,` or `'` can open a key;
+  `originalMsgURI`'s `%40` round-trips as `%2540`); `type` from a fixed
+  set, never from the model. `Launcher#launch` takes an argv.
 - `Q_forward_scope` — **decided 2026-11-23, kept 2026-11-24:**
   `thunderbird_mail_forward(message_id:, to:, body:, cc:)` forwards the
   whole mail as an attachment through `-compose type=3`; the model writes
@@ -281,10 +248,11 @@ presumably be `mailbox:` → `mailbox-message:`; not tried.
   bytes in the outbox, and since Thunderbird reads a file at Send, no
   moment is safe to reap it. The chip turned out to open into what
   leaves, so `Q_trifecta_grade` settled without reopening this.
-- `Q_display_run` — re-run both tables through the real `setsid
+- `Q_display_run` — re-run the forward tables through the real `setsid
   thunderbird …` remoting in a `--display` session (`DISABLE_WAYLAND=1`,
   architecture.md § The testbed); the modal-alert cases and the chip's
-  double-click matter most there, since a human meets them.
+  double-click matter most there, since a human meets them. Reply's ran
+  2026-11-27 and passed.
 - `Q_doc_order` — rewrite the invariant now, or after the testbed has
   answered the mechanics questions?
 

@@ -165,6 +165,7 @@ describe Pikuri::Thunderbird::Extension do
       Dir.mktmpdir do |cache|
         _, names = tool_names(dir, cache)
         refute_includes names, 'thunderbird_mail_compose'
+        refute_includes names, 'thunderbird_mail_reply'
       end
     end
   end
@@ -176,6 +177,7 @@ describe Pikuri::Thunderbird::Extension do
         c = FakeConfigurator.new
         Extension.new(profile_dir: dir, cache_dir: cache, allow_compose_mail: true).configure(c)
         assert_includes c.tools.map(&:name), 'thunderbird_mail_compose'
+        assert_includes c.tools.map(&:name), 'thunderbird_mail_reply'
       end
     end
   end
@@ -212,6 +214,7 @@ describe Pikuri::Thunderbird::Extension do
         names = c.tools.map(&:name)
         assert_includes names, 'thunderbird_mail_compose'
         refute_includes names, 'thunderbird_mail_search'
+        refute_includes names, 'thunderbird_mail_reply', 'no search, so no message id to answer'
       end
     end
   end

@@ -3,12 +3,12 @@
 module Pikuri
   module Thunderbird
     # Detached launch of the user's Thunderbird — the shared mechanism behind
-    # both outbound tools. Given an argument Thunderbird understands on its
-    # command line (a +mailto:+ URI for {MailCompose}, an +.ics+ path for
-    # {CalendarCreate}), it opens it in the running instance:
+    # the outbound tools. Given an argument Thunderbird understands on its
+    # command line, it opens it in the running instance:
     #
-    #   Launcher.new.launch('mailto:a@x.com?body=hi')   # compose window
-    #   Launcher.new.launch('/…/pikuri-outbox/x.ics')   # import wizard
+    #   Launcher.new.launch('mailto:a@x.com?body=hi')                 # compose window
+    #   Launcher.new.launch('/…/pikuri-outbox/handoff-3f9c….eml')   # a draft, in a compose window
+    #   Launcher.new.launch('/…/pikuri-outbox/handoff-8a1d….ics')   # import wizard
     #
     # It never sends or imports anything itself — the argument only *opens* a
     # window/wizard the human reviews and commits, which is the no-send seam.

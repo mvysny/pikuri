@@ -120,6 +120,7 @@ pikuri-thunderbird [:private, :untrusted_hard, :egress_reviewed]
   thunderbird_calendar_search [:private, :untrusted_hard]
   thunderbird_calendar_read [:private, :untrusted_hard]
   thunderbird_mail_compose [:egress_reviewed]
+  thunderbird_mail_reply [:egress_reviewed]
   thunderbird_calendar_create [:egress_reviewed]
 ```
 

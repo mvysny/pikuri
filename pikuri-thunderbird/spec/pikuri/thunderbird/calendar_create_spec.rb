@@ -20,8 +20,7 @@ describe Pikuri::Thunderbird::CalendarCreate do
 
       opened << arg
     end
-    # Profile#outbox_dir already includes the pikuri-outbox leaf; mirror that.
-    profile = Struct.new(:outbox_dir).new(File.join(dir, 'pikuri-outbox'))
+    profile = Pikuri::Thunderbird::Profile.new(dir: dir, variant: :override)
     Pikuri::Thunderbird::CalendarCreate.new(profile: profile, launcher: launcher)
   end
 

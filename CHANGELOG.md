@@ -19,6 +19,8 @@ march on.
 
 ## [Unreleased]
 
+- Add `thunderbird_mail_reply` (`Pikuri::Thunderbird::MailReply`), wired with `allow_compose_mail:` beside the mail tools: it opens a threaded, quoted reply as a draft in Thunderbird, from the address the message reached, its recipients taken from the message rather than the model.
+
 ## [0.2.0] - 2026-11-22
 
 pikuri narrows to what you can read in an evening: the coding agent, the
